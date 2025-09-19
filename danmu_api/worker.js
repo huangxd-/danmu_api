@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.0.2";
+const VERSION = "1.0.3";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -2647,7 +2647,7 @@ async function searchEpisodes(url) {
   }
 
   // 先搜索动漫
-  let searchUrl = new URL(url.href.replace("/search/episodes", `/search/anime?keyword=${anime}`));
+  let searchUrl = new URL(`/search/anime?keyword=${anime}`, url.origin);
   const searchRes = await searchAnime(searchUrl);
   const searchData = await searchRes.json();
   
@@ -2666,7 +2666,7 @@ async function searchEpisodes(url) {
 
   // 遍历所有找到的动漫，获取它们的集数信息
   for (const animeItem of searchData.animes) {
-    const bangumiUrl = new URL(url.href.replace("/search/episodes", `/bangumi/${animeItem.bangumiId}`));
+    const bangumiUrl = new URL(`/bangumi/${animeItem.bangumiId}`, url.origin);
     const bangumiRes = await getBangumi(bangumiUrl.pathname);
     const bangumiData = await bangumiRes.json();
     
@@ -2863,7 +2863,7 @@ async function handleRequest(req, env) {
   // 移除 token 部分，剩下的才是真正的路径
   path = "/" + parts.slice(1).join("/");
 
-  console.log(path);
+  log("log", path);
 
   // GET /
   if (path === "/" && method === "GET") {

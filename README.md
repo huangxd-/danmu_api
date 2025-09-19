@@ -12,12 +12,13 @@
 
 有问题提issue或私信机器人都ok。https://t.me/ddjdd_bot
 
-新加了tg频道，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个互助群，大家有问题可以在群里求助。请点击上面蓝色的按钮进行添加关注。
+新加了tg频道 (https://t.me/logvar_danmu_channel) ，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个互助群 (https://t.me/logvar_danmu_group) ，大家有问题可以在群里求助。请点击上面蓝色的按钮进行添加关注。
 
 ## 功能
 - **API 接口**：
   - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
   - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。
+  - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?withRelated=true&chConvert=1`：获取指定弹幕评论，支持返回相关评论和字符转换。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
@@ -57,8 +58,9 @@
 4. **测试 API**：
    使用 Postman 或 curl 测试：
    - `GET http://{ip}:9321/87654321`
-   - `GET http://{ip}:9321/87654321/api/v2/search/anime?keyword=Anime%20A`
+   - `GET http://{ip}:9321/87654321/api/v2/search/anime?keyword=生万物`
    - `POST http://{ip}:9321/87654321/api/v2/api/v2/match`
+   - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
    - `GET http://{ip}:9321/87654321/api/v2/comment/1?withRelated=true&chConvert=1`
    - `GET http://{ip}:9321/87654321/api/logs`
