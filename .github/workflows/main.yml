@@ -1,0 +1,23 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 每天凌晨2点自动同步（UTC时间）
+  workflow_dispatch:       # 也可以手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/huangxd-/danmu_api.git
+          git fetch upstream
+          git checkout main
+          git merge upstream/main --no-edit || true
+          git push origin main
