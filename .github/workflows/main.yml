@@ -2,8 +2,8 @@ name: Sync Fork
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # 每天凌晨2点自动同步（UTC时间）
-  workflow_dispatch:       # 也可以手动触发
+    - cron: '0 0 * * *'   # 每天 0 点自动执行（UTC 时间）
+  workflow_dispatch:       # 手动触发
 
 jobs:
   sync:
@@ -12,12 +12,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream
+        run: git remote add upstream https://github.com/huangxd-/danmu_api.git
 
       - name: Fetch upstream
-        run: |
-          git remote add upstream https://github.com/huangxd-/danmu_api.git
-          git fetch upstream
-          git checkout main
-          git merge upstream/main --no-edit || true
-          git push origin main
+        run: git fetch upstream
+
+      - name: Merge upstream changes
+        run: git merge upstream/main --allow-unrelated-histories || true
+
+      - name: Push changes
+        run: git push origin main
