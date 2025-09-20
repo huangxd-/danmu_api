@@ -1592,7 +1592,7 @@ async function fetchYouku(inputUrl) {
   };
 
   // 并发限制（避免在 Vercel 上串行导致总耗时过长，同时防止过度并发被风控）
-  const concurrency = 8;
+  const concurrency = 16;
   const mats = Array.from({ length: max_mat }, (_, i) => i);
   for (let i = 0; i < mats.length; i += concurrency) {
     const batch = mats.slice(i, i + concurrency).map((m) => requestOneMat(m));
