@@ -26,7 +26,7 @@
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Cloudflare 一键部署和 Docker 一键启动。
 
 ## 前置条件
-- Node.js（v20.19.0 或更高版本）
+- Node.js（v18.0.0 或更高版本）
 - npm
 - Docker（可选，用于容器化部署）
 
@@ -190,6 +190,7 @@ danmu_api/
 │   └── workflows/
 │       └── docker-image.yml
 ├── danmu_api/
+│   ├── esm-shim.js     # Node.js低版本兼容层
 │   ├── server.js       # 本地node启动脚本
 │   ├── worker.js       # 主 API 服务器代码
 │   ├── worker.test.js  # 测试文件
