@@ -1,7 +1,7 @@
 # LogVar 弹幕 API 服务器
 
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
-![GitHub License](https://img.shields.io/github/license/huangxd-/damnu_api)
+![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
 ![Docker Pulls](https://img.shields.io/docker/pulls/logvar/danmu-api)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_channel&color=blue)](https://t.me/logvar_danmu_channel)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_group&color=blue)](https://t.me/logvar_danmu_group)
@@ -10,9 +10,9 @@
 
 本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。
 
-有问题提issue或私信机器人都ok。https://t.me/ddjdd_bot
+有问题提issue或 [私信机器人](https://t.me/ddjdd_bot) 都ok。
 
-新加了tg频道 (https://t.me/logvar_danmu_channel) ，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个互助群 (https://t.me/logvar_danmu_group) ，大家有问题可以在群里求助。请点击上面蓝色的按钮进行添加关注。
+新加了 [tg频道](https://t.me/logvar_danmu_channel) ，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个 [互助群](https://t.me/logvar_danmu_group) ，大家有问题可以在群里求助。
 
 ## 功能
 - **API 接口**：
@@ -124,6 +124,7 @@
 
 ### 优化点
 Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，能提高访问速度，体验更优
+> hk有可能访问不了360，也可以尝试切其他region，如新加坡等
 
 ## 部署到 腾讯云 edgeone pages 【推荐】
 
@@ -134,7 +135,9 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 > 
 > 示例请求：`https://{your_domian}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
 >
-> 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？https://edgeone.cloud.tencent.com/pages/document/175191784523485184
+> 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
+> 
+> 也可直接用国际站的部署按钮一键部署，默认选择"全球可用区（不含中国大陆）" [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 > 
 <img src="https://i.mji.rip/2025/09/17/3a675876dabb92e4ce45c10d543ce66b.png" style="width:400px" />
 
@@ -157,7 +160,8 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。
 
 ## API食用指南
-支持 forward/senplayer 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt 等支持弹幕API的播放器。
+
 以`senplayer`为例：
 1. 获取到部署之后的API地址，如`http://192.168.1.7:9321/87654321`，其中`87654321`是默认token，前提是没有传TOKEN环境变量
 2. 将API地址填入自定义弹幕API，在`设置 - 弹幕设置 - 自定义弹幕API`
@@ -169,12 +173,15 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 <img src="https://i.mji.rip/2025/09/14/9fdf945fb247994518042691f60d7849.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
 
+> 注意：小幻在填写API的时候需要在API后面加上`/api/v2`，如`http://192.168.1.7:9321/87654321/api/v2`
+
 ## 环境变量列表
 | 变量名称      | 描述 |
 | ----------- | ----------- |
-| TOKEN      | 用户token       |
-| OTHER_SERVER   | 兜底第三方弹幕服务器，如 https://api.danmu.icu        |
-| VOD_SERVER      | vod查询站点，如 https://www.caiji.cyou       |
+| TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
+| OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，如 https://api.danmu.icu        |
+| VOD_SERVER      | 【可选】vod查询站点，如 https://www.caiji.cyou       |
+| BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取    |
 
 ## 项目结构
 ```
@@ -186,6 +193,9 @@ danmu_api/
 │   ├── server.js       # 本地node启动脚本
 │   ├── worker.js       # 主 API 服务器代码
 │   ├── worker.test.js  # 测试文件
+├── node-functions/
+│   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
+│   ├── index.js        # edgeone pages 中间处理逻辑
 ├── .gitignore
 ├── Dockerfile
 ├── package.json
@@ -202,7 +212,6 @@ danmu_api/
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
 - 如果想更换vod站点，请添加环境变量`VOD_SERVER`，示例`https://www.caiji.cyou`。
-- 会返回所有跟title匹配的影片，所以主要使用场景是手动弹幕搜索场景。
 - 推荐vercel和claw部署，cloudflare好像不稳定，当然最稳定还是自己本地docker部署最佳。
 
 ### 📈项目 Star 数增长趋势
