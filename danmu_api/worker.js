@@ -49,6 +49,22 @@ function resolveBilibiliCookie(env) {
   return DEFAULT_BILIBILI_COOKIE;
 }
 
+// 优酷并发配置（默认 8）
+const DEFAULT_YOUKU_CONCURRENCY = 8;
+let youkuConcurrency = DEFAULT_YOUKU_CONCURRENCY;
+
+function resolveYoukuConcurrency(env) {
+  if (env && env.YOUKU_CONCURRENCY) {
+    const n = parseInt(env.YOUKU_CONCURRENCY, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  if (typeof process !== "undefined" && process.env?.YOUKU_CONCURRENCY) {
+    const n = parseInt(process.env.YOUKU_CONCURRENCY, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return DEFAULT_YOUKU_CONCURRENCY;
+}
+
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
     // 检查是否已存在相同的 url
@@ -1591,8 +1607,8 @@ async function fetchYouku(inputUrl) {
     return results;
   };
 
-  // 并发限制（避免在 Vercel 上串行导致总耗时过长，同时防止过度并发被风控）
-  const concurrency = 16;
+  // 并发限制（可通过环境变量 YOUKU_CONCURRENCY 配置，默认 8）
+  const concurrency = youkuConcurrency;
   const mats = Array.from({ length: max_mat }, (_, i) => i);
   for (let i = 0; i < mats.length; i += concurrency) {
     const batch = mats.slice(i, i + concurrency).map((m) => requestOneMat(m));
@@ -3019,6 +3035,7 @@ async function handleRequest(req, env) {
   otherServer = resolveOtherServer(env);
   vodServer = resolveVodServer(env);
   bilibliCookie = resolveBilibiliCookie(env);
+  youkuConcurrency = resolveYoukuConcurrency(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
