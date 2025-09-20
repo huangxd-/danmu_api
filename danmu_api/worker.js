@@ -49,6 +49,22 @@ function resolveBilibiliCookie(env) {
   return DEFAULT_BILIBILI_COOKIE;
 }
 
+// 优酷并发配置（默认 8）
+const DEFAULT_YOUKU_CONCURRENCY = 8;
+let youkuConcurrency = DEFAULT_YOUKU_CONCURRENCY;
+
+function resolveYoukuConcurrency(env) {
+  if (env && env.YOUKU_CONCURRENCY) {
+    const n = parseInt(env.YOUKU_CONCURRENCY, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  if (typeof process !== "undefined" && process.env?.YOUKU_CONCURRENCY) {
+    const n = parseInt(process.env.YOUKU_CONCURRENCY, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return DEFAULT_YOUKU_CONCURRENCY;
+}
+
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
     // 检查是否已存在相同的 url
@@ -1473,7 +1489,9 @@ async function fetchYouku(inputUrl) {
   const step = 60; // 每60秒一个分段
   const max_mat = Math.floor(duration / step) + 1;
   let contents = [];
-  for (let mat = 0; mat < max_mat; mat++) {
+
+  // 将构造请求和解析逻辑封装为函数，返回该分段的弹幕数组
+  const requestOneMat = async (mat) => {
     const msg = {
       ctime: Date.now(),
       ctype: 10004,
@@ -1489,17 +1507,11 @@ async function fetchYouku(inputUrl) {
 
     const str = JSON.stringify(msg);
 
-    // 2. 处理 UTF-8 编码（替代 TextEncoder 和 Buffer）
-    // 对于简单的 ASCII 字符串，btoa 可以直接处理
-    // 如果需要支持 UTF-8 字符（例如中文），需要手动编码
     function utf8ToLatin1(str) {
-      // 将 UTF-8 字符串转换为 Latin-1 可用的字符串
-      // 浏览器 btoa 只能处理 Latin-1（0-255 字符码）
       let result = '';
       for (let i = 0; i < str.length; i++) {
         const charCode = str.charCodeAt(i);
         if (charCode > 255) {
-          // 对于非 Latin-1 字符（如中文），可以用 encodeURIComponent 转义
           result += encodeURIComponent(str[i]);
         } else {
           result += str[i];
@@ -1513,32 +1525,24 @@ async function fetchYouku(inputUrl) {
       let output = '';
       let buffer = 0;
       let bufferLength = 0;
-
       for (let i = 0; i < input.length; i++) {
         buffer = (buffer << 8) | input.charCodeAt(i);
         bufferLength += 8;
-
         while (bufferLength >= 6) {
           output += chars[(buffer >> (bufferLength - 6)) & 0x3F];
           bufferLength -= 6;
         }
       }
-
       if (bufferLength > 0) {
         output += chars[(buffer << (6 - bufferLength)) & 0x3F];
       }
-
       while (output.length % 4 !== 0) {
         output += '=';
       }
-
       return output;
     }
 
-    // 3. 转为 Base64 编码
     const msg_b64encode = base64Encode(utf8ToLatin1(str));
-
-    // 4. 将 Base64 编码存入 msg.msg
     msg.msg = msg_b64encode;
     msg.sign = md5(`${msg_b64encode}MkmC9SoIw6xCkSKHhJ7b5D2r51kBiREr`).toString().toLowerCase();
 
@@ -1557,53 +1561,66 @@ async function fetchYouku(inputUrl) {
       jsonpIncPrefix: "utility",
     };
 
-    let queryString = buildQueryString(params);
+    const queryString = buildQueryString(params);
     const url = `${api_danmaku}?${queryString}`;
     log("log", "piece_url: ", url);
 
-    try {
-        const response = await httpPost(url, buildQueryString({ data: data }), {
-          headers: {
-              "Cookie": `_m_h5_tk=${_m_h5_tk};_m_h5_tk_enc=${_m_h5_tk_enc};`,
-              "Referer": "https://v.youku.com",
-              "Content-Type": "application/x-www-form-urlencoded",
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",
-          },
-          allow_redirects: false
-        });
+    const response = await httpPost(url, buildQueryString({ data: data }), {
+      headers: {
+        "Cookie": `_m_h5_tk=${_m_h5_tk};_m_h5_tk_enc=${_m_h5_tk_enc};`,
+        "Referer": "https://v.youku.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",
+      },
+      allow_redirects: false
+    });
 
-        if (response.data.data && response.data.data.result) {
-          const result = JSON.parse(response.data.data.result);
-          if (result.code === "-1") continue;
-          const danmus = result.data.result;
-          for (const danmu of danmus) {
-            const content = {
-                timepoint: 0,	// 弹幕发送时间（秒）
-                ct: 1,	// 弹幕类型，1-3 为滚动弹幕、4 为底部、5 为顶端、6 为逆向、7 为精确、8 为高级
-                size: 25,	//字体大小，25 为中，18 为小
-                color: 16777215,	//弹幕颜色，RGB 颜色转为十进制后的值，16777215 为白色
-                unixtime: Math.floor(Date.now() / 1000),	//Unix 时间戳格式
-                uid: 0,		//发送人的 id
-                content: "",
-            };
-            content.timepoint = danmu.playat / 1000;
-            if (danmu.propertis?.color) {
-              content.color = JSON.parse(danmu.propertis).color;
-            }
-            if (danmu.propertis?.pos) {
-              if (JSON.parse(danmu.propertis).pos === 1) {
-                content.ct = 5;
-              } else if (JSON.parse(danmu.propertis).pos === 2) {
-                content.ct = 4;
-              }
-            }
-            content.content = danmu.content;
-            contents.push(content);
+    const results = [];
+    if (response.data?.data && response.data.data.result) {
+      const result = JSON.parse(response.data.data.result);
+      if (result.code !== "-1") {
+        const danmus = result.data.result;
+        for (const danmu of danmus) {
+          const content = {
+            timepoint: 0,
+            ct: 1,
+            size: 25,
+            color: 16777215,
+            unixtime: Math.floor(Date.now() / 1000),
+            uid: 0,
+            content: "",
+          };
+          content.timepoint = danmu.playat / 1000;
+          if (danmu.propertis?.color) {
+            content.color = JSON.parse(danmu.propertis).color;
           }
+          if (danmu.propertis?.pos) {
+            const pos = JSON.parse(danmu.propertis).pos;
+            if (pos === 1) content.ct = 5;
+            else if (pos === 2) content.ct = 4;
+          }
+          content.content = danmu.content;
+          results.push(content);
         }
-    } catch (error) {
-        log("error", "请求失败:", error.message); // 输出错误信息
-        return [];
+      }
+    }
+    return results;
+  };
+
+  // 并发限制（可通过环境变量 YOUKU_CONCURRENCY 配置，默认 8）
+  const concurrency = youkuConcurrency;
+  const mats = Array.from({ length: max_mat }, (_, i) => i);
+  for (let i = 0; i < mats.length; i += concurrency) {
+    const batch = mats.slice(i, i + concurrency).map((m) => requestOneMat(m));
+    try {
+      const settled = await Promise.allSettled(batch);
+      for (const s of settled) {
+        if (s.status === "fulfilled" && Array.isArray(s.value)) {
+          contents = contents.concat(s.value);
+        }
+      }
+    } catch (e) {
+      log("error", "优酷分段批量请求失败:", e.message);
     }
   }
 
@@ -3018,6 +3035,7 @@ async function handleRequest(req, env) {
   otherServer = resolveOtherServer(env);
   vodServer = resolveVodServer(env);
   bilibliCookie = resolveBilibiliCookie(env);
+  youkuConcurrency = resolveYoukuConcurrency(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
