@@ -25,8 +25,11 @@ jobs:
       - name: Fetch upstream
         run: git fetch upstream
 
-      - name: Merge upstream changes
-        run: git merge upstream/main --allow-unrelated-histories || true
+      - name: Sync upstream changes (ignore workflows)
+        run: |
+          git checkout upstream/main -- .
+          rm -rf .github/workflows
+          git commit -am "sync from upstream (without workflows)" || echo "No changes"
 
       - name: Push changes
         run: git push origin main
