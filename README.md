@@ -26,7 +26,7 @@
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Cloudflare 一键部署和 Docker 一键启动。
 
 ## 前置条件
-- Node.js（v20.19.0 或更高版本）
+- Node.js（v18.0.0 或更高版本；理论兼容更低版本，请自行测试）
 - npm
 - Docker（可选，用于容器化部署）
 
@@ -163,7 +163,7 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt 等支持弹幕API的播放器。
 
 以`senplayer`为例：
-1. 获取到部署之后的API地址，如`http://192.168.1.7:9321/87654321`，其中`87654321`是默认token，前提是没有传TOKEN环境变量
+1. 获取到部署之后的API地址，如 `http://192.168.1.7:9321/87654321` ，其中`87654321`是默认token，如果有自定义环境变量TOKEN，请替换成相应的token
 2. 将API地址填入自定义弹幕API，在`设置 - 弹幕设置 - 自定义弹幕API`
 3. 播放界面点击`弹幕按钮 - 搜索弹幕`，选择你的弹幕API，会根据标题进行搜索，等待一段时间，选择剧集就行。
 <img src="https://i.mji.rip/2025/09/14/1dae193008f23e507d3cc3733a92f0a1.jpeg" style="width:400px" />
@@ -179,9 +179,10 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 | 变量名称      | 描述 |
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
-| OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，如 https://api.danmu.icu        |
-| VOD_SERVER      | 【可选】vod查询站点，如 https://www.caiji.cyou       |
+| OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
+| VOD_SERVER      | 【可选】vod查询站点，不填默认为`https://www.caiji.cyou`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取    |
+| YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 
 ## 项目结构
 ```
@@ -190,6 +191,7 @@ danmu_api/
 │   └── workflows/
 │       └── docker-image.yml
 ├── danmu_api/
+│   ├── esm-shim.js     # Node.js低版本兼容层
 │   ├── server.js       # 本地node启动脚本
 │   ├── worker.js       # 主 API 服务器代码
 │   ├── worker.test.js  # 测试文件
@@ -213,6 +215,9 @@ danmu_api/
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
 - 如果想更换vod站点，请添加环境变量`VOD_SERVER`，示例`https://www.caiji.cyou`。
 - 推荐vercel和claw部署，cloudflare好像不稳定，当然最稳定还是自己本地docker部署最佳。
+
+### 关联项目
+[danmu_api 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
 
 ### 📈项目 Star 数增长趋势
 #### Star History

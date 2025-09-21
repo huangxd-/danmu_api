@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "esbuild": "^0.25.10",
     "node-fetch": "^3.3.2"
   }
 }
