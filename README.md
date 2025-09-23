@@ -1,5 +1,6 @@
 # LogVar 弹幕 API 服务器
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Gexnov/danmu_api)
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
 ![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
 ![Docker Pulls](https://img.shields.io/docker/pulls/logvar/danmu-api)
