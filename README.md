@@ -1,7 +1,7 @@
 # LogVar 弹幕 API 服务器
 
-[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
-![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/gexnov/damnu_api)
+![GitHub License](https://img.shields.io/github/license/gexnov/danmu_api)
 ![Docker Pulls](https://img.shields.io/docker/pulls/logvar/danmu-api)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_channel&color=blue)](https://t.me/logvar_danmu_channel)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_group&color=blue)](https://t.me/logvar_danmu_group)
