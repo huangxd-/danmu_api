@@ -180,6 +180,8 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
 
 > 注意：小幻在填写API的时候需要在API后面加上`/api/v2`，如`http://192.168.1.7:9321/87654321/api/v2`
+> 
+> 有很多人问FW能不能用，FW推荐直接使用插件，如果非要使用，则可以配合 `https://raw.githubusercontent.com/huangxd-/ForwardWidgets/refs/heads/main/widgets.fwd` 里的`danmu_api`插件使用
 
 ## 环境变量列表
 | 变量名称      | 描述 |
@@ -189,6 +191,7 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 | VOD_SERVER      | 【可选】vod查询站点，不填默认为`https://www.caiji.cyou`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
+| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`vod,360,renren`，表示vod数据排在最前，renren数据排在最后，示例`360,renren`：只返回360数据和renren数据，且360数据靠前       |
 
 ## 项目结构
 ```
