@@ -15,8 +15,8 @@ export const onRequest = async (context) => {
   try {
     let targetUrl = request.url;
 
-    // 判断是否包含 node-functions/index.js，如果是则用 / 代替
-    if (request.url.includes('node-functions/index.js')) {
+    // 判断是否包含 edge-functions/index.js，如果是则用 / 代替
+    if (request.url.includes('edge-functions/index.js')) {
       targetUrl = '/';
     }
 
@@ -39,5 +39,5 @@ export const onRequest = async (context) => {
   });
 
   // 传递修改后的 request 和 env 给 handleRequest
-  return await handleRequest(modifiedRequest, env);
+  return await handleRequest(modifiedRequest, env, "edgeone");
 };

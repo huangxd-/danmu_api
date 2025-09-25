@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "/node-functions/index.js"
+      "destination": "/edge-functions/index.js"
     },
     {
       "source": "/*",
-      "destination": "/node-functions/[[...path]].js"
+      "destination": "/edge-functions/[[...path]].js"
     }
   ]
 }
