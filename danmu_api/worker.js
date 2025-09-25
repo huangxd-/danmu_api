@@ -4,6 +4,7 @@ const VERSION = "1.1.2";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
+let from = ""; // 请求来自于哪个部署平台
 
 // 日志存储，最多保存 500 行
 let logBuffer = [];
@@ -2805,6 +2806,23 @@ async function searchAnime(url) {
     log("error", "发生错误:", error);
   }
 
+  // 存储更新后的变量到缓存
+  if (from === "edgeone") {
+    const cache = await caches.open('danmu-cache');
+    const cacheKey = new Request('https://example.com/cache/danmu');
+
+    const updatedResponse = new Response(
+        JSON.stringify({
+          animes: animes,
+          episodeIds: episodeIds,
+          episodeNum: episodeNum,
+          logBuffer: logBuffer,
+        }), {
+      headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=600'}
+    });
+    await cache.put(cacheKey, updatedResponse);
+  }
+
   return jsonResponse({
     errorCode: 0,
     success: true,
@@ -3147,7 +3165,7 @@ async function getComment(path) {
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
-async function handleRequest(req, env, from) {
+async function handleRequest(req, env, fromWhere) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
   otherServer = resolveOtherServer(env);
   vodServer = resolveVodServer(env);
@@ -3158,6 +3176,7 @@ async function handleRequest(req, env, from) {
   const url = new URL(req.url);
   let path = url.pathname;
   const method = req.method;
+  from = fromWhere;
 
   // 如果是edgeone的请求，则全局变量从cache中获取
   if (from === "edgeone") {
