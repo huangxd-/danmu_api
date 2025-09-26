@@ -2498,10 +2498,11 @@ function formatLogMessage(message) {
   }
 }
 
-function jsonResponse(data, status = 200) {
+async function jsonResponse(data, status = 200) {
+  await updateCaches();
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
   });
 }
 
@@ -2774,6 +2775,25 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
   return processRenrenAnimes;
 }
 
+// 存储更新后的变量到缓存
+async function updateCaches() {
+  if (from === "edgeone") {
+    const cache = await caches.open('danmu-cache');
+    const cacheKey = new Request('https://example.com/cache/danmu');
+
+    const updatedResponse = new Response(
+        JSON.stringify({
+          animes: animes,
+          episodeIds: episodeIds,
+          episodeNum: episodeNum,
+          logBuffer: logBuffer,
+        }), {
+          headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=600'}
+        });
+    await cache.put(cacheKey, updatedResponse);
+  }
+}
+
 // Extracted function for GET /api/v2/search/anime
 async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
@@ -2804,23 +2824,6 @@ async function searchAnime(url) {
     }
   } catch (error) {
     log("error", "发生错误:", error);
-  }
-
-  // 存储更新后的变量到缓存
-  if (from === "edgeone") {
-    const cache = await caches.open('danmu-cache');
-    const cacheKey = new Request('https://example.com/cache/danmu');
-
-    const updatedResponse = new Response(
-        JSON.stringify({
-          animes: animes,
-          episodeIds: episodeIds,
-          episodeNum: episodeNum,
-          logBuffer: logBuffer,
-        }), {
-      headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=600'}
-    });
-    await cache.put(cacheKey, updatedResponse);
   }
 
   return jsonResponse({
