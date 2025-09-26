@@ -205,7 +205,7 @@ danmu_api/
 │   ├── worker.js       # 主 API 服务器代码
 │   ├── worker.test.js  # 测试文件
 ├── node-functions/
-│   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
+│   ├── [[...path]].js # edgeone pages 所有路由跳转指向index
 │   ├── index.js        # edgeone pages 中间处理逻辑
 ├── .gitignore
 ├── Dockerfile

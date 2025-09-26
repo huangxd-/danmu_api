@@ -1,43 +1,21 @@
 import { handleRequest } from '../danmu_api/worker.js';
 
-export const onRequest = async (context) => {
-  const { request, env } = context;
+export async function onRequest(context) {  // 修改为 onRequest 以支持所有请求类型
+    try {
+        const url = new URL(context.request.url);
+        console.log('Request path:', url.pathname);  // 调试：日志中查看路径是否到达
 
-  // 获取协议和主机名，使用属性访问而非 get 方法
-  const baseUrl = `https://localhost`;
+        const workerResponse = await handleRequest(context.request, context.env, context);
+        console.log('Worker response status:', workerResponse.status);  // 调试 worker 返回
 
-  // 调试：打印 headers 和原始 URL
-  console.log('Request URL:', request.url);
-  console.log('Request Headers:', request.headers);
-
-  // 构造完整的 URL
-  let fullUrl;
-  try {
-    let targetUrl = request.url;
-
-    // 判断是否包含 edge-functions/index.js，如果是则用 / 代替
-    if (request.url.includes('edge-functions/index.js')) {
-      targetUrl = '/';
+        return workerResponse;
+    } catch (error) {
+        console.error('Error in index.js:', error);  // 调试错误
+        return new Response(JSON.stringify({ error: `处理失败: ${error.message}` }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+            }
+        });
     }
-
-    fullUrl = new URL(targetUrl, baseUrl).toString();
-    console.log('Request fullUrl:', fullUrl);
-  } catch (error) {
-    console.error('URL Construction Error:', error);
-    return new Response('Invalid URL', { status: 400 });
-  }
-
-  // 创建新的 request 对象，替换 url
-  const modifiedRequest = new Request(fullUrl, {
-    method: request.method,
-    headers: request.headers,
-    body: JSON.stringify(request.body),
-    redirect: request.redirect,
-    credentials: request.credentials,
-    cache: request.cache,
-    mode: request.mode
-  });
-
-  // 传递修改后的 request 和 env 给 handleRequest
-  return await handleRequest(modifiedRequest, env, "edgeone");
-};
+}

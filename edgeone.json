@@ -1,14 +1,10 @@
 {
   "name": "danmu-api",
   "outputDirectory": "./",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/edge-functions/index.js"
-    },
-    {
-      "source": "/*",
-      "destination": "/edge-functions/[[...path]].js"
+      "path": "/*",
+      "edge-functions": "[[...path]].js"
     }
   ]
 }
