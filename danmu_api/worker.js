@@ -3197,9 +3197,9 @@ async function handleRequest(req, env, fromWhere) {
     }
   }
 
-  async function handleHomepage() {
+  function handleHomepage() {
     log("log", "Accessed homepage with repository information");
-    return await jsonResponse({
+    return jsonResponse({
       message: "Welcome to the LogVar Danmu API server",
       version: VERSION,
       repository: "https://github.com/huangxd-/danmu_api.git",
@@ -3210,7 +3210,7 @@ async function handleRequest(req, env, fromWhere) {
 
   // GET /
   if (path === "/" && method === "GET") {
-    return await handleHomepage();
+    return handleHomepage();
   }
 
   if (path === "/favicon.ico" || path === "/robots.txt") {
@@ -3221,7 +3221,7 @@ async function handleRequest(req, env, fromWhere) {
   const parts = path.split("/").filter(Boolean); // 去掉空段
   if (parts.length < 1 || parts[0] !== token) {
     log("error", `Invalid or missing token in path: ${path}`);
-    return await jsonResponse(
+    return jsonResponse(
       { errorCode: 401, success: false, errorMessage: "Unauthorized" },
       401
     );
@@ -3233,32 +3233,32 @@ async function handleRequest(req, env, fromWhere) {
 
   // GET /
   if (path === "/" && method === "GET") {
-    return await handleHomepage();
+    return handleHomepage();
   }
 
   // GET /api/v2/search/anime
   if (path === "/api/v2/search/anime" && method === "GET") {
-    return await searchAnime(url);
+    return searchAnime(url);
   }
 
   // GET /api/v2/search/episodes
   if (path === "/api/v2/search/episodes" && method === "GET") {
-    return await searchEpisodes(url);
+    return searchEpisodes(url);
   }
 
   // GET /api/v2/match
   if (path === "/api/v2/match" && method === "POST") {
-    return await matchAnime(url, req);
+    return matchAnime(url, req);
   }
 
   // GET /api/v2/bangumi/:animeId
   if (path.startsWith("/api/v2/bangumi/") && method === "GET") {
-    return await getBangumi(path);
+    return getBangumi(path);
   }
 
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
-    return await getComment(path);
+    return getComment(path);
   }
 
   // GET /api/logs
@@ -3272,7 +3272,7 @@ async function handleRequest(req, env, fromWhere) {
     return new Response(logText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
 
-  return await jsonResponse({ message: "Not found" }, 404);
+  return jsonResponse({ message: "Not found" }, 404);
 }
 
 
