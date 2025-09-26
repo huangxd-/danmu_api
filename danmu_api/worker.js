@@ -2498,8 +2498,8 @@ function formatLogMessage(message) {
   }
 }
 
-async function jsonResponse(data, status = 200) {
-  await updateCaches();
+function jsonResponse(data, status = 200) {
+  updateCaches();
   return new Response(JSON.stringify(data), {
     status,
     headers: {"Content-Type": "application/json"},
@@ -2788,7 +2788,7 @@ async function updateCaches() {
           episodeNum: episodeNum,
           logBuffer: logBuffer,
         }), {
-          headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=600'}
+          headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=3600'}
         });
     await cache.put(cacheKey, updatedResponse);
   }
