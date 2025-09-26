@@ -1,10 +1,18 @@
-# LogVar 弹幕 API 服务器
+<div align="center">
+  <img src="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg" alt="Clash" width="128" style="border-radius: 16px;" />
+</div>
+
+<h2 align="center">
+LogVar 弹幕 API 服务器
+</h2>
 
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
 ![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
 ![Docker Pulls](https://img.shields.io/docker/pulls/logvar/danmu-api)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_channel&color=blue)](https://t.me/logvar_danmu_channel)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_group&color=blue)](https://t.me/logvar_danmu_group)
+
+---
 
 一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口，并提供日志记录，支持vercel/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
 
@@ -198,7 +206,8 @@ Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，
 danmu_api/
 ├── .github/
 │   └── workflows/
-│       └── docker-image.yml
+│       ├── docker-image.yml
+│       └── sync_fork.yml # vercel自动同步配置文件
 ├── danmu_api/
 │   ├── esm-shim.js     # Node.js低版本兼容层
 │   ├── server.js       # 本地node启动脚本
@@ -206,12 +215,15 @@ danmu_api/
 │   ├── worker.test.js  # 测试文件
 ├── node-functions/
 │   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
-│   ├── index.js        # edgeone pages 中间处理逻辑
+│   └── index.js        # edgeone pages 中间处理逻辑
 ├── .gitignore
 ├── Dockerfile
+├── edgeone.json        # edgeone pages 配置文件
+├── LICENSE
 ├── package.json
-├── vercel.json
 ├── README.md
+├── vercel.json         # vercel 配置文件
+└── wrangler.toml       # cloudflare worker 配置文件
 ```
 
 ## 注意事项
@@ -226,7 +238,16 @@ danmu_api/
 - 推荐vercel和claw部署，cloudflare好像不稳定，当然最稳定还是自己本地docker部署最佳。
 
 ### 关联项目
-[danmu_api 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
+[喂饭教程1：danmu_api vercel 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
+
+[喂饭教程2：logvar弹幕搭建教程（docker/claw）](https://blog.tencentx.de/p/logvar%E5%BC%B9%E5%B9%95%E6%90%AD%E5%BB%BA%E6%95%99%E7%A8%8B%E5%96%82%E9%A5%AD%E7%89%88/)
+
+### 部署完成后在播放器填写后弹幕未生效自主排查步骤
+以API示例 `http://192.168.1.7:9321/87654321` 为例
+1. 首先确认你的api部署成功 访问 `http://192.168.1.7:9321/87654321` 有json输出
+2. 检查你在播放器的填写是否正确，有无多余空格等
+3. 播放器请求后，查看 `http://192.168.1.7:9321/87654321/api/logs` 日志，看请求是否有报错，比如有用户在自己软路由上搭建，但走了全局代理，导致人人等访问不了，请确保走直连
+4. 如果你播放的影片片名不规范，很可能搜不到，请确保片名规范
 
 ### 贡献者
 <a href="https://github.com/huangxd-/danmu_api/graphs/contributors">
