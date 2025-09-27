@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.1.3";
+const VERSION = "1.1.4";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -167,6 +167,16 @@ function resolveEpisodeTitleFilter(env) {
     "(" + keywords + ")" + // 将关键字加入正则表达式中
     "(.*?)$"
   );
+}
+
+const DEFAULT_BLOCKED_WORDS = ""; // 默认 屏蔽词列表
+let blockedWords = DEFAULT_BLOCKED_WORDS;
+
+// 这里既支持 Cloudflare env，也支持 Node process.env
+function resolveBlockedWords(env) {
+  if (env && env.BLOCKED_WORDS) return env.BLOCKED_WORDS;         // Cloudflare Workers
+  if (typeof process !== "undefined" && process.env?.BLOCKED_WORDS) return process.env.BLOCKED_WORDS; // Vercel / Node
+  return DEFAULT_BLOCKED_WORDS;
 }
 
 // =====================
@@ -626,10 +636,37 @@ function convertToDanmakuJson(contents, platform) {
     danmus.push({ p: attributes, m, cid: cidCounter++ });
   }
 
-  log("log", "danmus:", danmus.length);
+  // 输入的正则表达式字符串
+  // const regexStr = '/.{20,}/,/^\\d{2,4}[-/.]\\d{1,2}[-/.]\\d{1,2}([日号.]*)?$/,/([a-zA-Z\\u4e00-\\u9fa5])\\1{2,}/,/\\s/,/[0-9]+\\.*[0-9]*\\s*(w|万)+\\s*(\\+|个|人|在看)+/';
+
+  // 切割字符串成正则表达式数组
+  const regexArray = blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
+    // 去除两端的斜杠并转换为正则对象
+    const pattern = str.trim();
+    if (pattern.startsWith('/') && pattern.endsWith('/')) {
+      try {
+        // 去除两边的 `/` 并转化为正则
+        return new RegExp(pattern.slice(1, -1));
+      } catch (e) {
+        console.error(`无效的正则表达式: ${pattern}`, e);
+        return null;
+      }
+    }
+    return null; // 如果不是有效的正则格式则返回 null
+  }).filter(regex => regex !== null); // 过滤掉无效的项
+
+  log("log", "屏蔽词列表:", regexArray);
+
+  // 过滤列表
+  const filteredDanmus = danmus.filter(item => {
+    return !regexArray.some(regex => regex.test(item.m)); // 针对 `m` 字段进行匹配
+  });
+
+  log("log", "danmus_original:", danmus.length);
+  log("log", "danmus:", filteredDanmus.length);
   // 输出前五条弹幕
-  log("log", "Top 5 danmus:", JSON.stringify(danmus.slice(0, 5), null, 2));
-  return danmus;
+  log("log", "Top 5 danmus:", JSON.stringify(filteredDanmus.slice(0, 5), null, 2));
+  return filteredDanmus;
 }
 
 function buildQueryString(params) {
@@ -3324,6 +3361,7 @@ async function handleRequest(req, env) {
   sourceOrderArr = resolveSourceOrder(env);
   platformOrderArr = resolvePlatformOrder(env);
   episodeTitleFilter = resolveEpisodeTitleFilter(env);
+  blockedWords = resolveBlockedWords(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
