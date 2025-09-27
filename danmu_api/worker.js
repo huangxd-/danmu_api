@@ -2775,22 +2775,32 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
   return processRenrenAnimes;
 }
 
+// 从缓存获取变量数据
+async function getCaches() {
+  if (from === "edgeone") {
+    const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer] = await Promise.all([
+      DANMU_API_KV.get('animes'),
+      DANMU_API_KV.get('episodeIds'),
+      DANMU_API_KV.get('episodeNum'),
+      DANMU_API_KV.get('logBuffer')
+    ]);
+
+    animes = kv_animes ? JSON.parse(kv_animes) : animes;
+    episodeIds = kv_episodeIds ? JSON.parse(kv_episodeIds) : episodeIds;
+    episodeNum = kv_episodeNum ? JSON.parse(kv_episodeNum) : episodeNum;
+    logBuffer = kv_logBuffer ? JSON.parse(kv_logBuffer) : logBuffer;
+  }
+}
+
 // 存储更新后的变量到缓存
 async function updateCaches() {
   if (from === "edgeone") {
-    const cache = await caches.open('danmu-cache');
-    const cacheKey = new Request('https://example.com/cache/danmu');
-
-    const updatedResponse = new Response(
-        JSON.stringify({
-          animes: animes,
-          episodeIds: episodeIds,
-          episodeNum: episodeNum,
-          logBuffer: logBuffer,
-        }), {
-          headers: {'Content-Type': 'application/json', 'Cache-Control': 'max-age=3600'}
-        });
-    await cache.put(cacheKey, updatedResponse);
+    await Promise.all([
+      DANMU_API_KV.put('animes', JSON.stringify(animes)),
+      DANMU_API_KV.put('episodeIds', JSON.stringify(episodeIds)),
+      DANMU_API_KV.put('episodeNum', JSON.stringify(episodeNum)),
+      DANMU_API_KV.put('logBuffer', JSON.stringify(logBuffer))
+    ]);
   }
 }
 
@@ -3182,20 +3192,7 @@ async function handleRequest(req, env, fromWhere) {
   from = fromWhere;
 
   // 如果是edgeone的请求，则全局变量从cache中获取
-  if (from === "edgeone") {
-    const cache = await caches.open('danmu-cache');
-    const cacheKey = new Request('https://example.com/cache/danmu');
-
-    // 检查缓存中的弹幕变量
-    const cachedResponse = await cache.match(cacheKey);
-    if (cachedResponse) {
-      const data = await cachedResponse.json();
-      animes = data.animes;
-      episodeIds = data.episodeIds;
-      episodeNum = data.episodeNum;
-      logBuffer = data.logBuffer;
-    }
-  }
+  await getCaches();
 
   function handleHomepage() {
     log("log", "Accessed homepage with repository information");
