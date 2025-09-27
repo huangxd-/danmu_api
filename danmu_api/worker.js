@@ -99,6 +99,38 @@ function resolveSourceOrder(env) {
   return orderArr;
 }
 
+const DEFAULT_PLATFORM_ORDER = ""; // 默认 自动匹配优选平台
+let platformOrderArr = [];
+
+function resolvePlatformOrder(env) {
+  // 获取环境变量中的 PLATFORM_ORDER 配置
+  let platformOrder = DEFAULT_PLATFORM_ORDER;
+
+  if (env && env.PLATFORM_ORDER) {
+    platformOrder = env.PLATFORM_ORDER;  // Cloudflare Workers
+  } else if (typeof process !== "undefined" && process.env?.PLATFORM_ORDER) {
+    platformOrder = process.env.PLATFORM_ORDER;  // Vercel / Node
+  }
+
+  // 解析并校验 platformOrder
+  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren"];
+
+  // 转换为数组并去除空格，过滤无效项
+  const orderArr = platformOrder
+    .split(',')
+    .map(s => s.trim())  // 去除空格
+    .filter(s => allowedPlatforms.includes(s));  // 只保留有效来源
+
+  // 如果没有有效的来源，使用默认顺序
+  if (orderArr.length === 0) {
+    return DEFAULT_PLATFORM_ORDER.split(',').map(s => s.trim());
+  }
+
+  orderArr.push(null);
+
+  return orderArr;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
@@ -2828,6 +2860,78 @@ async function searchAnime(url) {
   });
 }
 
+async function matchAniAndEp(season, episode, searchData, title, req, platform) {
+  // 正则表达式：提取【】中的内容
+  const extractTitle = (title) => {
+    const match = title.match(/【(.*?)】/);  // 匹配【】中的内容
+    return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
+  };
+
+  let resAnime;
+  let resEpisode;
+  if (season && episode) {
+    // 判断剧集
+    for (const anime of searchData.animes) {
+      if (anime.animeTitle.includes(title)) {
+        let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
+        const bangumiRes = await getBangumi(originBangumiUrl.pathname);
+        const bangumiData = await bangumiRes.json();
+        log("info", "判断剧集", bangumiData);
+
+        if (platform) {
+          const firstIndex = bangumiData.bangumi.episodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
+          const indexCount = bangumiData.bangumi.episodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
+          if (indexCount > 0 && indexCount >= episode) {
+            // 先判断season
+            if (matchSeason(anime, title, season)) {
+              resEpisode = bangumiData.bangumi.episodes[firstIndex + episode - 1];
+              resAnime = anime;
+              break;
+            }
+          }
+        } else {
+          if (bangumiData.bangumi.episodes.length >= episode) {
+            // 先判断season
+            if (matchSeason(anime, title, season)) {
+              resEpisode = bangumiData.bangumi.episodes[episode - 1];
+              resAnime = anime;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    // 判断电影
+    for (const anime of searchData.animes) {
+      const animeTitle = anime.animeTitle.split("(")[0].trim();
+      if (animeTitle === title) {
+        let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
+        const bangumiRes = await getBangumi(originBangumiUrl.pathname);
+        const bangumiData = await bangumiRes.json();
+        log("info", bangumiData);
+
+        if (platform) {
+          const firstIndex = bangumiData.bangumi.episodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
+          const indexCount = bangumiData.bangumi.episodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
+          if (indexCount > 0) {
+            resEpisode = bangumiData.bangumi.episodes[firstIndex];
+            resAnime = anime;
+            break;
+          }
+        } else {
+          if (bangumiData.bangumi.episodes.length > 0) {
+            resEpisode = bangumiData.bangumi.episodes[0];
+            resAnime = anime;
+            break;
+          }
+        }
+      }
+    }
+  }
+  return {resEpisode, resAnime};
+}
+
 // Extracted function for POST /api/v2/match
 async function matchAnime(url, req) {
   try {
@@ -2874,39 +2978,14 @@ async function matchAnime(url, req) {
     let resAnime;
     let resEpisode;
 
-    if (season && episode) {
-      // 判断剧集
-      for (const anime of searchData.animes) {
-        if (anime.animeTitle.includes(title)) {
-          let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
-          const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-          const bangumiData = await bangumiRes.json();
-          log("info", "判断剧集", bangumiData);
-          if (bangumiData.bangumi.episodes.length >= episode) {
-            // 先判断season
-            if (matchSeason(anime, title, season)) {
-              resEpisode = bangumiData.bangumi.episodes[episode-1];
-              resAnime = anime;
-              break;
-            }
-          }
-        }
-      }
-    } else {
-      // 判断电影
-      for (const anime of searchData.animes) {
-        const animeTitle = anime.animeTitle.split("(")[0].trim();
-        if (animeTitle === title) {
-          let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
-          const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-          const bangumiData = await bangumiRes.json();
-          log("info", bangumiData);
-          if (bangumiData.bangumi.episodes.length > 0) {
-            resEpisode = bangumiData.bangumi.episodes[0];
-            resAnime = anime;
-            break;
-          }
-        }
+    log("info", `platformOrderArr: ${platformOrderArr}`);
+    for (const platform of platformOrderArr) {
+      const __ret = await matchAniAndEp(season, episode, searchData, title, req, platform);
+      resEpisode = __ret.resEpisode;
+      resAnime = __ret.resAnime;
+
+      if (resAnime) {
+        break;
       }
     }
 
@@ -3169,6 +3248,7 @@ async function handleRequest(req, env) {
   bilibliCookie = resolveBilibiliCookie(env);
   youkuConcurrency = resolveYoukuConcurrency(env);
   sourceOrderArr = resolveSourceOrder(env);
+  platformOrderArr = resolvePlatformOrder(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
