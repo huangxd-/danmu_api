@@ -39,5 +39,5 @@ export const onRequest = async (context) => {
   });
 
   // 传递修改后的 request 和 env 给 handleRequest
-  return await handleRequest(modifiedRequest, env);
+  return await handleRequest(modifiedRequest, env, "edgeone");
 };

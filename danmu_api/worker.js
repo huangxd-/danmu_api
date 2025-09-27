@@ -4,9 +4,10 @@ const VERSION = "1.1.2";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
+let from = ""; // 请求来自于哪个部署平台
 
 // 日志存储，最多保存 500 行
-const logBuffer = [];
+let logBuffer = [];
 const MAX_LOGS = 500;
 const MAX_ANIMES = 100;
 const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
@@ -2497,10 +2498,11 @@ function formatLogMessage(message) {
   }
 }
 
-function jsonResponse(data, status = 200) {
+async function jsonResponse(data, status = 200) {
+  await updateCaches();
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
   });
 }
 
@@ -2773,6 +2775,35 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
   return processRenrenAnimes;
 }
 
+// 从缓存获取变量数据
+async function getCaches() {
+  if (from === "edgeone") {
+    const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer] = await Promise.all([
+      DANMU_API_KV.get('animes'),
+      DANMU_API_KV.get('episodeIds'),
+      DANMU_API_KV.get('episodeNum'),
+      DANMU_API_KV.get('logBuffer')
+    ]);
+
+    animes = kv_animes ? JSON.parse(kv_animes) : animes;
+    episodeIds = kv_episodeIds ? JSON.parse(kv_episodeIds) : episodeIds;
+    episodeNum = kv_episodeNum ? JSON.parse(kv_episodeNum) : episodeNum;
+    logBuffer = kv_logBuffer ? JSON.parse(kv_logBuffer) : logBuffer;
+  }
+}
+
+// 存储更新后的变量到缓存
+async function updateCaches() {
+  if (from === "edgeone") {
+    await Promise.all([
+      DANMU_API_KV.put('animes', JSON.stringify(animes)),
+      DANMU_API_KV.put('episodeIds', JSON.stringify(episodeIds)),
+      DANMU_API_KV.put('episodeNum', JSON.stringify(episodeNum)),
+      DANMU_API_KV.put('logBuffer', JSON.stringify(logBuffer))
+    ]);
+  }
+}
+
 // Extracted function for GET /api/v2/search/anime
 async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
@@ -2960,7 +2991,7 @@ async function matchAnime(url, req) {
 async function searchEpisodes(url) {
   const anime = url.searchParams.get("anime");
   const episode = url.searchParams.get("episode") || "";
-  
+
   log("log", `Search episodes with anime: ${anime}, episode: ${episode}`);
 
   if (!anime) {
@@ -2975,7 +3006,7 @@ async function searchEpisodes(url) {
   let searchUrl = new URL(`/search/anime?keyword=${anime}`, url.origin);
   const searchRes = await searchAnime(searchUrl);
   const searchData = await searchRes.json();
-  
+
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
     log("log", "No anime found for the given title");
     return jsonResponse({
@@ -2994,7 +3025,7 @@ async function searchEpisodes(url) {
     const bangumiUrl = new URL(`/bangumi/${animeItem.bangumiId}`, url.origin);
     const bangumiRes = await getBangumi(bangumiUrl.pathname);
     const bangumiData = await bangumiRes.json();
-    
+
     if (bangumiData.success && bangumiData.bangumi && bangumiData.bangumi.episodes) {
       let filteredEpisodes = bangumiData.bangumi.episodes;
 
@@ -3002,9 +3033,9 @@ async function searchEpisodes(url) {
       if (episode) {
         if (episode === "movie") {
           // 仅保留剧场版结果
-          filteredEpisodes = bangumiData.bangumi.episodes.filter(ep => 
+          filteredEpisodes = bangumiData.bangumi.episodes.filter(ep =>
             animeItem.typeDescription && (
-              animeItem.typeDescription.includes("电影") || 
+              animeItem.typeDescription.includes("电影") ||
               animeItem.typeDescription.includes("剧场版") ||
               ep.episodeTitle.toLowerCase().includes("movie") ||
               ep.episodeTitle.includes("剧场版")
@@ -3013,7 +3044,7 @@ async function searchEpisodes(url) {
         } else if (/^\d+$/.test(episode)) {
           // 纯数字，仅保留指定集数
           const targetEpisode = parseInt(episode);
-          filteredEpisodes = bangumiData.bangumi.episodes.filter(ep => 
+          filteredEpisodes = bangumiData.bangumi.episodes.filter(ep =>
             parseInt(ep.episodeNumber) === targetEpisode
           );
         }
@@ -3147,7 +3178,7 @@ async function getComment(path) {
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
-async function handleRequest(req, env) {
+async function handleRequest(req, env, fromWhere) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
   otherServer = resolveOtherServer(env);
   vodServer = resolveVodServer(env);
@@ -3158,6 +3189,10 @@ async function handleRequest(req, env) {
   const url = new URL(req.url);
   let path = url.pathname;
   const method = req.method;
+  from = fromWhere;
+
+  // 如果是edgeone的请求，则全局变量从cache中获取
+  await getCaches();
 
   function handleHomepage() {
     log("log", "Accessed homepage with repository information");
