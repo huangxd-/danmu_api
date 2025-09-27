@@ -636,9 +636,6 @@ function convertToDanmakuJson(contents, platform) {
     danmus.push({ p: attributes, m, cid: cidCounter++ });
   }
 
-  // 输入的正则表达式字符串
-  // const regexStr = '/.{20,}/,/^\\d{2,4}[-/.]\\d{1,2}[-/.]\\d{1,2}([日号.]*)?$/,/([a-zA-Z\\u4e00-\\u9fa5])\\1{2,}/,/\\s/,/[0-9]+\\.*[0-9]*\\s*(w|万)+\\s*(\\+|个|人|在看)+/';
-
   // 切割字符串成正则表达式数组
   const regexArray = blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
     // 去除两端的斜杠并转换为正则对象
@@ -655,7 +652,9 @@ function convertToDanmakuJson(contents, platform) {
     return null; // 如果不是有效的正则格式则返回 null
   }).filter(regex => regex !== null); // 过滤掉无效的项
 
-  log("log", "屏蔽词列表:", regexArray);
+  log("log", "原始屏蔽词字符串:", blockedWords);
+  const regexArrayToString = array => Array.isArray(array) ? array.map(regex => regex.toString()).join('\n') : String(array);
+  log("log", "屏蔽词列表:", regexArrayToString(regexArray));
 
   // 过滤列表
   const filteredDanmus = danmus.filter(item => {
