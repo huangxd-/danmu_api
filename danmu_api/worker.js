@@ -453,7 +453,11 @@ async function get360Animes(title) {
 
     return animes;
   } catch (error) {
-    log("error", `get360Animes error: ${error.message}`);
+    log("error", "get360Animes error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
     return [];
   }
 }
@@ -488,7 +492,11 @@ async function get360Zongyi(entId, site, year) {
     }
     return links;
   } catch (error) {
-    log("error", `get360Animes error: ${error.message}`);
+    log("error", "get360Animes error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
     return [];
   }
 }
@@ -517,7 +525,11 @@ async function getVodAnimes(title) {
       return [];
     }
   } catch (error) {
-    log("error", `请求 ${site} 失败:`, error.message);
+    log("error", `请求 ${vodServer} 失败:`, {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
     return [];
   }
 }
@@ -2399,7 +2411,11 @@ async function performNetworkSearch(
       currentEpisodeIndex: episodeInfo?.episode ?? null,
     }));
   } catch (error) {
-    log("error", `getRenrenAnimes error: ${error.message}`);
+    log("error", "getRenrenAnimes error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
     return [];
   }
 }
