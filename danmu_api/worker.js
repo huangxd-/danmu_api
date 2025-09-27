@@ -131,6 +131,44 @@ function resolvePlatformOrder(env) {
   return orderArr;
 }
 
+const DEFAULT_EPISODE_TITLE_FILTER = "(特别|惊喜|纳凉)?企划|合伙人手记|超前|速览|vlog|reaction|纯享|加更|抢先|抢鲜|预告|花絮|" +
+  "特辑|彩蛋|专访|幕后|直播|未播|衍生|番外|会员|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|" +
+  "花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|" +
+  "NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|主题曲|背景音乐|OST|音乐MV|歌曲MV|前季回顾|" +
+  "剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|抢先看|抢先版|" +
+  "试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|合唱|陪看|MV|高清正片|发布会|.{2,}篇|观察室|上班那点事儿|周top|赛段|直拍|REACTION|" +
+  "VLOG|全纪录"; // 默认 剧集标题正则过滤
+let episodeTitleFilter;
+
+// 这里既支持 Cloudflare env，也支持 Node process.env
+function resolveEpisodeTitleFilter(env) {
+  // 获取环境变量中的 PLATFORM_ORDER 配置
+  let keywords = DEFAULT_EPISODE_TITLE_FILTER;
+
+  if (env && env.EPISODE_TITLE_FILTER) {
+    keywords = env.EPISODE_TITLE_FILTER;  // Cloudflare Workers
+  } else if (typeof process !== "undefined" && process.env?.EPISODE_TITLE_FILTER) {
+    keywords = process.env.EPISODE_TITLE_FILTER;  // Vercel / Node
+  }
+
+  try {
+    // 尝试构建正则表达式，若失败则抛出异常
+    new RegExp(keywords);
+  } catch (error) {
+    // 若正则构建失败，回退使用默认值
+    log("warn", "Invalid EPISODE_TITLE_FILTER format, using default.");
+    keywords = DEFAULT_EPISODE_TITLE_FILTER;
+  }
+
+  // 返回由过滤后的关键字生成的正则表达式
+  return new RegExp(
+    "^" +
+    "(.*?)" +
+    "(" + keywords + ")" + // 将关键字加入正则表达式中
+    "(.*?)$"
+  );
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
@@ -873,6 +911,18 @@ function readLengthDelimited(bytes, offset) {
   const slice = bytes.slice(start, end);
   return [slice, end];
 }
+
+// 正则表达式：提取【】中的内容
+const extractTitle = (title) => {
+  const match = title.match(/【(.*?)】/);  // 匹配【】中的内容
+  return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
+};
+
+// 提取##中的内容并进行匹配
+const extractEpTitle = (title) => {
+  const match = title.match(/#(.*?)#/);  // 提取#号之间的内容
+  return match ? match[1] : null;  // 返回#号中的内容，若没有则返回null
+};
 
 // =====================
 // 获取腾讯弹幕
@@ -2660,7 +2710,7 @@ async function handleVodAnimes(animesVod, curAnimes) {
         links.push({
           "name": count,
           "url": epInfo[1],
-          "title": `【${platform}】${anime.vod_name}(${anime.vod_year}) ${epInfo[0]}`
+          "title": `【${platform}】${anime.vod_name}(${anime.vod_year}) #${epInfo[0]}#`
         });
       }
     }
@@ -2712,7 +2762,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": i + 1,
             "url": item.url,
-            "title": `【${anime.seriesSite}】${anime.titleTxt}(${anime.year}) ${i + 1}`
+            "title": `【${anime.seriesSite}】${anime.titleTxt}(${anime.year}) #${i + 1}#`
           });
         }
       }
@@ -2771,7 +2821,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
         links.push({
           "name": ep.episodeIndex,
           "url": ep.episodeId,
-          "title": `【${ep.provider}】${anime.title}(${anime.year}) ${ep.title}`
+          "title": `【${ep.provider}】${anime.title}(${anime.year}) #${ep.title}#`
         });
       }
 
@@ -2861,12 +2911,6 @@ async function searchAnime(url) {
 }
 
 async function matchAniAndEp(season, episode, searchData, title, req, platform) {
-  // 正则表达式：提取【】中的内容
-  const extractTitle = (title) => {
-    const match = title.match(/【(.*?)】/);  // 匹配【】中的内容
-    return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
-  };
-
   let resAnime;
   let resEpisode;
   if (season && episode) {
@@ -2878,22 +2922,30 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform) 
         const bangumiData = await bangumiRes.json();
         log("info", "判断剧集", bangumiData);
 
+        // 过滤符合条件的 episodes
+        const filteredEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+          const filterEp = extractEpTitle(episode.episodeTitle);
+          return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+        });
+
+        log("info", "filteredEpisodes", filteredEpisodes);
+
         if (platform) {
-          const firstIndex = bangumiData.bangumi.episodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
-          const indexCount = bangumiData.bangumi.episodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
+          const firstIndex = filteredEpisodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
+          const indexCount = filteredEpisodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
           if (indexCount > 0 && indexCount >= episode) {
             // 先判断season
             if (matchSeason(anime, title, season)) {
-              resEpisode = bangumiData.bangumi.episodes[firstIndex + episode - 1];
+              resEpisode = filteredEpisodes[firstIndex + episode - 1];
               resAnime = anime;
               break;
             }
           }
         } else {
-          if (bangumiData.bangumi.episodes.length >= episode) {
+          if (filteredEpisodes.length >= episode) {
             // 先判断season
             if (matchSeason(anime, title, season)) {
-              resEpisode = bangumiData.bangumi.episodes[episode - 1];
+              resEpisode = filteredEpisodes[episode - 1];
               resAnime = anime;
               break;
             }
@@ -2997,8 +3049,14 @@ async function matchAnime(url, req) {
         const bangumiData = await bangumiRes.json();
         log("info", bangumiData);
         if (season && episode) {
-          if (bangumiData.bangumi.episodes.length >= episode) {
-            resEpisode = bangumiData.bangumi.episodes[episode-1];
+          // 过滤符合条件的 episodes
+          const filteredEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+            const filterEp = extractEpTitle(episode.episodeTitle);
+            return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+          });
+
+          if (filteredEpisodes.length >= episode) {
+            resEpisode = filteredEpisodes[episode-1];
             resAnime = anime;
             break;
           }
@@ -3249,6 +3307,7 @@ async function handleRequest(req, env) {
   youkuConcurrency = resolveYoukuConcurrency(env);
   sourceOrderArr = resolveSourceOrder(env);
   platformOrderArr = resolvePlatformOrder(env);
+  episodeTitleFilter = resolveEpisodeTitleFilter(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
