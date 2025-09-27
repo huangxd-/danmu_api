@@ -2781,12 +2781,27 @@ async function searchAnime(url) {
   const curAnimes = [];
 
   try {
-    // 并行查询不同的来源
-    const [animesVod, animes360, animesRenren] = await Promise.all([
-      getVodAnimes(queryTitle),
-      get360Animes(queryTitle),
-      renrenSearch(queryTitle)
-    ]);
+    // 根据 sourceOrderArr 动态构建请求数组
+    log("log", `Search sourceOrderArr: ${sourceOrderArr}`);
+    const requestPromises = sourceOrderArr.map(source => {
+      if (source === "vod") return getVodAnimes(queryTitle);
+      if (source === "360") return get360Animes(queryTitle);
+      if (source === "renren") return renrenSearch(queryTitle);
+    });
+
+    // 执行所有请求并等待结果
+    const results = await Promise.all(requestPromises);
+
+    // 创建一个对象来存储返回的结果
+    const resultData = {};
+
+    // 动态根据 sourceOrderArr 顺序将结果赋值给对应的来源
+    sourceOrderArr.forEach((source, index) => {
+      resultData[source] = results[index];  // 根据顺序赋值
+    });
+
+    // 解构出返回的结果
+    const { vod: animesVod, 360: animes360, renren: animesRenren } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of sourceOrderArr) {
