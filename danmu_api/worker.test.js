@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert').strict;
 const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
-  fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost } = require('./worker');
+  fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost,
+  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail } = require('./worker');
 
 // Mock Request class for testing
 class MockRequest {
@@ -67,6 +68,26 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
+  // await t.test('GET hanjutv search', async () => {
+  //   const res = await hanjutvSearch("犯罪现场Zero");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET hanjutv detail', async () => {
+  //   const res = await gethanjutvDetail("Tc9lkfijFSDQ8SiUCB6T");
+  //   // assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET hanjutv episodes', async () => {
+  //   const res = await getHanjutvEpisodes("4EuRcD6T6y8XEQePtDsf");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET hanjutv danmu', async () => {
+  //   const res = await getHanjutvComments("12tY0Ktjzu5TCBrfTolNO");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
   await t.test('GET realistic danmu', async () => {
     // tencent
     // const keyword = "子夜归";
@@ -79,7 +100,9 @@ test('worker.js API endpoints', async (t) => {
     // youku
     // const keyword = "黑白局";
     // renren
-    const keyword = "瑞克和莫蒂";
+    // const keyword = "瑞克和莫蒂";
+    // hanjutv
+    const keyword = "请回答1988";
 
     const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
     const searchRes = await searchAnime(searchUrl);

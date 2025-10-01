@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.1.6";
+const VERSION = "1.2.0";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -69,7 +69,7 @@ function resolveYoukuConcurrency(env) {
   return Math.min(DEFAULT_YOUKU_CONCURRENCY, 16);
 }
 
-const DEFAULT_SOURCE_ORDER = "vod,360,renren"; // 默认 源排序
+const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv"; // 默认 源排序
 let sourceOrderArr = [];
 
 function resolveSourceOrder(env) {
@@ -83,7 +83,7 @@ function resolveSourceOrder(env) {
   }
 
   // 解析并校验 sourceOrder
-  const allowedSources = ['vod', '360', 'renren'];
+  const allowedSources = ['vod', '360', 'renren', "hanjutv"];
 
   // 转换为数组并去除空格，过滤无效项
   const orderArr = sourceOrder
@@ -113,13 +113,13 @@ function resolvePlatformOrder(env) {
   }
 
   // 解析并校验 platformOrder
-  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren"];
+  const _allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
 
   // 转换为数组并去除空格，过滤无效项
   const orderArr = platformOrder
     .split(',')
     .map(s => s.trim())  // 去除空格
-    .filter(s => allowedPlatforms.includes(s));  // 只保留有效来源
+    .filter(s => _allowedPlatforms.includes(s));  // 只保留有效来源
 
   // 如果没有有效的来源，使用默认顺序
   if (orderArr.length === 0) {
@@ -980,6 +980,20 @@ const extractEpTitle = (title) => {
   const match = title.match(/#(.*?)#/);  // 提取#号之间的内容
   return match ? match[1] : null;  // 返回#号中的内容，若没有则返回null
 };
+
+// djb2 哈希算法将string转成id
+function convertToAsciiSum(sid) {
+  let hash = 5381;
+  for (let i = 0; i < sid.length; i++) {
+    hash = (hash * 33) ^ sid.charCodeAt(i);
+  }
+  return hash >>> 0;
+}
+
+function canConvertToNumber(url) {
+  const number = Number(url);
+  return !isNaN(number) && url === String(number);
+}
 
 // =====================
 // 获取腾讯弹幕
@@ -2468,36 +2482,6 @@ async function performNetworkSearch(
 // ---------------------
 // 人人视频URL信息提取
 // ---------------------
-async function getInfoFromUrl(url) {
-  const m = String(url).match(/\/v\/(\d+)/);
-  if (!m) return null;
-  const dramaId = m[1];
-  const detail = await fetchDramaDetail(dramaId);
-  if (!detail) return null;
-  const titleClean = String(detail.dramaInfo.title).replace(/<[^>]+>/g,"").replace(/:/g,"：");
-  const searchResults = await search(titleClean);
-  const bestMatch = searchResults.find(r=>r.mediaId===dramaId);
-  if (bestMatch && !bestMatch.episodeCount) bestMatch.episodeCount = (detail.episodeList?.length || 0);
-  if (bestMatch) return bestMatch;
-  return {
-    provider: "renren",
-    mediaId: dramaId,
-    title: titleClean,
-    type: "tv_series",
-    season: null,
-    episodeCount: (detail.episodeList?.length || null)
-  };
-}
-
-function getIdFromUrl(url) {
-  const m = String(url).match(/\/v\/\d+\/(\d+)/);
-  return m ? m[1] : null;
-}
-
-function formatEpisodeIdForComments(providerEpisodeId) {
-  return String(providerEpisodeId);
-}
-
 async function fetchDramaDetail(dramaId) {
   const url = `https://api.rrmj.plus/m-station/drama/page`;
   const params = { hsdrOpen:0,isAgeLimit:0,dramaId:String(dramaId),hevcOpen:1 };
@@ -2505,12 +2489,6 @@ async function fetchDramaDetail(dramaId) {
   if (!resp.data) return null;
   const decoded = autoDecode(resp.data);
   return decoded?.data || null;
-}
-
-async function _episodeCountFromSid(dramaId) {
-  const detail = await fetchDramaDetail(dramaId);
-  if (!detail || !detail.episodeList) return null;
-  return detail.episodeList.filter(ep => String(ep.sid).trim()).length;
 }
 
 async function getEpisodes(mediaId, targetEpisodeIndex=null, dbMediaType=null) {
@@ -2610,6 +2588,186 @@ async function getRenRenComments(episodeId, progressCallback=null){
   if(progressCallback) await progressCallback(85,`原始弹幕 ${raw.length} 条，正在规范化`);
   log("log", `原始弹幕 ${raw.length} 条，正在规范化`);
   const formatted = formatComments(raw);
+  if(progressCallback) await progressCallback(100,`弹幕处理完成，共 ${formatted.length} 条`);
+  log("log", `弹幕处理完成，共 ${formatted.length} 条`);
+  // 输出前五条弹幕
+  log("log", "Top 5 danmus:", JSON.stringify(formatted.slice(0, 5), null, 2));
+  return formatted;
+}
+
+// ---------------------
+// hanjutv视频弹幕
+// ---------------------
+async function hanjutvSearch(keyword) {
+  try {
+    const resp = await httpGet(`https://hxqapi.hiyun.tv/wapi/search/aggregate/search?keyword=${keyword}&scope=101&page=1`, {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    });
+
+    // 判断 resp 和 resp.data 是否存在
+    if (!resp || !resp.data) {
+      log("log", "hanjutvSearchresp: 请求失败或无数据返回");
+      return [];
+    }
+
+    // 判断 seriesData 是否存在
+    if (!resp.data.seriesData || !resp.data.seriesData.seriesList) {
+      log("log", "hanjutvSearchresp: seriesData 或 seriesList 不存在");
+      return [];
+    }
+
+    // 正常情况下输出 JSON 字符串
+    log("log", `hanjutvSearchresp: ${JSON.stringify(resp.data.seriesData.seriesList)}`);
+
+    let resList = [];
+    for (const anime of resp.data.seriesData.seriesList) {
+      const animeId = convertToAsciiSum(anime.sid);
+      resList.push({ ...anime, animeId });
+    }
+    return resList;
+  } catch (error) {
+    // 捕获请求中的错误
+    log("error", "getHanjutvAnimes error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    return [];
+  }
+}
+
+async function getHanjutvDetail(sid) {
+  try {
+    const resp = await httpGet(`https://hxqapi.hiyun.tv/wapi/series/series/detail?sid=${sid}`, {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    });
+
+    // 判断 resp 和 resp.data 是否存在
+    if (!resp || !resp.data) {
+      log("log", "getHanjutvDetail: 请求失败或无数据返回");
+      return [];
+    }
+
+    // 判断 seriesData 是否存在
+    if (!resp.data.series) {
+      log("log", "getHanjutvDetail: series 不存在");
+      return [];
+    }
+
+    // 正常情况下输出 JSON 字符串
+    log("log", `getHanjutvDetail: ${JSON.stringify(resp.data.series)}`);
+
+    return resp.data.series;
+  } catch (error) {
+    // 捕获请求中的错误
+    log("error", "getHanjutvDetail error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    return [];
+  }
+}
+
+async function getHanjutvEpisodes(sid) {
+  try {
+    const resp = await httpGet(`https://hxqapi.hiyun.tv/wapi/series/series/detail?sid=${sid}`, {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    });
+
+    // 判断 resp 和 resp.data 是否存在
+    if (!resp || !resp.data) {
+      log("log", "getHanjutvEposides: 请求失败或无数据返回");
+      return [];
+    }
+
+    // 判断 seriesData 是否存在
+    if (!resp.data.episodes) {
+      log("log", "getHanjutvEposides: episodes 不存在");
+      return [];
+    }
+
+    const sortedEpisodes = resp.data.episodes.sort((a, b) => a.serialNo - b.serialNo);
+
+    // 正常情况下输出 JSON 字符串
+    log("log", `getHanjutvEposides: ${JSON.stringify(sortedEpisodes)}`);
+
+    return sortedEpisodes;
+  } catch (error) {
+    // 捕获请求中的错误
+    log("error", "getHanjutvEposides error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    return [];
+  }
+}
+
+async function fetchHanjutvEpisodeDanmu(sid) {
+  let allDanmus = [];
+  let fromAxis = 0;
+  const maxAxis = 100000000;
+
+  try {
+    while (fromAxis < maxAxis) {
+      const resp = await httpGet(`https://hxqapi.zmdcq.com/api/danmu/playItem/list?fromAxis=${fromAxis}&pid=${sid}&toAxis=${maxAxis}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+
+      // 将当前请求的 episodes 拼接到总数组
+      if (resp.data && resp.data.danmus) {
+        allDanmus = allDanmus.concat(resp.data.danmus);
+      }
+
+      // 获取 nextAxis，更新 fromAxis
+      const nextAxis = resp.data.nextAxis || maxAxis;
+      if (nextAxis >= maxAxis) {
+        break; // 如果 nextAxis 达到或超过最大值，退出循环
+      }
+      fromAxis = nextAxis;
+    }
+
+    return allDanmus;
+  } catch (error) {
+    // 捕获请求中的错误
+    log("error", "fetchHanjutvEpisodeDanmu error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    return allDanmus; // 返回已收集的 episodes
+  }
+}
+
+function formatHanjutvComments(items) {
+  return items.map(c=>({
+    cid: Number(c.did),
+    p: `${c.t.toFixed(2)},${c.tp},${Number(c.sc)},[hanjutv]`,
+    m: c.con,
+    t: c.t
+  }));
+}
+
+async function getHanjutvComments(pid, progressCallback=null){
+  if(progressCallback) await progressCallback(5,"开始获取弹幕韩剧TV弹幕");
+  log("log", "开始获取弹幕韩剧TV弹幕");
+  const raw = await fetchHanjutvEpisodeDanmu(pid);
+  if(progressCallback) await progressCallback(85,`原始弹幕 ${raw.length} 条，正在规范化`);
+  log("log", `原始弹幕 ${raw.length} 条，正在规范化`);
+  const formatted = formatHanjutvComments(raw);
   if(progressCallback) await progressCallback(100,`弹幕处理完成，共 ${formatted.length} 条`);
   log("log", `弹幕处理完成，共 ${formatted.length} 条`);
   // 输出前五条弹幕
@@ -2916,6 +3074,59 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
   return processRenrenAnimes;
 }
 
+async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
+  const cateMap = {1: "韩剧", 2: "综艺", 3: "电影", 5: "美剧"}
+
+  function getCategory(key) {
+    return cateMap[key] || "其他";
+  }
+
+  // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
+  const processHanjutvAnimes = await Promise.all(animesHanjutv
+    .filter(s => s.name.includes(queryTitle))
+    .map(async (anime) => {
+      const detail = await getHanjutvDetail(anime.sid);
+      const eps = await getHanjutvEpisodes(anime.sid);
+      let links = [];
+      for (const ep of eps) {
+        const epTitle = ep.title && ep.title.trim() !== "" ? `第${ep.serialNo}集：${ep.title}` : `第${ep.serialNo}集`;
+        links.push({
+          "name": ep.title,
+          "url": ep.pid,
+          "title": `【hanjutv】${anime.name}(${new Date(anime.updateTime).getFullYear()}) #${epTitle}#`
+        });
+      }
+
+      if (links.length > 0) {
+        let transformedAnime = {
+          animeId: anime.animeId,
+          bangumiId: String(anime.animeId),
+          animeTitle: `${anime.name}(${new Date(anime.updateTime).getFullYear()})【${getCategory(detail.category)}】from hanjutv`,
+          type: getCategory(detail.category),
+          typeDescription: getCategory(detail.category),
+          imageUrl: anime.image.thumb,
+          startDate: `${new Date(anime.updateTime).getFullYear()}-01-01T00:00:00`,
+          episodeCount: links.length,
+          rating: detail.rank,
+          isFavorited: true,
+        };
+
+        curAnimes.push(transformedAnime);
+
+        const exists = animes.some(existingAnime => existingAnime.animeId === transformedAnime.animeId);
+        if (!exists) {
+          const transformedAnimeCopy = {...transformedAnime, links: links};
+          addAnime(transformedAnimeCopy);
+        }
+
+        if (animes.length > MAX_ANIMES) removeEarliestAnime();
+      }
+    })
+  );
+
+  return processHanjutvAnimes;
+}
+
 // Extracted function for GET /api/v2/search/anime
 async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
@@ -2930,6 +3141,7 @@ async function searchAnime(url) {
       if (source === "vod") return getVodAnimes(queryTitle);
       if (source === "360") return get360Animes(queryTitle);
       if (source === "renren") return renrenSearch(queryTitle);
+      if (source === "hanjutv") return hanjutvSearch(queryTitle);
     });
 
     // 执行所有请求并等待结果
@@ -2944,7 +3156,7 @@ async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVod, 360: animes360, renren: animesRenren } = resultData;
+    const { vod: animesVod, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of sourceOrderArr) {
@@ -2957,6 +3169,9 @@ async function searchAnime(url) {
       } else if (key === 'renren') {
         // 等待处理Renren来源
         await handleRenrenAnimes(animesRenren, queryTitle, curAnimes);
+      } else if (key === 'hanjutv') {
+        // 等待处理Hanjutv来源
+        await handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes);
       }
     }
   } catch (error) {
@@ -3331,25 +3546,29 @@ async function getComment(path) {
   log("log", "开始从本地请求弹幕...", url);
   let danmus = [];
   if (url.includes('.qq.com')) {
-      danmus = await fetchTencentVideo(url);
+    danmus = await fetchTencentVideo(url);
   }
   if (url.includes('.iqiyi.com')) {
-      danmus = await fetchIqiyi(url);
+    danmus = await fetchIqiyi(url);
   }
   if (url.includes('.mgtv.com')) {
-      danmus = await fetchMangoTV(url);
+    danmus = await fetchMangoTV(url);
   }
   if (url.includes('.bilibili.com')) {
-      danmus = await fetchBilibili(url);
+    danmus = await fetchBilibili(url);
   }
   if (url.includes('.youku.com')) {
-      danmus = await fetchYouku(url);
+    danmus = await fetchYouku(url);
   }
 
   // 请求人人弹幕
   const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
   if (!urlPattern.test(url)) {
+    if (canConvertToNumber(url)) {
       danmus = await getRenRenComments(url);
+    } else {
+      danmus = await getHanjutvComments(url);
+    }
   }
 
   // 如果弹幕为空，则请求第三方弹幕服务器作为兜底
@@ -3517,4 +3736,5 @@ export async function vercelHandler(req, res) {
 
 // 为了测试导出 handleRequest
 export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
-  fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost };
+  fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
+  getHanjutvComments, getHanjutvDetail};
