@@ -3600,7 +3600,7 @@ async function handleRequest(req, env) {
       message: "Welcome to the LogVar Danmu API server",
       version: VERSION,
       repository: "https://github.com/huangxd-/danmu_api.git",
-      description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口，并提供日志记录，支持vercel/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
+      description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口，并提供日志记录，支持vercel/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
       notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok。https://t.me/ddjdd_bot"
     });
   }
