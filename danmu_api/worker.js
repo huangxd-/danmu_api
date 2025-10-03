@@ -10,6 +10,34 @@ const logBuffer = [];
 const MAX_LOGS = 500;
 const MAX_ANIMES = 100;
 const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
+// 👇 新增代码开始
+// 新增：用户选择的弹幕源存储（key: 会话ID, value: { platform, expire }）
+const userPlatformSelections = new Map();
+// 新增：清理间隔（2小时）
+const CLEAN_INTERVAL = 2 * 60 * 60 * 1000; // 毫秒
+// 新增：会话有效期（2小时）
+const SESSION_EXPIRE = 2 * 60 * 60 * 1000;
+
+// 新增：定期清理过期会话
+function startCleanupTimer() {
+  setInterval(() => {
+    const now = Date.now();
+    let count = 0;
+    for (const [sessionId, data] of userPlatformSelections) {
+      if (now > data.expire) {
+        userPlatformSelections.delete(sessionId);
+        count++;
+      }
+    }
+    if (count > 0) {
+      log("log", `Cleaned up ${count} expired platform selections`);
+    }
+  }, CLEAN_INTERVAL);
+}
+
+// 启动清理定时器
+startCleanupTimer();
+// 👆 新增代码结束
 
 // =====================
 // 环境变量处理
@@ -188,9 +216,44 @@ function resolveBlockedWords(env) {
   return DEFAULT_BLOCKED_WORDS;
 }
 
+// 👇 从这里开始插入新增代码（约186-187行）
+// 新增：生成或获取用户会话ID（基于IP+UA哈希，保护隐私）
+function getSessionId(request) {
+  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+  const userAgent = request.headers.get('User-Agent') || 'unknown';
+  // 简单哈希避免直接暴露IP和UA
+  return Array.from(new TextEncoder().encode(ip + userAgent))
+    .reduce((acc, val) => (acc << 5) - acc + val, 0)
+    .toString(36);
+}
+
+// 新增：处理用户手动设置弹幕源
+function handlePlatformSelection(request) {
+  const url = new URL(request.url);
+  const setPlatform = url.searchParams.get('set_platform');
+  if (!setPlatform) return null;
+
+  // 验证平台合法性
+  if (!allowedPlatforms.includes(setPlatform)) {
+    log("warn", `Invalid platform selection: ${setPlatform}`);
+    return null;
+  }
+
+  // 生成会话ID并存储选择（带过期时间）
+  const sessionId = getSessionId(request);
+  userPlatformSelections.set(sessionId, {
+    platform: setPlatform,
+    expire: Date.now() + SESSION_EXPIRE
+  });
+  log("log", `User ${sessionId} set platform to ${setPlatform}`);
+  return setPlatform;
+}
+// 👆 新增代码结束
+
 // =====================
 // 数据结构处理函数
 // =====================
+
 
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
