@@ -1074,6 +1074,102 @@ const extractEpTitle = (title) => {
   return match ? match[1] : null;  // 返回#号中的内容，若没有则返回null
 };
 
+// 解析fileName，提取动漫名称和平台偏好
+function parseFileName(fileName) {
+  if (!fileName || typeof fileName !== 'string') {
+    return { cleanFileName: '', preferredPlatform: '' };
+  }
+
+  const atIndex = fileName.indexOf('@');
+  if (atIndex === -1) {
+    // 没有@符号，直接返回原文件名
+    return { cleanFileName: fileName.trim(), preferredPlatform: '' };
+  }
+
+  // 找到@符号，需要分离平台标识
+  const beforeAt = fileName.substring(0, atIndex).trim();
+  const afterAt = fileName.substring(atIndex + 1).trim();
+
+  // 检查@符号后面是否有季集信息（如 S01E01）
+  const seasonEpisodeMatch = afterAt.match(/^(\w+)\s+(S\d+E\d+)$/);
+  if (seasonEpisodeMatch) {
+    // 格式：动漫名称@平台 S01E01
+    const platform = seasonEpisodeMatch[1];
+    const seasonEpisode = seasonEpisodeMatch[2];
+    return {
+      cleanFileName: `${beforeAt} ${seasonEpisode}`,
+      preferredPlatform: normalizePlatformName(platform)
+    };
+  } else {
+    // 检查@符号前面是否有季集信息
+    const beforeAtMatch = beforeAt.match(/^(.+?)\s+(S\d+E\d+)$/);
+    if (beforeAtMatch) {
+      // 格式：动漫名称 S01E01@平台
+      const title = beforeAtMatch[1];
+      const seasonEpisode = beforeAtMatch[2];
+      return {
+        cleanFileName: `${title} ${seasonEpisode}`,
+        preferredPlatform: normalizePlatformName(afterAt)
+      };
+    } else {
+      // 格式：动漫名称@平台（没有季集信息）
+      return {
+        cleanFileName: beforeAt,
+        preferredPlatform: normalizePlatformName(afterAt)
+      };
+    }
+  }
+}
+
+// 将用户输入的平台名称映射为标准平台名称
+function normalizePlatformName(inputPlatform) {
+  if (!inputPlatform || typeof inputPlatform !== 'string') {
+    return '';
+  }
+
+  const input = inputPlatform.trim();
+
+  // 支持的平台名称：["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"]
+  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
+
+  // 直接返回输入的平台名称（如果有效）
+  if (allowedPlatforms.includes(input)) {
+    return input;
+  }
+
+  // 如果输入的平台名称无效，返回空字符串
+  return '';
+}
+
+// 根据指定平台创建动态平台顺序
+function createDynamicPlatformOrder(preferredPlatform) {
+  if (!preferredPlatform) {
+    return [...platformOrderArr]; // 返回默认顺序的副本
+  }
+
+  // 验证平台是否有效
+  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
+  if (!allowedPlatforms.includes(preferredPlatform)) {
+    log("warn", `Invalid platform: ${preferredPlatform}, using default order`);
+    return [...platformOrderArr];
+  }
+
+  // 创建新的平台顺序，将指定平台放在最前面
+  const dynamicOrder = [preferredPlatform];
+
+  // 添加其他平台（排除已指定的平台）
+  for (const platform of platformOrderArr) {
+    if (platform !== preferredPlatform && platform !== null) {
+      dynamicOrder.push(platform);
+    }
+  }
+
+  // 最后添加 null（用于回退逻辑）
+  dynamicOrder.push(null);
+
+  return dynamicOrder;
+}
+
 // djb2 哈希算法将string转成id
 function convertToAsciiSum(sid) {
   let hash = 5381;
@@ -3359,13 +3455,15 @@ async function matchAnime(url, req) {
       );
     }
 
-    // 这里可以继续处理 query，比如调用其他服务或数据库查询
+    // 解析fileName，提取平台偏好
+    const { cleanFileName, preferredPlatform } = parseFileName(fileName);
     log("info", `Processing anime match for query: ${fileName}`);
+    log("info", `Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
     const regex = /^(.+?)\s+S(\d+)E(\d+)$/;
-    const match = fileName.match(regex);
+    const match = cleanFileName.match(regex);
 
-    let title = match ? match[1] : fileName;
+    let title = match ? match[1] : cleanFileName;
     let season = match ? parseInt(match[2]) : null;
     let episode = match ? parseInt(match[3]) : null;
 
@@ -3379,13 +3477,19 @@ async function matchAnime(url, req) {
     let resAnime;
     let resEpisode;
 
-    log("info", `platformOrderArr: ${platformOrderArr}`);
-    for (const platform of platformOrderArr) {
+    // 根据指定平台创建动态平台顺序
+    const dynamicPlatformOrder = createDynamicPlatformOrder(preferredPlatform);
+    log("info", `Original platformOrderArr: ${platformOrderArr}`);
+    log("info", `Dynamic platformOrder: ${dynamicPlatformOrder}`);
+    log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
+
+    for (const platform of dynamicPlatformOrder) {
       const __ret = await matchAniAndEp(season, episode, searchData, title, req, platform);
       resEpisode = __ret.resEpisode;
       resAnime = __ret.resAnime;
 
       if (resAnime) {
+        log("info", `Found match with platform: ${platform || 'default'}`);
         break;
       }
     }
