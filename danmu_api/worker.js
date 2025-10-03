@@ -9,7 +9,8 @@ let episodeNum = 10001; // 全局变量，用于自增 ID
 const logBuffer = [];
 const MAX_LOGS = 500;
 const MAX_ANIMES = 100;
-const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
+const vodAllowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
+const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
 
 // =====================
 // 环境变量处理
@@ -112,14 +113,11 @@ function resolvePlatformOrder(env) {
     platformOrder = process.env.PLATFORM_ORDER;  // Vercel / Node
   }
 
-  // 解析并校验 platformOrder
-  const _allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
-
   // 转换为数组并去除空格，过滤无效项
   const orderArr = platformOrder
     .split(',')
     .map(s => s.trim())  // 去除空格
-    .filter(s => _allowedPlatforms.includes(s));  // 只保留有效来源
+    .filter(s => allowedPlatforms.includes(s));  // 只保留有效来源
 
   // 如果没有有效的来源，使用默认顺序
   if (orderArr.length === 0) {
@@ -1129,9 +1127,6 @@ function normalizePlatformName(inputPlatform) {
 
   const input = inputPlatform.trim();
 
-  // 支持的平台名称：["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"]
-  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
-
   // 直接返回输入的平台名称（如果有效）
   if (allowedPlatforms.includes(input)) {
     return input;
@@ -1148,7 +1143,6 @@ function createDynamicPlatformOrder(preferredPlatform) {
   }
 
   // 验证平台是否有效
-  const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv"];
   if (!allowedPlatforms.includes(preferredPlatform)) {
     log("warn", `Invalid platform: ${preferredPlatform}, using default order`);
     return [...platformOrderArr];
@@ -3084,7 +3078,7 @@ async function handleVodAnimes(animesVod, curAnimes) {
 
     const vodPlayUrlList = anime.vod_play_url.split("$$$");
     const validIndices = vodPlayFromList
-        .map((item, index) => allowedPlatforms.includes(item) ? index : -1)
+        .map((item, index) => vodAllowedPlatforms.includes(item) ? index : -1)
         .filter(index => index !== -1);
 
     let links = [];
@@ -3135,7 +3129,7 @@ async function handle360Animes(animes360, curAnimes) {
     let links = [];
     if (anime.cat_name === "电影") {
       for (const key of Object.keys(anime.playlinks)) {
-        if (allowedPlatforms.includes(key)) {
+        if (vodAllowedPlatforms.includes(key)) {
           links.push({
             "name": key,
             "url": anime.playlinks[key],
@@ -3144,7 +3138,7 @@ async function handle360Animes(animes360, curAnimes) {
         }
       }
     } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
-      if (allowedPlatforms.includes(anime.seriesSite)) {
+      if (vodAllowedPlatforms.includes(anime.seriesSite)) {
         for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
           const item = anime.seriesPlaylinks[i];
           links.push({
@@ -3157,7 +3151,7 @@ async function handle360Animes(animes360, curAnimes) {
     } else if (anime.cat_name === "综艺") {
       const zongyiLinks = await Promise.all(
           Object.keys(anime.playlinks_year).map(async (site) => {
-            if (allowedPlatforms.includes(site)) {
+            if (vodAllowedPlatforms.includes(site)) {
               const yearLinks = await Promise.all(
                   anime.playlinks_year[site].map(async (year) => {
                     return await get360Zongyi(anime.id, site, year);
