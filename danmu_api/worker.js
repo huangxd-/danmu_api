@@ -193,11 +193,11 @@ let groupMinute = DEFAULT_GROUP_MINUTE;
 function resolveGroupMinute(env) {
   if (env && env.GROUP_MINUTE) {
     const n = parseInt(env.GROUP_MINUTE, 10);
-    if (!Number.isNaN(n) && n > 0) return Math.min(n, 30);
+    if (!Number.isNaN(n) && n >= 0) return Math.min(n, 30);
   }
   if (typeof process !== "undefined" && process.env?.GROUP_MINUTE) {
     const n = parseInt(process.env.GROUP_MINUTE, 10);
-    if (!Number.isNaN(n) && n > 0) return Math.min(n, 30);
+    if (!Number.isNaN(n) && n >= 0) return Math.min(n, 30);
   }
   return Math.min(DEFAULT_GROUP_MINUTE, 30);
 }
