@@ -44,6 +44,15 @@ function resolveVodServer(env) {
   return DEFAULT_VOD_SERVER;
 }
 
+const DEFAULT_VOD_SERVER2 = ""; // 默认 vod站点2
+let vodServer2 = DEFAULT_VOD_SERVER2;
+
+function resolveVodServer2(env) {
+  if (env && env.VOD_SERVER2) return env.VOD_SERVER2;         // Cloudflare Workers
+  if (typeof process !== "undefined" && process.env?.VOD_SERVER2) return process.env.VOD_SERVER2; // Vercel / Node
+  return DEFAULT_VOD_SERVER2;
+}
+
 const DEFAULT_BILIBILI_COOKIE = ""; // 默认 bilibili cookie
 let bilibliCookie = DEFAULT_BILIBILI_COOKIE;
 
@@ -70,7 +79,7 @@ function resolveYoukuConcurrency(env) {
   return Math.min(DEFAULT_YOUKU_CONCURRENCY, 16);
 }
 
-const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv,bahamut"; // 默认 源排序
+const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv"; // 默认 源排序
 let sourceOrderArr = [];
 
 function resolveSourceOrder(env) {
@@ -84,7 +93,7 @@ function resolveSourceOrder(env) {
   }
 
   // 解析并校验 sourceOrder
-  const allowedSources = ['vod', '360', 'renren', "hanjutv", "bahamut"];
+  const allowedSources = ['vod', 'vod2', '360', 'renren', "hanjutv", "bahamut"];
 
   // 转换为数组并去除空格，过滤无效项
   const orderArr = sourceOrder
@@ -605,10 +614,10 @@ async function get360Zongyi(entId, site, year) {
 }
 
 // 查询vod站点影片信息
-async function getVodAnimes(title) {
+async function getVodAnimes(title, server) {
   try {
     const response = await httpGet(
-      `${vodServer}/api.php/provide/vod/?ac=detail&wd=${title}&pg=1`,
+      `${server}/api.php/provide/vod/?ac=detail&wd=${title}&pg=1`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -3262,7 +3271,7 @@ function matchSeason(anime, queryTitle, season) {
   }
 }
 
-async function handleVodAnimes(animesVod, curAnimes) {
+async function handleVodAnimes(animesVod, curAnimes, key) {
   const processVodAnimes = await Promise.all(animesVod.map(async (anime) => {
     let vodPlayFromList = anime.vod_play_from.split("$$$");
     vodPlayFromList = vodPlayFromList.map(item => {
@@ -3296,7 +3305,7 @@ async function handleVodAnimes(animesVod, curAnimes) {
       let transformedAnime = {
         animeId: Number(anime.vod_id),
         bangumiId: String(anime.vod_id),
-        animeTitle: `${anime.vod_name}(${anime.vod_year})【${anime.type_name}】from vod`,
+        animeTitle: `${anime.vod_name}(${anime.vod_year})【${anime.type_name}】from ${key}`,
         type: anime.type_name,
         typeDescription: anime.type_name,
         imageUrl: anime.vod_pic,
@@ -3507,9 +3516,9 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
         let transformedAnime = {
           animeId: anime.video_sn,
           bangumiId: String(anime.video_sn),
-          animeTitle: `${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动画】from bahamut`,
-          type: "动画",
-          typeDescription: "动画",
+          animeTitle: `${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
+          type: "动漫",
+          typeDescription: "动漫",
           imageUrl: anime.cover,
           startDate: `${new Date(epData.anime.seasonStart).getFullYear()}-01-01T00:00:00`,
           episodeCount: links.length,
@@ -3535,7 +3544,7 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
 
 // Extracted function for GET /api/v2/search/anime
 async function searchAnime(url) {
-  const queryTitle = traditionalized(url.searchParams.get("keyword"));
+  const queryTitle = url.searchParams.get("keyword");
   log("log", `Search anime with keyword: ${queryTitle}`);
 
   const curAnimes = [];
@@ -3544,11 +3553,12 @@ async function searchAnime(url) {
     // 根据 sourceOrderArr 动态构建请求数组
     log("log", `Search sourceOrderArr: ${sourceOrderArr}`);
     const requestPromises = sourceOrderArr.map(source => {
-      if (source === "vod") return getVodAnimes(queryTitle);
+      if (source === "vod") return getVodAnimes(queryTitle, vodServer);
+      if (source === "vod2") return getVodAnimes(queryTitle, vodServer2);
       if (source === "360") return get360Animes(queryTitle);
       if (source === "renren") return renrenSearch(queryTitle);
       if (source === "hanjutv") return hanjutvSearch(queryTitle);
-      if (source === "bahamut") return bahamutSearch(queryTitle);
+      if (source === "bahamut") return bahamutSearch(traditionalized(queryTitle));
     });
 
     // 执行所有请求并等待结果
@@ -3563,13 +3573,16 @@ async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVod, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut } = resultData;
+    const { vod: animesVod, vod2: animesVod2, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of sourceOrderArr) {
       if (key === 'vod') {
         // 等待处理Vod来源
-        await handleVodAnimes(animesVod, curAnimes);
+        await handleVodAnimes(animesVod, curAnimes, key);
+      } else if (key === 'vod2') {
+        // 等待处理Vod2来源
+        await handleVodAnimes(animesVod2, curAnimes, key);
       } else if (key === '360') {
         // 等待处理360来源
         await handle360Animes(animes360, curAnimes);
@@ -3581,7 +3594,7 @@ async function searchAnime(url) {
         await handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes);
       } else if (key === 'bahamut') {
         // 等待处理Bahamut来源
-        await handleBahamutAnimes(animesBahamut, queryTitle, curAnimes);
+        await handleBahamutAnimes(animesBahamut, traditionalized(queryTitle), curAnimes);
       }
     }
   } catch (error) {
@@ -4008,6 +4021,7 @@ async function handleRequest(req, env) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
   otherServer = resolveOtherServer(env);
   vodServer = resolveVodServer(env);
+  vodServer2 = resolveVodServer2(env);
   bilibliCookie = resolveBilibiliCookie(env);
   youkuConcurrency = resolveYoukuConcurrency(env);
   sourceOrderArr = resolveSourceOrder(env);
