@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.2.4";
+const VERSION = "1.2.5";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -11,6 +11,7 @@ const MAX_LOGS = 500;
 const MAX_ANIMES = 100;
 const vodAllowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
 const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv", "bahamut"];
+let envs = {};
 
 // =====================
 // 环境变量处理
@@ -82,9 +83,12 @@ function resolveYoukuConcurrency(env) {
 const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv"; // 默认 源排序
 let sourceOrderArr = [];
 
-function resolveSourceOrder(env) {
+function resolveSourceOrder(env, deployPlatform) {
   // 获取环境变量中的 SOURCE_ORDER 配置
   let sourceOrder = DEFAULT_SOURCE_ORDER;
+  if (deployPlatform === "cloudflare" || deployPlatform === "vercel") {
+      sourceOrder += ",bahamut";
+  }
 
   if (env && env.SOURCE_ORDER) {
     sourceOrder = env.SOURCE_ORDER;  // Cloudflare Workers
@@ -1252,6 +1256,11 @@ function convertToAsciiSum(sid) {
   hash = (hash >>> 0) % 9999999;
   // 确保至少 5 位
   return hash < 10000 ? hash + 10000 : hash;
+}
+
+// 基础加密函数 - 将字符串转换为星号
+function encryptStr(str) {
+  return '*'.repeat(str.length);
 }
 
 // =====================
@@ -3627,8 +3636,6 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform) 
           return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
         });
 
-        log("info", "filteredEpisodes", filteredEpisodes);
-
         if (platform) {
           const firstIndex = filteredEpisodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
           const indexCount = filteredEpisodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
@@ -4017,19 +4024,31 @@ async function getComment(path) {
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
-async function handleRequest(req, env) {
+async function handleRequest(req, env, deployPlatform) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
+  envs["token"] = encryptStr(token);
   otherServer = resolveOtherServer(env);
+  envs["otherServer"] = otherServer;
   vodServer = resolveVodServer(env);
+  envs["vodServer"] = vodServer;
   vodServer2 = resolveVodServer2(env);
+  envs["vodServer2"] = vodServer2;
   bilibliCookie = resolveBilibiliCookie(env);
+  envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);
-  sourceOrderArr = resolveSourceOrder(env);
+  envs["youkuConcurrency"] = youkuConcurrency;
+  sourceOrderArr = resolveSourceOrder(env, deployPlatform);
+  envs["sourceOrderArr"] = sourceOrderArr;
   platformOrderArr = resolvePlatformOrder(env);
+  envs["platformOrderArr"] = platformOrderArr;
   episodeTitleFilter = resolveEpisodeTitleFilter(env);
+  envs["episodeTitleFilter"] = episodeTitleFilter;
   blockedWords = resolveBlockedWords(env);
+  envs["blockedWords"] = blockedWords;
   groupMinute = resolveGroupMinute(env);
+  envs["groupMinute"] = groupMinute;
   proxyUrl = resolveProxyUrl(env);
+  envs["proxyUrl"] = proxyUrl;
 
   const url = new URL(req.url);
   let path = url.pathname;
@@ -4042,6 +4061,7 @@ async function handleRequest(req, env) {
     return jsonResponse({
       message: "Welcome to the LogVar Danmu API server",
       version: VERSION,
+      envs: envs,
       repository: "https://github.com/huangxd-/danmu_api.git",
       description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口，并提供日志记录，支持vercel/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
       notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok。https://t.me/ddjdd_bot"
@@ -4154,7 +4174,7 @@ async function handleRequest(req, env) {
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
-    return handleRequest(request, env);
+    return handleRequest(request, env, "cloudflare");
   },
 };
 
@@ -4169,7 +4189,7 @@ export async function vercelHandler(req, res) {
         : undefined,
   });
 
-  const response = await handleRequest(cfReq, process.env);
+  const response = await handleRequest(cfReq, process.env, "vercel");
 
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
