@@ -12,7 +12,6 @@ const MAX_ANIMES = 100;
 const vodAllowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
 const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv", "bahamut"];
 let envs = {};
-let deployPlatform = "";
 
 // =====================
 // 环境变量处理
@@ -84,7 +83,7 @@ function resolveYoukuConcurrency(env) {
 const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv"; // 默认 源排序
 let sourceOrderArr = [];
 
-function resolveSourceOrder(env) {
+function resolveSourceOrder(env, deployPlatform) {
   // 获取环境变量中的 SOURCE_ORDER 配置
   let sourceOrder = DEFAULT_SOURCE_ORDER;
   if (deployPlatform === "cloudflare" || deployPlatform === "vercel") {
@@ -4025,7 +4024,7 @@ async function getComment(path) {
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
-async function handleRequest(req, env) {
+async function handleRequest(req, env, deployPlatform) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
   envs["token"] = encryptStr(token);
   otherServer = resolveOtherServer(env);
@@ -4038,7 +4037,7 @@ async function handleRequest(req, env) {
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);
   envs["youkuConcurrency"] = youkuConcurrency;
-  sourceOrderArr = resolveSourceOrder(env);
+  sourceOrderArr = resolveSourceOrder(env, deployPlatform);
   envs["sourceOrderArr"] = sourceOrderArr;
   platformOrderArr = resolvePlatformOrder(env);
   envs["platformOrderArr"] = platformOrderArr;
@@ -4175,16 +4174,12 @@ async function handleRequest(req, env) {
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
-    deployPlatform = "cloudflare";
-    envs["deployPlatform"] = deployPlatform;
-    return handleRequest(request, env);
+    return handleRequest(request, env, "cloudflare");
   },
 };
 
 // --- Vercel 入口 ---
 export async function vercelHandler(req, res) {
-  deployPlatform = "vercel";
-  envs["deployPlatform"] = deployPlatform;
   const cfReq = new Request(req.url, {
     method: req.method,
     headers: req.headers,
@@ -4194,7 +4189,7 @@ export async function vercelHandler(req, res) {
         : undefined,
   });
 
-  const response = await handleRequest(cfReq, process.env);
+  const response = await handleRequest(cfReq, process.env, "vercel");
 
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
