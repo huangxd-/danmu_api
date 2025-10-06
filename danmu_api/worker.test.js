@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert').strict;
 const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost,
-  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail } = require('./worker');
+  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail,
+  bahamutSearch, getBahamutEpisodes, getBahamutComments} = require('./worker');
 
 // Mock Request class for testing
 class MockRequest {
@@ -88,6 +89,21 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
+  // await t.test('GET bahamut search', async () => {
+  //   const res = await bahamutSearch("膽大黨");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bahamut episodes', async () => {
+  //   const res = await getBahamutEpisodes("44243");
+  //   assert(res.anime.episodes[0].length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bahamut danmu', async () => {
+  //   const res = await getBahamutComments("44453");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
   await t.test('GET realistic danmu', async () => {
     // tencent
     // const keyword = "子夜归";
@@ -102,7 +118,9 @@ test('worker.js API endpoints', async (t) => {
     // renren
     // const keyword = "瑞克和莫蒂";
     // hanjutv
-    const keyword = "请回答1988";
+    // const keyword = "请回答1988";
+    // bahamut
+    const keyword = "胆大党";
 
     const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
     const searchRes = await searchAnime(searchUrl);
