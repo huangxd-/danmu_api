@@ -178,8 +178,6 @@ function resolveEpisodeTitleFilter(env) {
     keywords = DEFAULT_EPISODE_TITLE_FILTER;
   }
 
-  log("log", "EPISODE_TITLE_FILTER keywords: ", keywords);
-
   // 返回由过滤后的关键字生成的正则表达式
   return new RegExp(
     "^" +
@@ -3721,10 +3719,10 @@ async function matchAnime(url, req) {
     log("info", `Processing anime match for query: ${fileName}`);
     log("info", `Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
-    const regex = /^(.+?)\s+S(\d+)E(\d+)$/;
+    const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
     const match = cleanFileName.match(regex);
 
-    let title = match ? match[1] : cleanFileName;
+    let title = match ? match[1].trim() : cleanFileName;
     let season = match ? parseInt(match[2]) : null;
     let episode = match ? parseInt(match[3]) : null;
 
