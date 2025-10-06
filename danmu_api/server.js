@@ -2,20 +2,23 @@
 require('./esm-shim'); // 总是加载，但内部会判断是否需要启用
 
 const http = require('http');
+const https = require('https');
+const url = require('url');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // 比较版本号的辅助函数
 function compareVersion(version1, version2) {
   const v1Parts = version1.split('.').map(Number);
   const v2Parts = version2.split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
     const v1Part = v1Parts[i] || 0;
     const v2Part = v2Parts[i] || 0;
-    
+
     if (v1Part > v2Part) return 1;
     if (v1Part < v2Part) return -1;
   }
-  
+
   return 0;
 }
 
@@ -24,22 +27,22 @@ function needsAsyncStartup() {
   try {
     const nodeVersion = process.versions.node;
     const isNodeCompatible = compareVersion(nodeVersion, '20.19.0') >= 0;
-    
+
     // 尝试检测 node-fetch 版本
     const packagePath = require.resolve('node-fetch/package.json');
     const pkg = require(packagePath);
     const isNodeFetchV3 = pkg.version.startsWith('3.');
-    
+
     // 核心逻辑：只有在 Node.js < v20.19.0 + node-fetch v3 时才需要异步启动
     const needsAsync = !isNodeCompatible && isNodeFetchV3;
-    
+
     console.log(`[server] Environment check: Node ${nodeVersion}, node-fetch ${pkg.version}`);
     console.log(`[server] Node.js compatible (>=20.19.0): ${isNodeCompatible}`);
     console.log(`[server] node-fetch v3: ${isNodeFetchV3}`);
     console.log(`[server] Needs async startup: ${needsAsync}`);
-    
+
     return needsAsync;
-    
+
   } catch (e) {
     // 无法检测或者 node-fetch 不存在，使用同步启动
     console.log('[server] Cannot detect node-fetch, using sync startup');
@@ -57,7 +60,7 @@ function createServer() {
     try {
       // Construct the full URL
       const fullUrl = `http://${req.headers.host}${req.url}`;
-      
+
       // Convert Node.js request body to a string for POST/PUT requests
       let body;
       if (req.method === 'POST' || req.method === 'PUT') {
@@ -93,14 +96,70 @@ function createServer() {
   });
 }
 
+// 代理服务器逻辑（用于5321端口）
+function createProxyServer() {
+  return http.createServer((req, res) => {
+    const queryObject = url.parse(req.url, true).query;
+
+    if (queryObject.url) {
+      const targetUrl = queryObject.url;
+      console.log('Target URL:', targetUrl);
+
+      // 从环境变量获取代理地址
+      const proxyUrl = process.env.PROXY_URL;
+
+      const urlObj = new URL(targetUrl);
+      const options = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: 'GET'
+      };
+
+      // 如果设置了代理，则使用代理
+      if (proxyUrl) {
+        options.agent = new HttpsProxyAgent(proxyUrl);
+        console.log('Using proxy:', proxyUrl);
+      } else {
+        console.log('No proxy configured, direct connection');
+      }
+
+      const protocol = urlObj.protocol === 'https:' ? https : http;
+
+      const proxyReq = protocol.request(options, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
+      });
+
+      proxyReq.on('error', (err) => {
+        console.error('Proxy request error:', err);
+        res.statusCode = 500;
+        res.end('Proxy Error: ' + err.message);
+      });
+
+      proxyReq.end();
+    } else {
+      res.statusCode = 400;
+      res.end('Bad Request: Missing URL parameter');
+    }
+  });
+}
+
 // 同步启动（适用于兼容环境）
 function startServerSync() {
   console.log('[server] Starting server synchronously (optimal path)');
-  
+
   const server = createServer();
-  
+
   server.listen(9321, '0.0.0.0', () => {
     console.log('Server running on http://0.0.0.0:9321');
+  });
+
+  // 启动5321端口的代理服务
+  const proxyServer = createProxyServer();
+
+  proxyServer.listen(5321, '0.0.0.0', () => {
+    console.log('Proxy server running on http://0.0.0.0:5321');
   });
 }
 
@@ -108,7 +167,7 @@ function startServerSync() {
 async function startServerAsync() {
   try {
     console.log('[server] Starting server asynchronously (compatibility mode for Node.js <20.19.0 + node-fetch v3)');
-    
+
     // 预加载 node-fetch v3
     if (typeof global.loadNodeFetch === 'function') {
       console.log('[server] Pre-loading node-fetch v3...');
@@ -117,9 +176,16 @@ async function startServerAsync() {
     }
 
     const server = createServer();
-    
+
     server.listen(9321, '0.0.0.0', () => {
       console.log('Server running on http://0.0.0.0:9321 (compatibility mode)');
+    });
+
+    // 启动5321端口的代理服务
+    const proxyServer = createProxyServer();
+
+    proxyServer.listen(5321, '0.0.0.0', () => {
+      console.log('Proxy server running on http://0.0.0.0:5321 (compatibility mode)');
     });
 
   } catch (error) {

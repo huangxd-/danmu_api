@@ -211,14 +211,14 @@ function resolveGroupMinute(env) {
   return Math.min(DEFAULT_GROUP_MINUTE, 30);
 }
 
-const DEFAULT_BAHAMUT_PROXY = ""; // 默认 巴哈姆特代理
-let bahamutProxy = DEFAULT_BAHAMUT_PROXY;
+const DEFAULT_PROXY_URL = ""; // 默认 代理地址
+let proxyUrl = DEFAULT_PROXY_URL;
 
 // 这里既支持 Cloudflare env，也支持 Node process.env
-function resolveBahamutProxy(env) {
-  if (env && env.BAHAMUT_PROXY) return env.BAHAMUT_PROXY;         // Cloudflare Workers
-  if (typeof process !== "undefined" && process.env?.BAHAMUT_PROXY) return process.env.BAHAMUT_PROXY; // Vercel / Node
-  return DEFAULT_BAHAMUT_PROXY;
+function resolveProxyUrl(env) {
+  if (env && env.PROXY_URL) return env.PROXY_URL;         // Cloudflare Workers
+  if (typeof process !== "undefined" && process.env?.PROXY_URL) return process.env.PROXY_URL; // Vercel / Node
+  return DEFAULT_PROXY_URL;
 }
 
 // =====================
@@ -3017,7 +3017,7 @@ async function getHanjutvComments(pid, progressCallback=null){
 // ---------------------
 async function bahamutSearch(keyword) {
   try {
-    const url = DEFAULT_BAHAMUT_PROXY ? `${DEFAULT_BAHAMUT_PROXY}/proxy?url=https://api.gamer.com.tw/mobile_app/anime/v1/search.php?kw=${keyword}` : `https://api.gamer.com.tw/mobile_app/anime/v1/search.php?kw=${keyword}`;
+    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=https://api.gamer.com.tw/mobile_app/anime/v1/search.php?kw=${keyword}` : `https://api.gamer.com.tw/mobile_app/anime/v1/search.php?kw=${keyword}`;
     const resp = await httpGet(url, {
       headers: {
         "Content-Type": "application/json",
@@ -3054,7 +3054,7 @@ async function bahamutSearch(keyword) {
 
 async function getBahamutEpisodes(videoSn) {
   try {
-    const url = DEFAULT_BAHAMUT_PROXY ? `${DEFAULT_BAHAMUT_PROXY}/proxy?url=https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}`;
+    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}`;
     const resp = await httpGet(url, {
       headers: {
         "Content-Type": "application/json",
@@ -3093,7 +3093,7 @@ async function fetchBahamutEpisodeDanmu(videoSn) {
   let danmus = [];
 
   try {
-    const url = DEFAULT_BAHAMUT_PROXY ? `${DEFAULT_BAHAMUT_PROXY}/proxy?url=https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}`;
+    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}`;
     const resp = await httpGet(url, {
       headers: {
         "Content-Type": "application/json",
@@ -4029,7 +4029,7 @@ async function handleRequest(req, env) {
   episodeTitleFilter = resolveEpisodeTitleFilter(env);
   blockedWords = resolveBlockedWords(env);
   groupMinute = resolveGroupMinute(env);
-  bahamutProxy = resolveBahamutProxy(env);
+  proxyUrl = resolveProxyUrl(env);
 
   const url = new URL(req.url);
   let path = url.pathname;
