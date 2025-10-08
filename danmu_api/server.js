@@ -1,12 +1,14 @@
-// server.js - 智能启动，根据环境自动选择最优方案
-require('./esm-shim'); // 总是加载，但内部会判断是否需要启用
+// server.js - 智能服务器启动器：根据 Node.js 环境自动选择最优启动模式
+// 导入 ES module 兼容层（始终加载，但内部会根据需要启用）
+require('./esm-shim');
 
 const http = require('http');
 const https = require('https');
 const url = require('url');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
-// 比较版本号的辅助函数
+// --- 版本兼容性检测工具 ---
+// 辅助函数：比较两个版本号字符串
 function compareVersion(version1, version2) {
   const v1Parts = version1.split('.').map(Number);
   const v2Parts = version2.split('.').map(Number);
@@ -22,18 +24,20 @@ function compareVersion(version1, version2) {
   return 0;
 }
 
-// 检测是否需要异步启动
+// 检测是否需要异步启动（兼容层模式）
 function needsAsyncStartup() {
   try {
     const nodeVersion = process.versions.node;
+    // 检查 Node.js 版本是否 >= v20.19.0 (此版本及更高版本内置了 fetch API，对 node-fetch v3 的兼容性更好)
     const isNodeCompatible = compareVersion(nodeVersion, '20.19.0') >= 0;
 
-    // 尝试检测 node-fetch 版本
+    // 尝试检测已安装的 node-fetch 版本
     const packagePath = require.resolve('node-fetch/package.json');
     const pkg = require(packagePath);
+    // 检查 node-fetch 是否是 v3.x 版本 (v3.x 在旧版 Node.js 中可能存在一些加载问题)
     const isNodeFetchV3 = pkg.version.startsWith('3.');
 
-    // 核心逻辑：只有在 Node.js < v20.19.0 + node-fetch v3 时才需要异步启动
+    // 核心逻辑：只有在 Node.js < v20.19.0 且同时使用 node-fetch v3 时，才需要特殊的异步启动（兼容层模式）
     const needsAsync = !isNodeCompatible && isNodeFetchV3;
 
     console.log(`[server] Environment check: Node ${nodeVersion}, node-fetch ${pkg.version}`);
@@ -50,18 +54,21 @@ function needsAsyncStartup() {
   }
 }
 
-// 核心服务器逻辑（抽取为函数，避免重复）
+// --- 核心 HTTP 服务器（端口 9321）逻辑 ---
+// 创建主业务服务器实例（将 Node.js 请求转换为 Web API Request，并调用 worker.js 处理）
 function createServer() {
+  // 导入所需的 fetch 兼容对象
   const fetch = require('node-fetch');
   const { Request, Response } = fetch;
-  const worker = require('./worker.js');
+  // 导入核心请求处理逻辑
+  const { handleRequest } = require('./worker.js'); // 直接导入 handleRequest 函数
 
   return http.createServer(async (req, res) => {
     try {
-      // Construct the full URL
+      // 构造完整的请求 URL
       const fullUrl = `http://${req.headers.host}${req.url}`;
 
-      // Convert Node.js request body to a string for POST/PUT requests
+      // 异步读取 POST/PUT 请求的请求体
       let body;
       if (req.method === 'POST' || req.method === 'PUT') {
         body = await new Promise((resolve) => {
@@ -71,21 +78,23 @@ function createServer() {
         });
       }
 
-      // Create a Web API-compatible Request object
+      // 创建一个 Web API 兼容的 Request 对象
       const webRequest = new Request(fullUrl, {
         method: req.method,
         headers: req.headers,
-        body: body || undefined,
+        body: body || undefined, // 对于 GET/HEAD 等请求，body 为 undefined
       });
 
-      // Call the worker's fetch handler
-      const webResponse = await worker.default.fetch(webRequest, {}, {});
+      // 调用核心处理函数，并标识平台为 "node"
+      const webResponse = await handleRequest(webRequest, process.env, "node");
 
-      // Convert Web API Response to Node.js response
+      // 将 Web API Response 对象转换为 Node.js 响应
       res.statusCode = webResponse.status;
+      // 设置响应头
       webResponse.headers.forEach((value, key) => {
         res.setHeader(key, value);
       });
+      // 发送响应体
       const responseText = await webResponse.text();
       res.end(responseText);
     } catch (error) {
@@ -145,12 +154,13 @@ function createProxyServer() {
   });
 }
 
-// 同步启动（适用于兼容环境）
+// --- 启动函数 ---
+// 同步启动（最优/默认路径，适用于常规已兼容环境）
 function startServerSync() {
   console.log('[server] Starting server synchronously (optimal path)');
 
+  // 启动主业务服务器 (9321)
   const server = createServer();
-
   server.listen(9321, '0.0.0.0', () => {
     console.log('Server running on http://0.0.0.0:9321');
   });
@@ -163,20 +173,20 @@ function startServerSync() {
   });
 }
 
-// 异步启动（适用于需要兼容的环境：Node.js < v20.19.0 + node-fetch v3）
+// 异步启动（兼容层模式路径，适用于 Node.js < v20.19.0 + node-fetch v3）
 async function startServerAsync() {
   try {
     console.log('[server] Starting server asynchronously (compatibility mode for Node.js <20.19.0 + node-fetch v3)');
 
-    // 预加载 node-fetch v3
+    // 预加载 node-fetch v3（解决特定环境下 node-fetch v3 的加载问题）
     if (typeof global.loadNodeFetch === 'function') {
       console.log('[server] Pre-loading node-fetch v3...');
       await global.loadNodeFetch();
       console.log('[server] node-fetch v3 loaded successfully');
     }
 
+    // 启动主业务服务器 (9321)
     const server = createServer();
-
     server.listen(9321, '0.0.0.0', () => {
       console.log('Server running on http://0.0.0.0:9321 (compatibility mode)');
     });
@@ -194,7 +204,8 @@ async function startServerAsync() {
   }
 }
 
-// 智能选择启动方式
+// --- 启动决策逻辑 ---
+// 智能选择启动方式：如果环境需要兼容，则异步启动；否则同步启动。
 if (needsAsyncStartup()) {
   startServerAsync();
 } else {
