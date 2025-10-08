@@ -4168,19 +4168,19 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     // 过滤掉已经超出 1 分钟的请求
     const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
 
+    // 如果最近的请求数量大于等于 3 次，则限制请求
+    if (recentRequests.length >= 3) {
+      return jsonResponse({
+        status: 429, // HTTP 429 Too Many Requests
+        body: `1分钟内同一IP只能请求弹幕3次，请稍后重试`,
+      });
+    }
+
     // 将当前请求的时间戳添加到该 IP 地址的请求历史队列中
     recentRequests.push(currentTime);
 
     // 更新该 IP 地址的请求历史
     requestHistory.set(clientIp, recentRequests);
-
-    // 如果最近的请求数量大于 3 次，则限制请求
-    if (recentRequests.length > 3) {
-      return jsonResponse({
-        status: 429, // HTTP 429 Too Many Requests
-        body: `1分钟内同一IP只能请求弹幕3次，请稍后重试，当前次数为${recentRequests.length}`,
-      });
-    }
 
     return getComment(path);
   }
