@@ -724,7 +724,7 @@ function groupDanmusByMinute(filteredDanmus, n) {
       return {
         cid: data.cid,
         p: data.p,
-        m: data.count > 1 ? `${message}X${data.count}` : message,
+        m: data.count > 1 ? `${message} x ${data.count}` : message,
         t: data.earliestT
       };
     });

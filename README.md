@@ -153,8 +153,9 @@ LogVar 弹幕 API 服务器
 - 示例请求：`https://{your_domian}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
 
 ### 优化点
-Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，能提高访问速度，体验更优
-> hk有可能访问不了360，也可以尝试切其他region，如新加坡等
+- Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，能提高访问速度，体验更优
+  > hk有可能访问不了360或其他源，可以尝试切其他region，如新加坡等
+- vercel在国内被墙，请配合代理使用或绑定自定义域名
 
 ## 部署到 腾讯云 edgeone pages
 
@@ -296,7 +297,8 @@ danmu_api/
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
 - 如果想更换vod站点，请添加环境变量`VOD_SERVER`，示例`https://www.caiji.cyou`。
-- 推荐vercel和claw部署，cloudflare好像不稳定，当然最稳定还是自己本地docker部署最佳。
+- 推荐vercel和claw部署，cloudflare/edgeone不稳定，当然最稳定还是自己本地docker部署最佳。
+- /api/v2/comment接口1分钟内同一IP只能请求三次。
 
 ### 关联项目
 [喂饭教程1：danmu_api vercel 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
