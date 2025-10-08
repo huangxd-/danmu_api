@@ -68,6 +68,9 @@ function createServer() {
       // 构造完整的请求 URL
       const fullUrl = `http://${req.headers.host}${req.url}`;
 
+      // 获取请求客户端的ip
+      const clientIp = req.connection.remoteAddress || 'unknown';
+
       // 异步读取 POST/PUT 请求的请求体
       let body;
       if (req.method === 'POST' || req.method === 'PUT') {
@@ -86,7 +89,7 @@ function createServer() {
       });
 
       // 调用核心处理函数，并标识平台为 "node"
-      const webResponse = await handleRequest(webRequest, process.env, "node");
+      const webResponse = await handleRequest(webRequest, process.env, "node", clientIp);
 
       // 将 Web API Response 对象转换为 Node.js 响应
       res.statusCode = webResponse.status;

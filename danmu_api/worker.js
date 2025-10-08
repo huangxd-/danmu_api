@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.2.5";
+const VERSION = "1.3.0";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -4022,7 +4022,7 @@ async function getComment(path) {
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
-async function handleRequest(req, env, deployPlatform) {
+async function handleRequest(req, env, deployPlatform, clientIp) {
   token = resolveToken(env);  // 每次请求动态获取，确保热更新环境变量后也能生效
   envs["token"] = encryptStr(token);
   otherServer = resolveOtherServer(env);
@@ -4053,6 +4053,7 @@ async function handleRequest(req, env, deployPlatform) {
   const method = req.method;
 
   log("info", `request url: ${JSON.stringify(url)}`);
+  log("info", `client ip: ${clientIp}`);
 
   function handleHomepage() {
     log("log", "Accessed homepage with repository information");
@@ -4172,12 +4173,18 @@ async function handleRequest(req, env, deployPlatform) {
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
-    return handleRequest(request, env, "cloudflare");
+    // 获取客户端的真实 IP
+    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+
+    return handleRequest(request, env, "cloudflare", clientIp);
   },
 };
 
 // --- Vercel 入口 ---
 export async function vercelHandler(req, res) {
+  // 从请求头获取真实 IP
+  const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+
   const cfReq = new Request(req.url, {
     method: req.method,
     headers: req.headers,
@@ -4187,7 +4194,7 @@ export async function vercelHandler(req, res) {
         : undefined,
   });
 
-  const response = await handleRequest(cfReq, process.env, "vercel");
+  const response = await handleRequest(cfReq, process.env, "vercel", clientIp);
 
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));

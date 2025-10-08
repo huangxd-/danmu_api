@@ -38,6 +38,11 @@ export const onRequest = async (context) => {
     mode: request.mode
   });
 
+  // 获取客户端真实 IP
+  const clientIp = request.headers.get('CF-Connecting-IP') ||
+                   request.headers.get('X-Forwarded-For')?.split(',')[0] ||
+                   'unknown';
+
   // 传递修改后的 request 和 env 给 handleRequest
-  return await handleRequest(modifiedRequest, env);
+  return await handleRequest(modifiedRequest, env, "edgeone", clientIp);
 };
