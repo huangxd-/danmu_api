@@ -42,10 +42,10 @@ export const onRequest = async (context) => {
   let clientIp = 'unknown';
 
   // 尝试从 EO-Connecting-IP 获取客户端 IP
-  clientIp = request.headers['EO-Connecting-IP'];
+  clientIp = request.headers['eo-connecting-ip'];
   if (!clientIp) {
     // 如果 EO-Connecting-IP 不存在，尝试从 X-Forwarded-For 获取
-    const forwardedFor = request.headers['X-Forwarded-For'];
+    const forwardedFor = request.headers['x-forwarded-for'];
     if (forwardedFor) {
       // X-Forwarded-For 可能包含多个 IP 地址，选择第一个（最原始客户端 IP）
       clientIp = forwardedFor.split(',')[0].trim();
