@@ -12,6 +12,8 @@ const MAX_ANIMES = 100;
 const vodAllowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
 const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", "hanjutv", "bahamut"];
 let envs = {};
+// 定义一个全局变量来记录每个 IP 地址的请求历史
+const requestHistory = new Map();
 
 // =====================
 // 环境变量处理
@@ -4151,6 +4153,35 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
+    // 获取当前时间戳（单位：毫秒）
+    const currentTime = Date.now();
+    const oneMinute = 60 * 1000;  // 1分钟 = 60000 毫秒
+
+    // 检查该 IP 地址的历史请求
+    if (!requestHistory.has(clientIp)) {
+      // 如果该 IP 地址没有请求历史，初始化一个空队列
+      requestHistory.set(clientIp, []);
+    }
+
+    const history = requestHistory.get(clientIp);
+
+    // 过滤掉已经超出 1 分钟的请求
+    const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
+
+    // 将当前请求的时间戳添加到该 IP 地址的请求历史队列中
+    recentRequests.push(currentTime);
+
+    // 更新该 IP 地址的请求历史
+    requestHistory.set(clientIp, recentRequests);
+
+    // 如果最近的请求数量大于 3 次，则限制请求
+    if (recentRequests.length > 3) {
+      return jsonResponse({
+        status: 429, // HTTP 429 Too Many Requests
+        body: `1分钟内同一IP只能请求弹幕3次，请稍后重试，当前次数为${recentRequests.length}`,
+      });
+    }
+
     return getComment(path);
   }
 
