@@ -38,10 +38,19 @@ export const onRequest = async (context) => {
     mode: request.mode
   });
 
-  // 获取客户端真实 IP
-  const clientIp = request.headers.get('CF-Connecting-IP') ||
-                   request.headers.get('X-Forwarded-For')?.split(',')[0] ||
-                   'unknown';
+  // 获取客户端 IP 地址
+  let clientIp = 'unknown';
+
+  // 尝试从 EO-Connecting-IP 获取客户端 IP
+  clientIp = request.headers.get('EO-Connecting-IP');
+  if (!clientIp) {
+    // 如果 EO-Connecting-IP 不存在，尝试从 X-Forwarded-For 获取
+    const forwardedFor = request.headers.get('X-Forwarded-For');
+    if (forwardedFor) {
+      // X-Forwarded-For 可能包含多个 IP 地址，选择第一个（最原始客户端 IP）
+      clientIp = forwardedFor.split(',')[0].trim();
+    }
+  }
 
   // 传递修改后的 request 和 env 给 handleRequest
   return await handleRequest(modifiedRequest, env, "edgeone", clientIp);
