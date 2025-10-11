@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.3.0";
+const VERSION = "1.3.1";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -3451,7 +3451,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
 }
 
 async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
-  const cateMap = {1: "韩剧", 2: "综艺", 3: "电影", 5: "美剧"}
+  const cateMap = {1: "韩剧", 2: "综艺", 3: "电影", 4: "日剧", 5: "美剧", 6: "泰剧", 7: "国产剧"}
 
   function getCategory(key) {
     return cateMap[key] || "其他";
