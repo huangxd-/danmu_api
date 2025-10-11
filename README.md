@@ -297,7 +297,7 @@ danmu_api/
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
 - 如果想更换vod站点，请添加环境变量`VOD_SERVER`，示例`https://www.caiji.cyou`。
-- 推荐vercel和claw部署，cloudflare/edgeone不稳定，当然最稳定还是自己本地docker部署最佳。
+- 推荐vercel部署，cloudflare/edgeone/claw不稳定，当然最稳定还是自己本地docker部署最佳。
 - /api/v2/comment接口1分钟内同一IP只能请求三次。
 
 ### 关联项目
