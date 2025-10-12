@@ -253,11 +253,11 @@ function resolveRedisToken(env) {
 
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
-    // 检查是否已存在相同的 url
-    const exists = episodeIds.some(episode => episode.url === url);
-    if (exists) {
-        log("log", `URL ${url} already exists in episodeIds, skipping addition.`);
-        return null; // 返回 null 表示未添加
+    // 检查是否已存在相同的 url 和 title
+    const existingEpisode = episodeIds.find(episode => episode.url === url && episode.title === title);
+    if (existingEpisode) {
+        log("log", `Episode with URL ${url} and title ${title} already exists in episodeIds, returning existing episode.`);
+        return existingEpisode; // 返回已存在的 episode
     }
 
     // 自增 episodeNum 并使用作为 id
@@ -4194,7 +4194,7 @@ async function getComment(path) {
     danmus = await fetchYouku(url);
   }
 
-  // 请求人人弹幕
+  // 请求其他平台弹幕
   const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
   if (!urlPattern.test(url)) {
     if (plat === "renren") {
