@@ -221,8 +221,8 @@ LogVar 弹幕 API 服务器
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
-| VOD_SERVER      | 【可选】vod查询站点，不填默认为`https://www.caiji.cyou`       |
-| VOD_SERVER2      | 【可选】vod2查询站点，如果想开启vod2源，请先填写VOD_SERVER2源地址，如`https://zy.xmm.hk`，并在SOURCE_ORDER环境变量中增加`vod2`       |
+| VOD_SERVER      | 【可选】vod查询站点，不填默认为`https://gctf.tfdh.top`       |
+| VOD_SERVER2      | 【可选】vod2查询站点，如果想开启vod2源，请先填写VOD_SERVER2源地址，如`https://www.caiji.cyou`、`https://zy.xmm.hk`，并在SOURCE_ORDER环境变量中增加`vod2`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`vod,360,renren,hanjutv`，表示vod数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `vod,vod2,360,renren,hanjutv,bahamut`       |
