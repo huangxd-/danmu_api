@@ -3618,6 +3618,20 @@ async function searchAnime(url) {
   });
 }
 
+function filterSameEpisodeTitle(filteredTmpEpisodes) {
+    const filteredEpisodes = filteredTmpEpisodes.filter((episode, index, episodes) => {
+        const filterEp = extractEpTitle(episode.episodeTitle);
+        // 如果没有提取到标题，返回 true 保留该 episode
+        if (!filterEp) return true;
+        // 查找当前 episode 标题是否在之前的 episodes 中出现过
+        return !episodes.slice(0, index).some(prevEpisode => {
+            const prevFilterEp = extractEpTitle(prevEpisode.episodeTitle);
+            return prevFilterEp === filterEp;
+        });
+    });
+    return filteredEpisodes;
+}
+
 async function matchAniAndEp(season, episode, searchData, title, req, platform) {
   let resAnime;
   let resEpisode;
@@ -3630,11 +3644,14 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform) 
         const bangumiData = await bangumiRes.json();
         log("info", "判断剧集", bangumiData);
 
-        // 过滤符合条件的 episodes
-        const filteredEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+        // 过滤集标题正则条件的 episode
+        const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
           const filterEp = extractEpTitle(episode.episodeTitle);
           return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
         });
+
+        // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
+        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
 
         if (platform) {
           const firstIndex = filteredEpisodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
@@ -3763,11 +3780,14 @@ async function matchAnime(url, req) {
         const bangumiData = await bangumiRes.json();
         log("info", bangumiData);
         if (season && episode) {
-          // 过滤符合条件的 episodes
-          const filteredEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+          // 过滤集标题正则条件的 episode
+          const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
             const filterEp = extractEpTitle(episode.episodeTitle);
             return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
           });
+
+          // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
+          const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
 
           if (filteredEpisodes.length >= episode) {
             resEpisode = filteredEpisodes[episode-1];
