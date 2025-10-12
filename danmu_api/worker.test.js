@@ -3,7 +3,8 @@ const assert = require('node:assert').strict;
 const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost,
   hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail,
-  bahamutSearch, getBahamutEpisodes, getBahamutComments} = require('./worker');
+  bahamutSearch, getBahamutEpisodes, getBahamutComments, pingRedis, getRedisKey,
+  setRedisKey, setRedisKeyWithExpiry} = require('./worker');
 
 // Mock Request class for testing
 class MockRequest {
@@ -188,5 +189,26 @@ test('worker.js API endpoints', async (t) => {
   //   // 验证响应状态
   //   assert.equal(res.status, 200);
   //   assert.deepEqual(responseBody.success, true);
+  // });
+
+  // 测试upstash redis
+  // await t.test('GET redis pingRedis', async () => {
+  //   const res = await pingRedis();
+  //   assert(res.result === "PONG", `Expected res.result === "PONG", but got ${res.result}`);
+  // });
+
+  // await t.test('SET redis setRedisKey', async () => {
+  //   const res = await setRedisKey('mykey', 'Hello World');
+  //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
+  // });
+
+  // await t.test('GET redis getRedisKey', async () => {
+  //   const res = await getRedisKey('mykey');
+  //   assert(res.result.toString() === "\"Hello World\"", `Expected res.result === "\"Hello World\"", but got ${res.result}`);
+  // });
+
+  // await t.test('SET redis setRedisKeyWithExpiry', async () => {
+  //   const res = await setRedisKeyWithExpiry('expkey', 'Temporary Value', 10);
+  //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
   // });
 });

@@ -6,7 +6,7 @@ let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
 
 // 日志存储，最多保存 500 行
-const logBuffer = [];
+let logBuffer = [];
 const MAX_LOGS = 500;
 const MAX_ANIMES = 100;
 const vodAllowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq"];
@@ -14,6 +14,8 @@ const allowedPlatforms = ["qiyi", "bilibili1", "imgo", "youku", "qq", "renren", 
 let envs = {};
 // 定义一个全局变量来记录每个 IP 地址的请求历史
 const requestHistory = new Map();
+// redis是否生效
+let redisValid = false;
 
 // =====================
 // 环境变量处理
@@ -223,6 +225,26 @@ function resolveProxyUrl(env) {
   if (env && env.PROXY_URL) return env.PROXY_URL;         // Cloudflare Workers
   if (typeof process !== "undefined" && process.env?.PROXY_URL) return process.env.PROXY_URL; // Vercel / Node
   return DEFAULT_PROXY_URL;
+}
+
+const DEFAULT_UPSTASH_REDIS_REST_URL = ""; // 默认 upstash redis url
+let redisUrl = DEFAULT_UPSTASH_REDIS_REST_URL;
+
+// 这里既支持 Cloudflare env，也支持 Node process.env
+function resolveRedisUrl(env) {
+  if (env && env.UPSTASH_REDIS_REST_URL) return env.UPSTASH_REDIS_REST_URL;         // Cloudflare Workers
+  if (typeof process !== "undefined" && process.env?.UPSTASH_REDIS_REST_URL) return process.env.UPSTASH_REDIS_REST_URL; // Vercel / Node
+  return DEFAULT_UPSTASH_REDIS_REST_URL;
+}
+
+const DEFAULT_UPSTASH_REDIS_REST_TOKEN = ""; // 默认 upstash redis url
+let redisToken = DEFAULT_UPSTASH_REDIS_REST_TOKEN;
+
+// 这里既支持 Cloudflare env，也支持 Node process.env
+function resolveRedisToken(env) {
+  if (env && env.UPSTASH_REDIS_REST_TOKEN) return env.UPSTASH_REDIS_REST_TOKEN;         // Cloudflare Workers
+  if (typeof process !== "undefined" && process.env?.UPSTASH_REDIS_REST_TOKEN) return process.env.UPSTASH_REDIS_REST_TOKEN; // Vercel / Node
+  return DEFAULT_UPSTASH_REDIS_REST_TOKEN;
 }
 
 // =====================
@@ -505,6 +527,127 @@ async function httpPost(url, body, options = {}) {
     }
     throw error;
   }
+}
+
+// =====================
+// upstash redis 读写请求 （先简单实现，不加锁）
+// =====================
+
+// 使用 GET 发送简单命令（如 PING 检查连接）
+async function pingRedis() {
+  const url = `${redisUrl}/ping`;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`
+      }
+    });
+    return await response.json(); // 预期: ["PONG"]
+  } catch (error) {
+    log("error", `[redis] 请求失败:`, error.message);
+    log("error", '- 错误类型:', error.name);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+  }
+}
+
+// 使用 GET 发送 GET 命令（读取键值）
+async function getRedisKey(key) {
+  const url = `${redisUrl}/get/${key}`;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`
+      }
+    });
+    return await response.json(); // 预期: ["value"] 或 null
+  } catch (error) {
+    log("error", `[redis] 请求失败:`, error.message);
+    log("error", '- 错误类型:', error.name);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+  }
+}
+
+// 使用 POST 发送 SET 命令（写入键值，值在请求体中）
+async function setRedisKey(key, value) {
+  const url = `${redisUrl}/set/${key}`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(value)  // 值作为 body 发送，支持 JSON 或字符串
+    });
+    return await response.json();  // 预期: ["OK"]
+  } catch (error) {
+    log("error", `[redis] 请求失败:`, error.message);
+    log("error", '- 错误类型:', error.name);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+  }
+}
+
+// 复杂命令，如 SETEX（设置键值并过期，使用查询参数）
+async function setRedisKeyWithExpiry(key, value, expirySeconds) {
+  const url = `${redisUrl}/set/${key}?EX=${expirySeconds}`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(value)
+    });
+    return await response.json();
+  } catch (error) {
+    log("error", `[redis] 请求失败:`, error.message);
+    log("error", '- 错误类型:', error.name);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+  }
+}
+
+// 从redis获取变量数据
+async function getCaches() {
+    if (animes.length === 0) {
+        log("info", 'getCaches start.');
+        const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer] = await Promise.all([
+          getRedisKey('animes'),
+          getRedisKey('episodeIds'),
+          getRedisKey('episodeNum'),
+          getRedisKey('logBuffer')
+        ]);
+
+        animes = kv_animes.result ? JSON.parse(kv_animes.result) : animes;
+        episodeIds = kv_episodeIds.result ? JSON.parse(kv_episodeIds.result) : episodeIds;
+        episodeNum = kv_episodeNum.result ? JSON.parse(kv_episodeNum.result) : episodeNum;
+        logBuffer = kv_logBuffer.result ? JSON.parse(kv_logBuffer.result) : logBuffer;
+    }
+}
+
+// 存储更新后的变量到redis
+async function updateCaches() {
+    log("info", 'updateCaches start.');
+    await Promise.all([
+      setRedisKey('animes', animes),
+      setRedisKey('episodeIds', episodeIds),
+      setRedisKey('episodeNum', episodeNum),
+      setRedisKey('logBuffer', logBuffer)
+    ]);
 }
 
 // =====================
@@ -3631,6 +3774,11 @@ async function searchAnime(url) {
     log("error", "发生错误:", error);
   }
 
+  // 如果有新的anime获取到，则更新redis
+  if (redisValid && curAnimes.length !== 0) {
+      await updateCaches();
+  }
+
   return jsonResponse({
     errorCode: 0,
     success: true,
@@ -4091,6 +4239,23 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["groupMinute"] = groupMinute;
   proxyUrl = resolveProxyUrl(env);
   envs["proxyUrl"] = proxyUrl;
+  redisUrl = resolveRedisUrl(env);
+  envs["redisUrl"] = encryptStr(redisUrl);
+  redisToken = resolveRedisToken(env);
+  envs["redisToken"] = encryptStr(redisToken);
+  envs["redisValid"] = redisValid;
+
+  // 测试redis是否可用
+  if (!redisValid && redisUrl && redisToken) {
+    const res = await pingRedis();
+    if (res && res.result && res.result === "PONG") {
+        redisValid = true;
+        envs["redisValid"] = redisValid;
+    }
+  }
+  if (redisValid) {
+      await getCaches();
+  }
 
   const url = new URL(req.url);
   let path = url.pathname;
@@ -4278,4 +4443,5 @@ export async function vercelHandler(req, res) {
 // 为了测试导出 handleRequest
 export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
-  getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments};
+  getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments, pingRedis, getRedisKey,
+  setRedisKey, setRedisKeyWithExpiry};
