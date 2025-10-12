@@ -147,10 +147,10 @@ function resolvePlatformOrder(env) {
 const DEFAULT_EPISODE_TITLE_FILTER = "(特别|惊喜|纳凉)?企划|合伙人手记|超前|速览|vlog|reaction|纯享|加更|抢先|抢鲜|预告|花絮|" +
   "特辑|彩蛋|专访|幕后|直播|未播|衍生|番外|会员|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|" +
   "花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|" +
-  "NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|主题曲|背景音乐|OST|音乐MV|歌曲MV|前季回顾|" +
+  "NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|" +
   "剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|抢先看|抢先版|" +
-  "试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|合唱|陪看|MV|高清正片|发布会|.{2,}篇|观察室|上班那点事儿|周top|赛段|直拍|REACTION|" +
-  "VLOG|全纪录|开播|先导|总宣|展演"; // 默认 剧集标题正则过滤
+  "试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|陪看|高清正片|发布会|.{2,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|" +
+  "周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记"; // 默认 剧集标题正则过滤
 let episodeTitleFilter;
 
 // 这里既支持 Cloudflare env，也支持 Node process.env
@@ -601,15 +601,32 @@ async function get360Zongyi(title, entId, site, year) {
         break;
       }
       for (const episodeInfo of episodeList) {
+        // Extract episode number from episodeInfo.name (e.g., "第10期下：地球团熟人局大胆开麦，做晚宴超催泪" -> "10")
+        const epNumMatch = episodeInfo.name.match(/第(\d+)期([上中下])?/) || episodeInfo.period.match(/第(\d+)期([上中下])?/);
+        let epNum = epNumMatch ? epNumMatch[1] : null;
+        if (epNum && epNumMatch[2]) {
+          epNum = epNumMatch[2] === "上" ? `${epNum}.1` :
+                  epNumMatch[2] === "中" ? `${epNum}.2` : `${epNum}.3`;
+        }
+
         links.push({
             "name": episodeInfo.id,
             "url": episodeInfo.url,
-            "title": `【${site}】${title}(${year}) #${episodeInfo.name} ${episodeInfo.period}#`
+            "title": `【${site}】${title}(${year}) #${episodeInfo.name} ${episodeInfo.period}#`,
+            "sort": epNum || episodeInfo.sort || null
         });
       }
 
       log("log", `links.length: ${links.length}`);
     }
+    // Sort links by pubdate numerically
+    links.sort((a, b) => {
+      if (!a.sort || !b.sort) return 0;
+      const aNum = parseFloat(a.sort);
+      const bNum = parseFloat(b.sort);
+      return aNum - bNum;
+    });
+
     return links;
   } catch (error) {
     log("error", "get360Animes error:", {
@@ -3656,6 +3673,7 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform) 
 
         // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
         const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
+        log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
         if (platform) {
           const firstIndex = filteredEpisodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
