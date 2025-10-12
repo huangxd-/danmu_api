@@ -4294,7 +4294,9 @@ async function getComment(path) {
 
   const animeId = findAnimeIdByCommentId(commentId);
   setPreferByAnimeId(animeId);
-  console.log("ttttttttttt lastSelectMap: ", lastSelectMap);
+  if (redisValid && animeId) {
+    await setRedisKey('lastSelectMap', lastSelectMap);
+  }
 
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
