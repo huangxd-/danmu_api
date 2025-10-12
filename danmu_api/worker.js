@@ -3840,12 +3840,12 @@ async function searchAnime(url) {
     log("error", "发生错误:", error);
   }
 
+  storeAnimeIdsToMap(curAnimes, queryTitle);
+
   // 如果有新的anime获取到，则更新redis
   if (redisValid && curAnimes.length !== 0) {
       await updateCaches();
   }
-  
-  storeAnimeIdsToMap(curAnimes, queryTitle);
 
   return jsonResponse({
     errorCode: 0,
@@ -4336,12 +4336,9 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (!redisValid && redisUrl && redisToken) {
     const res = await pingRedis();
     if (res && res.result && res.result === "PONG") {
-        redisValid = true;
-        envs["redisValid"] = redisValid;
+      redisValid = true;
+      envs["redisValid"] = redisValid;
     }
-  }
-  if (redisValid) {
-      await getCaches();
   }
 
   const url = new URL(req.url);
@@ -4350,6 +4347,10 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   log("info", `request url: ${JSON.stringify(url)}`);
   log("info", `client ip: ${clientIp}`);
+
+  if (redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    await getCaches();
+  }
 
   function handleHomepage() {
     log("info", "Accessed homepage with repository information");
