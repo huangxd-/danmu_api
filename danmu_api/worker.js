@@ -579,7 +579,7 @@ async function get360Animes(title) {
 }
 
 // 查询360kan综艺详情
-async function get360Zongyi(entId, site, year) {
+async function get360Zongyi(title, entId, site, year) {
   try {
     let links = [];
     for (let j = 0; j <= 10; j++) {
@@ -601,7 +601,11 @@ async function get360Zongyi(entId, site, year) {
         break;
       }
       for (const episodeInfo of episodeList) {
-        links.push({"name": episodeInfo.id, "url": episodeInfo.url, "title": `【${site}】${episodeInfo.name}(${episodeInfo.period})`});
+        links.push({
+            "name": episodeInfo.id,
+            "url": episodeInfo.url,
+            "title": `【${site}】${title}(${year}) #${episodeInfo.name} ${episodeInfo.period}#`
+        });
       }
 
       log("log", `links.length: ${links.length}`);
@@ -3367,7 +3371,7 @@ async function handle360Animes(animes360, curAnimes) {
             if (vodAllowedPlatforms.includes(site)) {
               const yearLinks = await Promise.all(
                   anime.playlinks_year[site].map(async (year) => {
-                    return await get360Zongyi(anime.id, site, year);
+                    return await get360Zongyi(anime.titleTxt, anime.id, site, year);
                   })
               );
               return yearLinks.flat(); // 将每个年份的子链接合并到一个数组
