@@ -43,22 +43,39 @@ function resolveOtherServer(env) {
   return DEFAULT_OTHER_SERVER;
 }
 
-const DEFAULT_VOD_SERVER = "https://gctf.tfdh.top"; // 默认 vod站点
-let vodServer = DEFAULT_VOD_SERVER;
+const DEFAULT_VOD_SERVERS = "vod@https://www.caiji.cyou"; // 默认 vod站点配置，格式：名称@URL,名称@URL
+let vodServers = [];
 
-function resolveVodServer(env) {
-  if (env && env.VOD_SERVER) return env.VOD_SERVER;         // Cloudflare Workers
-  if (typeof process !== "undefined" && process.env?.VOD_SERVER) return process.env.VOD_SERVER; // Vercel / Node
-  return DEFAULT_VOD_SERVER;
-}
+function resolveVodServers(env) {
+  // 获取配置字符串
+  let vodServersConfig = DEFAULT_VOD_SERVERS;
+  if (env && env.VOD_SERVERS) {
+    vodServersConfig = env.VOD_SERVERS;  // Cloudflare Workers
+  } else if (typeof process !== "undefined" && process.env?.VOD_SERVERS) {
+    vodServersConfig = process.env.VOD_SERVERS;  // Vercel / Node
+  }
 
-const DEFAULT_VOD_SERVER2 = ""; // 默认 vod站点2
-let vodServer2 = DEFAULT_VOD_SERVER2;
+  // 解析配置：支持 "名称@URL,名称@URL" 格式
+  if (!vodServersConfig || vodServersConfig.trim() === "") {
+    return [];
+  }
 
-function resolveVodServer2(env) {
-  if (env && env.VOD_SERVER2) return env.VOD_SERVER2;         // Cloudflare Workers
-  if (typeof process !== "undefined" && process.env?.VOD_SERVER2) return process.env.VOD_SERVER2; // Vercel / Node
-  return DEFAULT_VOD_SERVER2;
+  const servers = vodServersConfig
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map((item, index) => {
+      if (item.includes('@')) {
+        const [name, url] = item.split('@').map(s => s.trim());
+        return { name: name || `vod-${index + 1}`, url };
+      } else {
+        // 没有 @ 符号，自动生成名称
+        return { name: `vod-${index + 1}`, url: item };
+      }
+    })
+    .filter(server => server.url && server.url.length > 0);  // 过滤掉空 URL
+
+  return servers;
 }
 
 const DEFAULT_BILIBILI_COOKIE = ""; // 默认 bilibili cookie
@@ -87,7 +104,7 @@ function resolveYoukuConcurrency(env) {
   return Math.min(DEFAULT_YOUKU_CONCURRENCY, 16);
 }
 
-const DEFAULT_SOURCE_ORDER = "vod,360,renren,hanjutv"; // 默认 源排序
+const DEFAULT_SOURCE_ORDER = "360,vod,renren,hanjutv"; // 默认 源排序
 let sourceOrderArr = [];
 
 function resolveSourceOrder(env, deployPlatform) {
@@ -103,8 +120,8 @@ function resolveSourceOrder(env, deployPlatform) {
     sourceOrder = process.env.SOURCE_ORDER;  // Vercel / Node
   }
 
-  // 解析并校验 sourceOrder
-  const allowedSources = ['vod', 'vod2', '360', 'renren', "hanjutv", "bahamut"];
+  // 解析并校验 sourceOrder（移除 vod2，因为已合并到 vod）
+  const allowedSources = ['360', 'vod', 'renren', "hanjutv", "bahamut"];
 
   // 转换为数组并去除空格，过滤无效项
   const orderArr = sourceOrder
@@ -848,7 +865,7 @@ async function get360Zongyi(title, entId, site, year) {
 }
 
 // 查询vod站点影片信息
-async function getVodAnimes(title, server) {
+async function getVodAnimes(title, server, serverName) {
   try {
     const response = await httpGet(
       `${server}/api.php/provide/vod/?ac=detail&wd=${title}&pg=1`,
@@ -861,23 +878,42 @@ async function getVodAnimes(title, server) {
     );
     // 检查 response.data.list 是否存在且长度大于 0
     if (response && response.data && response.data.list && response.data.list.length > 0) {
-      log("info", `请求 ${vodServer} 成功`);
+      log("info", `请求 ${serverName}(${server}) 成功`);
       const data = response.data;
-      log("info", "vod response: ↓↓↓");
+      log("info", `${serverName} response: ↓↓↓`);
       printFirst200Chars(data);
-      return data.list;
+      return { serverName, list: data.list };
     } else {
-      log("info", `请求 ${vodServer} 成功，但 response.data.list 为空`);
-      return [];
+      log("info", `请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
+      return { serverName, list: [] };
     }
   } catch (error) {
-    log("error", `请求 ${vodServer} 失败:`, {
+    log("error", `请求 ${serverName}(${server}) 失败:`, {
       message: error.message,
       name: error.name,
       stack: error.stack,
     });
+    return { serverName, list: [] };
+  }
+}
+
+// 查询所有vod站点影片信息（并发查询）
+async function getVodAnimesFromAllServers(title, servers) {
+  if (!servers || servers.length === 0) {
     return [];
   }
+
+  // 并发查询所有服务器，使用 allSettled 确保单个服务器失败不影响其他服务器
+  const promises = servers.map(server =>
+    getVodAnimes(title, server.url, server.name)
+  );
+
+  const results = await Promise.allSettled(promises);
+
+  // 过滤出成功的结果，即使某些服务器失败也不影响其他服务器
+  return results
+    .filter(result => result.status === 'fulfilled')
+    .map(result => result.value);
 }
 
 // =====================
@@ -3792,9 +3828,8 @@ async function searchAnime(url) {
     // 根据 sourceOrderArr 动态构建请求数组
     log("info", `Search sourceOrderArr: ${sourceOrderArr}`);
     const requestPromises = sourceOrderArr.map(source => {
-      if (source === "vod") return getVodAnimes(queryTitle, vodServer);
-      if (source === "vod2") return getVodAnimes(queryTitle, vodServer2);
       if (source === "360") return get360Animes(queryTitle);
+      if (source === "vod") return getVodAnimesFromAllServers(queryTitle, vodServers);
       if (source === "renren") return renrenSearch(queryTitle);
       if (source === "hanjutv") return hanjutvSearch(queryTitle);
       if (source === "bahamut") return bahamutSearch(traditionalized(queryTitle));
@@ -3812,19 +3847,22 @@ async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVod, vod2: animesVod2, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut } = resultData;
+    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of sourceOrderArr) {
-      if (key === 'vod') {
-        // 等待处理Vod来源
-        await handleVodAnimes(animesVod, curAnimes, key);
-      } else if (key === 'vod2') {
-        // 等待处理Vod2来源
-        await handleVodAnimes(animesVod2, curAnimes, key);
-      } else if (key === '360') {
+      if (key === '360') {
         // 等待处理360来源
         await handle360Animes(animes360, curAnimes);
+      } else if (key === 'vod') {
+        // 等待处理Vod来源（遍历所有VOD服务器的结果）
+        if (animesVodResults && Array.isArray(animesVodResults)) {
+          for (const vodResult of animesVodResults) {
+            if (vodResult && vodResult.list && vodResult.list.length > 0) {
+              await handleVodAnimes(vodResult.list, curAnimes, vodResult.serverName);
+            }
+          }
+        }
       } else if (key === 'renren') {
         // 等待处理Renren来源
         await handleRenrenAnimes(animesRenren, queryTitle, curAnimes);
@@ -4306,10 +4344,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["token"] = encryptStr(token);
   otherServer = resolveOtherServer(env);
   envs["otherServer"] = otherServer;
-  vodServer = resolveVodServer(env);
-  envs["vodServer"] = vodServer;
-  vodServer2 = resolveVodServer2(env);
-  envs["vodServer2"] = vodServer2;
+  vodServers = resolveVodServers(env);
+  envs["vodServers"] = vodServers.map(s => `${s.name}@${s.url}`).join(',');
   bilibliCookie = resolveBilibiliCookie(env);
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);

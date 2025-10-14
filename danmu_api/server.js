@@ -1,4 +1,13 @@
 // server.js - 智能服务器启动器：根据 Node.js 环境自动选择最优启动模式
+
+// 加载 .env 文件中的环境变量（本地开发时使用）
+try {
+  require('dotenv').config();
+  console.log('[server] .env file loaded successfully');
+} catch (e) {
+  console.log('[server] dotenv not available or .env file not found, using system environment variables');
+}
+
 // 导入 ES module 兼容层（始终加载，但内部会根据需要启用）
 require('./esm-shim');
 
