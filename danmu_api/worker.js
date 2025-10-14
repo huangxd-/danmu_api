@@ -4299,17 +4299,13 @@ async function getComment(path) {
   let danmus = [];
   if (url.includes('.qq.com')) {
     danmus = await fetchTencentVideo(url);
-  }
-  if (url.includes('.iqiyi.com')) {
+  } else if (url.includes('.iqiyi.com')) {
     danmus = await fetchIqiyi(url);
-  }
-  if (url.includes('.mgtv.com')) {
+  } else if (url.includes('.mgtv.com')) {
     danmus = await fetchMangoTV(url);
-  }
-  if (url.includes('.bilibili.com')) {
+  } else if (url.includes('.bilibili.com')) {
     danmus = await fetchBilibili(url);
-  }
-  if (url.includes('.youku.com')) {
+  } else if (url.includes('.youku.com')) {
     danmus = await fetchYouku(url);
   }
 
@@ -4337,6 +4333,81 @@ async function getComment(path) {
   }
 
   return jsonResponse({ count: danmus.length, comments: danmus });
+}
+
+// Extracted function for POST /api/v2/comment/by-url
+async function getCommentByUrl(req) {
+  try {
+    // 获取请求体
+    const body = await req.json();
+
+    // 验证请求体是否有效
+    if (!body || !body.videoUrl) {
+      log("error", "Missing videoUrl parameter in request body");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Missing videoUrl parameter", count: 0, comments: [] },
+        400
+      );
+    }
+
+    const videoUrl = body.videoUrl.trim();
+
+    // 验证URL格式
+    if (!videoUrl.startsWith('http')) {
+      log("error", "Invalid videoUrl format");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Invalid videoUrl format", count: 0, comments: [] },
+        400
+      );
+    }
+
+    log("info", `Processing comment request for URL: ${videoUrl}`);
+
+    // 处理优酷302场景
+    let url = videoUrl;
+    if (url.includes("youku.com/video?vid")) {
+      url = convertYoukuUrl(url);
+    }
+
+    log("info", "开始从本地请求弹幕...", url);
+    let danmus = [];
+
+    // 根据URL域名判断平台并获取弹幕
+    if (url.includes('.qq.com')) {
+      danmus = await fetchTencentVideo(url);
+    } else if (url.includes('.iqiyi.com')) {
+      danmus = await fetchIqiyi(url);
+    } else if (url.includes('.mgtv.com')) {
+      danmus = await fetchMangoTV(url);
+    } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
+      danmus = await fetchBilibili(url);
+    } else if (url.includes('.youku.com')) {
+      danmus = await fetchYouku(url);
+    } else {
+      // 如果不是已知平台，尝试第三方弹幕服务器
+      const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
+      if (urlPattern.test(url)) {
+        danmus = await fetchOtherServer(url);
+      }
+    }
+
+    log("info", `Successfully fetched ${danmus.length} comments from URL`);
+
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      count: danmus.length,
+      comments: danmus
+    });
+  } catch (error) {
+    // 处理 JSON 解析错误或其他异常
+    log("error", `Failed to process comment by URL request: ${error.message}`);
+    return jsonResponse(
+      { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
+      500
+    );
+  }
 }
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
@@ -4482,6 +4553,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return getBangumi(path);
   }
 
+  // POST /api/v2/comment/by-url
+  if (path === "/api/v2/comment/by-url" && method === "POST") {
+    return getCommentByUrl(req);
+  }
+
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
     // 获取当前时间戳（单位：毫秒）
@@ -4565,7 +4641,7 @@ export async function vercelHandler(req, res) {
 }
 
 // 为了测试导出 handleRequest
-export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
+export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, getCommentByUrl, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
   getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments, pingRedis, getRedisKey,
   setRedisKey, setRedisKeyWithExpiry};
