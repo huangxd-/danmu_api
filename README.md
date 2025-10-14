@@ -34,6 +34,7 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?withRelated=true&chConvert=1`：获取指定弹幕评论，支持返回相关评论和字符转换。
+  - `POST /api/v2/comment/by-url`：通过视频URL直接获取弹幕。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Cloudflare 一键部署和 Docker 一键启动。
@@ -73,10 +74,11 @@ LogVar 弹幕 API 服务器
    使用 Postman 或 curl 测试：
    - `GET http://{ip}:9321/87654321`
    - `GET http://{ip}:9321/87654321/api/v2/search/anime?keyword=生万物`
-   - `POST http://{ip}:9321/87654321/api/v2/api/v2/match`
+   - `POST http://{ip}:9321/87654321/api/v2/match`
    - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
    - `GET http://{ip}:9321/87654321/api/v2/comment/1?withRelated=true&chConvert=1`
+   - `POST http://{ip}:9321/87654321/api/v2/comment/by-url`
    - `GET http://{ip}:9321/87654321/api/logs`
 
 ## 使用 Docker 运行
@@ -224,8 +226,7 @@ LogVar 弹幕 API 服务器
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
-| VOD_SERVER      | 【可选】vod查询站点，不填默认为`https://gctf.tfdh.top`       |
-| VOD_SERVER2      | 【可选】vod2查询站点，如果想开启vod2源，请先填写VOD_SERVER2源地址，如`https://www.caiji.cyou`、`https://zy.xmm.hk`，并在SOURCE_ORDER环境变量中增加`vod2`       |
+| VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`，不填默认为`vod@https://www.caiji.cyou`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`vod,360,renren,hanjutv`，表示vod数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `vod,vod2,360,renren,hanjutv,bahamut`       |
@@ -301,7 +302,7 @@ danmu_api/
 - 运行 Docker 容器时，需通过 `-e TOKEN=87654321` 传递 `TOKEN` 环境变量。
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
-- 如果想更换vod站点，请添加环境变量`VOD_SERVER`，示例`https://www.caiji.cyou`。
+- 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`（支持多个服务器并发查询）。
 - 推荐vercel部署，cloudflare/edgeone/claw不稳定，当然最稳定还是自己本地docker部署最佳。
 - /api/v2/comment接口1分钟内同一IP只能请求三次。
 
