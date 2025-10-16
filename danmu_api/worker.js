@@ -3825,6 +3825,56 @@ async function searchAnime(url) {
 
   const curAnimes = [];
 
+  // 链接弹幕解析
+  const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}(:\d+)?(\/[^\s]*)?$/;
+  if (urlRegex.test(queryTitle)) {
+    const tmpAnime = {
+      "animeId": 111,
+      "bangumiId": "string",
+      "animeTitle": queryTitle,
+      "type": "type",
+      "typeDescription": "string",
+      "imageUrl": "string",
+      "startDate": "2025-08-08T13:25:11.189Z",
+      "episodeCount": 1,
+      "rating": 0,
+      "isFavorited": true
+    };
+
+    let platform = "all";
+    if (queryTitle.includes(".qq.com")) {
+      platform = "qq";
+    } else if (queryTitle.includes(".iqiyi.com")) {
+      platform = "qiyi";
+    } else if (queryTitle.includes(".mgtv.com")) {
+      platform = "imgo";
+    } else if (queryTitle.includes(".youku.com")) {
+      platform = "youku";
+    } else if (queryTitle.includes(".bilibili.com")) {
+      platform = "bilibili1";
+    }
+
+    const links = [{
+      "name": "手动解析链接弹幕",
+      "url": queryTitle,
+      "title": `【${platform}】 #${queryTitle}#`
+    }];
+    curAnimes.push(tmpAnime);
+    const exists = animes.some(existingAnime => existingAnime.animeId === tmpAnime.animeId);
+    if (!exists) {
+      const transformedAnimeCopy = {...tmpAnime, links: links};
+      addAnime(transformedAnimeCopy);
+    }
+    if (animes.length > MAX_ANIMES) removeEarliestAnime();
+
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: curAnimes,
+    });
+  }
+
   try {
     // 根据 sourceOrderArr 动态构建请求数组
     log("info", `Search sourceOrderArr: ${sourceOrderArr}`);
