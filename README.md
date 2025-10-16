@@ -39,6 +39,7 @@ LogVar 弹幕 API 服务器
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Cloudflare 一键部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
+- **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔播放链接可获取弹幕，如`senplayer`。
 
 ## 前置条件
 - Node.js（v18.0.0 或更高版本；理论兼容更低版本，请自行测试）
@@ -212,6 +213,7 @@ LogVar 弹幕 API 服务器
 <img src="https://i.mji.rip/2025/09/14/80aa5205d49a767447f61938f2dada20.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/9fdf945fb247994518042691f60d7849.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
+4. 现已支持手动搜索标题输入爱优腾芒哔播放链接获取弹幕。
 
 > 注意：
 >
@@ -229,7 +231,7 @@ LogVar 弹幕 API 服务器
 | VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`，不填默认为`vod@https://www.caiji.cyou`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
-| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`vod,360,renren,hanjutv`，表示vod数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `vod,vod2,360,renren,hanjutv,bahamut`       |
+| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`vod,360,renren,hanjutv`，表示vod数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `vod,360,renren,hanjutv,bahamut`       |
 | PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, renren, hanjutv, bahamut`  |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
 | BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，示例如下       |
