@@ -1,6 +1,12 @@
 # 使用官方 Node.js 22 轻量版镜像作为基础镜像
 FROM node:22-alpine
 
+# 设置时区为上海
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apk del tzdata
+
 # 设置工作目录
 WORKDIR /app/danmu_api
 
