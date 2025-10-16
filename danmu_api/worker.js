@@ -267,6 +267,22 @@ function resolveRedisToken(env) {
   return DEFAULT_UPSTASH_REDIS_REST_TOKEN;
 }
 
+// 限流配置：时间窗口内最大请求次数（默认 3，0表示不限流）
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 3;
+let rateLimitMaxRequests = DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+
+function resolveRateLimitMaxRequests(env) {
+  if (env && env.RATE_LIMIT_MAX_REQUESTS) {
+    const n = parseInt(env.RATE_LIMIT_MAX_REQUESTS, 10);
+    if (!Number.isNaN(n) && n >= 0) return n;
+  }
+  if (typeof process !== "undefined" && process.env?.RATE_LIMIT_MAX_REQUESTS) {
+    const n = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10);
+    if (!Number.isNaN(n) && n >= 0) return n;
+  }
+  return DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
@@ -4279,7 +4295,7 @@ async function getComment(path) {
   const commentId = parseInt(path.split("/").pop());
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
-  let plat = (title.match(/【(.*?)】/) || [null])[0]?.replace(/[【】]/g, '');
+  let plat = title ? (title.match(/【(.*?)】/) || [null])[0]?.replace(/[【】]/g, '') : null;
   log("info", "comment url...", url);
   log("info", "comment title...", title);
   log("info", "comment platform...", plat);
@@ -4431,6 +4447,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["blockedWords"] = blockedWords;
   groupMinute = resolveGroupMinute(env);
   envs["groupMinute"] = groupMinute;
+  rateLimitMaxRequests = resolveRateLimitMaxRequests(env);
+  envs["rateLimitMaxRequests"] = rateLimitMaxRequests;
   proxyUrl = resolveProxyUrl(env);
   envs["proxyUrl"] = proxyUrl;
   redisUrl = resolveRedisUrl(env);
@@ -4560,34 +4578,44 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
-    // 获取当前时间戳（单位：毫秒）
-    const currentTime = Date.now();
-    const oneMinute = 60 * 1000;  // 1分钟 = 60000 毫秒
+    // 限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
+    if (rateLimitMaxRequests > 0) {
+      // 获取当前时间戳（单位：毫秒）
+      const currentTime = Date.now();
+      const oneMinute = 60 * 1000;  // 1分钟 = 60000 毫秒
 
-    // 检查该 IP 地址的历史请求
-    if (!requestHistory.has(clientIp)) {
-      // 如果该 IP 地址没有请求历史，初始化一个空队列
-      requestHistory.set(clientIp, []);
+      // 检查该 IP 地址的历史请求
+      if (!requestHistory.has(clientIp)) {
+        // 如果该 IP 地址没有请求历史，初始化一个空队列
+        requestHistory.set(clientIp, []);
+      }
+
+      const history = requestHistory.get(clientIp);
+
+      // 过滤掉已经超出 1 分钟的请求
+      const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
+
+      // 如果最近的请求数量大于等于配置的限制次数，则限制请求
+      if (recentRequests.length >= rateLimitMaxRequests) {
+        // 清理过期记录（如果为空则删除键，避免内存泄漏）
+        if (recentRequests.length === 0) {
+          requestHistory.delete(clientIp);
+        } else {
+          requestHistory.set(clientIp, recentRequests);
+        }
+
+        return jsonResponse({
+          status: 429, // HTTP 429 Too Many Requests
+          body: `1分钟内同一IP只能请求弹幕${rateLimitMaxRequests}次，请稍后重试`,
+        });
+      }
+
+      // 将当前请求的时间戳添加到该 IP 地址的请求历史队列中
+      recentRequests.push(currentTime);
+
+      // 更新该 IP 地址的请求历史
+      requestHistory.set(clientIp, recentRequests);
     }
-
-    const history = requestHistory.get(clientIp);
-
-    // 过滤掉已经超出 1 分钟的请求
-    const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
-
-    // 如果最近的请求数量大于等于 3 次，则限制请求
-    if (recentRequests.length >= 3) {
-      return jsonResponse({
-        status: 429, // HTTP 429 Too Many Requests
-        body: `1分钟内同一IP只能请求弹幕3次，请稍后重试`,
-      });
-    }
-
-    // 将当前请求的时间戳添加到该 IP 地址的请求历史队列中
-    recentRequests.push(currentTime);
-
-    // 更新该 IP 地址的请求历史
-    requestHistory.set(clientIp, recentRequests);
 
     return getComment(path);
   }
