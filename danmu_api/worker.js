@@ -3426,7 +3426,12 @@ function log(level, ...args) {
   const message = args
     .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : arg))
     .join(" ");
-  const timestamp = new Date().toISOString();
+
+  // 获取上海时区时间(UTC+8)
+  const now = new Date();
+  const shanghaiTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  const timestamp = shanghaiTime.toISOString().replace('Z', '+08:00');
+
   logBuffer.push({ timestamp, level, message });
   if (logBuffer.length > MAX_LOGS) logBuffer.shift();
   console[level](...args);
