@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.3.2";
+const VERSION = "1.3.3";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -838,7 +838,7 @@ async function get360Zongyi(title, entId, site, year) {
         links.push({
             "name": episodeInfo.id,
             "url": episodeInfo.url,
-            "title": `【${site}】${title}(${year}) #${episodeInfo.name} ${episodeInfo.period}#`,
+            "title": `【${site}】 #${episodeInfo.name} ${episodeInfo.period}#`,
             "sort": epNum || episodeInfo.sort || null
         });
       }
@@ -3571,7 +3571,7 @@ async function handleVodAnimes(animesVod, curAnimes, key) {
         links.push({
           "name": count,
           "url": epInfo[1],
-          "title": `【${platform}】${anime.vod_name}(${anime.vod_year}) #${epInfo[0]}#`
+          "title": `【${platform}】 #${epInfo[0]}#`
         });
       }
     }
@@ -3623,7 +3623,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": i + 1,
             "url": item.url,
-            "title": `【${anime.seriesSite}】${anime.titleTxt}(${anime.year}) #${i + 1}#`
+            "title": `【${anime.seriesSite}】 #${i + 1}#`
           });
         }
       }
@@ -3682,7 +3682,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
         links.push({
           "name": ep.episodeIndex,
           "url": ep.episodeId,
-          "title": `【${ep.provider}】${anime.title}(${anime.year}) #${ep.title}#`
+          "title": `【${ep.provider}】 #${ep.title}#`
         });
       }
 
@@ -3735,7 +3735,7 @@ async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
         links.push({
           "name": ep.title,
           "url": ep.pid,
-          "title": `【hanjutv】${anime.name}(${new Date(anime.updateTime).getFullYear()}) #${epTitle}#`
+          "title": `【hanjutv】 #${epTitle}#`
         });
       }
 
@@ -3783,7 +3783,7 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
         links.push({
           "name": ep.episode,
           "url": ep.videoSn.toString(),
-          "title": `【bahamut】${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]}) #${epTitle}#`
+          "title": `【bahamut】 #${epTitle}#`
         });
       }
 
