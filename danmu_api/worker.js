@@ -2316,11 +2316,12 @@ async function fetchYouku(inputUrl) {
             content: "",
           };
           content.timepoint = danmu.playat / 1000;
-          if (danmu.propertis?.color) {
-            content.color = JSON.parse(danmu.propertis).color;
+          const prop = JSON.parse(danmu.propertis)
+          if (prop?.color) {
+            content.color = prop.color;
           }
-          if (danmu.propertis?.pos) {
-            const pos = JSON.parse(danmu.propertis).pos;
+          if (prop?.pos) {
+            const pos = prop.pos;
             if (pos === 1) content.ct = 5;
             else if (pos === 2) content.ct = 4;
           }
