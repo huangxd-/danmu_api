@@ -1811,46 +1811,15 @@ async function getTencentEpisodes(cid) {
       }
     }
 
-    if (tabs.length === 0) {
-      log("info", "[Tencent] 未找到分页信息");
-      return [];
-    }
-
-    log("info", `[Tencent] 找到 ${tabs.length} 个分页`);
-
     // 获取所有分页的分集
     const allEpisodes = [];
-    for (const tab of tabs) {
-      if (!tab.page_context) continue;
 
-      const tabPayload = {
-        has_cache: 1,
-        page_params: {
-          req_from: "web_vsite",
-          page_id: "vsite_episode_list",
-          page_type: "detail_operation",
-          id_type: "1",
-          page_size: "",
-          cid: cid,
-          vid: "",
-          lid: "",
-          page_num: "",
-          page_context: tab.page_context,
-          detail_page_type: "1"
-        }
-      };
+    if (tabs.length === 0) {
+      log("info", "[Tencent] 未找到分页信息,尝试从初始响应中提取分集");
 
-      const tabResponse = await httpPost(episodesUrl, JSON.stringify(tabPayload), { headers });
-
-      if (!tabResponse || !tabResponse.data) continue;
-
-      const tabData = typeof tabResponse.data === "string" ? JSON.parse(tabResponse.data) : tabResponse.data;
-
-      if (tabData.ret !== 0 || !tabData.data) continue;
-
-      // 提取分集
-      if (tabData.data.module_list_datas) {
-        for (const moduleListData of tabData.data.module_list_datas) {
+      // 尝试直接从第一次响应中提取分集(单页情况)
+      if (data.data && data.data.module_list_datas) {
+        for (const moduleListData of data.data.module_list_datas) {
           for (const moduleData of moduleListData.module_datas) {
             if (moduleData.item_data_lists && moduleData.item_data_lists.item_datas) {
               for (const item of moduleData.item_data_lists.item_datas) {
@@ -1860,6 +1829,64 @@ async function getTencentEpisodes(cid) {
                     title: item.item_params.title,
                     unionTitle: item.item_params.union_title || item.item_params.title
                   });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (allEpisodes.length === 0) {
+        log("info", "[Tencent] 初始响应中也未找到分集信息");
+        return [];
+      }
+
+      log("info", `[Tencent] 从初始响应中提取到 ${allEpisodes.length} 集`);
+    } else {
+      log("info", `[Tencent] 找到 ${tabs.length} 个分页`);
+
+      // 获取所有分页的分集
+      for (const tab of tabs) {
+        if (!tab.page_context) continue;
+
+        const tabPayload = {
+          has_cache: 1,
+          page_params: {
+            req_from: "web_vsite",
+            page_id: "vsite_episode_list",
+            page_type: "detail_operation",
+            id_type: "1",
+            page_size: "",
+            cid: cid,
+            vid: "",
+            lid: "",
+            page_num: "",
+            page_context: tab.page_context,
+            detail_page_type: "1"
+          }
+        };
+
+        const tabResponse = await httpPost(episodesUrl, JSON.stringify(tabPayload), { headers });
+
+        if (!tabResponse || !tabResponse.data) continue;
+
+        const tabData = typeof tabResponse.data === "string" ? JSON.parse(tabResponse.data) : tabResponse.data;
+
+        if (tabData.ret !== 0 || !tabData.data) continue;
+
+        // 提取分集
+        if (tabData.data.module_list_datas) {
+          for (const moduleListData of tabData.data.module_list_datas) {
+            for (const moduleData of moduleListData.module_datas) {
+              if (moduleData.item_data_lists && moduleData.item_data_lists.item_datas) {
+                for (const item of moduleData.item_data_lists.item_datas) {
+                  if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
+                    allEpisodes.push({
+                      vid: item.item_params.vid,
+                      title: item.item_params.title,
+                      unionTitle: item.item_params.union_title || item.item_params.title
+                    });
+                  }
                 }
               }
             }
