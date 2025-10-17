@@ -470,13 +470,21 @@ function getPreferAnimeId(title) {
 async function httpGet(url, options) {
   log("info", `[iOS模拟] HTTP GET: ${url}`);
 
+  // 设置超时时间（默认5秒）
+  const timeout = parseInt(process.env.VOD_REQUEST_TIMEOUT || '5000');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
   try {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         ...options.headers,
-      }
+      },
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -559,6 +567,17 @@ async function httpGet(url, options) {
     };
 
   } catch (error) {
+    clearTimeout(timeoutId);
+
+    // 检查是否是超时错误
+    if (error.name === 'AbortError') {
+      log("error", `[iOS模拟] 请求超时:`, error.message);
+      log("error", '详细诊断:');
+      log("error", '- URL:', url);
+      log("error", '- 超时时间:', `${timeout}ms`);
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+
     log("error", `[iOS模拟] 请求失败:`, error.message);
     log("error", '详细诊断:');
     log("error", '- URL:', url);

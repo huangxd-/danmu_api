@@ -231,6 +231,7 @@ LogVar 弹幕 API 服务器
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
 | VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`，不填默认为`vod@https://www.caiji.cyou`       |
+| VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`5000`（5秒），建议值：`3000-10000`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tencent,renren,hanjutv,bahamut`       |
