@@ -2325,7 +2325,7 @@ async function fetchBilibili(inputUrl) {
       return [];
     }
 
-  // 番剧
+  // 番剧 - ep格式
   } else if (inputUrl.includes("bangumi/") && inputUrl.includes("ep")) {
     try {
       const epid = path.slice(-1)[0].slice(2);
@@ -2364,8 +2364,49 @@ async function fetchBilibili(inputUrl) {
       return [];
     }
 
+  // 番剧 - ss格式
+  } else if (inputUrl.includes("bangumi/") && inputUrl.includes("ss")) {
+    try {
+      const ssid = path.slice(-1)[0].slice(2).split('?')[0]; // 移除可能的查询参数
+      const ssInfoUrl = `${api_epid_cid}?season_id=${ssid}`;
+
+      log("info", `获取番剧信息: season_id=${ssid}`);
+
+      const res = await httpGet(ssInfoUrl, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+
+      const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+      if (data.code !== 0) {
+        log("error", "获取番剧视频信息失败:", data.message);
+        return [];
+      }
+
+      // 检查是否有episodes数据
+      if (!data.result.episodes || data.result.episodes.length === 0) {
+        log("error", "番剧没有可用的集数");
+        return [];
+      }
+
+      // 默认获取第一集的弹幕
+      const firstEpisode = data.result.episodes[0];
+      title = firstEpisode.share_copy;
+      cid = firstEpisode.cid;
+      duration = firstEpisode.duration / 1000;
+      danmakuUrl = `https://comment.bilibili.com/${cid}.xml`;
+
+      log("info", `使用第一集: ${title}, cid=${cid}`);
+
+    } catch (error) {
+      log("error", "请求番剧视频信息失败:", error);
+      return [];
+    }
+
   } else {
-    log("error", "不支持的B站视频网址，仅支持普通视频(av,bv)、剧集视频(ep)");
+    log("error", "不支持的B站视频网址，仅支持普通视频(av,bv)、剧集视频(ep,ss)");
     return [];
   }
   log("info", danmakuUrl, cid, aid, duration);
