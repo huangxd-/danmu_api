@@ -4173,9 +4173,10 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
       }
 
       if (links.length > 0) {
-        // 直接使用mediaId作为animeId和bangumiId
+        // 将字符串mediaId转换为数字ID (使用哈希函数)
+        const numericAnimeId = convertToAsciiSum(anime.mediaId);
         let transformedAnime = {
-          animeId: anime.mediaId,
+          animeId: numericAnimeId,
           bangumiId: anime.mediaId,
           animeTitle: `${anime.title}(${anime.year})【${anime.type}】from tencent`,
           type: anime.type,
