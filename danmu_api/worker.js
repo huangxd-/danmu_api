@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.3.5";
+const VERSION = "1.3.6";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -383,7 +383,7 @@ function addAnime(anime) {
         removeEarliestAnime();
     }
 
-    console.log("animes: ", animes);
+    log("info", "animes: ", animes);
 
     return true;
 }
@@ -1609,6 +1609,19 @@ function encryptStr(str) {
   return '*'.repeat(str.length);
 }
 
+// RGB 转整数的函数
+function rgbToInt(color) {
+  // 检查 RGB 值是否有效
+  if (
+    typeof color.r !== 'number' || color.r < 0 || color.r > 255 ||
+    typeof color.g !== 'number' || color.g < 0 || color.g > 255 ||
+    typeof color.b !== 'number' || color.b < 0 || color.b > 255
+  ) {
+    return -1;
+  }
+  return color.r * 256 * 256 + color.g * 256 + color.b;
+}
+
 // =====================
 // 腾讯视频搜索和分集
 // =====================
@@ -2239,7 +2252,7 @@ async function fetchMangoTV(inputUrl) {
 
   // 弹幕和视频信息 API 基础地址
   const api_video_info = "https://pcweb.api.mgtv.com/video/info";
-  const api_danmaku = "https://galaxy.bz.mgtv.com/rdbarrage";
+  const api_ctl_barrage = "https://galaxy.bz.mgtv.com/getctlbarrage";
 
   // 解析 URL 获取 cid 和 vid
   // 手动解析 URL（没有 URL 对象的情况下）
@@ -2270,7 +2283,7 @@ async function fetchMangoTV(inputUrl) {
       },
     });
   } catch (error) {
-    log("info", "请求视频信息失败:", error);
+    log("error", "请求视频信息失败:", error);
     return [];
   }
 
@@ -2280,22 +2293,63 @@ async function fetchMangoTV(inputUrl) {
   log("info", "标题:", title);
 
   // 计算弹幕分段请求
-  const step = 60 * 1000; // 每60秒一个分段
-  const end_time = time_to_second(time) * 1000; // 将视频时长转换为毫秒
   const promises = [];
-  for (let i = 0; i < end_time; i += step) {
-    const danmakuUrl = `${api_danmaku}?vid=${vid}&cid=${cid}&time=${i}`;
-    promises.push(
-      httpGet(danmakuUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-      })
-    );
+  try {
+    const ctlBarrageUrl = `${api_ctl_barrage}?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid=${vid}&pid=&cid=${cid}&ticket=`;
+    const res = await httpGet(ctlBarrageUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    });
+    const ctlBarrage = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+
+    // 每1分钟一个分段
+    for (let i = 0; i < Math.ceil(time_to_second(time) / 60); i += 1) {
+      const danmakuUrl = `https://${ctlBarrage.data?.cdn_list.split(',')[0]}/${ctlBarrage.data?.cdn_version}/${i}.json`;
+      promises.push(
+        httpGet(danmakuUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+        })
+      );
+    }
+  } catch (error) {
+    log("error", "请求弹幕分片失败:", error);
+    return [];
   }
 
   log("info", "弹幕分段数量:", promises.length);
+
+  // 默认颜色值
+  const DEFAULT_COLOR_INT = -1;
+
+  // 处理 v2_color 对象的转换逻辑
+  function transformV2Color(v2_color) {
+    // 如果 v2_color 不存在，返回默认值
+    if (!v2_color) {
+      return DEFAULT_COLOR_INT;
+    }
+    // 计算左右颜色的整数值
+    const leftColor = rgbToInt(v2_color.color_left);
+    const rightColor = rgbToInt(v2_color.color_right);
+    // 如果左右颜色均为 -1，返回默认值
+    if (leftColor === -1 && rightColor === -1) {
+      return DEFAULT_COLOR_INT;
+    }
+    // 如果左颜色无效，返回右颜色
+    if (leftColor === -1) {
+      return rightColor;
+    }
+    // 如果右颜色无效，返回左颜色
+    if (rightColor === -1) {
+      return leftColor;
+    }
+    // 返回左右颜色的平均值
+    return Math.floor((leftColor + rightColor) / 2);
+  }
 
   // 解析弹幕数据
   let contents = [];
@@ -2318,10 +2372,15 @@ async function fetchMangoTV(inputUrl) {
             uid: 0,		//发送人的 id
             content: "",
         };
-        if (item.type === 1) {
-          content.ct = 5;
-        } else if (item.type === 2) {
-          content.ct = 4;
+        if (item?.v2_color) {
+          content.color = transformV2Color(item?.v2_color);
+        }
+        if (item?.v2_position) {
+          if (item?.v2_position === 1) {
+            content.ct = 5;
+          } else if (item?.v2_position === 2) {
+            content.ct = 4;
+          }
         }
         content.timepoint = item.time / 1000;
         content.content = item.content;
