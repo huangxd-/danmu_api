@@ -6,7 +6,7 @@
 LogVar 弹幕 API 服务器
 </h2>
 
-[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/danmu_api)
 ![GitHub forks](https://img.shields.io/github/forks/huangxd-/danmu_api)
 ![GitHub Repo stars](https://img.shields.io/github/stars/huangxd-/danmu_api)
 ![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
@@ -94,6 +94,7 @@ LogVar 弹幕 API 服务器
    docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 danmu-api
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
+   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
 
 3. **测试 API**：
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
@@ -109,7 +110,9 @@ LogVar 弹幕 API 服务器
    docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 logvar/danmu-api:latest
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
+   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
+   或使用 docker compose 部署：
    ```yaml
    services:
      danmu-api:
@@ -119,9 +122,12 @@ LogVar 弹幕 API 服务器
          - "9321:9321"
        environment:
          - TOKEN=87654321  # 请将 87654321 替换为你想自定义的 Token 值
+       # 如需使用 .env 文件，取消下行注释并注释掉上面的 environment 部分
+       # env_file: .env
        restart: unless-stopped    # 可选配置，容器退出时自动重启（非必需，可根据需求删除）
    ```
-   - 或使用docker compose部署。
+
+   可以使用 watchtower 监控有新版本自动更新：
    ```yaml
    services:
      watchtower:
@@ -138,7 +144,6 @@ LogVar 弹幕 API 服务器
          - "12600"           # 30分钟（1800秒），适合测试
          - danmu-api         # 监控的目标容器名
    ```
-   - 可以使用watchtower监控有新版本自动更新。
 
 3. **测试 API**：
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
@@ -155,7 +160,7 @@ LogVar 弹幕 API 服务器
   1. 转到你的项目设置。
   2. 在“Environment Variables”部分添加 `TOKEN` 变量，输入你的 API 令牌值。
   3. 保存更改并重新部署。
-- 示例请求：`https://{your_domian}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
+- 示例请求：`https://{your_domain}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
 
 ### 优化点
 - Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，能提高访问速度，体验更优
@@ -183,7 +188,7 @@ LogVar 弹幕 API 服务器
 
 > 注意：部署时请在环境变量配置区域填写你的TOKEN值，该变量将用于API服务的身份验证相关功能
 > 
-> 示例请求：`https://{your_domian}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
+> 示例请求：`https://{your_domain}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
 >
 > 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
 > 
@@ -208,7 +213,7 @@ LogVar 弹幕 API 服务器
   2. 转到“Settings” > “Variables”。
   3. 添加 `TOKEN` 环境变量，输入你的 API 令牌值。
   4. 保存并部署。
-- 示例请求：`https://{your_domian}.workers.dev/87654321/api/v2/search/anime?keyword=子夜归`
+- 示例请求：`https://{your_domain}.workers.dev/87654321/api/v2/search/anime?keyword=子夜归`
 
 ### 手动部署
 创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。
