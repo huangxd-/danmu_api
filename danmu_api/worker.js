@@ -633,6 +633,43 @@ async function httpPost(url, body, options = {}) {
   }
 }
 
+async function getPageTitle(url) {
+  try {
+    // 使用 httpGet 获取网页内容
+    const response = await httpGet(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'
+      }
+    });
+
+    // response.data 包含 HTML 内容
+    const html = response.data;
+
+    // 方法1: 使用正则表达式提取 <title> 标签
+    const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
+    if (titleMatch && titleMatch[1]) {
+      // 解码 HTML 实体（如 &nbsp; &amp; 等）
+      const title = titleMatch[1]
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+
+      return title;
+    }
+
+    // 如果没找到 title 标签
+    return null;
+
+  } catch (error) {
+    log("error", `获取标题失败: ${error.message}`);
+    throw error;
+  }
+}
+
 // =====================
 // upstash redis 读写请求 （先简单实现，不加锁）
 // =====================
@@ -4224,10 +4261,12 @@ async function searchAnime(url) {
       platform = "bilibili1";
     }
 
+    const pageTitle = await getPageTitle(queryTitle);
+
     const links = [{
       "name": "手动解析链接弹幕",
       "url": queryTitle,
-      "title": `【${platform}】 #${queryTitle}#`
+      "title": `【${platform}】 #${pageTitle}#`
     }];
     curAnimes.push(tmpAnime);
     addAnime({...tmpAnime, links: links});
