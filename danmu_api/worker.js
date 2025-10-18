@@ -5414,7 +5414,28 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
-    // 限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
+    // ⚠️ 限流设计说明：
+    // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
+    // 2. 只有缓存未命中时才执行限流检查和网络请求
+    // 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
+    const commentId = parseInt(path.split("/").pop());
+    let url = findUrlById(commentId);
+
+    if (url) {
+      // 处理302场景
+      if (url.includes("youku.com/video?vid")) {
+        url = convertYoukuUrl(url);
+      }
+
+      // 检查弹幕缓存 - 缓存命中时直接返回，不计入限流
+      const cachedComments = getCommentCache(url);
+      if (cachedComments !== null) {
+        log("info", `[Rate Limit] Cache hit for URL: ${url}, skipping rate limit check`);
+        return jsonResponse({ count: cachedComments.length, comments: cachedComments });
+      }
+    }
+
+    // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
     if (rateLimitMaxRequests > 0) {
       // 获取当前时间戳（单位：毫秒）
       const currentTime = Date.now();
@@ -5451,6 +5472,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
       // 更新该 IP 地址的请求历史
       requestHistory.set(clientIp, recentRequests);
+      log("info", `[Rate Limit] Request counted for IP: ${clientIp}, count: ${recentRequests.length}/${rateLimitMaxRequests}`);
     }
 
     return getComment(path);
