@@ -43,7 +43,7 @@ function resolveOtherServer(env) {
   return DEFAULT_OTHER_SERVER;
 }
 
-const DEFAULT_VOD_SERVERS = "vod@https://www.caiji.cyou"; // 默认 vod站点配置，格式：名称@URL,名称@URL
+const DEFAULT_VOD_SERVERS = "vod@https://gctf.tfdh.top"; // 默认 vod站点配置，格式：名称@URL,名称@URL
 let vodServers = [];
 
 function resolveVodServers(env) {
@@ -172,7 +172,7 @@ const DEFAULT_EPISODE_TITLE_FILTER = "(特别|惊喜|纳凉)?企划|合伙人手
   "NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|" +
   "剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|抢先看|抢先版|" +
   "试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|陪看|高清正片|发布会|.{2,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|" +
-  "周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记"; // 默认 剧集标题正则过滤
+  "周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘"; // 默认 剧集标题正则过滤
 let episodeTitleFilter;
 
 // 这里既支持 Cloudflare env，也支持 Node process.env
@@ -281,6 +281,20 @@ function resolveRateLimitMaxRequests(env) {
     if (!Number.isNaN(n) && n >= 0) return n;
   }
   return DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+}
+
+// 集标题过滤开关配置（默认 true，启用过滤）
+const DEFAULT_ENABLE_EPISODE_FILTER = true;
+let enableEpisodeFilter = DEFAULT_ENABLE_EPISODE_FILTER;
+
+function resolveEnableEpisodeFilter(env) {
+  if (env && env.ENABLE_EPISODE_FILTER !== undefined) {
+    return env.ENABLE_EPISODE_FILTER.toLowerCase() === 'true';
+  }
+  if (typeof process !== "undefined" && process.env?.ENABLE_EPISODE_FILTER !== undefined) {
+    return process.env.ENABLE_EPISODE_FILTER.toLowerCase() === 'true';
+  }
+  return DEFAULT_ENABLE_EPISODE_FILTER;
 }
 
 // =====================
@@ -4432,6 +4446,46 @@ async function searchAnime(url) {
 
   storeAnimeIdsToMap(curAnimes, queryTitle);
 
+  // 如果启用了集标题过滤，则为每个动漫添加过滤后的 episodes
+  if (enableEpisodeFilter) {
+    const validAnimes = [];
+    for (const anime of curAnimes) {
+      // 首先检查动漫名称是否包含过滤关键词
+      const animeTitle = anime.animeTitle || '';
+      const titleFilterEp = extractEpTitle(animeTitle) || animeTitle;
+      if (episodeTitleFilter.test(titleFilterEp)) {
+        log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
+        continue; // 跳过该动漫
+      }
+
+      const animeData = animes.find(a => a.animeId === anime.animeId);
+      if (animeData && animeData.links) {
+        let episodesList = animeData.links.map((link, index) => ({
+          episodeId: link.id,
+          episodeTitle: link.title,
+          episodeNumber: index + 1
+        }));
+
+        // 应用过滤
+        episodesList = episodesList.filter(episode => {
+          const filterEp = extractEpTitle(episode.episodeTitle);
+          return filterEp && !episodeTitleFilter.test(filterEp);
+        });
+
+        log("info", `[searchAnime] Anime ${anime.animeId} filtered episodes: ${episodesList.length}/${animeData.links.length}`);
+
+        // 只有当过滤后还有有效剧集时才保留该动漫
+        if (episodesList.length > 0) {
+          anime.episodes = episodesList;
+          validAnimes.push(anime);
+        }
+      }
+    }
+    // 用过滤后的动漫列表替换原列表
+    curAnimes.length = 0;
+    curAnimes.push(...validAnimes);
+  }
+
   // 如果有新的anime获取到，则更新redis
   if (redisValid && curAnimes.length !== 0) {
       await updateCaches();
@@ -4825,16 +4879,38 @@ async function getBangumi(path) {
     },
   };
 
+  // 构建 episodes 列表
+  let episodesList = [];
   for (let i = 0; i < anime.links.length; i++) {
     const link = anime.links[i];
-    resData["bangumi"]["episodes"].push({
-          seasonId: `season-${anime.animeId}`,
-          episodeId: link.id,
-          episodeTitle: `${link.title}`,
-          episodeNumber: `${i+1}`,
-          airDate: anime.startDate,
-        });
+    episodesList.push({
+      seasonId: `season-${anime.animeId}`,
+      episodeId: link.id,
+      episodeTitle: `${link.title}`,
+      episodeNumber: `${i+1}`,
+      airDate: anime.startDate,
+    });
   }
+
+  // 如果启用了集标题过滤，则应用过滤
+  if (enableEpisodeFilter) {
+    episodesList = episodesList.filter(episode => {
+      const filterEp = extractEpTitle(episode.episodeTitle);
+      return filterEp && !episodeTitleFilter.test(filterEp);
+    });
+    log("info", `[getBangumi] Episode filter enabled. Filtered episodes: ${episodesList.length}/${anime.links.length}`);
+
+    // 如果过滤后没有有效剧集，返回错误
+    if (episodesList.length === 0) {
+      log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam}`);
+      return jsonResponse(
+        { errorCode: 404, success: false, errorMessage: "No valid episodes after filtering", bangumi: null },
+        404
+      );
+    }
+  }
+
+  resData["bangumi"]["episodes"] = episodesList;
 
   return jsonResponse(resData);
 }
@@ -4998,6 +5074,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["groupMinute"] = groupMinute;
   rateLimitMaxRequests = resolveRateLimitMaxRequests(env);
   envs["rateLimitMaxRequests"] = rateLimitMaxRequests;
+  enableEpisodeFilter = resolveEnableEpisodeFilter(env);
+  envs["enableEpisodeFilter"] = enableEpisodeFilter;
   proxyUrl = resolveProxyUrl(env);
   envs["proxyUrl"] = proxyUrl;
   redisUrl = resolveRedisUrl(env);
