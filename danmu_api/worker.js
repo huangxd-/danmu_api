@@ -662,11 +662,11 @@ async function getPageTitle(url) {
     }
 
     // 如果没找到 title 标签
-    return null;
+    return url;
 
   } catch (error) {
     log("error", `获取标题失败: ${error.message}`);
-    throw error;
+    return url;
   }
 }
 
