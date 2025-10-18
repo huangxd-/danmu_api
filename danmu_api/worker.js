@@ -9,7 +9,7 @@ if (typeof process !== "undefined" && process.env && !process.env.CLOUDFLARE_ENV
 
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.3.5";
+const VERSION = "1.4.0";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
