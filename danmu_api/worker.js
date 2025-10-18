@@ -1,6 +1,6 @@
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.3.6";
+const VERSION = "1.4.0";
 let animes = [];
 let episodeIds = [];
 let episodeNum = 10001; // 全局变量，用于自增 ID
@@ -19,6 +19,13 @@ const requestHistory = new Map();
 let redisValid = false;
 // 存储查询关键字上次选择的animeId，用于下次match自动匹配时优先选择该anime
 let lastSelectMap = new Map();
+// 存储上一次各变量哈希值
+let lastHashes = {
+  animes: null,
+  episodeIds: null,
+  episodeNum: null,
+  lastSelectMap: null
+};
 
 // =====================
 // 环境变量处理
@@ -696,6 +703,7 @@ async function getPageTitle(url) {
 // 使用 GET 发送简单命令（如 PING 检查连接）
 async function pingRedis() {
   const url = `${redisUrl}/ping`;
+  log("info", `[redis] 开始发送 PING 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -717,6 +725,7 @@ async function pingRedis() {
 // 使用 GET 发送 GET 命令（读取键值）
 async function getRedisKey(key) {
   const url = `${redisUrl}/get/${key}`;
+  log("info", `[redis] 开始发送 GET 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -735,9 +744,19 @@ async function getRedisKey(key) {
   }
 }
 
-// 使用 POST 发送 SET 命令（写入键值，值在请求体中）
+// 使用 POST 发送 SET 命令，仅在值变化时更新
 async function setRedisKey(key, value) {
+  const serializedValue = JSON.stringify(value);
+  const currentHash = simpleHash(serializedValue);
+
+  // 检查值是否变化
+  if (lastHashes[key] === currentHash) {
+    log("info", `[redis] 键 ${key} 无变化，跳过 SET 请求`);
+    return { result: "OK" }; // 模拟成功响应
+  }
+
   const url = `${redisUrl}/set/${key}`;
+  log("info", `[redis] 开始发送 SET 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -745,22 +764,35 @@ async function setRedisKey(key, value) {
         'Authorization': `Bearer ${redisToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(value)  // 值作为 body 发送，支持 JSON 或字符串
+      body: serializedValue
     });
-    return await response.json();  // 预期: ["OK"]
+    const result = await response.json();
+    lastHashes[key] = currentHash; // 更新哈希值
+    log("info", `[redis] 键 ${key} 更新成功`);
+    return result; // 预期: ["OK"]
   } catch (error) {
-    log("error", `[redis] 请求失败:`, error.message);
+    log("error", `[redis] SET 请求失败:`, error.message);
     log("error", '- 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 码:', error.cause.code);
       log("error", '- 原因:', error.cause.message);
     }
   }
 }
 
-// 复杂命令，如 SETEX（设置键值并过期，使用查询参数）
+// 使用 POST 发送 SETEX 命令，仅在值变化时更新
 async function setRedisKeyWithExpiry(key, value, expirySeconds) {
+  const serializedValue = JSON.stringify(value);
+  const currentHash = simpleHash(serializedValue);
+
+  // 检查值是否变化
+  if (lastHashes[key] === currentHash) {
+    log("info", `[redis] 键 ${key} 无变化，跳过 SETEX 请求`);
+    return { result: "OK" }; // 模拟成功响应
+  }
+
   const url = `${redisUrl}/set/${key}?EX=${expirySeconds}`;
+  log("info", `[redis] 开始发送 SETEX 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -768,49 +800,102 @@ async function setRedisKeyWithExpiry(key, value, expirySeconds) {
         'Authorization': `Bearer ${redisToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(value)
+      body: serializedValue
     });
-    return await response.json();
+    const result = await response.json();
+    lastHashes[key] = currentHash; // 更新哈希值
+    log("info", `[redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
+    return result;
   } catch (error) {
-    log("error", `[redis] 请求失败:`, error.message);
+    log("error", `[redis] SETEX 请求失败:`, error.message);
     log("error", '- 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 码:', error.cause.code);
       log("error", '- 原因:', error.cause.message);
     }
   }
 }
 
-// 从redis获取变量数据
-async function getCaches() {
-    if (animes.length === 0) {
-        log("info", 'getCaches start.');
-        const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
-          getRedisKey('animes'),
-          getRedisKey('episodeIds'),
-          getRedisKey('episodeNum'),
-          getRedisKey('logBuffer'),
-          getRedisKey('lastSelectMap'),
-        ]);
-
-        animes = kv_animes.result ? JSON.parse(kv_animes.result) : animes;
-        episodeIds = kv_episodeIds.result ? JSON.parse(kv_episodeIds.result) : episodeIds;
-        episodeNum = kv_episodeNum.result ? JSON.parse(kv_episodeNum.result) : episodeNum;
-        logBuffer = kv_logBuffer.result ? JSON.parse(kv_logBuffer.result) : logBuffer;
-        lastSelectMap = kv_lastSelectMap.result ? JSON.parse(kv_lastSelectMap.result) : lastSelectMap;
+// 通用的 pipeline 请求函数
+async function runPipeline(commands) {
+  const url = `${redisUrl}/pipeline`;
+  log("info", `[redis] 开始发送 PIPELINE 请求:`, url);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${redisToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(commands) // commands 是一个数组，包含多个 Redis 命令
+    });
+    const result = await response.json();
+    return result; // 返回结果数组，按命令顺序
+  } catch (error) {
+    log("error", `[redis] Pipeline 请求失败:`, error.message);
+    log("error", '- 错误类型:', error.name);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);
+      log("error", '- 原因:', error.cause.message);
     }
+  }
 }
 
-// 存储更新后的变量到redis
-async function updateCaches() {
-    log("info", 'updateCaches start.');
-    await Promise.all([
-      setRedisKey('animes', animes),
-      setRedisKey('episodeIds', episodeIds),
-      setRedisKey('episodeNum', episodeNum),
-      setRedisKey('logBuffer', logBuffer),
-      setRedisKey('lastSelectMap', lastSelectMap)
-    ]);
+// 优化后的 getRedisCaches，单次请求获取所有键
+async function getRedisCaches() {
+  if (animes.length === 0) {
+    log("info", 'getCaches start.');
+    const keys = ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap'];
+    const commands = keys.map(key => ['GET', key]); // 构造 pipeline 命令
+    const results = await runPipeline(commands);
+
+    // 解析结果，按顺序赋值
+    animes = results[0].result ? JSON.parse(results[0].result) : animes;
+    episodeIds = results[1].result ? JSON.parse(results[1].result) : episodeIds;
+    episodeNum = results[2].result ? JSON.parse(results[2].result) : episodeNum;
+    lastSelectMap = results[3].result ? JSON.parse(results[3].result) : lastSelectMap;
+
+    // 更新哈希值
+    lastHashes.animes = simpleHash(JSON.stringify(animes));
+    lastHashes.episodeIds = simpleHash(JSON.stringify(episodeIds));
+    lastHashes.episodeNum = simpleHash(JSON.stringify(episodeNum));
+    lastHashes.lastSelectMap = simpleHash(JSON.stringify(lastSelectMap));
+  }
+}
+
+// 优化后的 updateRedisCaches，仅更新有变化的变量
+async function updateRedisCaches() {
+  log("info", 'updateCaches start.');
+  const commands = [];
+  const updates = [];
+
+  // 检查每个变量的哈希值
+  const variables = [
+    { key: 'animes', value: animes },
+    { key: 'episodeIds', value: episodeIds },
+    { key: 'episodeNum', value: episodeNum },
+    { key: 'lastSelectMap', value: lastSelectMap }
+  ];
+
+  for (const { key, value } of variables) {
+    const currentHash = simpleHash(JSON.stringify(value));
+    if (currentHash !== lastHashes[key]) {
+      commands.push(['SET', key, JSON.stringify(value)]);
+      updates.push({ key, hash: currentHash });
+    }
+  }
+
+  // 如果有需要更新的键，执行 pipeline
+  if (commands.length > 0) {
+    log("info", `Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
+    await runPipeline(commands);
+    // 更新哈希值
+    updates.forEach(({ key, hash }) => {
+      lastHashes[key] = hash;
+    });
+  } else {
+    log("info", 'No changes detected, skipping Redis update.');
+  }
 }
 
 // =====================
@@ -1620,6 +1705,17 @@ function rgbToInt(color) {
     return -1;
   }
   return color.r * 256 * 256 + color.g * 256 + color.b;
+}
+
+// 简单的字符串哈希函数
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash >>> 0; // 确保为无符号 32 位整数
+  }
+  return hash.toString(16); // 转换为十六进制
 }
 
 // =====================
@@ -4420,7 +4516,7 @@ async function searchAnime(url) {
 
     // 如果有新的anime获取到，则更新redis
     if (redisValid && curAnimes.length !== 0) {
-      await updateCaches();
+      await updateRedisCaches();
     }
 
     return jsonResponse({
@@ -4493,7 +4589,7 @@ async function searchAnime(url) {
 
   // 如果有新的anime获取到，则更新redis
   if (redisValid && curAnimes.length !== 0) {
-      await updateCaches();
+      await updateRedisCaches();
   }
 
   return jsonResponse({
@@ -5082,7 +5178,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   log("info", `client ip: ${clientIp}`);
 
   if (redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
-    await getCaches();
+    await getRedisCaches();
   }
 
   function handleHomepage() {
@@ -5093,7 +5189,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       envs: envs,
       repository: "https://github.com/huangxd-/danmu_api.git",
       description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口，并提供日志记录，支持vercel/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
-      notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok。https://t.me/ddjdd_bot"
+      notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok，TG MSG ROBOT: [https://t.me/ddjdd_bot]; 推荐加互助群咨询，TG GROUP: [https://t.me/logvar_danmu_group]; 关注频道获取最新更新内容，TG CHANNEL: [https://t.me/logvar_danmu_channel]。"
     });
   }
 
