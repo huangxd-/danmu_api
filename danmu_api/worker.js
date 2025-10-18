@@ -1061,7 +1061,7 @@ async function get360Zongyi(title, entId, site, year) {
         links.push({
             "name": episodeInfo.id,
             "url": episodeInfo.url,
-            "title": `【${site}】 #${episodeInfo.name} ${episodeInfo.period}#`,
+            "title": `【${site}】 ${episodeInfo.name} ${episodeInfo.period}`,
             "sort": epNum || episodeInfo.sort || null
         });
       }
@@ -1683,11 +1683,7 @@ const extractTitle = (title) => {
   return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
 };
 
-// 提取##中的内容并进行匹配
-const extractEpTitle = (title) => {
-  const match = title.match(/#(.*?)#/);  // 提取#号之间的内容
-  return match ? match[1] : null;  // 返回#号中的内容，若没有则返回null
-};
+
 
 // 解析fileName，提取动漫名称和平台偏好
 function parseFileName(fileName) {
@@ -4226,7 +4222,7 @@ async function handleVodAnimes(animesVod, curAnimes, key) {
         links.push({
           "name": count,
           "url": epInfo[1],
-          "title": `【${platform}】 #${epInfo[0]}#`
+          "title": `【${platform}】 ${epInfo[0]}`
         });
       }
     }
@@ -4263,7 +4259,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": key,
             "url": anime.playlinks[key],
-            "title": `【${key}】 #${anime.titleTxt}(${anime.year})#`
+            "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
           });
         }
       }
@@ -4274,7 +4270,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": i + 1,
             "url": item.url,
-            "title": `【${anime.seriesSite}】 #${i + 1}#`
+            "title": `【${anime.seriesSite}】 第${i + 1}集`
           });
         }
       }
@@ -4329,7 +4325,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
         links.push({
           "name": ep.episodeIndex,
           "url": ep.episodeId,
-          "title": `【${ep.provider}】 #${ep.title}#`
+          "title": `【${ep.provider}】 ${ep.title}`
         });
       }
 
@@ -4378,7 +4374,7 @@ async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
         links.push({
           "name": ep.title,
           "url": ep.pid,
-          "title": `【hanjutv】 #${epTitle}#`
+          "title": `【hanjutv】 ${epTitle}`
         });
       }
 
@@ -4422,7 +4418,7 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
         links.push({
           "name": ep.episode,
           "url": ep.videoSn.toString(),
-          "title": `【bahamut】 #${epTitle}#`
+          "title": `【bahamut】 ${epTitle}`
         });
       }
 
@@ -4468,7 +4464,7 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
         links.push({
           "name": i + 1,
           "url": fullUrl,
-          "title": `【tencent】 #${epTitle}#`
+          "title": `【tencent】 ${epTitle}`
         });
       }
 
@@ -4552,7 +4548,7 @@ async function searchAnime(url) {
     const links = [{
       "name": "手动解析链接弹幕",
       "url": queryTitle,
-      "title": `【${platform}】 #${pageTitle}#`
+      "title": `【${platform}】 ${pageTitle}`
     }];
     curAnimes.push(tmpAnime);
     addAnime({...tmpAnime, links: links});
@@ -4637,8 +4633,7 @@ async function searchAnime(url) {
     for (const anime of curAnimes) {
       // 首先检查动漫名称是否包含过滤关键词
       const animeTitle = anime.animeTitle || '';
-      const titleFilterEp = extractEpTitle(animeTitle) || animeTitle;
-      if (episodeTitleFilter.test(titleFilterEp)) {
+      if (episodeTitleFilter.test(animeTitle)) {
         log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
         continue; // 跳过该动漫
       }
@@ -4653,8 +4648,7 @@ async function searchAnime(url) {
 
         // 应用过滤
         episodesList = episodesList.filter(episode => {
-          const filterEp = extractEpTitle(episode.episodeTitle);
-          return filterEp && !episodeTitleFilter.test(filterEp);
+          return !episodeTitleFilter.test(episode.episodeTitle);
         });
 
         log("info", `[searchAnime] Anime ${anime.animeId} filtered episodes: ${episodesList.length}/${animeData.links.length}`);
@@ -4691,13 +4685,9 @@ async function searchAnime(url) {
 
 function filterSameEpisodeTitle(filteredTmpEpisodes) {
     const filteredEpisodes = filteredTmpEpisodes.filter((episode, index, episodes) => {
-        const filterEp = extractEpTitle(episode.episodeTitle);
-        // 如果没有提取到标题，返回 true 保留该 episode
-        if (!filterEp) return true;
         // 查找当前 episode 标题是否在之前的 episodes 中出现过
         return !episodes.slice(0, index).some(prevEpisode => {
-            const prevFilterEp = extractEpTitle(prevEpisode.episodeTitle);
-            return prevFilterEp === filterEp;
+            return prevEpisode.episodeTitle === episode.episodeTitle;
         });
     });
     return filteredEpisodes;
@@ -4718,8 +4708,7 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
 
         // 过滤集标题正则条件的 episode
         const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-          const filterEp = extractEpTitle(episode.episodeTitle);
-          return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+          return !episodeTitleFilter.test(episode.episodeTitle);
         });
 
         // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
@@ -4790,8 +4779,7 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisod
     if (season && episode) {
       // 过滤集标题正则条件的 episode
       const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-        const filterEp = extractEpTitle(episode.episodeTitle);
-        return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+        return !episodeTitleFilter.test(episode.episodeTitle);
       });
 
       // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
@@ -5085,8 +5073,7 @@ async function getBangumi(path) {
   // 如果启用了集标题过滤，则应用过滤
   if (enableEpisodeFilter) {
     episodesList = episodesList.filter(episode => {
-      const filterEp = extractEpTitle(episode.episodeTitle);
-      return filterEp && !episodeTitleFilter.test(filterEp);
+      return !episodeTitleFilter.test(episode.episodeTitle);
     });
     log("info", `[getBangumi] Episode filter enabled. Filtered episodes: ${episodesList.length}/${anime.links.length}`);
 
