@@ -36,10 +36,10 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # 构建 Docker 镜像，并指定平台为 amd64 和 arm64，推送到 Docker Hub
+      # 使用单条命令同时指定两个标签，避免重复构建
       - name: Build and Push Docker image with version and latest tag
         run: |
-          # 构建带版本号的镜像并推送
-          docker buildx build --platform linux/amd64,linux/arm64 -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION }} --push .
-
-          # 构建带 latest 标签的镜像并推送
-          docker buildx build --platform linux/amd64,linux/arm64 -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:latest --push .
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION }} \
+            -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:latest \
+            --push .
