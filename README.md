@@ -245,7 +245,8 @@ LogVar 弹幕 API 服务器
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
-| VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`vod@https://gctf.tfdh.top,vod2@https://zy.jinchancaiji.com`，不填默认为`vod@https://gctf.tfdh.top`       |
+| VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`，不填默认为`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`       |
+| VOD_RETURN_MODE      | 【可选】VOD返回模式，可选值：`all`（返回所有站点结果）、`fastest`（只返回最快的站点结果），默认为`fastest`。当配置多个VOD站点时，`all`模式会返回所有站点的结果（结果较多），`fastest`模式只返回首先响应成功的站点结果（结果较少，避免重复）       |
 | VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`5000`（5秒），建议值：`3000-10000`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
@@ -342,7 +343,8 @@ danmu_api/
 - 运行 Docker 容器时，需通过 `-e TOKEN=87654321` 传递 `TOKEN` 环境变量。
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
-- 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`vod@https://gctf.tfdh.top,vod2@https://zy.jinchancaiji.com`（支持多个服务器并发查询）。
+- 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`（支持多个服务器并发查询）。
+- 当配置多个VOD站点时，可通过`VOD_RETURN_MODE`环境变量控制返回结果方式：`all`（返回所有站点结果）或`fastest`（默认，只返回最快的站点结果，避免结果过多）。
 - 推荐vercel/netlify部署，cloudflare/edgeone/claw不稳定，当然最稳定还是自己本地docker部署最佳。
 - /api/v2/comment接口默认限流：1分钟内同一IP只能请求3次，可通过环境变量`RATE_LIMIT_MAX_REQUESTS`调整（设置为0表示不限流）。
 

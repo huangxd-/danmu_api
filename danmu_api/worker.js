@@ -47,7 +47,7 @@ function resolveOtherServer(env) {
   return DEFAULT_OTHER_SERVER;
 }
 
-const DEFAULT_VOD_SERVERS = "vod@https://gctf.tfdh.top"; // 默认 vod站点配置，格式：名称@URL,名称@URL
+const DEFAULT_VOD_SERVERS = "金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top"; // 默认 vod站点配置，格式：名称@URL,名称@URL
 let vodServers = [];
 
 function resolveVodServers(env) {
@@ -80,6 +80,26 @@ function resolveVodServers(env) {
     .filter(server => server.url && server.url.length > 0);  // 过滤掉空 URL
 
   return servers;
+}
+
+const DEFAULT_VOD_RETURN_MODE = "fastest"; // 默认 vod返回模式：all（所有站点）或 fastest（最快的站点）
+let vodReturnMode = DEFAULT_VOD_RETURN_MODE;
+
+function resolveVodReturnMode(env) {
+  let mode = DEFAULT_VOD_RETURN_MODE;
+  if (env && env.VOD_RETURN_MODE) {
+    mode = env.VOD_RETURN_MODE.toLowerCase();  // Cloudflare Workers
+  } else if (typeof process !== "undefined" && process.env?.VOD_RETURN_MODE) {
+    mode = process.env.VOD_RETURN_MODE.toLowerCase();  // Vercel / Node
+  }
+
+  // 验证模式值
+  if (mode !== "all" && mode !== "fastest") {
+    log("warn", `Invalid VOD_RETURN_MODE: ${mode}, using default: ${DEFAULT_VOD_RETURN_MODE}`);
+    return DEFAULT_VOD_RETURN_MODE;
+  }
+
+  return mode;
 }
 
 const DEFAULT_BILIBILI_COOKIE = ""; // 默认 bilibili cookie
@@ -1097,6 +1117,16 @@ async function getVodAnimesFromAllServers(title, servers) {
     return [];
   }
 
+  // 根据 vodReturnMode 决定查询策略
+  if (vodReturnMode === "fastest") {
+    return await getVodAnimesFromFastestServer(title, servers);
+  } else {
+    return await getVodAnimesFromAllServersImpl(title, servers);
+  }
+}
+
+// 查询所有vod站点影片信息（返回所有结果）
+async function getVodAnimesFromAllServersImpl(title, servers) {
   // 并发查询所有服务器，使用 allSettled 确保单个服务器失败不影响其他服务器
   const promises = servers.map(server =>
     getVodAnimes(title, server.url, server.name)
@@ -1108,6 +1138,41 @@ async function getVodAnimesFromAllServers(title, servers) {
   return results
     .filter(result => result.status === 'fulfilled')
     .map(result => result.value);
+}
+
+// 查询vod站点影片信息（返回最快的结果）
+async function getVodAnimesFromFastestServer(title, servers) {
+  if (!servers || servers.length === 0) {
+    return [];
+  }
+
+  // 使用 Promise.race 获取最快响应的服务器
+  const promises = servers.map(server =>
+    getVodAnimes(title, server.url, server.name)
+  );
+
+  try {
+    // race 会返回第一个成功的结果
+    const result = await Promise.race(promises);
+
+    // 检查结果是否有效（有数据）
+    if (result && result.list && result.list.length > 0) {
+      log("info", `[VOD fastest mode] 使用最快的服务器: ${result.serverName}`);
+      return [result];
+    }
+
+    // 如果最快的服务器没有数据，继续尝试其他服务器
+    log("info", `[VOD fastest mode] 最快的服务器 ${result.serverName} 无数据，尝试其他服务器`);
+    const allResults = await Promise.allSettled(promises);
+    const validResults = allResults
+      .filter(r => r.status === 'fulfilled' && r.value && r.value.list && r.value.list.length > 0)
+      .map(r => r.value);
+
+    return validResults.length > 0 ? [validResults[0]] : [];
+  } catch (error) {
+    log("error", `[VOD fastest mode] 所有服务器查询失败:`, error.message);
+    return [];
+  }
 }
 
 // =====================
@@ -5201,6 +5266,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   otherServer = resolveOtherServer(env);
   envs["otherServer"] = otherServer;
   vodServers = resolveVodServers(env);
+  vodReturnMode = resolveVodReturnMode(env);
   envs["vodServers"] = vodServers.map(s => `${s.name}@${s.url}`).join(',');
   bilibliCookie = resolveBilibiliCookie(env);
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
