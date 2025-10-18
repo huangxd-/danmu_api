@@ -4211,7 +4211,7 @@ async function searchAnime(url) {
       "isFavorited": true
     };
 
-    let platform = "all";
+    let platform = "unknown";
     if (queryTitle.includes(".qq.com")) {
       platform = "qq";
     } else if (queryTitle.includes(".iqiyi.com")) {
@@ -4232,6 +4232,11 @@ async function searchAnime(url) {
     curAnimes.push(tmpAnime);
     addAnime({...tmpAnime, links: links});
     if (animes.length > MAX_ANIMES) removeEarliestAnime();
+
+    // 如果有新的anime获取到，则更新redis
+    if (redisValid && curAnimes.length !== 0) {
+      await updateCaches();
+    }
 
     return jsonResponse({
       errorCode: 0,

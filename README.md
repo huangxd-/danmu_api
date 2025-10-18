@@ -274,6 +274,16 @@ LogVar 弹幕 API 服务器
 /(全体成员|报到|报道|来啦|签到|刷|打卡|我在|来了|考古|爱了|挖坟|留念|你好|回来|哦哦|重温|复习|重刷|再看|在看|前排|沙发|有人看|板凳|末排|我老婆|我老公|撅了|后排|周目|重看|包养|DVD|同上|同样|我也是|俺也|算我|爱豆|我家爱豆|我家哥哥|加我|三连|币|新人|入坑|补剧|冲了|硬了|看完|舔屏|万人|牛逼|煞笔|傻逼|卧槽|tm|啊这|哇哦)/  # 屏蔽常见互动、报到或口语化弹幕词汇
 ```
 
+## 采集源及对应平台列表
+| 采集源      | 平台列表 |
+| ----------- | ----------- |
+| 360      | qiyi, bilibili1, imgo, youku, qq |
+| vod      | qiyi, bilibili1, imgo, youku, qq |
+| tencent  | tencent |
+| renren   | renren |
+| hanjutv  | hanjutv |
+| bahamut  | bahamut |
+
 ## 项目结构
 ```
 danmu_api/
@@ -289,6 +299,7 @@ danmu_api/
 ├── node-functions/
 │   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
 │   └── index.js        # edgeone pages 中间处理逻辑
+├── .env.example
 ├── .gitignore
 ├── Dockerfile
 ├── edgeone.json        # edgeone pages 配置文件
