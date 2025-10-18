@@ -316,8 +316,8 @@ function resolveRateLimitMaxRequests(env) {
   return DEFAULT_RATE_LIMIT_MAX_REQUESTS;
 }
 
-// 集标题过滤开关配置（默认 true，启用过滤）
-const DEFAULT_ENABLE_EPISODE_FILTER = true;
+// 集标题过滤开关配置（默认 false，禁用过滤）
+const DEFAULT_ENABLE_EPISODE_FILTER = false;
 let enableEpisodeFilter = DEFAULT_ENABLE_EPISODE_FILTER;
 
 function resolveEnableEpisodeFilter(env) {
@@ -5277,6 +5277,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   vodServers = resolveVodServers(env);
   vodReturnMode = resolveVodReturnMode(env);
   envs["vodServers"] = vodServers.map(s => `${s.name}@${s.url}`).join(',');
+  envs["vodReturnMode"] = vodReturnMode;
   bilibliCookie = resolveBilibiliCookie(env);
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);
