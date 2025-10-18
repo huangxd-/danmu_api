@@ -161,6 +161,15 @@ LogVar 弹幕 API 服务器
   > hk有可能访问不了360或其他源，可以尝试切其他region，如新加坡等
 - vercel在国内被墙，请配合代理使用或绑定自定义域名
 
+## 部署到 Vercel
+
+### 一键部署
+点击以下按钮即可将项目快速部署到 Netlify：
+
+<a href="https://app.netlify.com/start/deploy?repository=https://github.com/huangxd-/danmu_api"><img src="https://www.netlify.com/img/deploy/button.svg"></a>
+
+> 默认访问domain：https://{你的部署项目名}.netlify.app
+
 ## 部署到 腾讯云 edgeone pages
 
 ### 一键部署

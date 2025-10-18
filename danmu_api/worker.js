@@ -110,7 +110,7 @@ let sourceOrderArr = [];
 function resolveSourceOrder(env, deployPlatform) {
   // 获取环境变量中的 SOURCE_ORDER 配置
   let sourceOrder = DEFAULT_SOURCE_ORDER;
-  if (deployPlatform === "cloudflare" || deployPlatform === "vercel") {
+  if (deployPlatform === "cloudflare" || deployPlatform === "vercel" || deployPlatform === "netlify") {
       sourceOrder += ",bahamut";
   }
 
@@ -5128,6 +5128,39 @@ export async function vercelHandler(req, res) {
   response.headers.forEach((value, key) => res.setHeader(key, value));
   const text = await response.text();
   res.send(text);
+}
+
+// --- Netlify 入口 ---
+export async function netlifyHandler(event, context) {
+  // 获取客户端 IP
+  const clientIp = event.headers['x-nf-client-connection-ip'] ||
+                   event.headers['x-forwarded-for'] ||
+                   context.ip ||
+                   'unknown';
+
+  // 构造标准 Request 对象
+  const url = event.rawUrl || `https://${event.headers.host}${event.path}`;
+
+  const request = new Request(url, {
+    method: event.httpMethod,
+    headers: new Headers(event.headers),
+    body: event.body ? event.body : undefined,
+  });
+
+  // 调用核心处理函数
+  const response = await handleRequest(request, process.env, "netlify", clientIp);
+
+  // 转换为 Netlify 响应格式
+  const headers = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  return {
+    statusCode: response.status,
+    headers,
+    body: await response.text(),
+  };
 }
 
 // 为了测试导出 handleRequest
