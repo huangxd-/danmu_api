@@ -19,6 +19,10 @@ const requestHistory = new Map();
 let redisValid = false;
 // 存储查询关键字上次选择的animeId，用于下次match自动匹配时优先选择该anime
 let lastSelectMap = new Map();
+// 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
+const searchCache = new Map();
+// 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
+const commentCache = new Map();
 
 // =====================
 // 环境变量处理
@@ -297,9 +301,105 @@ function resolveEnableEpisodeFilter(env) {
   return DEFAULT_ENABLE_EPISODE_FILTER;
 }
 
+// 搜索结果缓存时间配置（分钟，默认 1）
+const DEFAULT_SEARCH_CACHE_MINUTES = 1;
+let searchCacheMinutes = DEFAULT_SEARCH_CACHE_MINUTES;
+
+function resolveSearchCacheMinutes(env) {
+  if (env && env.SEARCH_CACHE_MINUTES) {
+    const n = parseInt(env.SEARCH_CACHE_MINUTES, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  if (typeof process !== "undefined" && process.env?.SEARCH_CACHE_MINUTES) {
+    const n = parseInt(process.env.SEARCH_CACHE_MINUTES, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return DEFAULT_SEARCH_CACHE_MINUTES;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
+
+// =====================
+// 搜索结果缓存管理
+// =====================
+
+// 检查搜索缓存是否有效（未过期）
+function isSearchCacheValid(keyword) {
+    if (!searchCache.has(keyword)) {
+        return false;
+    }
+
+    const cached = searchCache.get(keyword);
+    const now = Date.now();
+    const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
+
+    if (cacheAgeMinutes > searchCacheMinutes) {
+        // 缓存已过期，删除它
+        searchCache.delete(keyword);
+        log("info", `Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        return false;
+    }
+
+    return true;
+}
+
+// 获取搜索缓存
+function getSearchCache(keyword) {
+    if (isSearchCacheValid(keyword)) {
+        log("info", `Using search cache for "${keyword}"`);
+        return searchCache.get(keyword).results;
+    }
+    return null;
+}
+
+// 设置搜索缓存
+function setSearchCache(keyword, results) {
+    searchCache.set(keyword, {
+        results: results,
+        timestamp: Date.now()
+    });
+    log("info", `Cached search results for "${keyword}" (${results.length} animes)`);
+}
+
+// 检查弹幕缓存是否有效（未过期）
+function isCommentCacheValid(videoUrl) {
+    if (!commentCache.has(videoUrl)) {
+        return false;
+    }
+
+    const cached = commentCache.get(videoUrl);
+    const now = Date.now();
+    const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
+
+    if (cacheAgeMinutes > searchCacheMinutes) {
+        // 缓存已过期，删除它
+        commentCache.delete(videoUrl);
+        log("info", `Comment cache for "${videoUrl}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        return false;
+    }
+
+    return true;
+}
+
+// 获取弹幕缓存
+function getCommentCache(videoUrl) {
+    if (isCommentCacheValid(videoUrl)) {
+        log("info", `Using comment cache for "${videoUrl}"`);
+        return commentCache.get(videoUrl).comments;
+    }
+    return null;
+}
+
+// 设置弹幕缓存
+function setCommentCache(videoUrl, comments) {
+    commentCache.set(videoUrl, {
+        comments: comments,
+        timestamp: Date.now()
+    });
+    log("info", `Cached comments for "${videoUrl}" (${comments.length} comments)`);
+}
 
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
@@ -4331,6 +4431,17 @@ async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
+  // 检查搜索缓存
+  const cachedResults = getSearchCache(queryTitle);
+  if (cachedResults !== null) {
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: cachedResults,
+    });
+  }
+
   const curAnimes = [];
 
   // 链接弹幕解析
@@ -4489,6 +4600,11 @@ async function searchAnime(url) {
   // 如果有新的anime获取到，则更新redis
   if (redisValid && curAnimes.length !== 0) {
       await updateCaches();
+  }
+
+  // 缓存搜索结果
+  if (curAnimes.length > 0) {
+    setSearchCache(queryTitle, curAnimes);
   }
 
   return jsonResponse({
@@ -4936,6 +5052,12 @@ async function getComment(path) {
       url = convertYoukuUrl(url);
   }
 
+  // 检查弹幕缓存
+  const cachedComments = getCommentCache(url);
+  if (cachedComments !== null) {
+    return jsonResponse({ count: cachedComments.length, comments: cachedComments });
+  }
+
   log("info", "开始从本地请求弹幕...", url);
   let danmus = [];
   if (url.includes('.qq.com')) {
@@ -4971,6 +5093,11 @@ async function getComment(path) {
   setPreferByAnimeId(animeId);
   if (redisValid && animeId) {
     await setRedisKey('lastSelectMap', lastSelectMap);
+  }
+
+  // 缓存弹幕结果
+  if (danmus.length > 0) {
+    setCommentCache(url, danmus);
   }
 
   return jsonResponse({ count: danmus.length, comments: danmus });
@@ -5010,6 +5137,18 @@ async function getCommentByUrl(req) {
       url = convertYoukuUrl(url);
     }
 
+    // 检查弹幕缓存
+    const cachedComments = getCommentCache(url);
+    if (cachedComments !== null) {
+      return jsonResponse({
+        errorCode: 0,
+        success: true,
+        errorMessage: "",
+        count: cachedComments.length,
+        comments: cachedComments
+      });
+    }
+
     log("info", "开始从本地请求弹幕...", url);
     let danmus = [];
 
@@ -5033,6 +5172,11 @@ async function getCommentByUrl(req) {
     }
 
     log("info", `Successfully fetched ${danmus.length} comments from URL`);
+
+    // 缓存弹幕结果
+    if (danmus.length > 0) {
+      setCommentCache(url, danmus);
+    }
 
     return jsonResponse({
       errorCode: 0,
@@ -5078,6 +5222,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["enableEpisodeFilter"] = enableEpisodeFilter;
   proxyUrl = resolveProxyUrl(env);
   envs["proxyUrl"] = proxyUrl;
+  searchCacheMinutes = resolveSearchCacheMinutes(env);
+  envs["searchCacheMinutes"] = searchCacheMinutes;
   redisUrl = resolveRedisUrl(env);
   envs["redisUrl"] = encryptStr(redisUrl);
   redisToken = resolveRedisToken(env);
@@ -5332,4 +5478,5 @@ export async function netlifyHandler(event, context) {
 export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, getCommentByUrl, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
   getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments, tencentSearch, getTencentEpisodes,
-  pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry};
+  pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getSearchCache, setSearchCache, isSearchCacheValid,
+  getCommentCache, setCommentCache, isCommentCacheValid};
