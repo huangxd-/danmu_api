@@ -4464,7 +4464,7 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
         links.push({
           "name": i + 1,
           "url": fullUrl,
-          "title": `【tencent】 ${epTitle}`
+          "title": `【qq】 ${epTitle}`
         });
       }
 
