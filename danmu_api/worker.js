@@ -1,12 +1,3 @@
-// 加载 .env 文件（仅在 Node.js 环境中有效，Cloudflare Workers 会忽略）
-if (typeof process !== "undefined" && process.env && !process.env.CLOUDFLARE_ENVIRONMENT) {
-  try {
-    require('dotenv').config();
-  } catch (e) {
-    // dotenv 未安装或加载失败，继续执行
-  }
-}
-
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
 const VERSION = "1.4.1";
