@@ -5,7 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
 
-const envPath = path.join(__dirname, '.env');
+// .env 文件在项目根目录（server.js 的上一级目录）
+const envPath = path.join(__dirname, '..', '.env');
 
 function loadEnv() {
   try {
@@ -48,11 +49,40 @@ function setupEnvWatcher() {
       reloadTimer = setTimeout(() => {
         console.log(`[server] .env file changed, reloading environment variables...`);
 
-        // 清除 dotenv 缓存并重新加载环境变量
-        delete require.cache[require.resolve('dotenv')];
-        loadEnv();
+        // 读取新的 .env 文件内容
+        try {
+          const envContent = fs.readFileSync(envPath, 'utf8');
+          const lines = envContent.split('\n');
 
-        console.log('[server] Environment variables reloaded successfully');
+          // 解析 .env 文件中的所有键
+          const newEnvKeys = new Set();
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+              const match = trimmed.match(/^([^=]+)=/);
+              if (match) {
+                newEnvKeys.add(match[1]);
+              }
+            }
+          }
+
+          // 删除 process.env 中旧的键（不在新 .env 文件中的键）
+          for (const key of Object.keys(process.env)) {
+            if (!newEnvKeys.has(key)) {
+              delete process.env[key];
+            }
+          }
+
+          // 清除 dotenv 缓存并重新加载环境变量
+          delete require.cache[require.resolve('dotenv')];
+          loadEnv();
+
+          console.log('[server] Environment variables reloaded successfully');
+          console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
+        } catch (error) {
+          console.log('[server] Error reloading .env file:', error.message);
+        }
+
         reloadTimer = null;
       }, 200); // 200ms 防抖
     });

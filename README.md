@@ -109,7 +109,7 @@ LogVar 弹幕 API 服务器
 
    **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/danmu_api/.env --env-file .env danmu-api
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env --env-file .env danmu-api
    ```
 
    > **推荐**：使用 docker compose 部署可以更方便地管理配置和支持热更新，详见下方"Docker 一键启动"部分。
@@ -132,7 +132,7 @@ LogVar 弹幕 API 服务器
 
    **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/danmu_api/.env --env-file .env logvar/danmu-api:latest
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env --env-file .env logvar/danmu-api:latest
    ```
 
    或使用 docker compose 部署（**推荐，支持环境变量热更新**）：
@@ -144,7 +144,7 @@ LogVar 弹幕 API 服务器
          - "9321:9321"
        # 热更新支持：挂载 .env 文件，修改后容器会自动重新加载配置（无需重启容器）
        volumes:
-         - ./.env:/app/danmu_api/.env
+         - ./.env:/app/.env
        restart: unless-stopped
    ```
 
