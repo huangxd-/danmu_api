@@ -1401,6 +1401,17 @@ async function getVodAnimesFromFastestServer(title, servers) {
 // 工具方法
 // =====================
 
+// 生成有效的 ISO 8601 日期格式
+function generateValidStartDate(year) {
+  // 验证年份是否有效（1900-2100）
+  const yearNum = parseInt(year);
+  if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2100) {
+    // 如果年份无效，使用当前年份
+    return `${new Date().getFullYear()}-01-01T00:00:00Z`;
+  }
+  return `${yearNum}-01-01T00:00:00Z`;
+}
+
 function printFirst200Chars(data) {
   let dataToPrint;
 
@@ -4525,7 +4536,7 @@ async function handleVodAnimes(animesVod, curAnimes, key) {
         type: anime.type_name,
         typeDescription: anime.type_name,
         imageUrl: anime.vod_pic,
-        startDate: `${anime.vod_year}-01-01T00:00:00`,
+        startDate: generateValidStartDate(anime.vod_year),
         episodeCount: links.length,
         rating: 0,
         isFavorited: true,
@@ -4589,7 +4600,7 @@ async function handle360Animes(animes360, curAnimes) {
         type: anime.cat_name,
         typeDescription: anime.cat_name,
         imageUrl: anime.cover,
-        startDate: `${anime.year}-01-01T00:00:00`,
+        startDate: generateValidStartDate(anime.year),
         episodeCount: links.length,
         rating: 0,
         isFavorited: true,
@@ -4627,7 +4638,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
           type: anime.type,
           typeDescription: anime.type,
           imageUrl: anime.imageUrl,
-          startDate: `${anime.year}-01-01T00:00:00`,
+          startDate: generateValidStartDate(anime.year),
           episodeCount: links.length,
           rating: 0,
           isFavorited: true,
@@ -4676,7 +4687,7 @@ async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
           type: getCategory(detail.category),
           typeDescription: getCategory(detail.category),
           imageUrl: anime.image.thumb,
-          startDate: `${new Date(anime.updateTime).getFullYear()}-01-01T00:00:00`,
+          startDate: generateValidStartDate(new Date(anime.updateTime).getFullYear()),
           episodeCount: links.length,
           rating: detail.rank,
           isFavorited: true,
@@ -4720,7 +4731,7 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
           type: "动漫",
           typeDescription: "动漫",
           imageUrl: anime.cover,
-          startDate: `${new Date(epData.anime.seasonStart).getFullYear()}-01-01T00:00:00`,
+          startDate: generateValidStartDate(new Date(epData.anime.seasonStart).getFullYear()),
           episodeCount: links.length,
           rating: detail.rating,
           isFavorited: true,
@@ -4768,7 +4779,7 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
           type: anime.type,
           typeDescription: anime.type,
           imageUrl: anime.imageUrl,
-          startDate: `${anime.year}-01-01T00:00:00`,
+          startDate: generateValidStartDate(anime.year),
           episodeCount: links.length,
           rating: 0,
           isFavorited: true,
