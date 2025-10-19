@@ -72,6 +72,9 @@ LogVar 弹幕 API 服务器
    npm start
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
+
+   **热更新支持**：修改 `.env` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+
    或者使用下面的命令
    ```bash
    # 启动
@@ -104,6 +107,13 @@ LogVar 弹幕 API 服务器
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
 
+   **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
+   ```bash
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/danmu_api/.env --env-file .env danmu-api
+   ```
+
+   > **推荐**：使用 docker compose 部署可以更方便地管理配置和支持热更新，详见下方"Docker 一键启动"部分。
+
 3. **测试 API**：
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
 
@@ -120,19 +130,22 @@ LogVar 弹幕 API 服务器
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
-   或使用 docker compose 部署：
+   **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
+   ```bash
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/danmu_api/.env --env-file .env logvar/danmu-api:latest
+   ```
+
+   或使用 docker compose 部署（**推荐，支持环境变量热更新**）：
    ```yaml
    services:
      danmu-api:
        image: logvar/danmu-api:latest
-       container_name: danmu-api
        ports:
          - "9321:9321"
-       environment:
-         - TOKEN=87654321  # 请将 87654321 替换为你想自定义的 Token 值
-       # 如需使用 .env 文件，取消下行注释并注释掉上面的 environment 部分
-       # env_file: .env
-       restart: unless-stopped    # 可选配置，容器退出时自动重启（非必需，可根据需求删除）
+       # 热更新支持：挂载 .env 文件，修改后容器会自动重新加载配置（无需重启容器）
+       volumes:
+         - ./.env:/app/danmu_api/.env
+       restart: unless-stopped
    ```
 
    可以使用 watchtower 监控有新版本自动更新：
@@ -352,6 +365,13 @@ danmu_api/
 ```
 
 ## 注意事项
+
+### 热更新相关
+- **本地运行**：修改 `.env` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+- **Docker 部署**：需要使用 Volume 挂载 `.env` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改 `.env` 文件容器会自动重新加载配置。
+- **Vercel/Netlify/Cloudflare**：需要在平台的环境变量设置中修改，然后重新部署才能生效。
+
+### 其他注意事项
 - 日志存储在内存中，服务器重启后会清空。
 - `/api/logs` 中的 JSON 日志会格式化显示，带缩进以提高可读性。
 - 搜索结果和弹幕数据存储在内存中，服务器重启后会清空，可通过配置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN` 启用 Redis 持久化存储。

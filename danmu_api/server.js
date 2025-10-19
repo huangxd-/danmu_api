@@ -1,12 +1,92 @@
 // server.js - 智能服务器启动器：根据 Node.js 环境自动选择最优启动模式
 
 // 加载 .env 文件中的环境变量（本地开发时使用）
-try {
-  require('dotenv').config();
-  console.log('[server] .env file loaded successfully');
-} catch (e) {
-  console.log('[server] dotenv not available or .env file not found, using system environment variables');
+const path = require('path');
+const fs = require('fs');
+const dotenv = require('dotenv');
+
+const envPath = path.join(__dirname, '.env');
+
+function loadEnv() {
+  try {
+    dotenv.config({ path: envPath, override: true });
+    console.log('[server] .env file loaded successfully');
+  } catch (e) {
+    console.log('[server] dotenv not available or .env file not found, using system environment variables');
+  }
 }
+
+// 初始加载
+loadEnv();
+
+// 监听 .env 文件变化（仅在文件存在时）
+let envWatcher = null;
+let reloadTimer = null;
+
+function setupEnvWatcher() {
+  if (!fs.existsSync(envPath)) {
+    console.log('[server] .env file not found, skipping file watcher');
+    return;
+  }
+
+  try {
+    const chokidar = require('chokidar');
+    envWatcher = chokidar.watch(envPath, {
+      persistent: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 100
+      }
+    });
+
+    envWatcher.on('change', () => {
+      // 防抖：避免短时间内多次触发
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
+
+      reloadTimer = setTimeout(() => {
+        console.log(`[server] .env file changed, reloading environment variables...`);
+
+        // 清除 dotenv 缓存并重新加载环境变量
+        delete require.cache[require.resolve('dotenv')];
+        loadEnv();
+
+        console.log('[server] Environment variables reloaded successfully');
+        reloadTimer = null;
+      }, 200); // 200ms 防抖
+    });
+
+    envWatcher.on('unlink', () => {
+      console.log('[server] .env file deleted, using default environment variables');
+    });
+
+    envWatcher.on('error', (error) => {
+      console.log('[server] File watcher error:', error.message);
+    });
+
+    console.log('[server] .env file watcher started');
+  } catch (e) {
+    console.log('[server] chokidar not available, .env hot reload disabled');
+  }
+}
+
+// 优雅关闭：清理文件监听器
+function cleanupWatcher() {
+  if (envWatcher) {
+    console.log('[server] Closing file watcher...');
+    envWatcher.close();
+    envWatcher = null;
+  }
+  if (reloadTimer) {
+    clearTimeout(reloadTimer);
+    reloadTimer = null;
+  }
+}
+
+// 监听进程退出信号
+process.on('SIGTERM', cleanupWatcher);
+process.on('SIGINT', cleanupWatcher);
 
 // 导入 ES module 兼容层（始终加载，但内部会根据需要启用）
 require('./esm-shim');
@@ -190,6 +270,9 @@ function createProxyServer() {
 function startServerSync() {
   console.log('[server] Starting server synchronously (optimal path)');
 
+  // 设置 .env 文件监听
+  setupEnvWatcher();
+
   // 启动主业务服务器 (9321)
   const server = createServer();
   server.listen(9321, '0.0.0.0', () => {
@@ -208,6 +291,9 @@ function startServerSync() {
 async function startServerAsync() {
   try {
     console.log('[server] Starting server asynchronously (compatibility mode for Node.js <20.19.0 + node-fetch v3)');
+
+    // 设置 .env 文件监听
+    setupEnvWatcher();
 
     // 预加载 node-fetch v3（解决特定环境下 node-fetch v3 的加载问题）
     if (typeof global.loadNodeFetch === 'function') {
