@@ -1,8 +1,13 @@
+// 加载 .env 文件
+require('dotenv').config();
+
 const test = require('node:test');
 const assert = require('node:assert').strict;
 const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost,
-  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail } = require('./worker');
+  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail,
+  bahamutSearch, getBahamutEpisodes, getBahamutComments, pingRedis, getRedisKey,
+  setRedisKey, setRedisKeyWithExpiry} = require('./worker');
 
 // Mock Request class for testing
 class MockRequest {
@@ -88,6 +93,21 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
+  // await t.test('GET bahamut search', async () => {
+  //   const res = await bahamutSearch("膽大黨");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bahamut episodes', async () => {
+  //   const res = await getBahamutEpisodes("44243");
+  //   assert(res.anime.episodes[0].length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bahamut danmu', async () => {
+  //   const res = await getBahamutComments("44453");
+  //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
   await t.test('GET realistic danmu', async () => {
     // tencent
     // const keyword = "子夜归";
@@ -102,7 +122,9 @@ test('worker.js API endpoints', async (t) => {
     // renren
     // const keyword = "瑞克和莫蒂";
     // hanjutv
-    const keyword = "请回答1988";
+    // const keyword = "请回答1988";
+    // bahamut
+    const keyword = "胆大党";
 
     const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
     const searchRes = await searchAnime(searchUrl);
@@ -170,5 +192,26 @@ test('worker.js API endpoints', async (t) => {
   //   // 验证响应状态
   //   assert.equal(res.status, 200);
   //   assert.deepEqual(responseBody.success, true);
+  // });
+
+  // 测试upstash redis
+  // await t.test('GET redis pingRedis', async () => {
+  //   const res = await pingRedis();
+  //   assert(res.result === "PONG", `Expected res.result === "PONG", but got ${res.result}`);
+  // });
+
+  // await t.test('SET redis setRedisKey', async () => {
+  //   const res = await setRedisKey('mykey', 'Hello World');
+  //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
+  // });
+
+  // await t.test('GET redis getRedisKey', async () => {
+  //   const res = await getRedisKey('mykey');
+  //   assert(res.result.toString() === "\"Hello World\"", `Expected res.result === "\"Hello World\"", but got ${res.result}`);
+  // });
+
+  // await t.test('SET redis setRedisKeyWithExpiry', async () => {
+  //   const res = await setRedisKeyWithExpiry('expkey', 'Temporary Value', 10);
+  //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
   // });
 });
