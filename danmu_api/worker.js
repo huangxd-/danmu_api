@@ -330,8 +330,8 @@ function resolveEnableEpisodeFilter(env) {
   return DEFAULT_ENABLE_EPISODE_FILTER;
 }
 
-// 日志级别配置（默认 warn，可选值：error, warn, info）
-const DEFAULT_LOG_LEVEL = "warn";
+// 日志级别配置（默认 info，可选值：error, warn, info）
+const DEFAULT_LOG_LEVEL = "info";
 let logLevel = DEFAULT_LOG_LEVEL;
 
 function resolveLogLevel(env) {
