@@ -1,3 +1,12 @@
+// 加载 .env 文件（仅在 Node.js 环境中有效，Cloudflare Workers 会忽略）
+if (typeof process !== "undefined" && process.env && !process.env.CLOUDFLARE_ENVIRONMENT) {
+  try {
+    require('dotenv').config();
+  } catch (e) {
+    // dotenv 未安装或加载失败，继续执行
+  }
+}
+
 // 全局状态（Cloudflare 和 Vercel 都可能重用实例）
 // ⚠️ 不是持久化存储，每次冷启动会丢失
 const VERSION = "1.4.0";
@@ -26,6 +35,10 @@ let lastHashes = {
   episodeNum: null,
   lastSelectMap: null
 };
+// 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
+const searchCache = new Map();
+// 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
+const commentCache = new Map();
 
 // =====================
 // 环境变量处理
@@ -50,7 +63,7 @@ function resolveOtherServer(env) {
   return DEFAULT_OTHER_SERVER;
 }
 
-const DEFAULT_VOD_SERVERS = "vod@https://www.caiji.cyou"; // 默认 vod站点配置，格式：名称@URL,名称@URL
+const DEFAULT_VOD_SERVERS = "金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top"; // 默认 vod站点配置，格式：名称@URL,名称@URL
 let vodServers = [];
 
 function resolveVodServers(env) {
@@ -83,6 +96,26 @@ function resolveVodServers(env) {
     .filter(server => server.url && server.url.length > 0);  // 过滤掉空 URL
 
   return servers;
+}
+
+const DEFAULT_VOD_RETURN_MODE = "fastest"; // 默认 vod返回模式：all（所有站点）或 fastest（最快的站点）
+let vodReturnMode = DEFAULT_VOD_RETURN_MODE;
+
+function resolveVodReturnMode(env) {
+  let mode = DEFAULT_VOD_RETURN_MODE;
+  if (env && env.VOD_RETURN_MODE) {
+    mode = env.VOD_RETURN_MODE.toLowerCase();  // Cloudflare Workers
+  } else if (typeof process !== "undefined" && process.env?.VOD_RETURN_MODE) {
+    mode = process.env.VOD_RETURN_MODE.toLowerCase();  // Vercel / Node
+  }
+
+  // 验证模式值
+  if (mode !== "all" && mode !== "fastest") {
+    log("warn", `Invalid VOD_RETURN_MODE: ${mode}, using default: ${DEFAULT_VOD_RETURN_MODE}`);
+    return DEFAULT_VOD_RETURN_MODE;
+  }
+
+  return mode;
 }
 
 const DEFAULT_BILIBILI_COOKIE = ""; // 默认 bilibili cookie
@@ -173,13 +206,13 @@ function resolvePlatformOrder(env) {
   return orderArr;
 }
 
-const DEFAULT_EPISODE_TITLE_FILTER = "(特别|惊喜|纳凉)?企划|合伙人手记|超前|速览|vlog|reaction|纯享|加更|抢先|抢鲜|预告|花絮|" +
-  "特辑|彩蛋|专访|幕后|直播|未播|衍生|番外|会员|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|" +
+const DEFAULT_EPISODE_TITLE_FILTER = "(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|" +
+  "特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|" +
   "花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|" +
   "NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|" +
-  "剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|抢先看|抢先版|" +
-  "试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|陪看|高清正片|发布会|.{2,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|" +
-  "周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记"; // 默认 剧集标题正则过滤
+  "剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|采访|陪看(记)?|" +
+  "试看版|短剧|精编|Plus|独家版|特别版|短片|发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|.{3,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|" +
+  "周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘"; // 默认 剧集标题正则过滤
 let episodeTitleFilter;
 
 // 这里既支持 Cloudflare env，也支持 Node process.env
@@ -290,9 +323,119 @@ function resolveRateLimitMaxRequests(env) {
   return DEFAULT_RATE_LIMIT_MAX_REQUESTS;
 }
 
+// 集标题过滤开关配置（默认 false，禁用过滤）
+const DEFAULT_ENABLE_EPISODE_FILTER = false;
+let enableEpisodeFilter = DEFAULT_ENABLE_EPISODE_FILTER;
+
+function resolveEnableEpisodeFilter(env) {
+  if (env && env.ENABLE_EPISODE_FILTER !== undefined) {
+    return env.ENABLE_EPISODE_FILTER.toLowerCase() === 'true';
+  }
+  if (typeof process !== "undefined" && process.env?.ENABLE_EPISODE_FILTER !== undefined) {
+    return process.env.ENABLE_EPISODE_FILTER.toLowerCase() === 'true';
+  }
+  return DEFAULT_ENABLE_EPISODE_FILTER;
+}
+
+// 搜索结果缓存时间配置（分钟，默认 1）
+const DEFAULT_SEARCH_CACHE_MINUTES = 1;
+let searchCacheMinutes = DEFAULT_SEARCH_CACHE_MINUTES;
+
+function resolveSearchCacheMinutes(env) {
+  if (env && env.SEARCH_CACHE_MINUTES) {
+    const n = parseInt(env.SEARCH_CACHE_MINUTES, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  if (typeof process !== "undefined" && process.env?.SEARCH_CACHE_MINUTES) {
+    const n = parseInt(process.env.SEARCH_CACHE_MINUTES, 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return DEFAULT_SEARCH_CACHE_MINUTES;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
+
+// =====================
+// 搜索结果缓存管理
+// =====================
+
+// 检查搜索缓存是否有效（未过期）
+function isSearchCacheValid(keyword) {
+    if (!searchCache.has(keyword)) {
+        return false;
+    }
+
+    const cached = searchCache.get(keyword);
+    const now = Date.now();
+    const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
+
+    if (cacheAgeMinutes > searchCacheMinutes) {
+        // 缓存已过期，删除它
+        searchCache.delete(keyword);
+        log("info", `Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        return false;
+    }
+
+    return true;
+}
+
+// 获取搜索缓存
+function getSearchCache(keyword) {
+    if (isSearchCacheValid(keyword)) {
+        log("info", `Using search cache for "${keyword}"`);
+        return searchCache.get(keyword).results;
+    }
+    return null;
+}
+
+// 设置搜索缓存
+function setSearchCache(keyword, results) {
+    searchCache.set(keyword, {
+        results: results,
+        timestamp: Date.now()
+    });
+    log("info", `Cached search results for "${keyword}" (${results.length} animes)`);
+}
+
+// 检查弹幕缓存是否有效（未过期）
+function isCommentCacheValid(videoUrl) {
+    if (!commentCache.has(videoUrl)) {
+        return false;
+    }
+
+    const cached = commentCache.get(videoUrl);
+    const now = Date.now();
+    const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
+
+    if (cacheAgeMinutes > searchCacheMinutes) {
+        // 缓存已过期，删除它
+        commentCache.delete(videoUrl);
+        log("info", `Comment cache for "${videoUrl}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        return false;
+    }
+
+    return true;
+}
+
+// 获取弹幕缓存
+function getCommentCache(videoUrl) {
+    if (isCommentCacheValid(videoUrl)) {
+        log("info", `Using comment cache for "${videoUrl}"`);
+        return commentCache.get(videoUrl).comments;
+    }
+    return null;
+}
+
+// 设置弹幕缓存
+function setCommentCache(videoUrl, comments) {
+    commentCache.set(videoUrl, {
+        comments: comments,
+        timestamp: Date.now()
+    });
+    log("info", `Cached comments for "${videoUrl}" (${comments.length} comments)`);
+}
 
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 function addEpisode(url, title) {
@@ -1003,7 +1146,7 @@ async function get360Zongyi(title, entId, site, year) {
         links.push({
             "name": episodeInfo.id,
             "url": episodeInfo.url,
-            "title": `【${site}】 #${episodeInfo.name} ${episodeInfo.period}#`,
+            "title": `【${site}】 ${episodeInfo.name} ${episodeInfo.period}`,
             "sort": epNum || episodeInfo.sort || null
         });
       }
@@ -1068,6 +1211,16 @@ async function getVodAnimesFromAllServers(title, servers) {
     return [];
   }
 
+  // 根据 vodReturnMode 决定查询策略
+  if (vodReturnMode === "fastest") {
+    return await getVodAnimesFromFastestServer(title, servers);
+  } else {
+    return await getVodAnimesFromAllServersImpl(title, servers);
+  }
+}
+
+// 查询所有vod站点影片信息（返回所有结果）
+async function getVodAnimesFromAllServersImpl(title, servers) {
   // 并发查询所有服务器，使用 allSettled 确保单个服务器失败不影响其他服务器
   const promises = servers.map(server =>
     getVodAnimes(title, server.url, server.name)
@@ -1079,6 +1232,41 @@ async function getVodAnimesFromAllServers(title, servers) {
   return results
     .filter(result => result.status === 'fulfilled')
     .map(result => result.value);
+}
+
+// 查询vod站点影片信息（返回最快的结果）
+async function getVodAnimesFromFastestServer(title, servers) {
+  if (!servers || servers.length === 0) {
+    return [];
+  }
+
+  // 使用 Promise.race 获取最快响应的服务器
+  const promises = servers.map(server =>
+    getVodAnimes(title, server.url, server.name)
+  );
+
+  try {
+    // race 会返回第一个成功的结果
+    const result = await Promise.race(promises);
+
+    // 检查结果是否有效（有数据）
+    if (result && result.list && result.list.length > 0) {
+      log("info", `[VOD fastest mode] 使用最快的服务器: ${result.serverName}`);
+      return [result];
+    }
+
+    // 如果最快的服务器没有数据，继续尝试其他服务器
+    log("info", `[VOD fastest mode] 最快的服务器 ${result.serverName} 无数据，尝试其他服务器`);
+    const allResults = await Promise.allSettled(promises);
+    const validResults = allResults
+      .filter(r => r.status === 'fulfilled' && r.value && r.value.list && r.value.list.length > 0)
+      .map(r => r.value);
+
+    return validResults.length > 0 ? [validResults[0]] : [];
+  } catch (error) {
+    log("error", `[VOD fastest mode] 所有服务器查询失败:`, error.message);
+    return [];
+  }
 }
 
 // =====================
@@ -1580,11 +1768,7 @@ const extractTitle = (title) => {
   return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
 };
 
-// 提取##中的内容并进行匹配
-const extractEpTitle = (title) => {
-  const match = title.match(/#(.*?)#/);  // 提取#号之间的内容
-  return match ? match[1] : null;  // 返回#号中的内容，若没有则返回null
-};
+
 
 // 解析fileName，提取动漫名称和平台偏好
 function parseFileName(fileName) {
@@ -4193,7 +4377,7 @@ async function handleVodAnimes(animesVod, curAnimes, key) {
         links.push({
           "name": count,
           "url": epInfo[1],
-          "title": `【${platform}】 #${epInfo[0]}#`
+          "title": `【${platform}】 ${epInfo[0]}`
         });
       }
     }
@@ -4230,7 +4414,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": key,
             "url": anime.playlinks[key],
-            "title": `【${key}】${anime.titleTxt}(${anime.year})`
+            "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
           });
         }
       }
@@ -4241,7 +4425,7 @@ async function handle360Animes(animes360, curAnimes) {
           links.push({
             "name": i + 1,
             "url": item.url,
-            "title": `【${anime.seriesSite}】 #${i + 1}#`
+            "title": `【${anime.seriesSite}】 第${i + 1}集`
           });
         }
       }
@@ -4296,7 +4480,7 @@ async function handleRenrenAnimes(animesRenren, queryTitle, curAnimes) {
         links.push({
           "name": ep.episodeIndex,
           "url": ep.episodeId,
-          "title": `【${ep.provider}】 #${ep.title}#`
+          "title": `【${ep.provider}】 ${ep.title}`
         });
       }
 
@@ -4345,7 +4529,7 @@ async function handleHanjutvAnimes(animesHanjutv, queryTitle, curAnimes) {
         links.push({
           "name": ep.title,
           "url": ep.pid,
-          "title": `【hanjutv】 #${epTitle}#`
+          "title": `【hanjutv】 ${epTitle}`
         });
       }
 
@@ -4389,7 +4573,7 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
         links.push({
           "name": ep.episode,
           "url": ep.videoSn.toString(),
-          "title": `【bahamut】 #${epTitle}#`
+          "title": `【bahamut】 ${epTitle}`
         });
       }
 
@@ -4435,7 +4619,7 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
         links.push({
           "name": i + 1,
           "url": fullUrl,
-          "title": `【tencent】 #${epTitle}#`
+          "title": `【qq】 ${epTitle}`
         });
       }
 
@@ -4471,6 +4655,17 @@ async function handleTencentAnimes(animesTencent, queryTitle, curAnimes) {
 async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
+
+  // 检查搜索缓存
+  const cachedResults = getSearchCache(queryTitle);
+  if (cachedResults !== null) {
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: cachedResults,
+    });
+  }
 
   const curAnimes = [];
 
@@ -4508,7 +4703,7 @@ async function searchAnime(url) {
     const links = [{
       "name": "手动解析链接弹幕",
       "url": queryTitle,
-      "title": `【${platform}】 #${pageTitle}#`
+      "title": `【${platform}】 ${pageTitle}`
     }];
     curAnimes.push(tmpAnime);
     addAnime({...tmpAnime, links: links});
@@ -4587,9 +4782,52 @@ async function searchAnime(url) {
 
   storeAnimeIdsToMap(curAnimes, queryTitle);
 
+  // 如果启用了集标题过滤，则为每个动漫添加过滤后的 episodes
+  if (enableEpisodeFilter) {
+    const validAnimes = [];
+    for (const anime of curAnimes) {
+      // 首先检查动漫名称是否包含过滤关键词
+      const animeTitle = anime.animeTitle || '';
+      if (episodeTitleFilter.test(animeTitle)) {
+        log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
+        continue; // 跳过该动漫
+      }
+
+      const animeData = animes.find(a => a.animeId === anime.animeId);
+      if (animeData && animeData.links) {
+        let episodesList = animeData.links.map((link, index) => ({
+          episodeId: link.id,
+          episodeTitle: link.title,
+          episodeNumber: index + 1
+        }));
+
+        // 应用过滤
+        episodesList = episodesList.filter(episode => {
+          return !episodeTitleFilter.test(episode.episodeTitle);
+        });
+
+        log("info", `[searchAnime] Anime ${anime.animeId} filtered episodes: ${episodesList.length}/${animeData.links.length}`);
+
+        // 只有当过滤后还有有效剧集时才保留该动漫
+        if (episodesList.length > 0) {
+          anime.episodes = episodesList;
+          validAnimes.push(anime);
+        }
+      }
+    }
+    // 用过滤后的动漫列表替换原列表
+    curAnimes.length = 0;
+    curAnimes.push(...validAnimes);
+  }
+
   // 如果有新的anime获取到，则更新redis
   if (redisValid && curAnimes.length !== 0) {
       await updateRedisCaches();
+  }
+
+  // 缓存搜索结果
+  if (curAnimes.length > 0) {
+    setSearchCache(queryTitle, curAnimes);
   }
 
   return jsonResponse({
@@ -4602,13 +4840,9 @@ async function searchAnime(url) {
 
 function filterSameEpisodeTitle(filteredTmpEpisodes) {
     const filteredEpisodes = filteredTmpEpisodes.filter((episode, index, episodes) => {
-        const filterEp = extractEpTitle(episode.episodeTitle);
-        // 如果没有提取到标题，返回 true 保留该 episode
-        if (!filterEp) return true;
         // 查找当前 episode 标题是否在之前的 episodes 中出现过
         return !episodes.slice(0, index).some(prevEpisode => {
-            const prevFilterEp = extractEpTitle(prevEpisode.episodeTitle);
-            return prevFilterEp === filterEp;
+            return prevEpisode.episodeTitle === episode.episodeTitle;
         });
     });
     return filteredEpisodes;
@@ -4629,8 +4863,7 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
 
         // 过滤集标题正则条件的 episode
         const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-          const filterEp = extractEpTitle(episode.episodeTitle);
-          return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+          return !episodeTitleFilter.test(episode.episodeTitle);
         });
 
         // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
@@ -4701,8 +4934,7 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisod
     if (season && episode) {
       // 过滤集标题正则条件的 episode
       const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-        const filterEp = extractEpTitle(episode.episodeTitle);
-        return filterEp && !episodeTitleFilter.test(filterEp);  // 如果##中的内容匹配正则表达式
+        return !episodeTitleFilter.test(episode.episodeTitle);
       });
 
       // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
@@ -4980,16 +5212,37 @@ async function getBangumi(path) {
     },
   };
 
+  // 构建 episodes 列表
+  let episodesList = [];
   for (let i = 0; i < anime.links.length; i++) {
     const link = anime.links[i];
-    resData["bangumi"]["episodes"].push({
-          seasonId: `season-${anime.animeId}`,
-          episodeId: link.id,
-          episodeTitle: `${link.title}`,
-          episodeNumber: `${i+1}`,
-          airDate: anime.startDate,
-        });
+    episodesList.push({
+      seasonId: `season-${anime.animeId}`,
+      episodeId: link.id,
+      episodeTitle: `${link.title}`,
+      episodeNumber: `${i+1}`,
+      airDate: anime.startDate,
+    });
   }
+
+  // 如果启用了集标题过滤，则应用过滤
+  if (enableEpisodeFilter) {
+    episodesList = episodesList.filter(episode => {
+      return !episodeTitleFilter.test(episode.episodeTitle);
+    });
+    log("info", `[getBangumi] Episode filter enabled. Filtered episodes: ${episodesList.length}/${anime.links.length}`);
+
+    // 如果过滤后没有有效剧集，返回错误
+    if (episodesList.length === 0) {
+      log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam}`);
+      return jsonResponse(
+        { errorCode: 404, success: false, errorMessage: "No valid episodes after filtering", bangumi: null },
+        404
+      );
+    }
+  }
+
+  resData["bangumi"]["episodes"] = episodesList;
 
   return jsonResponse(resData);
 }
@@ -5013,6 +5266,12 @@ async function getComment(path) {
   // https://v.youku.com/video?vid=XNjQ4MTIwOTE2NA==&tpa=dW5pb25faWQ9MTAyMjEzXzEwMDAwNl8wMV8wMQ需要转成https://v.youku.com/v_show/id_XNjQ4MTIwOTE2NA==.html
   if (url.includes("youku.com/video?vid")) {
       url = convertYoukuUrl(url);
+  }
+
+  // 检查弹幕缓存
+  const cachedComments = getCommentCache(url);
+  if (cachedComments !== null) {
+    return jsonResponse({ count: cachedComments.length, comments: cachedComments });
   }
 
   log("info", "开始从本地请求弹幕...", url);
@@ -5052,6 +5311,11 @@ async function getComment(path) {
     await setRedisKey('lastSelectMap', lastSelectMap);
   }
 
+  // 缓存弹幕结果
+  if (danmus.length > 0) {
+    setCommentCache(url, danmus);
+  }
+
   return jsonResponse({ count: danmus.length, comments: danmus });
 }
 
@@ -5089,6 +5353,18 @@ async function getCommentByUrl(req) {
       url = convertYoukuUrl(url);
     }
 
+    // 检查弹幕缓存
+    const cachedComments = getCommentCache(url);
+    if (cachedComments !== null) {
+      return jsonResponse({
+        errorCode: 0,
+        success: true,
+        errorMessage: "",
+        count: cachedComments.length,
+        comments: cachedComments
+      });
+    }
+
     log("info", "开始从本地请求弹幕...", url);
     let danmus = [];
 
@@ -5112,6 +5388,11 @@ async function getCommentByUrl(req) {
     }
 
     log("info", `Successfully fetched ${danmus.length} comments from URL`);
+
+    // 缓存弹幕结果
+    if (danmus.length > 0) {
+      setCommentCache(url, danmus);
+    }
 
     return jsonResponse({
       errorCode: 0,
@@ -5137,6 +5418,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["otherServer"] = otherServer;
   vodServers = resolveVodServers(env);
   envs["vodServers"] = vodServers.map(s => `${s.name}@${s.url}`).join(',');
+  vodReturnMode = resolveVodReturnMode(env);
+  envs["vodReturnMode"] = vodReturnMode;
   bilibliCookie = resolveBilibiliCookie(env);
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);
@@ -5153,8 +5436,12 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["groupMinute"] = groupMinute;
   rateLimitMaxRequests = resolveRateLimitMaxRequests(env);
   envs["rateLimitMaxRequests"] = rateLimitMaxRequests;
+  enableEpisodeFilter = resolveEnableEpisodeFilter(env);
+  envs["enableEpisodeFilter"] = enableEpisodeFilter;
   proxyUrl = resolveProxyUrl(env);
   envs["proxyUrl"] = proxyUrl;
+  searchCacheMinutes = resolveSearchCacheMinutes(env);
+  envs["searchCacheMinutes"] = searchCacheMinutes;
   redisUrl = resolveRedisUrl(env);
   envs["redisUrl"] = encryptStr(redisUrl);
   redisToken = resolveRedisToken(env);
@@ -5282,7 +5569,28 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/comment/:commentId
   if (path.startsWith("/api/v2/comment/") && method === "GET") {
-    // 限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
+    // ⚠️ 限流设计说明：
+    // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
+    // 2. 只有缓存未命中时才执行限流检查和网络请求
+    // 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
+    const commentId = parseInt(path.split("/").pop());
+    let url = findUrlById(commentId);
+
+    if (url) {
+      // 处理302场景
+      if (url.includes("youku.com/video?vid")) {
+        url = convertYoukuUrl(url);
+      }
+
+      // 检查弹幕缓存 - 缓存命中时直接返回，不计入限流
+      const cachedComments = getCommentCache(url);
+      if (cachedComments !== null) {
+        log("info", `[Rate Limit] Cache hit for URL: ${url}, skipping rate limit check`);
+        return jsonResponse({ count: cachedComments.length, comments: cachedComments });
+      }
+    }
+
+    // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
     if (rateLimitMaxRequests > 0) {
       // 获取当前时间戳（单位：毫秒）
       const currentTime = Date.now();
@@ -5319,6 +5627,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
       // 更新该 IP 地址的请求历史
       requestHistory.set(clientIp, recentRequests);
+      log("info", `[Rate Limit] Request counted for IP: ${clientIp}, count: ${recentRequests.length}/${rateLimitMaxRequests}`);
     }
 
     return getComment(path);
@@ -5409,4 +5718,5 @@ export async function netlifyHandler(event, context) {
 export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, getComment, getCommentByUrl, fetchTencentVideo, fetchIqiyi,
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
   getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments, tencentSearch, getTencentEpisodes,
-  pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry};
+  pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getSearchCache, setSearchCache, isSearchCacheValid,
+  getCommentCache, setCommentCache, isCommentCacheValid};

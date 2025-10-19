@@ -6,7 +6,7 @@
 LogVar 弹幕 API 服务器
 </h2>
 
-[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/damnu_api)
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/danmu_api)
 ![GitHub forks](https://img.shields.io/github/forks/huangxd-/danmu_api)
 ![GitHub Repo stars](https://img.shields.io/github/stars/huangxd-/danmu_api)
 ![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
@@ -37,6 +37,7 @@ LogVar 弹幕 API 服务器
   - `POST /api/v2/comment/by-url`：通过视频URL直接获取弹幕。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
+- **搜索结果缓存**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求，可通过 `SEARCH_CACHE_MINUTES` 环境变量配置缓存时间（默认1分钟）。
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Cloudflare 一键部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔播放链接可获取弹幕，如`senplayer`。
@@ -93,6 +94,7 @@ LogVar 弹幕 API 服务器
    docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 danmu-api
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
+   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
 
 3. **测试 API**：
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
@@ -108,7 +110,9 @@ LogVar 弹幕 API 服务器
    docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 logvar/danmu-api:latest
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
+   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
+   或使用 docker compose 部署：
    ```yaml
    services:
      danmu-api:
@@ -118,9 +122,12 @@ LogVar 弹幕 API 服务器
          - "9321:9321"
        environment:
          - TOKEN=87654321  # 请将 87654321 替换为你想自定义的 Token 值
+       # 如需使用 .env 文件，取消下行注释并注释掉上面的 environment 部分
+       # env_file: .env
        restart: unless-stopped    # 可选配置，容器退出时自动重启（非必需，可根据需求删除）
    ```
-   - 或使用docker compose部署。
+
+   可以使用 watchtower 监控有新版本自动更新：
    ```yaml
    services:
      watchtower:
@@ -137,7 +144,6 @@ LogVar 弹幕 API 服务器
          - "12600"           # 30分钟（1800秒），适合测试
          - danmu-api         # 监控的目标容器名
    ```
-   - 可以使用watchtower监控有新版本自动更新。
 
 3. **测试 API**：
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
@@ -154,7 +160,7 @@ LogVar 弹幕 API 服务器
   1. 转到你的项目设置。
   2. 在“Environment Variables”部分添加 `TOKEN` 变量，输入你的 API 令牌值。
   3. 保存更改并重新部署。
-- 示例请求：`https://{your_domian}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
+- 示例请求：`https://{your_domain}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
 
 ### 优化点
 - Settings > Functions > Advanced Setting > Function Region 切换为 Hong Kong，能提高访问速度，体验更优
@@ -182,7 +188,7 @@ LogVar 弹幕 API 服务器
 
 > 注意：部署时请在环境变量配置区域填写你的TOKEN值，该变量将用于API服务的身份验证相关功能
 > 
-> 示例请求：`https://{your_domian}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
+> 示例请求：`https://{your_domain}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
 >
 > 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
 > 
@@ -207,7 +213,7 @@ LogVar 弹幕 API 服务器
   2. 转到“Settings” > “Variables”。
   3. 添加 `TOKEN` 环境变量，输入你的 API 令牌值。
   4. 保存并部署。
-- 示例请求：`https://{your_domian}.workers.dev/87654321/api/v2/search/anime?keyword=子夜归`
+- 示例请求：`https://{your_domain}.workers.dev/87654321/api/v2/search/anime?keyword=子夜归`
 
 ### 手动部署
 创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。
@@ -244,23 +250,26 @@ LogVar 弹幕 API 服务器
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`       |
-| VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`，不填默认为`vod@https://www.caiji.cyou`       |
+| VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`，不填默认为`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`       |
+| VOD_RETURN_MODE      | 【可选】VOD返回模式，可选值：`all`（返回所有站点结果）、`fastest`（只返回最快的站点结果），默认为`fastest`。当配置多个VOD站点时，`all`模式会返回所有站点的结果（结果较多），`fastest`模式只返回首先响应成功的站点结果（结果较少，避免重复）       |
 | VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`5000`（5秒），建议值：`3000-10000`       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tencent,renren,hanjutv,bahamut`       |
-| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, tencent, renren, hanjutv, bahamut`  |
+| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, renren, hanjutv, bahamut`  |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
+| ENABLE_EPISODE_FILTER    | 【可选】是否在手动选择接口中启用集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
 | BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，示例如下       |
 | GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不去重       |
 | PROXY_URL    | 【可选】代理地址，示例: `http://127.0.0.1:7897` ，目前只对巴哈姆特生效（注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，所以除vercel/netlify/cloudflare之外默认不开启bahamut源，开启请先在SOURCE_ORDER环境变量中添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址；vercel/netlify/cf中理应都自然能联通，不用填写       |
 | RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |
+| SEARCH_CACHE_MINUTES    | 【可选】搜索结果缓存时间（分钟），默认为`1`，避免短期内重复的不必要API请求，同时保证获取最新的结果列表，可根据需要调整：Vercel/Cloudflare建议`1-5`分钟，Docker可设置`5-30`分钟，设置为`0`表示不缓存       |
 | UPSTASH_REDIS_REST_URL    | 【可选】update redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】update redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 
 ```regex
 # EPISODE_TITLE_FILTER 默认值
-(特别|惊喜|纳凉)?企划|合伙人手记|超前|速览|vlog|reaction|纯享|加更|抢先|抢鲜|预告|花絮|特辑|彩蛋|专访|幕后|直播|未播|衍生|番外|会员|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|NG镜头|NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|抢先看|抢先版|试看版|短剧|精编|会员版|Plus|独家版|特别版|短片|陪看|高清正片|发布会|.{2,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记
+(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|采访|陪看(记)?|试看版|短剧|精编|Plus|独家版|特别版|短片|发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|.{3,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘
 
 # 如果你想新增过滤词，请自定义EPISODE_TITLE_FILTER，示例如下，每个词用'|'隔开，增加的词都会追加到默认值后面
 测试|test
@@ -294,7 +303,7 @@ LogVar 弹幕 API 服务器
 | ----------- | ----------- |
 | 360      | qiyi, bilibili1, imgo, youku, qq |
 | vod      | qiyi, bilibili1, imgo, youku, qq |
-| tencent  | tencent |
+| tencent  | qq |
 | renren   | renren |
 | hanjutv  | hanjutv |
 | bahamut  | bahamut |
@@ -332,12 +341,15 @@ danmu_api/
 ## 注意事项
 - 日志存储在内存中，服务器重启后会清空。
 - `/api/logs` 中的 JSON 日志会格式化显示，带缩进以提高可读性。
+- 搜索结果和弹幕数据存储在内存中，服务器重启后会清空，可通过配置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN` 启用 Redis 持久化存储。
+- 搜索结果缓存默认时间为 1 分钟，可通过环境变量 `SEARCH_CACHE_MINUTES` 调整（设置为 0 表示不缓存）。
 - 确保 `package.json` 中包含 `node-fetch` 依赖。
 - 一键部署需要将项目推送到公开的 Git 仓库（如 GitHub），并更新按钮中的仓库地址。
 - 运行 Docker 容器时，需通过 `-e TOKEN=87654321` 传递 `TOKEN` 环境变量。
 - cloudflare貌似被哔风控了。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
-- 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`vod@https://www.caiji.cyou,vod2@https://zy.xmm.hk`（支持多个服务器并发查询）。
+- 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`（支持多个服务器并发查询）。
+- 当配置多个VOD站点时，可通过`VOD_RETURN_MODE`环境变量控制返回结果方式：`all`（返回所有站点结果）或`fastest`（默认，只返回最快的站点结果，避免结果过多）。
 - 推荐vercel/netlify部署，cloudflare/edgeone/claw不稳定，当然最稳定还是自己本地docker部署最佳。
 - /api/v2/comment接口默认限流：1分钟内同一IP只能请求3次，可通过环境变量`RATE_LIMIT_MAX_REQUESTS`调整（设置为0表示不限流）。
 

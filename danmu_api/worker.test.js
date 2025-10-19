@@ -1,3 +1,6 @@
+// 加载 .env 文件
+require('dotenv').config();
+
 const test = require('node:test');
 const assert = require('node:assert').strict;
 const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
