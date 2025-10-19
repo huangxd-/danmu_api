@@ -391,6 +391,34 @@ function resolveCommentCacheMinutes(env) {
   return DEFAULT_COMMENT_CACHE_MINUTES;
 }
 
+// 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
+const DEFAULT_CONVERT_TOP_BOTTOM_TO_SCROLL = false;
+let convertTopBottomToScroll = DEFAULT_CONVERT_TOP_BOTTOM_TO_SCROLL;
+
+function resolveConvertTopBottomToScroll(env) {
+  if (env && env.CONVERT_TOP_BOTTOM_TO_SCROLL !== undefined) {
+    return env.CONVERT_TOP_BOTTOM_TO_SCROLL.toLowerCase() === 'true';
+  }
+  if (typeof process !== "undefined" && process.env?.CONVERT_TOP_BOTTOM_TO_SCROLL !== undefined) {
+    return process.env.CONVERT_TOP_BOTTOM_TO_SCROLL.toLowerCase() === 'true';
+  }
+  return DEFAULT_CONVERT_TOP_BOTTOM_TO_SCROLL;
+}
+
+// 彩色弹幕转换为纯白弹幕配置（默认 false，禁用转换）
+const DEFAULT_CONVERT_COLOR_TO_WHITE = false;
+let convertColorToWhite = DEFAULT_CONVERT_COLOR_TO_WHITE;
+
+function resolveConvertColorToWhite(env) {
+  if (env && env.CONVERT_COLOR_TO_WHITE !== undefined) {
+    return env.CONVERT_COLOR_TO_WHITE.toLowerCase() === 'true';
+  }
+  if (typeof process !== "undefined" && process.env?.CONVERT_COLOR_TO_WHITE !== undefined) {
+    return process.env.CONVERT_COLOR_TO_WHITE.toLowerCase() === 'true';
+  }
+  return DEFAULT_CONVERT_COLOR_TO_WHITE;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
@@ -1525,25 +1553,20 @@ function convertToDanmakuJson(contents, platform) {
 
   for (const item of items) {
     let attributes, m;
+    let time, mode, color;
 
     // 新增：处理新格式的弹幕数据
     if ("progress" in item && "mode" in item && "content" in item) {
       // 处理新格式的弹幕对象
-      attributes = [
-        (item.progress / 1000).toFixed(2), // progress 转换为秒
-        item.mode || 1,
-        item.color || 16777215,
-        `[${platform}]`
-      ].join(",");
+      time = (item.progress / 1000).toFixed(2);
+      mode = item.mode || 1;
+      color = item.color || 16777215;
       m = item.content;
     } else if ("timepoint" in item) {
       // 处理对象数组输入
-      attributes = [
-        parseFloat(item.timepoint).toFixed(2),
-        item.ct || 0,
-        item.color || 16777215,
-        `[${platform}]`
-      ].join(",");
+      time = parseFloat(item.timepoint).toFixed(2);
+      mode = item.ct || 0;
+      color = item.color || 16777215;
       m = item.content;
     } else {
       if (!("p" in item)) {
@@ -1551,23 +1574,22 @@ function convertToDanmakuJson(contents, platform) {
       }
       // 处理 XML 解析后的格式
       const pValues = item.p.split(",");
+      time = parseFloat(pValues[0]).toFixed(2);
+      mode = pValues[1] || 0;
       if (pValues.length === 4) {
-        attributes = [
-          parseFloat(pValues[0]).toFixed(2),
-          pValues[1] || 0,
-          pValues[2] || 16777215,
-          `[${platform}]`
-        ].join(",");
+        color = pValues[2] || 16777215;
       } else {
-        attributes = [
-          parseFloat(pValues[0]).toFixed(2),
-          pValues[1] || 0,
-          pValues[3] || 16777215,
-          `[${platform}]`
-        ].join(",");
+        color = pValues[3] || 16777215;
       }
       m = item.m;
     }
+
+    attributes = [
+      time,
+      mode,
+      color,
+      `[${platform}]`
+    ].join(",");
 
     danmus.push({ p: attributes, m, cid: cidCounter++ });
   }
@@ -1601,12 +1623,56 @@ function convertToDanmakuJson(contents, platform) {
   log("info", `去重分钟数: ${groupMinute}`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, groupMinute);
 
+  // 应用弹幕转换规则（在去重之后）
+  let convertedDanmus = groupedDanmus;
+  if (convertTopBottomToScroll || convertColorToWhite) {
+    let topBottomCount = 0;
+    let colorCount = 0;
+
+    convertedDanmus = groupedDanmus.map(danmu => {
+      const pValues = danmu.p.split(',');
+      if (pValues.length < 3) return danmu;
+
+      let mode = parseInt(pValues[1], 10);
+      let color = parseInt(pValues[2], 10);
+      let modified = false;
+
+      // 1. 将顶部/底部弹幕转换为浮动弹幕
+      if (convertTopBottomToScroll && (mode === 4 || mode === 5)) {
+        topBottomCount++;
+        mode = 1;
+        modified = true;
+      }
+
+      // 2. 将彩色弹幕转换为纯白弹幕
+      if (convertColorToWhite && color !== 16777215) {
+        colorCount++;
+        color = 16777215;
+        modified = true;
+      }
+
+      if (modified) {
+        const newP = [pValues[0], mode, color, ...pValues.slice(3)].join(',');
+        return { ...danmu, p: newP };
+      }
+      return danmu;
+    });
+
+    // 统计输出转换结果
+    if (topBottomCount > 0) {
+      log("info", `[danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
+    }
+    if (colorCount > 0) {
+      log("info", `[danmu convert] 转换了 ${colorCount} 条彩色弹幕为纯白弹幕`);
+    }
+  }
+
   log("info", `danmus_original: ${danmus.length}`);
   log("info", `danmus_filter: ${filteredDanmus.length}`);
   log("info", `danmus_group: ${groupedDanmus.length}`);
   // 输出前五条弹幕
-  log("info", "Top 5 danmus:", JSON.stringify(groupedDanmus.slice(0, 5), null, 2));
-  return groupedDanmus;
+  log("info", "Top 5 danmus:", JSON.stringify(convertedDanmus.slice(0, 5), null, 2));
+  return convertedDanmus;
 }
 
 function buildQueryString(params) {
@@ -5649,6 +5715,10 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   envs["searchCacheMinutes"] = searchCacheMinutes;
   commentCacheMinutes = resolveCommentCacheMinutes(env);
   envs["commentCacheMinutes"] = commentCacheMinutes;
+  convertTopBottomToScroll = resolveConvertTopBottomToScroll(env);
+  envs["convertTopBottomToScroll"] = convertTopBottomToScroll;
+  convertColorToWhite = resolveConvertColorToWhite(env);
+  envs["convertColorToWhite"] = convertColorToWhite;
   redisUrl = resolveRedisUrl(env);
   envs["redisUrl"] = encryptStr(redisUrl);
   redisToken = resolveRedisToken(env);
