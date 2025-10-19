@@ -2885,6 +2885,47 @@ async function fetchMangoTV(inputUrl) {
 }
 
 // =====================
+// 解析 b23.tv 短链接
+// =====================
+
+async function resolveB23Link(shortUrl) {
+  try {
+    log("info", `正在解析 b23.tv 短链接: ${shortUrl}`);
+
+    // 设置超时时间（默认5秒）
+    const timeout = parseInt(process.env.VOD_REQUEST_TIMEOUT || '5000');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    // 使用原生 fetch 获取重定向后的 URL
+    // fetch 默认会自动跟踪重定向，response.url 会是最终的 URL
+    const response = await fetch(shortUrl, {
+      method: 'GET',
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+      signal: controller.signal,
+      redirect: 'follow'
+    });
+
+    clearTimeout(timeoutId);
+
+    // 获取最终的 URL（重定向后的 URL）
+    const finalUrl = response.url;
+    if (finalUrl && finalUrl !== shortUrl) {
+      log("info", `b23.tv 短链接已解析为: ${finalUrl}`);
+      return finalUrl;
+    }
+
+    log("error", "无法解析 b23.tv 短链接");
+    return shortUrl; // 如果解析失败，返回原 URL
+  } catch (error) {
+    log("error", "解析 b23.tv 短链接失败:", error);
+    return shortUrl; // 如果出错，返回原 URL
+  }
+}
+
+// =====================
 // 获取bilibili弹幕
 // =====================
 
@@ -4830,15 +4871,25 @@ async function handleBahamutAnimes(animesBahamut, queryTitle, curAnimes) {
     .map(async (anime) => {
       const epData = await getBahamutEpisodes(anime.video_sn);
       const detail = epData.video;
-      const eps = epData.anime.episodes["0"]
+
+      // 处理 episodes 对象中的多个键（"0", "1", "2" 等）
+      // 某些内容（如电影）可能在不同的键中
+      let eps = null;
+      if (epData.anime.episodes) {
+        // 优先使用 "0" 键，如果不存在则使用第一个可用的键
+        eps = epData.anime.episodes["0"] || Object.values(epData.anime.episodes)[0];
+      }
+
       let links = [];
-      for (const ep of eps) {
-        const epTitle = `第${ep.episode}集`;
-        links.push({
-          "name": ep.episode,
-          "url": ep.videoSn.toString(),
-          "title": `【bahamut】 ${epTitle}`
-        });
+      if (eps && Array.isArray(eps)) {
+        for (const ep of eps) {
+          const epTitle = `第${ep.episode}集`;
+          links.push({
+            "name": ep.episode,
+            "url": ep.videoSn.toString(),
+            "title": `【bahamut】 ${epTitle}`
+          });
+        }
       }
 
       if (links.length > 0) {
@@ -5551,7 +5602,11 @@ async function getComment(path) {
     danmus = await fetchIqiyi(url);
   } else if (url.includes('.mgtv.com')) {
     danmus = await fetchMangoTV(url);
-  } else if (url.includes('.bilibili.com')) {
+  } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
+    // 如果是 b23.tv 短链接，先解析为完整 URL
+    if (url.includes('b23.tv')) {
+      url = await resolveB23Link(url);
+    }
     danmus = await fetchBilibili(url);
   } else if (url.includes('.youku.com')) {
     danmus = await fetchYouku(url);
@@ -5645,6 +5700,10 @@ async function getCommentByUrl(req) {
     } else if (url.includes('.mgtv.com')) {
       danmus = await fetchMangoTV(url);
     } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
+      // 如果是 b23.tv 短链接，先解析为完整 URL
+      if (url.includes('b23.tv')) {
+        url = await resolveB23Link(url);
+      }
       danmus = await fetchBilibili(url);
     } else if (url.includes('.youku.com')) {
       danmus = await fetchYouku(url);
@@ -6004,4 +6063,4 @@ export { handleRequest, searchAnime, searchEpisodes, matchAnime, getBangumi, get
   fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost, hanjutvSearch, getHanjutvEpisodes,
   getHanjutvComments, getHanjutvDetail, bahamutSearch, getBahamutEpisodes, getBahamutComments, tencentSearch, getTencentEpisodes,
   pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getSearchCache, setSearchCache, isSearchCacheValid,
-  getCommentCache, setCommentCache, isCommentCacheValid};
+  getCommentCache, setCommentCache, isCommentCacheValid, resolveB23Link};
