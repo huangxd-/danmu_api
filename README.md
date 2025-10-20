@@ -36,6 +36,11 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/comment/:commentId?withRelated=true&chConvert=1`：获取指定弹幕评论，支持返回相关评论和字符转换。
   - `POST /api/v2/comment/by-url`：通过视频URL直接获取弹幕。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
+- **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
+  - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml`（默认：json）
+  - 查询参数：`?format=xml` 或 `?format=json`（优先级最高）
+  - 优先级：查询参数 > 环境变量 > 默认值
+  - 示例：`GET /api/v2/comment/10001?format=xml` 返回 XML 格式弹幕
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。包括：
   - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
@@ -284,6 +289,7 @@ LogVar 弹幕 API 服务器
 | GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不去重       |
 | CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
 | CONVERT_COLOR_TO_WHITE    | 【可选】是否将彩色弹幕转换为纯白弹幕，默认为`false`（不转换），启用后所有非白色的弹幕颜色会被转换为纯白色（16777215），可选值：`true`、`false`       |
+| DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | PROXY_URL    | 【可选】代理地址，示例: `http://127.0.0.1:7897` ，目前只对巴哈姆特生效（注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，所以除vercel/netlify/cloudflare之外默认不开启bahamut源，开启请先在SOURCE_ORDER环境变量中添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址；vercel/netlify/cf中理应都自然能联通，不用填写       |
 | RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |
 | LOG_LEVEL    | 【可选】日志级别，默认为`warn`，可选值：`error`（仅错误）、`warn`（错误和警告）、`info`（所有日志），生产环境建议使用`warn`，调试时使用`info`       |

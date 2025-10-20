@@ -410,6 +410,28 @@ function resolveConvertColorToWhite(env) {
   return DEFAULT_CONVERT_COLOR_TO_WHITE;
 }
 
+// 弹幕输出格式配置（默认 json，可选值：json, xml）
+const DEFAULT_DANMU_OUTPUT_FORMAT = "json";
+let danmuOutputFormat = DEFAULT_DANMU_OUTPUT_FORMAT;
+
+function resolveDanmuOutputFormat(env) {
+  let format = DEFAULT_DANMU_OUTPUT_FORMAT;
+  if (env && env.DANMU_OUTPUT_FORMAT) {
+    format = env.DANMU_OUTPUT_FORMAT.toLowerCase();
+  } else if (typeof process !== "undefined" && process.env?.DANMU_OUTPUT_FORMAT) {
+    format = process.env.DANMU_OUTPUT_FORMAT.toLowerCase();
+  }
+
+  // 验证格式值
+  const validFormats = ["json", "xml"];
+  if (!validFormats.includes(format)) {
+    log("warn", `Invalid DANMU_OUTPUT_FORMAT: ${format}, using default: ${DEFAULT_DANMU_OUTPUT_FORMAT}`);
+    return DEFAULT_DANMU_OUTPUT_FORMAT;
+  }
+
+  return format;
+}
+
 // =====================
 // 数据结构处理函数
 // =====================
@@ -4510,6 +4532,64 @@ function xmlResponse(data, status = 200) {
   });
 }
 
+// 将弹幕 JSON 数据转换为 XML 格式
+function convertDanmuToXml(danmuData) {
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += '<root>\n';
+
+  if (danmuData.comments && Array.isArray(danmuData.comments)) {
+    for (const comment of danmuData.comments) {
+      xml += '  <d p="' + escapeXmlAttr(comment.p) + '">' + escapeXmlText(comment.m) + '</d>\n';
+    }
+  }
+
+  xml += '</root>';
+  return xml;
+}
+
+// 转义 XML 属性值
+function escapeXmlAttr(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// 转义 XML 文本内容
+function escapeXmlText(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// 根据格式参数返回弹幕数据（JSON 或 XML）
+function formatDanmuResponse(danmuData, queryFormat) {
+  // 确定最终使用的格式：查询参数 > 环境变量 > 默认值
+  let format = queryFormat || danmuOutputFormat || DEFAULT_DANMU_OUTPUT_FORMAT;
+  format = format.toLowerCase();
+
+  log("info", `[Format] Using format: ${format}`);
+
+  if (format === 'xml') {
+    try {
+      const xmlData = convertDanmuToXml(danmuData);
+      return xmlResponse(xmlData);
+    } catch (error) {
+      log("error", `Failed to convert to XML: ${error.message}`);
+      // 转换失败时回退到 JSON
+      return jsonResponse(danmuData);
+    }
+  }
+
+  // 默认返回 JSON
+  return jsonResponse(danmuData);
+}
+
 function convertChineseNumber(chineseNumber) {
   // 如果是阿拉伯数字，直接转换
   if (/^\d+$/.test(chineseNumber)) {
@@ -5559,7 +5639,7 @@ async function getBangumi(path) {
 }
 
 // Extracted function for GET /api/v2/comment/:commentId
-async function getComment(path) {
+async function getComment(path, queryFormat) {
   const commentId = parseInt(path.split("/").pop());
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
@@ -5582,7 +5662,8 @@ async function getComment(path) {
   // 检查弹幕缓存
   const cachedComments = getCommentCache(url);
   if (cachedComments !== null) {
-    return jsonResponse({ count: cachedComments.length, comments: cachedComments });
+    const responseData = { count: cachedComments.length, comments: cachedComments };
+    return formatDanmuResponse(responseData, queryFormat);
   }
 
   log("info", "开始从本地请求弹幕...", url);
@@ -5631,11 +5712,12 @@ async function getComment(path) {
     setCommentCache(url, danmus);
   }
 
-  return jsonResponse({ count: danmus.length, comments: danmus });
+  const responseData = { count: danmus.length, comments: danmus };
+  return formatDanmuResponse(responseData, queryFormat);
 }
 
 // Extracted function for POST /api/v2/comment/by-url
-async function getCommentByUrl(req) {
+async function getCommentByUrl(req, queryFormat) {
   try {
     // 获取请求体
     const body = await req.json();
@@ -5671,13 +5753,14 @@ async function getCommentByUrl(req) {
     // 检查弹幕缓存
     const cachedComments = getCommentCache(url);
     if (cachedComments !== null) {
-      return jsonResponse({
+      const responseData = {
         errorCode: 0,
         success: true,
         errorMessage: "",
         count: cachedComments.length,
         comments: cachedComments
-      });
+      };
+      return formatDanmuResponse(responseData, queryFormat);
     }
 
     log("info", "开始从本地请求弹幕...", url);
@@ -5713,13 +5796,14 @@ async function getCommentByUrl(req) {
       setCommentCache(url, danmus);
     }
 
-    return jsonResponse({
+    const responseData = {
       errorCode: 0,
       success: true,
       errorMessage: "",
       count: danmus.length,
       comments: danmus
-    });
+    };
+    return formatDanmuResponse(responseData, queryFormat);
   } catch (error) {
     // 处理 JSON 解析错误或其他异常
     log("error", `Failed to process comment by URL request: ${error.message}`);
@@ -5744,6 +5828,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   bilibliCookie = resolveBilibiliCookie(env);
   envs["bilibliCookie"] = encryptStr(bilibliCookie);
   youkuConcurrency = resolveYoukuConcurrency(env);
+  danmuOutputFormat = resolveDanmuOutputFormat(env);
+  envs["danmuOutputFormat"] = danmuOutputFormat;
   envs["youkuConcurrency"] = youkuConcurrency;
   sourceOrderArr = resolveSourceOrder(env, deployPlatform);
   envs["sourceOrderArr"] = sourceOrderArr;
@@ -5891,7 +5977,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // POST /api/v2/comment/by-url
   if (path === "/api/v2/comment/by-url" && method === "POST") {
-    return getCommentByUrl(req);
+    const queryFormat = url.searchParams.get('format');
+    return getCommentByUrl(req, queryFormat);
   }
 
   // GET /api/v2/comment/:commentId
@@ -5900,20 +5987,22 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
     // 2. 只有缓存未命中时才执行限流检查和网络请求
     // 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
+    const queryFormat = url.searchParams.get('format');
     const commentId = parseInt(path.split("/").pop());
-    let url = findUrlById(commentId);
+    let urlForComment = findUrlById(commentId);
 
-    if (url) {
+    if (urlForComment) {
       // 处理302场景
-      if (url.includes("youku.com/video?vid")) {
-        url = convertYoukuUrl(url);
+      if (urlForComment.includes("youku.com/video?vid")) {
+        urlForComment = convertYoukuUrl(urlForComment);
       }
 
       // 检查弹幕缓存 - 缓存命中时直接返回，不计入限流
-      const cachedComments = getCommentCache(url);
+      const cachedComments = getCommentCache(urlForComment);
       if (cachedComments !== null) {
-        log("info", `[Rate Limit] Cache hit for URL: ${url}, skipping rate limit check`);
-        return jsonResponse({ count: cachedComments.length, comments: cachedComments });
+        log("info", `[Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
+        const responseData = { count: cachedComments.length, comments: cachedComments };
+        return formatDanmuResponse(responseData, queryFormat);
       }
     }
 
@@ -5965,7 +6054,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] Request counted for IP: ${clientIp}, count: ${recentRequests.length}/${rateLimitMaxRequests}`);
     }
 
-    return getComment(path);
+    return getComment(path, queryFormat);
   }
 
   // GET /api/logs
