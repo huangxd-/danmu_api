@@ -4599,7 +4599,8 @@ async function bahamutSearch(keyword) {
 
 async function getBahamutEpisodes(videoSn) {
   try {
-    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}`;
+    const targetUrl = `https://api.gamer.com.tw/anime/v1/video.php?videoSn=${videoSn}`;
+    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(targetUrl)}` : targetUrl;
     const resp = await httpGet(url, {
       headers: {
         "Content-Type": "application/json",
@@ -4638,7 +4639,8 @@ async function fetchBahamutEpisodeDanmu(videoSn) {
   let danmus = [];
 
   try {
-    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}` : `https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}`;
+    const targetUrl = `https://api.gamer.com.tw/anime/v1/danmu.php?geo=TW%2CHK&videoSn=${videoSn}`;
+    const url = proxyUrl ? `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(targetUrl)}` : targetUrl;
     const resp = await httpGet(url, {
       headers: {
         "Content-Type": "application/json",
