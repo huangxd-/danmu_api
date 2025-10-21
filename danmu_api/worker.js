@@ -1608,10 +1608,20 @@ function convertToDanmakuJson(contents, platform) {
       const pValues = item.p.split(",");
       time = parseFloat(pValues[0]).toFixed(2);
       mode = pValues[1] || 0;
+
+      // 支持多种格式的 p 属性
+      // 旧格式（4字段）：时间,类型,颜色,来源
+      // 标准格式（8字段）：时间,类型,字体,颜色,时间戳,弹幕池,用户Hash,弹幕ID
+      // Bilibili格式（9字段）：时间,类型,字体,颜色,时间戳,弹幕池,用户Hash,弹幕ID,权重
       if (pValues.length === 4) {
+        // 旧格式
         color = pValues[2] || 16777215;
-      } else {
+      } else if (pValues.length >= 8) {
+        // 新标准格式（8字段或9字段）
         color = pValues[3] || 16777215;
+      } else {
+        // 其他格式，尝试从第3或第4位获取颜色
+        color = pValues[3] || pValues[2] || 16777215;
       }
       m = item.m;
     }
@@ -4732,19 +4742,56 @@ function xmlResponse(data, status = 200) {
   });
 }
 
-// 将弹幕 JSON 数据转换为 XML 格式
+// 将弹幕 JSON 数据转换为 XML 格式（Bilibili 标准格式）
 function convertDanmuToXml(danmuData) {
-  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-  xml += '<root>\n';
+  let xml = '<?xml version="1.0" ?>\n';
+  xml += '<i>\n';
 
-  if (danmuData.comments && Array.isArray(danmuData.comments)) {
-    for (const comment of danmuData.comments) {
-      xml += '  <d p="' + escapeXmlAttr(comment.p) + '">' + escapeXmlText(comment.m) + '</d>\n';
+  // 添加弹幕数据
+  const comments = danmuData.comments || [];
+  if (Array.isArray(comments)) {
+    for (const comment of comments) {
+      // 解析原有的 p 属性，转换为 Bilibili 格式
+      const pValue = buildBilibiliDanmuP(comment);
+      xml += '    <d p="' + escapeXmlAttr(pValue) + '">' + escapeXmlText(comment.m) + '</d>\n';
     }
   }
 
-  xml += '</root>';
+  xml += '</i>';
   return xml;
+}
+
+// 生成弹幕ID（11位数字）
+function generateDanmuId() {
+  // 生成11位数字ID
+  // 格式: 时间戳后8位 + 随机3位
+  const timestamp = Date.now();
+  const lastEightDigits = (timestamp % 100000000).toString().padStart(8, '0');
+  const randomThreeDigits = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return lastEightDigits + randomThreeDigits;
+}
+
+// 构建 Bilibili 格式的 p 属性值（8个字段）
+function buildBilibiliDanmuP(comment) {
+  // Bilibili 格式: 时间,类型,字体,颜色,时间戳,弹幕池,用户Hash,弹幕ID
+  // 示例: 5.0,5,25,16488046,1751533608,0,0,13190629936
+
+  const pValues = comment.p.split(',');
+  const timeNum = parseFloat(pValues[0]) || 0;
+  const time = timeNum.toFixed(1); // 时间（秒，保留1位小数）
+  const mode = pValues[1] || '1'; // 类型（1=滚动, 4=底部, 5=顶部）
+  const fontSize = '25'; // 字体大小（25=中, 18=小）
+
+  // 颜色字段（输入总是4字段格式：时间,类型,颜色,平台）
+  const color = pValues[2] || '16777215'; // 默认白色
+
+  // 使用固定值以符合标准格式
+  const timestamp = '1751533608'; // 固定时间戳
+  const pool = '0'; // 弹幕池（固定为0）
+  const userHash = '0'; // 用户Hash（固定为0）
+  const danmuId = generateDanmuId(); // 弹幕ID（11位数字）
+
+  return `${time},${mode},${fontSize},${color},${timestamp},${pool},${userHash},${danmuId}`;
 }
 
 // 转义 XML 属性值
