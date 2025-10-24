@@ -1,12 +1,9 @@
 import { Globals } from './configs/globals.js';
+import { httpGet, httpPost, getPageTitle } from './utils/http-util.js';
+import { log, formatLogMessage } from './utils/log-util.js'
+import { pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getRedisCaches, updateRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 
 let globals;
-
-// 全局状态（Cloudflare 和 Vercel 都可能重用实例）
-// ⚠️ 不是持久化存储，每次冷启动会丢失
-const VERSION = "1.4.5";
-
-let envs = {};
 
 // =====================
 // 数据结构处理函数
@@ -291,224 +288,6 @@ function getPreferAnimeId(title) {
 }
 
 // =====================
-// 请求工具方法
-// =====================
-
-async function httpGet(url, options) {
-  log("info", `[iOS模拟] HTTP GET: ${url}`);
-
-  // 设置超时时间（默认5秒）
-  const timeout = parseInt(globals.vodRequestTimeout);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        ...options.headers,
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    let data;
-
-    if (options.base64Data) {
-      log("info", "base64模式");
-
-      // 先拿二进制
-      const arrayBuffer = await response.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-
-      // 转换为 Base64
-      let binary = '';
-      const chunkSize = 0x8000; // 分块防止大文件卡死
-      for (let i = 0; i < uint8Array.length; i += chunkSize) {
-        let chunk = uint8Array.subarray(i, i + chunkSize);
-        binary += String.fromCharCode.apply(null, chunk);
-      }
-      data = btoa(binary); // 得到 base64 字符串
-
-    } else if (options.zlibMode) {
-      log("info", "zlib模式")
-
-      // 获取 ArrayBuffer
-      const arrayBuffer = await response.arrayBuffer();
-
-      // 使用 DecompressionStream 进行解压
-      // "deflate" 对应 zlib 的 inflate
-      const decompressionStream = new DecompressionStream("deflate");
-      const decompressedStream = new Response(
-        new Blob([arrayBuffer]).stream().pipeThrough(decompressionStream)
-      );
-
-      // 读取解压后的文本
-      let decodedData;
-      try {
-        decodedData = await decompressedStream.text();
-      } catch (e) {
-        log("error", "[iOS模拟] 解压缩失败", e);
-        throw e;
-      }
-
-      data = decodedData; // 更新解压后的数据
-    } else {
-      data = await response.text();
-    }
-
-    let parsedData;
-    try {
-      parsedData = JSON.parse(data);  // 尝试将文本解析为 JSON
-    } catch (e) {
-      parsedData = data;  // 如果解析失败，保留原始文本
-    }
-
-    // 获取所有 headers，但特别处理 set-cookie
-    const headers = {};
-    let setCookieValues = [];
-
-    // 遍历 headers 条目
-    for (const [key, value] of response.headers.entries()) {
-      if (key.toLowerCase() === 'set-cookie') {
-        setCookieValues.push(value);
-      } else {
-        headers[key] = value;
-      }
-    }
-
-    // 如果存在 set-cookie 头，将其合并为分号分隔的字符串
-    if (setCookieValues.length > 0) {
-      headers['set-cookie'] = setCookieValues.join(';');
-    }
-    // 模拟 iOS 环境：返回 { data: ... } 结构
-    return {
-      data: parsedData,
-      status: response.status,
-      headers: headers
-    };
-
-  } catch (error) {
-    clearTimeout(timeoutId);
-
-    // 检查是否是超时错误
-    if (error.name === 'AbortError') {
-      log("error", `[iOS模拟] 请求超时:`, error.message);
-      log("error", '详细诊断:');
-      log("error", '- URL:', url);
-      log("error", '- 超时时间:', `${timeout}ms`);
-      throw new Error(`Request timeout after ${timeout}ms`);
-    }
-
-    log("error", `[iOS模拟] 请求失败:`, error.message);
-    log("error", '详细诊断:');
-    log("error", '- URL:', url);
-    log("error", '- 错误类型:', error.name);
-    log("error", '- 消息:', error.message);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- 原因:', error.cause.message);
-    }
-    throw error;
-  }
-}
-
-async function httpPost(url, body, options = {}) {
-  log("info", `[iOS模拟] HTTP POST: ${url}`);
-
-  // 处理请求头、body 和其他参数
-  const { headers = {}, params, allow_redirects = true } = options;
-  const fetchOptions = {
-    method: 'POST',
-    headers: {
-      ...headers,
-    },
-    body: body
-  };
-
-  if (!allow_redirects) {
-    fetchOptions.redirect = 'manual';  // 禁止重定向
-  }
-
-  try {
-    const response = await fetch(url, fetchOptions);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.text();
-    let parsedData;
-    try {
-      parsedData = JSON.parse(data);  // 尝试将文本解析为 JSON
-    } catch (e) {
-      parsedData = data;  // 如果解析失败，保留原始文本
-    }
-
-    // 模拟 iOS 环境：返回 { data: ... } 结构
-    return {
-      data: parsedData,
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries())
-    };
-
-  } catch (error) {
-    log("error", `[iOS模拟] 请求失败:`, error.message);
-    log("error", '详细诊断:');
-    log("error", '- URL:', url);
-    log("error", '- 错误类型:', error.name);
-    log("error", '- 消息:', error.message);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- 原因:', error.cause.message);
-    }
-    throw error;
-  }
-}
-
-async function getPageTitle(url) {
-  try {
-    // 使用 httpGet 获取网页内容
-    const response = await httpGet(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'
-      }
-    });
-
-    // response.data 包含 HTML 内容
-    const html = response.data;
-
-    // 方法1: 使用正则表达式提取 <title> 标签
-    const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
-    if (titleMatch && titleMatch[1]) {
-      // 解码 HTML 实体（如 &nbsp; &amp; 等）
-      const title = titleMatch[1]
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-
-      return title;
-    }
-
-    // 如果没找到 title 标签
-    return url;
-
-  } catch (error) {
-    log("error", `获取标题失败: ${error.message}`);
-    return url;
-  }
-}
-
-// =====================
 // 限流 IP 清理函数
 // =====================
 
@@ -530,259 +309,6 @@ function cleanupExpiredIPs(currentTime) {
 
   if (cleanedCount > 0) {
     log("info", `[Rate Limit] Cleanup completed: removed ${cleanedCount} expired IP records`);
-  }
-}
-
-// =====================
-// upstash redis 读写请求 （先简单实现，不加锁）
-// =====================
-
-// 使用 GET 发送简单命令（如 PING 检查连接）
-async function pingRedis() {
-  const url = `${globals.redisUrl}/ping`;
-  log("info", `[redis] 开始发送 PING 请求:`, url);
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${globals.redisToken}`
-      }
-    });
-    return await response.json(); // 预期: ["PONG"]
-  } catch (error) {
-    log("error", `[redis] 请求失败:`, error.message);
-    log("error", '- 错误类型:', error.name);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- 原因:', error.cause.message);
-    }
-  }
-}
-
-// 使用 GET 发送 GET 命令（读取键值）
-async function getRedisKey(key) {
-  const url = `${globals.redisUrl}/get/${key}`;
-  log("info", `[redis] 开始发送 GET 请求:`, url);
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${globals.redisToken}`
-      }
-    });
-    return await response.json(); // 预期: ["value"] 或 null
-  } catch (error) {
-    log("error", `[redis] 请求失败:`, error.message);
-    log("error", '- 错误类型:', error.name);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- 原因:', error.cause.message);
-    }
-  }
-}
-
-// 辅助函数：序列化值，处理 Map 对象
-function serializeValue(key, value) {
-  // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-  if (key === 'lastSelectMap' && value instanceof Map) {
-    return JSON.stringify(Object.fromEntries(value));
-  }
-  return JSON.stringify(value);
-}
-
-// 使用 POST 发送 SET 命令，仅在值变化时更新
-async function setRedisKey(key, value) {
-  const serializedValue = serializeValue(key, value);
-  const currentHash = simpleHash(serializedValue);
-
-  // 检查值是否变化
-  if (globals.lastHashes[key] === currentHash) {
-    log("info", `[redis] 键 ${key} 无变化，跳过 SET 请求`);
-    return { result: "OK" }; // 模拟成功响应
-  }
-
-  const url = `${globals.redisUrl}/set/${key}`;
-  log("info", `[redis] 开始发送 SET 请求:`, url);
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${globals.redisToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: serializedValue
-    });
-    const result = await response.json();
-    globals.lastHashes[key] = currentHash; // 更新哈希值
-    log("info", `[redis] 键 ${key} 更新成功`);
-    return result; // 预期: ["OK"]
-  } catch (error) {
-    log("error", `[redis] SET 请求失败:`, error.message);
-    log("error", '- 错误类型:', error.name);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);
-      log("error", '- 原因:', error.cause.message);
-    }
-  }
-}
-
-// 使用 POST 发送 SETEX 命令，仅在值变化时更新
-async function setRedisKeyWithExpiry(key, value, expirySeconds) {
-  const serializedValue = serializeValue(key, value);
-  const currentHash = simpleHash(serializedValue);
-
-  // 检查值是否变化
-  if (globals.lastHashes[key] === currentHash) {
-    log("info", `[redis] 键 ${key} 无变化，跳过 SETEX 请求`);
-    return { result: "OK" }; // 模拟成功响应
-  }
-
-  const url = `${globals.redisUrl}/set/${key}?EX=${expirySeconds}`;
-  log("info", `[redis] 开始发送 SETEX 请求:`, url);
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${globals.redisToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: serializedValue
-    });
-    const result = await response.json();
-    globals.lastHashes[key] = currentHash; // 更新哈希值
-    log("info", `[redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
-    return result;
-  } catch (error) {
-    log("error", `[redis] SETEX 请求失败:`, error.message);
-    log("error", '- 错误类型:', error.name);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);
-      log("error", '- 原因:', error.cause.message);
-    }
-  }
-}
-
-// 通用的 pipeline 请求函数
-async function runPipeline(commands) {
-  const url = `${globals.redisUrl}/pipeline`;
-  log("info", `[redis] 开始发送 PIPELINE 请求:`, url);
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${globals.redisToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(commands) // commands 是一个数组，包含多个 Redis 命令
-    });
-    const result = await response.json();
-    return result; // 返回结果数组，按命令顺序
-  } catch (error) {
-    log("error", `[redis] Pipeline 请求失败:`, error.message);
-    log("error", '- 错误类型:', error.name);
-    if (error.cause) {
-      log("error", '- 码:', error.cause.code);
-      log("error", '- 原因:', error.cause.message);
-    }
-  }
-}
-
-// 优化后的 getRedisCaches，单次请求获取所有键
-async function getRedisCaches() {
-  if (!globals.redisCacheInitialized) {
-    try {
-      log("info", 'getRedisCaches start.');
-      const keys = ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap'];
-      const commands = keys.map(key => ['GET', key]); // 构造 pipeline 命令
-      const results = await runPipeline(commands);
-
-      // 解析结果，按顺序赋值
-      globals.animes = results[0].result ? JSON.parse(results[0].result) : globals.animes;
-      globals.episodeIds = results[1].result ? JSON.parse(results[1].result) : globals.episodeIds;
-      globals.episodeNum = results[2].result ? JSON.parse(results[2].result) : globals.episodeNum;
-
-      // 恢复 lastSelectMap 并转换为 Map 对象
-      const lastSelectMapData = results[3].result ? JSON.parse(results[3].result) : null;
-      if (lastSelectMapData && typeof lastSelectMapData === 'object') {
-        globals.lastSelectMap = new Map(Object.entries(lastSelectMapData));
-        log("info", `Restored lastSelectMap from Redis with ${globals.lastSelectMap.size} entries`);
-      }
-
-      // 更新哈希值
-      globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
-      globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
-      globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
-      globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
-
-      globals.redisCacheInitialized = true;
-      log("info", 'getRedisCaches completed successfully.');
-    } catch (error) {
-      log("error", `getRedisCaches failed: ${error.message}`, error.stack);
-      globals.redisCacheInitialized = true; // 标记为已初始化，避免重复尝试
-    }
-  }
-}
-
-// 优化后的 updateRedisCaches，仅更新有变化的变量
-async function updateRedisCaches() {
-  try {
-    log("info", 'updateCaches start.');
-    const commands = [];
-    const updates = [];
-
-    // 检查每个变量的哈希值
-    const variables = [
-      { key: 'animes', value: globals.animes },
-      { key: 'episodeIds', value: globals.episodeIds },
-      { key: 'episodeNum', value: globals.episodeNum },
-      { key: 'lastSelectMap', value: globals.lastSelectMap }
-    ];
-
-    for (const { key, value } of variables) {
-      // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-      const serializedValue = key === 'lastSelectMap' ? JSON.stringify(Object.fromEntries(value)) : JSON.stringify(value);
-      const currentHash = simpleHash(serializedValue);
-      if (currentHash !== globals.lastHashes[key]) {
-        commands.push(['SET', key, serializedValue]);
-        updates.push({ key, hash: currentHash });
-      }
-    }
-
-    // 如果有需要更新的键，执行 pipeline
-    if (commands.length > 0) {
-      log("info", `Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
-      const results = await runPipeline(commands);
-
-      // 检查每个操作的结果
-      let successCount = 0;
-      let failureCount = 0;
-
-      if (Array.isArray(results)) {
-        results.forEach((result, index) => {
-          if (result && result.result === 'OK') {
-            successCount++;
-          } else {
-            failureCount++;
-            log("warn", `Failed to update Redis key: ${updates[index]?.key}, result: ${JSON.stringify(result)}`);
-          }
-        });
-      }
-
-      // 只有在所有操作都成功时才更新哈希值
-      if (failureCount === 0) {
-        updates.forEach(({ key, hash }) => {
-          globals.lastHashes[key] = hash;
-        });
-        log("info", `Redis update completed successfully: ${successCount} keys updated`);
-      } else {
-        log("warn", `Redis update partially failed: ${successCount} succeeded, ${failureCount} failed`);
-      }
-    } else {
-      log("info", 'No changes detected, skipping Redis update.');
-    }
-  } catch (error) {
-    log("error", `updateRedisCaches failed: ${error.message}`, error.stack);
-    log("error", `Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
   }
 }
 
@@ -1693,17 +1219,6 @@ function rgbToInt(color) {
     return -1;
   }
   return color.r * 256 * 256 + color.g * 256 + color.b;
-}
-
-// 简单的字符串哈希函数
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash >>> 0; // 确保为无符号 32 位整数
-  }
-  return hash.toString(16); // 转换为十六进制
 }
 
 // =====================
@@ -4246,41 +3761,6 @@ async function getBahamutComments(pid, progressCallback=null){
   return convertToDanmakuJson(formatted, "bahamut");
 }
 
-// =====================
-// 路由请求相关
-// =====================
-
-function log(level, ...args) {
-  // 根据日志级别决定是否输出
-  const levels = { error: 0, warn: 1, info: 2 };
-  const currentLevelValue = levels[globals.logLevel] !== undefined ? levels[globals.logLevel] : 1;
-  if ((levels[level] || 0) > currentLevelValue) {
-    return; // 日志级别不符合，不输出
-  }
-
-  const message = args
-    .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : arg))
-    .join(" ");
-
-  // 获取上海时区时间(UTC+8)
-  const now = new Date();
-  const shanghaiTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-  const timestamp = shanghaiTime.toISOString().replace('Z', '+08:00');
-
-  globals.logBuffer.push({ timestamp, level, message });
-  if (globals.logBuffer.length > globals.MAX_LOGS) globals.logBuffer.shift();
-  console[level](...args);
-}
-
-function formatLogMessage(message) {
-  try {
-    const parsed = JSON.parse(message);
-    return JSON.stringify(parsed, null, 2).replace(/\n/g, "\n    ");
-  } catch {
-    return message;
-  }
-}
-
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -5671,23 +5151,17 @@ async function getCommentByUrl(req, queryFormat) {
 }
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
-  // 加载配置
+  // 加载全局变量和环境变量配置
   globals = Globals.init(env, deployPlatform);
-
-  // 测试redis是否可用
-  if (!globals.redisValid && globals.redisUrl && globals.redisToken) {
-    const res = await pingRedis();
-    if (res && res.result && res.result === "PONG") {
-      globals.redisValid = true;
-      envs["redisValid"] = globals.redisValid;
-    }
-  }
 
   const url = new URL(req.url);
   let path = url.pathname;
   const method = req.method;
 
+  await judgeRedisValid(path);
+
   log("info", `request url: ${JSON.stringify(url)}`);
+  log("info", `request path: ${path}`);
   log("info", `client ip: ${clientIp}`);
 
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
@@ -5698,8 +5172,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     log("info", "Accessed homepage with repository information");
     return jsonResponse({
       message: "Welcome to the LogVar Danmu API server",
-      version: VERSION,
-      envs: globals.accessedEnvVars,
+      version: globals.VERSION,
+      envs: {
+        ...globals.accessedEnvVars,
+        redisValid: globals.redisValid
+      },
       repository: "https://github.com/huangxd-/danmu_api.git",
       description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
       notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok，TG MSG ROBOT: [https://t.me/ddjdd_bot]; 推荐加互助群咨询，TG GROUP: [https://t.me/logvar_danmu_group]; 关注频道获取最新更新内容，TG CHANNEL: [https://t.me/logvar_danmu_channel]。"

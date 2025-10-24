@@ -6,13 +6,15 @@ import { Envs } from './envs.js';
  * ⚠️不是持久化存储，每次冷启动会丢失
  */
 export const Globals = {
+  // 缓存环境变量
+  envs: {},
+  accessedEnvVars: {},
+
   // 静态常量
-  VERSION: '1.4.5',
+  VERSION: '1.5.0',
   MAX_LOGS: 500, // 日志存储，最多保存 500 行
   MAX_ANIMES: 100,
   MAX_LAST_SELECT_MAP: 100,
-  VOD_ALLOWED_PLATFORMS: ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq'],
-  ALLOWED_PLATFORMS: ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut'],
 
   // 运行时状态
   animes: [],
@@ -39,53 +41,48 @@ export const Globals = {
    * @returns {Object} 全局配置对象
    */
   init(env = {}, deployPlatform = 'node') {
-    const config = Envs.load(env, deployPlatform);
-    return {
-      version: this.VERSION,
-      maxLogs: this.MAX_LOGS,
-      maxAnimes: this.MAX_ANIMES,
-      maxLastSelectMap: this.MAX_LAST_SELECT_MAP,
-      vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
-      allowedPlatforms: this.ALLOWED_PLATFORMS,
-      animes: this.animes,
-      episodeIds: this.episodeIds,
-      episodeNum: this.episodeNum,
-      logBuffer: this.logBuffer,
-      requestHistory: this.requestHistory,
-      redisValid: this.redisValid,
-      redisCacheInitialized: this.redisCacheInitialized,
-      lastSelectMap: this.lastSelectMap,
-      lastHashes: this.lastHashes,
-      searchCache: this.searchCache,
-      commentCache: this.commentCache,
-      accessedEnvVars: Object.fromEntries(Envs.getAccessedEnvVars()),
-      ...config,
-    };
+    if (!this.envs || !this.envs.token) {
+      this.envs = Envs.load(env, deployPlatform);
+      this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
+    }
+    return this.getConfig();
   },
 
   /**
    * 获取全局配置快照
    * @returns {Object} 当前全局配置
    */
+  /**
+   * 获取全局配置对象（单例，可修改）
+   * @returns {Object} 全局配置对象本身
+   */
   getConfig() {
-    return {
-      version: this.VERSION,
-      maxLogs: this.MAX_LOGS,
-      maxAnimes: this.MAX_ANIMES,
-      maxLastSelectMap: this.MAX_LAST_SELECT_MAP,
-      vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
-      allowedPlatforms: this.ALLOWED_PLATFORMS,
-      animes: this.animes,
-      episodeIds: this.episodeIds,
-      episodeNum: this.episodeNum,
-      logBuffer: this.logBuffer,
-      requestHistory: this.requestHistory,
-      redisValid: this.redisValid,
-      redisCacheInitialized: this.redisCacheInitialized,
-      lastSelectMap: this.lastSelectMap,
-      lastHashes: this.lastHashes,
-      searchCache: this.searchCache,
-      commentCache: this.commentCache
-    };
-  }
+    // 使用 Proxy 保持接口兼容性
+    const self = this;
+    return new Proxy({}, {
+      get(target, prop) {
+        // 优先返回 envs 中的属性（保持原有的平铺效果）
+        if (prop in self.envs) {
+          return self.envs[prop];
+        }
+        // 映射大写常量到小写
+        if (prop === 'version') return self.VERSION;
+        if (prop === 'maxLogs') return self.MAX_LOGS;
+        if (prop === 'maxAnimes') return self.MAX_ANIMES;
+        if (prop === 'maxLastSelectMap') return self.MAX_LAST_SELECT_MAP;
+
+        // 其他属性直接返回
+        return self[prop];
+      },
+      set(target, prop, value) {
+        // 写操作同步到 Globals
+        if (prop in self.envs) {
+          self.envs[prop] = value;
+        } else {
+          self[prop] = value;
+        }
+        return true;
+      }
+    });
+  },
 };

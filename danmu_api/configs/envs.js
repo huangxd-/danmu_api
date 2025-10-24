@@ -9,6 +9,10 @@ export class Envs {
   // 记录获取过的环境变量
   static accessedEnvVars = new Map();
 
+  static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq']; // vod允许的播放平台
+  static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut']; // 全部源允许的播放平台
+  static ALLOWED_SOURCES = ['360', 'vod', 'tencent', 'renren', 'hanjutv', 'bahamut']; // 允许的源
+
   /**
    * 获取环境变量
    * @param {string} key 环境变量的键
@@ -115,11 +119,10 @@ export class Envs {
       sourceOrder += ',bahamut';
     }
 
-    const allowedSources = ['360', 'vod', 'tencent', 'renren', 'hanjutv', 'bahamut'];
     const orderArr = sourceOrder
       .split(',')
       .map(s => s.trim())
-      .filter(s => allowedSources.includes(s));
+      .filter(s => this.ALLOWED_SOURCES.includes(s));
 
     return orderArr.length > 0 ? orderArr : ['360', 'vod', 'renren', 'hanjutv'];
   }
@@ -133,7 +136,7 @@ export class Envs {
     const orderArr = this.get('PLATFORM_ORDER', '', 'string')
       .split(',')
       .map(s => s.trim())
-      .filter(s => ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut'].includes(s));
+      .filter(s => this.ALLOWED_PLATFORMS.includes(s));
 
     return orderArr.length > 0 ? [...orderArr, null] : [null];
   }
@@ -184,6 +187,8 @@ export class Envs {
    */
   static load(env = {}, deployPlatform = 'node') {
     return {
+      vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
+      allowedPlatforms: this.ALLOWED_PLATFORMS,
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
       vodServers: this.resolveVodServers(env), // vod站点配置，格式：名称@URL,名称@URL
