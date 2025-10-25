@@ -219,3 +219,135 @@ export async function getPageTitle(url) {
     return url;
   }
 }
+
+export function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function xmlResponse(data, status = 200) {
+  // 确保 data 是字符串且以 <?xml 开头
+  if (typeof data !== 'string' || !data.trim().startsWith('<?xml')) {
+    throw new Error('Expected data to be an XML string starting with <?xml');
+  }
+
+  // 直接返回 XML 字符串作为 Response 的 body
+  return new Response(data, {
+    status,
+    headers: { "Content-Type": "application/xml" },
+  });
+}
+
+export function buildQueryString(params) {
+  let queryString = '';
+
+  // 遍历 params 对象的每个属性
+  for (let key in params) {
+    if (params.hasOwnProperty(key)) {
+      // 如果 queryString 已经有参数了，则添加 '&'
+      if (queryString.length > 0) {
+        queryString += '&';
+      }
+
+      // 将 key 和 value 使用 encodeURIComponent 编码，并拼接成查询字符串
+      queryString += encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+    }
+  }
+
+  return queryString;
+}
+
+export function sortedQueryString(params = {}) {
+  const normalized = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === "boolean") normalized[k] = v ? "true" : "false";
+    else if (v == null) normalized[k] = "";
+    else normalized[k] = String(v);
+  }
+
+  // 获取对象的所有键并排序
+  const keys = [];
+  for (const key in normalized) {
+    if (Object.prototype.hasOwnProperty.call(normalized, key)) {
+      keys.push(key);
+    }
+  }
+  keys.sort();
+
+  // 构建键值对数组
+  const pairs = [];
+  for (const key of keys) {
+    // 对键和值进行 URL 编码
+    const encodedKey = encodeURIComponent(key);
+    const encodedValue = encodeURIComponent(normalized[key]);
+    pairs.push(`${encodedKey}=${encodedValue}`);
+  }
+
+  // 用 & 连接所有键值对
+  return pairs.join('&');
+}
+
+export function updateQueryString(url, params) {
+  // 解析 URL
+  let baseUrl = url;
+  let queryString = '';
+  const hashIndex = url.indexOf('#');
+  let hash = '';
+  if (hashIndex !== -1) {
+    baseUrl = url.substring(0, hashIndex);
+    hash = url.substring(hashIndex);
+  }
+  const queryIndex = baseUrl.indexOf('?');
+  if (queryIndex !== -1) {
+    queryString = baseUrl.substring(queryIndex + 1);
+    baseUrl = baseUrl.substring(0, queryIndex);
+  }
+
+  // 解析现有查询字符串为对象
+  const queryParams = {};
+  if (queryString) {
+    const pairs = queryString.split('&');
+    for (const pair of pairs) {
+      if (pair) {
+        const [key, value = ''] = pair.split('=').map(decodeURIComponent);
+        queryParams[key] = value;
+      }
+    }
+  }
+
+  // 更新参数
+  for (const key in params) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) {
+      queryParams[key] = params[key];
+    }
+  }
+
+  // 构建新的查询字符串
+  const newQuery = [];
+  for (const key in queryParams) {
+    if (Object.prototype.hasOwnProperty.call(queryParams, key)) {
+      newQuery.push(
+        `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`
+      );
+    }
+  }
+
+  // 拼接最终 URL
+  return baseUrl + (newQuery.length ? '?' + newQuery.join('&') : '') + hash;
+}
+
+export function getPathname(url) {
+  // 查找路径的起始位置（跳过协议和主机部分）
+  let pathnameStart = url.indexOf('//') + 2;
+  if (pathnameStart === 1) pathnameStart = 0; // 如果没有协议部分
+  const pathStart = url.indexOf('/', pathnameStart);
+  if (pathStart === -1) return '/'; // 如果没有路径，返回默认根路径
+  const queryStart = url.indexOf('?', pathStart);
+  const hashStart = url.indexOf('#', pathStart);
+  // 确定路径的结束位置（查询字符串或片段之前）
+  let pathEnd = queryStart !== -1 ? queryStart : (hashStart !== -1 ? hashStart : url.length);
+  const pathname = url.substring(pathStart, pathEnd);
+  return pathname || '/';
+}
