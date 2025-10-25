@@ -3,9 +3,6 @@
  * 提供获取和设置环境变量的函数，支持 Cloudflare Workers 和 Node.js
  */
 export class Envs {
-  // 缓存环境变量（使用普通静态字段）
-  static cache = new Map();
-
   // 记录获取过的环境变量
   static accessedEnvVars = new Map();
 
@@ -21,10 +18,6 @@ export class Envs {
    * @returns {any} 转换后的值
    */
   static get(key, defaultValue, type = 'string', encrypt = false) {
-    if (this.cache.has(key)) {
-      return this.cache.get(key);
-    }
-
     let value;
     if (typeof env !== 'undefined' && env[key]) {
       value = env[key]; // Cloudflare Workers
@@ -54,7 +47,6 @@ export class Envs {
     const finalValue = encrypt ? this.encryptStr(parsedValue) : parsedValue;
     this.accessedEnvVars.set(key, finalValue);
 
-    this.cache.set(key, parsedValue);
     return parsedValue;
   }
 
@@ -67,7 +59,6 @@ export class Envs {
     if (typeof process !== 'undefined') {
       process.env[key] = String(value);
     }
-    this.cache.set(key, value);
     this.accessedEnvVars.set(key, value);
   }
 
@@ -161,7 +152,7 @@ export class Envs {
       keywords = `${keywords}|${customFilter}`;
     }
 
-    this.set('EPISODE_TITLE_FILTER', keywords);
+    this.accessedEnvVars.set('EPISODE_TITLE_FILTER', keywords);
 
     try {
       return new RegExp(`^(.*?)(?:${keywords})(.*?)$`);

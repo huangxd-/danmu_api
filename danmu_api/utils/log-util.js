@@ -1,12 +1,10 @@
-import { Globals } from '../configs/globals.js';
+import { globals } from '../configs/globals.js';
 
 // =====================
 // 路由请求相关
 // =====================
 
 export function log(level, ...args) {
-  const globals = Globals.getConfig(); // 需要等Globals里的init函数先被调用
-
   // 根据日志级别决定是否输出
   const levels = { error: 0, warn: 1, info: 2 };
   const currentLevelValue = levels[globals.logLevel] !== undefined ? levels[globals.logLevel] : 1;

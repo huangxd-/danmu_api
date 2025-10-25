@@ -41,10 +41,8 @@ export const Globals = {
    * @returns {Object} 全局配置对象
    */
   init(env = {}, deployPlatform = 'node') {
-    if (!this.envs || !this.envs.token) {
-      this.envs = Envs.load(env, deployPlatform);
-      this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
-    }
+    this.envs = Envs.load(env, deployPlatform);
+    this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
     return this.getConfig();
   },
 
@@ -86,3 +84,29 @@ export const Globals = {
     });
   },
 };
+
+/**
+ * 全局配置代理对象
+ * 自动转发所有属性访问到 Globals.getConfig()
+ * 使用示例：
+ *   import { globals } from './globals.js';
+ *   console.log(globals.version);  // 直接访问，无需调用 getConfig()
+ */
+export const globals = new Proxy({}, {
+  get(target, prop) {
+    return Globals.getConfig()[prop];
+  },
+  set(target, prop, value) {
+    Globals.getConfig()[prop] = value;
+    return true;
+  },
+  has(target, prop) {
+    return prop in Globals.getConfig();
+  },
+  ownKeys(target) {
+    return Reflect.ownKeys(Globals.getConfig());
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return Object.getOwnPropertyDescriptor(Globals.getConfig(), prop);
+  }
+});

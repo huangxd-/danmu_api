@@ -23,6 +23,8 @@ loadEnv();
 // 监听 .env 文件变化（仅在文件存在时）
 let envWatcher = null;
 let reloadTimer = null;
+let mainServer = null;
+let proxyServer = null;
 
 function setupEnvWatcher() {
   if (!fs.existsSync(envPath)) {
@@ -112,6 +114,25 @@ function cleanupWatcher() {
     clearTimeout(reloadTimer);
     reloadTimer = null;
   }
+  // 优雅关闭主服务器
+  if (mainServer) {
+    console.log('[server] Closing main server...');
+    mainServer.close(() => {
+      console.log('[server] Main server closed');
+    });
+  }
+  // 优雅关闭代理服务器
+  if (proxyServer) {
+    console.log('[server] Closing proxy server...');
+    proxyServer.close(() => {
+      console.log('[server] Proxy server closed');
+    });
+  }
+  // 给服务器一点时间关闭后退出
+  setTimeout(() => {
+    console.log('[server] Exit complete.');
+    process.exit(0);
+  }, 500);
 }
 
 // 监听进程退出信号
@@ -304,14 +325,13 @@ function startServerSync() {
   setupEnvWatcher();
 
   // 启动主业务服务器 (9321)
-  const server = createServer();
-  server.listen(9321, '0.0.0.0', () => {
+  mainServer = createServer();
+  mainServer.listen(9321, '0.0.0.0', () => {
     console.log('Server running on http://0.0.0.0:9321');
   });
 
   // 启动5321端口的代理服务
-  const proxyServer = createProxyServer();
-
+  proxyServer = createProxyServer();
   proxyServer.listen(5321, '0.0.0.0', () => {
     console.log('Proxy server running on http://0.0.0.0:5321');
   });
@@ -333,14 +353,13 @@ async function startServerAsync() {
     }
 
     // 启动主业务服务器 (9321)
-    const server = createServer();
-    server.listen(9321, '0.0.0.0', () => {
+    mainServer = createServer();
+    mainServer.listen(9321, '0.0.0.0', () => {
       console.log('Server running on http://0.0.0.0:9321 (compatibility mode)');
     });
 
     // 启动5321端口的代理服务
-    const proxyServer = createProxyServer();
-
+    proxyServer = createProxyServer();
     proxyServer.listen(5321, '0.0.0.0', () => {
       console.log('Proxy server running on http://0.0.0.0:5321 (compatibility mode)');
     });

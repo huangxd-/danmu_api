@@ -1,4 +1,4 @@
-import { Globals } from '../configs/globals.js';
+import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { simpleHash, serializeValue } from "./codec-util.js";
 
@@ -8,8 +8,6 @@ import { simpleHash, serializeValue } from "./codec-util.js";
 
 // 使用 GET 发送简单命令（如 PING 检查连接）
 export async function pingRedis() {
-  const globals = Globals.getConfig();
-
   const url = `${globals.redisUrl}/ping`;
   log("info", `[redis] 开始发送 PING 请求:`, url);
   try {
@@ -32,8 +30,6 @@ export async function pingRedis() {
 
 // 使用 GET 发送 GET 命令（读取键值）
 export async function getRedisKey(key) {
-  const globals = Globals.getConfig();
-
   const url = `${globals.redisUrl}/get/${key}`;
   log("info", `[redis] 开始发送 GET 请求:`, url);
   try {
@@ -56,8 +52,6 @@ export async function getRedisKey(key) {
 
 // 使用 POST 发送 SET 命令，仅在值变化时更新
 export async function setRedisKey(key, value) {
-  const globals = Globals.getConfig();
-
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
 
@@ -94,8 +88,6 @@ export async function setRedisKey(key, value) {
 
 // 使用 POST 发送 SETEX 命令，仅在值变化时更新
 export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
-  const globals = Globals.getConfig();
-
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
 
@@ -132,8 +124,6 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
 
 // 通用的 pipeline 请求函数
 export async function runPipeline(commands) {
-  const globals = Globals.getConfig();
-
   const url = `${globals.redisUrl}/pipeline`;
   log("info", `[redis] 开始发送 PIPELINE 请求:`, url);
   try {
@@ -159,8 +149,6 @@ export async function runPipeline(commands) {
 
 // 优化后的 getRedisCaches，单次请求获取所有键
 export async function getRedisCaches() {
-  const globals = Globals.getConfig();
-
   if (!globals.redisCacheInitialized) {
     try {
       log("info", 'getRedisCaches start.');
@@ -197,8 +185,6 @@ export async function getRedisCaches() {
 
 // 优化后的 updateRedisCaches，仅更新有变化的变量
 export async function updateRedisCaches() {
-  const globals = Globals.getConfig();
-
   try {
     log("info", 'updateCaches start.');
     const commands = [];
@@ -262,7 +248,6 @@ export async function updateRedisCaches() {
 
 // 判断redis是否可用
 export async function judgeRedisValid(path) {
-  const globals = Globals.getConfig();
   if (!globals.redisValid && globals.redisUrl && globals.redisToken && path !== "/favicon.ico" && path !== "/robots.txt") {
     const res = await pingRedis();
     if (res && res.result && res.result === "PONG") {

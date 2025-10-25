@@ -1,4 +1,4 @@
-import { Globals } from '../configs/globals.js';
+import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 
 // =====================
@@ -6,7 +6,6 @@ import { log } from './log-util.js'
 // =====================
 
 export async function httpGet(url, options) {
-  const globals = Globals.getConfig(); // 需要等Globals里的init函数先被调用
 
   log("info", `[请求模拟] HTTP GET: ${url}`);
 
