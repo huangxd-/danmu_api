@@ -58,6 +58,7 @@ export async function searchAnime(url) {
   const bahamutSource = new BahamutSource();
   const tencentSource = new TencentSource();
   const youkuSource = new YoukuSource();
+  const iqiyiSource = new IqiyiSource();
 
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
@@ -139,6 +140,7 @@ export async function searchAnime(url) {
       if (source === "bahamut") return bahamutSource.search(queryTitle);
       if (source === "tencent") return tencentSource.search(queryTitle);
       if (source === "youku") return youkuSource.search(queryTitle);
+      if (source === "iqiyi") return iqiyiSource.search(queryTitle);
     });
 
     // 执行所有请求并等待结果
@@ -153,7 +155,7 @@ export async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku } = resultData;
+    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of globals.sourceOrderArr) {
@@ -184,6 +186,9 @@ export async function searchAnime(url) {
       } else if (key === 'youku') {
         // 等待处理Youku来源
         await youkuSource.handleAnimes(animesYouku, queryTitle, curAnimes);
+      } else if (key === 'iqiyi') {
+        // 等待处理iQiyi来源
+        await iqiyiSource.handleAnimes(animesIqiyi, queryTitle, curAnimes);
       }
     }
   } catch (error) {
