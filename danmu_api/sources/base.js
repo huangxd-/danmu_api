@@ -67,7 +67,13 @@ export default class BaseSource {
         return 0;
       })
       .forEach(anime => {
-        curAnimes.push(anime);
+        // 检查 curAnimes 中是否已存在相同 animeId 的动漫
+        const existingIndex = curAnimes.findIndex(a => a.animeId === anime.animeId);
+        if (existingIndex === -1) {
+          // 不存在则添加
+          curAnimes.push(anime);
+        }
+        // 如果已存在则跳过，避免重复
       });
   }
 }

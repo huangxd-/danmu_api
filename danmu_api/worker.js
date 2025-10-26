@@ -123,19 +123,70 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return getBangumi(path);
   }
 
-  // POST /api/v2/comment/by-url
-  if (path === "/api/v2/comment/by-url" && method === "POST") {
+  // GET /api/v2/comment/:commentId or /api/v2/comment?url=xxx
+  if (path.startsWith("/api/v2/comment") && method === "GET") {
     const queryFormat = url.searchParams.get('format');
-    return getCommentByUrl(req, queryFormat);
-  }
+    const videoUrl = url.searchParams.get('url');
 
-  // GET /api/v2/comment/:commentId
-  if (path.startsWith("/api/v2/comment/") && method === "GET") {
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
     // 2. 只有缓存未命中时才执行限流检查和网络请求
-    // 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
-    const queryFormat = url.searchParams.get('format');
+    // 3. 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
+
+    // 如果有url参数，则通过URL获取弹幕
+    if (videoUrl) {
+      // 先检查缓存
+      const cachedComments = getCommentCache(videoUrl);
+      if (cachedComments !== null) {
+        log("info", `[Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
+        const responseData = { count: cachedComments.length, comments: cachedComments };
+        return formatDanmuResponse(responseData, queryFormat);
+      }
+
+      // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
+      if (globals.rateLimitMaxRequests > 0) {
+        const currentTime = Date.now();
+        const oneMinute = 60 * 1000;
+
+        // 清理所有过期的 IP 记录
+        cleanupExpiredIPs(currentTime);
+
+        // 检查该 IP 地址的历史请求
+        if (!globals.requestHistory.has(clientIp)) {
+          globals.requestHistory.set(clientIp, []);
+        }
+
+        const history = globals.requestHistory.get(clientIp);
+        const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
+
+        // 如果最近 1 分钟内的请求次数超过限制，返回 429 错误
+        if (recentRequests.length >= globals.rateLimitMaxRequests) {
+          log("warn", `[Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
+          return jsonResponse(
+            { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
+            429
+          );
+        }
+
+        // 记录本次请求时间戳
+        recentRequests.push(currentTime);
+        globals.requestHistory.set(clientIp, recentRequests);
+        log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
+      }
+
+      // 通过URL获取弹幕
+      return getCommentByUrl(videoUrl, queryFormat);
+    }
+
+    // 否则通过commentId获取弹幕
+    if (!path.startsWith("/api/v2/comment/")) {
+      log("error", "Missing commentId or url parameter");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Missing commentId or url parameter" },
+        400
+      );
+    }
+
     const commentId = parseInt(path.split("/").pop());
     let urlForComment = findUrlById(commentId);
 
@@ -171,30 +222,17 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
       // 如果最近的请求数量大于等于配置的限制次数，则限制请求
       if (recentRequests.length >= globals.rateLimitMaxRequests) {
-        // 更新请求历史（清理过期记录）
-        if (recentRequests.length === 0) {
-          globals.requestHistory.delete(clientIp);
-        } else {
-          globals.requestHistory.set(clientIp, recentRequests);
-        }
-
-        return jsonResponse({
-          status: 429, // HTTP 429 Too Many Requests
-          body: `1分钟内同一IP只能请求弹幕${globals.rateLimitMaxRequests}次，请稍后重试`,
-        });
+        log("warn", `[Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
+        return jsonResponse(
+          { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
+          429
+        );
       }
 
-      // 将当前请求的时间戳添加到该 IP 地址的请求历史队列中
+      // 记录本次请求时间戳
       recentRequests.push(currentTime);
-
-      // 更新该 IP 地址的请求历史
-      if (recentRequests.length === 0) {
-        // 如果没有最近的请求，删除该 IP 的记录以避免内存泄漏
-        globals.requestHistory.delete(clientIp);
-      } else {
-        globals.requestHistory.set(clientIp, recentRequests);
-      }
-      log("info", `[Rate Limit] Request counted for IP: ${clientIp}, count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
+      globals.requestHistory.set(clientIp, recentRequests);
+      log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
     return getComment(path, queryFormat);

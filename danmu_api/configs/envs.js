@@ -147,14 +147,12 @@ export class Envs {
       '花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|' +
       'NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|' +
       '剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|采访|陪看(记)?|' +
-      '试看版|短剧|精编|Plus|独家版|特别版|短片|发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|.{3,}篇|(?!.*(入局|破冰局|做局)).{2,}局|观察室|上班那点事儿|' +
+      '试看版|短剧|精编|Plus|独家版|特别版|短片|发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|观察室|上班那点事儿|' +
       '周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘';
-    let keywords = defaultFilter;
 
-    const customFilter = this.get('EPISODE_TITLE_FILTER', '', 'string', false).replace(/^\|+|\|+$/g, '');
-    if (customFilter) {
-      keywords = `${keywords}|${customFilter}`;
-    }
+    // 读取环境变量，如果设置了则完全覆盖默认值
+    const customFilter = this.get('EPISODE_TITLE_FILTER', '', 'string', false).trim();
+    let keywords = customFilter || defaultFilter;
 
     this.accessedEnvVars.set('EPISODE_TITLE_FILTER', keywords);
 

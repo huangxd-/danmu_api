@@ -753,8 +753,8 @@ export async function getComment(path, queryFormat) {
   return formatDanmuResponse(responseData, queryFormat);
 }
 
-// Extracted function for POST /api/v2/comment/by-url
-export async function getCommentByUrl(req, queryFormat) {
+// Extracted function for GET /api/v2/comment?url=xxx
+export async function getCommentByUrl(videoUrl, queryFormat) {
   const tencentSource = new TencentSource();
   const iqiyiSource = new IqiyiSource();
   const mangoSource = new MangoSource();
@@ -763,25 +763,22 @@ export async function getCommentByUrl(req, queryFormat) {
   const otherSource = new OtherSource();
 
   try {
-    // 获取请求体
-    const body = await req.json();
-
-    // 验证请求体是否有效
-    if (!body || !body.videoUrl) {
-      log("error", "Missing videoUrl parameter in request body");
+    // 验证URL参数
+    if (!videoUrl || typeof videoUrl !== 'string') {
+      log("error", "Missing or invalid url parameter");
       return jsonResponse(
-        { errorCode: 400, success: false, errorMessage: "Missing videoUrl parameter", count: 0, comments: [] },
+        { errorCode: 400, success: false, errorMessage: "Missing or invalid url parameter", count: 0, comments: [] },
         400
       );
     }
 
-    const videoUrl = body.videoUrl.trim();
+    videoUrl = videoUrl.trim();
 
     // 验证URL格式
     if (!videoUrl.startsWith('http')) {
-      log("error", "Invalid videoUrl format");
+      log("error", "Invalid url format, must start with http or https");
       return jsonResponse(
-        { errorCode: 400, success: false, errorMessage: "Invalid videoUrl format", count: 0, comments: [] },
+        { errorCode: 400, success: false, errorMessage: "Invalid url format, must start with http or https", count: 0, comments: [] },
         400
       );
     }
@@ -844,7 +841,7 @@ export async function getCommentByUrl(req, queryFormat) {
     };
     return formatDanmuResponse(responseData, queryFormat);
   } catch (error) {
-    // 处理 JSON 解析错误或其他异常
+    // 处理异常
     log("error", `Failed to process comment by URL request: ${error.message}`);
     return jsonResponse(
       { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },

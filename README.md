@@ -34,7 +34,7 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
-  - `POST /api/v2/comment/by-url`：通过视频URL直接获取弹幕。
+  - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
 - **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
   - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml`（默认：json）
@@ -97,7 +97,7 @@ LogVar 弹幕 API 服务器
    - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
    - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json`
-   - `POST http://{ip}:9321/87654321/api/v2/comment/by-url`
+   - `GET http://{ip}:9321/87654321/api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
    - `GET http://{ip}:9321/87654321/api/logs`
 
 ## 使用 Docker 运行
@@ -289,7 +289,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 **使用示例**：
 - 获取 JSON 格式：`GET /api/v2/comment/10001`
 - 获取 XML 格式：`GET /api/v2/comment/10001?format=xml`
-- 通过 URL 获取 XML：`POST /api/v2/comment/by-url?format=xml` （body: `{"videoUrl":"..."}`）
+- 通过 URL 获取弹幕：`GET /api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
 
 > 注意：
 >
