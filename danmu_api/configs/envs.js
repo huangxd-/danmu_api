@@ -106,9 +106,6 @@ export class Envs {
    */
   static resolveSourceOrder(env, deployPlatform) {
     let sourceOrder = this.get('SOURCE_ORDER', '360,vod,renren,hanjutv', 'string');
-    if (['cloudflare', 'vercel', 'netlify'].includes(deployPlatform)) {
-      sourceOrder += ',bahamut';
-    }
 
     const orderArr = sourceOrder
       .split(',')
