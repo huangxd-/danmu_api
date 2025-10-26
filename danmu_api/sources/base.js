@@ -19,7 +19,7 @@ export default class BaseSource {
     throw new Error("Method 'Episodes' must be implemented");
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
     throw new Error("Method 'handleAnimes' must be implemented");
   }
 

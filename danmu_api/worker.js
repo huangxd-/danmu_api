@@ -11,10 +11,9 @@ import {
     setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap
 } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
-import { generateValidStartDate } from "./utils/time-util.js";
-import {
-    printFirst200Chars, extractTitle, extractYear, convertChineseNumber, parseFileName, createDynamicPlatformOrder
-} from "./utils/common-util.js";
+import { extractTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder } from "./utils/common-util.js";
+import Kan360Source from "./sources/kan360.js";
+import VodSource from "./sources/vod.js";
 import RenrenSource from "./sources/renren.js";
 import HanjutvSource from "./sources/hanjutv.js";
 import BahamutSource from "./sources/bahamut.js";
@@ -26,201 +25,6 @@ import YoukuSource from "./sources/youku.js";
 import OtherSource from "./sources/other.js";
 
 let globals;
-
-// =====================
-// 获取播放链接
-// =====================
-
-// 查询360kan影片信息
-async function get360Animes(title) {
-  try {
-    const response = await httpGet(
-      `https://api.so.360kan.com/index?force_v=1&kw=${encodeURIComponent(title)}&from=&pageno=1&v_ap=1&tab=all`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-      }
-    );
-
-    const data = response.data;
-    log("info", `360kan response: ${JSON.stringify(data)}`);
-
-    let tmpAnimes = [];
-    if ('rows' in data.data.longData) {
-      tmpAnimes = data.data.longData.rows;
-    }
-
-    log("info", `360kan animes.length: ${tmpAnimes.length}`);
-
-    return tmpAnimes;
-  } catch (error) {
-    log("error", "get360Animes error:", {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-    });
-    return [];
-  }
-}
-
-// 查询360kan综艺详情
-async function get360Zongyi(title, entId, site, year) {
-  try {
-    let links = [];
-    for (let j = 0; j <= 10; j++) {
-      const response = await httpGet(
-          `https://api.so.360kan.com/episodeszongyi?entid=${entId}&site=${site}&y=${year}&count=20&offset=${j * 20}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            },
-          }
-      );
-
-      const data = await response.data;
-      log("info", `360kan zongyi response: ${JSON.stringify(data)}`);
-
-      const episodeList = data.data.list;
-      if (!episodeList) {
-        break;
-      }
-      for (const episodeInfo of episodeList) {
-        // Extract episode number from episodeInfo.name (e.g., "第10期下：地球团熟人局大胆开麦，做晚宴超催泪" -> "10")
-        const epNumMatch = episodeInfo.name.match(/第(\d+)期([上中下])?/) || episodeInfo.period.match(/第(\d+)期([上中下])?/);
-        let epNum = epNumMatch ? epNumMatch[1] : null;
-        if (epNum && epNumMatch[2]) {
-          epNum = epNumMatch[2] === "上" ? `${epNum}.1` :
-                  epNumMatch[2] === "中" ? `${epNum}.2` : `${epNum}.3`;
-        }
-
-        links.push({
-            "name": episodeInfo.id,
-            "url": episodeInfo.url,
-            "title": `【${site}】 ${episodeInfo.name} ${episodeInfo.period}`,
-            "sort": epNum || episodeInfo.sort || null
-        });
-      }
-
-      log("info", `links.length: ${links.length}`);
-    }
-    // Sort links by pubdate numerically
-    links.sort((a, b) => {
-      if (!a.sort || !b.sort) return 0;
-      const aNum = parseFloat(a.sort);
-      const bNum = parseFloat(b.sort);
-      return aNum - bNum;
-    });
-
-    return links;
-  } catch (error) {
-    log("error", "get360Animes error:", {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-    });
-    return [];
-  }
-}
-
-// 查询vod站点影片信息
-async function getVodAnimes(title, server, serverName) {
-  try {
-    const response = await httpGet(
-      `${server}/api.php/provide/vod/?ac=detail&wd=${title}&pg=1`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-      }
-    );
-    // 检查 response.data.list 是否存在且长度大于 0
-    if (response && response.data && response.data.list && response.data.list.length > 0) {
-      log("info", `请求 ${serverName}(${server}) 成功`);
-      const data = response.data;
-      log("info", `${serverName} response: ↓↓↓`);
-      printFirst200Chars(data);
-      return { serverName, list: data.list };
-    } else {
-      log("info", `请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
-      return { serverName, list: [] };
-    }
-  } catch (error) {
-    log("error", `请求 ${serverName}(${server}) 失败:`, {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-    });
-    return { serverName, list: [] };
-  }
-}
-
-// 查询所有vod站点影片信息（并发查询）
-async function getVodAnimesFromAllServers(title, servers) {
-  if (!servers || servers.length === 0) {
-    return [];
-  }
-
-  // 根据 vodReturnMode 决定查询策略
-  if (globals.vodReturnMode === "fastest") {
-    return await getVodAnimesFromFastestServer(title, servers);
-  } else {
-    return await getVodAnimesFromAllServersImpl(title, servers);
-  }
-}
-
-// 查询所有vod站点影片信息（返回所有结果）
-async function getVodAnimesFromAllServersImpl(title, servers) {
-  // 并发查询所有服务器，使用 allSettled 确保单个服务器失败不影响其他服务器
-  const promises = servers.map(server =>
-    getVodAnimes(title, server.url, server.name)
-  );
-
-  const results = await Promise.allSettled(promises);
-
-  // 过滤出成功的结果，即使某些服务器失败也不影响其他服务器
-  return results
-    .filter(result => result.status === 'fulfilled')
-    .map(result => result.value);
-}
-
-// 查询vod站点影片信息（返回最快的结果）
-async function getVodAnimesFromFastestServer(title, servers) {
-  if (!servers || servers.length === 0) {
-    return [];
-  }
-
-  // 使用 Promise.race 获取最快响应的服务器
-  const promises = servers.map(server =>
-    getVodAnimes(title, server.url, server.name)
-  );
-
-  try {
-    // race 会返回第一个成功的结果
-    const result = await Promise.race(promises);
-
-    // 检查结果是否有效（有数据）
-    if (result && result.list && result.list.length > 0) {
-      log("info", `[VOD fastest mode] 使用最快的服务器: ${result.serverName}`);
-      return [result];
-    }
-
-    // 如果最快的服务器没有数据，继续尝试其他服务器
-    log("info", `[VOD fastest mode] 最快的服务器 ${result.serverName} 无数据，尝试其他服务器`);
-    const allResults = await Promise.allSettled(promises);
-    const validResults = allResults
-      .filter(r => r.status === 'fulfilled' && r.value && r.value.list && r.value.list.length > 0)
-      .map(r => r.value);
-
-    return validResults.length > 0 ? [validResults[0]] : [];
-  } catch (error) {
-    log("error", `[VOD fastest mode] 所有服务器查询失败:`, error.message);
-    return [];
-  }
-}
 
 function matchSeason(anime, queryTitle, season) {
   if (anime.animeTitle.includes(queryTitle)) {
@@ -247,161 +51,10 @@ function matchSeason(anime, queryTitle, season) {
   }
 }
 
-// 按年份降序排序并添加到curAnimes
-function sortAndPushAnimesByYear(processedAnimes, curAnimes) {
-  processedAnimes
-    .filter(anime => anime !== null)
-    .sort((a, b) => {
-      const yearA = extractYear(a.animeTitle);
-      const yearB = extractYear(b.animeTitle);
-
-      // 如果都有年份，按年份降序排列
-      if (yearA !== null && yearA !== undefined && yearB !== null && yearB !== undefined) {
-        return yearB - yearA;
-      }
-      // 如果只有a有年份，a排在前面
-      if ((yearA !== null && yearA !== undefined) && (yearB === null || yearB === undefined)) {
-        return -1;
-      }
-      // 如果只有b有年份，b排在前面
-      if ((yearA === null || yearA === undefined) && (yearB !== null && yearB !== undefined)) {
-        return 1;
-      }
-      // 如果都没有年份，保持原顺序
-      return 0;
-    })
-    .forEach(anime => {
-      curAnimes.push(anime);
-    });
-}
-
-async function handleVodAnimes(animesVod, curAnimes, key) {
-  const tmpAnimes = [];
-
-  const processVodAnimes = await Promise.all(animesVod.map(async (anime) => {
-    let vodPlayFromList = anime.vod_play_from.split("$$$");
-    vodPlayFromList = vodPlayFromList.map(item => {
-      if (item === "mgtv") return "imgo";
-      if (item === "bilibili") return "bilibili1";
-      return item;
-    });
-
-    const vodPlayUrlList = anime.vod_play_url.split("$$$");
-    const validIndices = vodPlayFromList
-        .map((item, index) => globals.vodAllowedPlatforms.includes(item) ? index : -1)
-        .filter(index => index !== -1);
-
-    let links = [];
-    let count = 0;
-    for (const num of validIndices) {
-      const platform = vodPlayFromList[num];
-      const eps = vodPlayUrlList[num].split("#");
-      for (const ep of eps) {
-        const epInfo = ep.split("$");
-        count++;
-        links.push({
-          "name": count,
-          "url": epInfo[1],
-          "title": `【${platform}】 ${epInfo[0]}`
-        });
-      }
-    }
-
-    if (links.length > 0) {
-      let transformedAnime = {
-        animeId: Number(anime.vod_id),
-        bangumiId: String(anime.vod_id),
-        animeTitle: `${anime.vod_name}(${anime.vod_year})【${anime.type_name}】from ${key}`,
-        type: anime.type_name,
-        typeDescription: anime.type_name,
-        imageUrl: anime.vod_pic,
-        startDate: generateValidStartDate(anime.vod_year),
-        episodeCount: links.length,
-        rating: 0,
-        isFavorited: true,
-      };
-
-      tmpAnimes.push(transformedAnime);
-      addAnime({...transformedAnime, links: links});
-      if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-    }
-  }));
-
-  sortAndPushAnimesByYear(tmpAnimes, curAnimes);
-
-  return processVodAnimes;
-}
-
-async function handle360Animes(animes360, curAnimes) {
-  const tmpAnimes = [];
-
-  const process360Animes = await Promise.all(animes360.map(async (anime) => {
-    let links = [];
-    if (anime.cat_name === "电影") {
-      for (const key of Object.keys(anime.playlinks)) {
-        if (globals.vodAllowedPlatforms.includes(key)) {
-          links.push({
-            "name": key,
-            "url": anime.playlinks[key],
-            "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
-          });
-        }
-      }
-    } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
-      if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
-        for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
-          const item = anime.seriesPlaylinks[i];
-          links.push({
-            "name": i + 1,
-            "url": item.url,
-            "title": `【${anime.seriesSite}】 第${i + 1}集`
-          });
-        }
-      }
-    } else if (anime.cat_name === "综艺") {
-      const zongyiLinks = await Promise.all(
-          Object.keys(anime.playlinks_year).map(async (site) => {
-            if (globals.vodAllowedPlatforms.includes(site)) {
-              const yearLinks = await Promise.all(
-                  anime.playlinks_year[site].map(async (year) => {
-                    return await get360Zongyi(anime.titleTxt, anime.id, site, year);
-                  })
-              );
-              return yearLinks.flat(); // 将每个年份的子链接合并到一个数组
-            }
-            return [];
-          })
-      );
-      links = zongyiLinks.flat(); // 扁平化所有返回的子链接
-    }
-
-    if (links.length > 0) {
-      let transformedAnime = {
-        animeId: Number(anime.id),
-        bangumiId: String(anime.id),
-        animeTitle: `${anime.titleTxt}(${anime.year})【${anime.cat_name}】from 360`,
-        type: anime.cat_name,
-        typeDescription: anime.cat_name,
-        imageUrl: anime.cover,
-        startDate: generateValidStartDate(anime.year),
-        episodeCount: links.length,
-        rating: 0,
-        isFavorited: true,
-      };
-
-      tmpAnimes.push(transformedAnime);
-      addAnime({...transformedAnime, links: links});
-      if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-    }
-  }));
-
-  sortAndPushAnimesByYear(tmpAnimes, curAnimes);
-
-  return process360Animes;
-}
-
 // Extracted function for GET /api/v2/search/anime
 async function searchAnime(url) {
+  const kan360Source = new Kan360Source();
+  const vodSource = new VodSource();
   const renrenSource = new RenrenSource();
   const hanjutvSource = new HanjutvSource();
   const bahamutSource = new BahamutSource();
@@ -480,8 +133,8 @@ async function searchAnime(url) {
     // 根据 sourceOrderArr 动态构建请求数组
     log("info", `Search sourceOrderArr: ${globals.sourceOrderArr}`);
     const requestPromises = globals.sourceOrderArr.map(source => {
-      if (source === "360") return get360Animes(queryTitle);
-      if (source === "vod") return getVodAnimesFromAllServers(queryTitle, globals.vodServers);
+      if (source === "360") return kan360Source.search(queryTitle);
+      if (source === "vod") return vodSource.search(queryTitle);
       if (source === "renren") return renrenSource.search(queryTitle);
       if (source === "hanjutv") return hanjutvSource.search(queryTitle);
       if (source === "bahamut") return bahamutSource.search(queryTitle);
@@ -506,13 +159,13 @@ async function searchAnime(url) {
     for (const key of globals.sourceOrderArr) {
       if (key === '360') {
         // 等待处理360来源
-        await handle360Animes(animes360, curAnimes);
+        await kan360Source.handleAnimes(animes360, queryTitle, curAnimes);
       } else if (key === 'vod') {
         // 等待处理Vod来源（遍历所有VOD服务器的结果）
         if (animesVodResults && Array.isArray(animesVodResults)) {
           for (const vodResult of animesVodResults) {
             if (vodResult && vodResult.list && vodResult.list.length > 0) {
-              await handleVodAnimes(vodResult.list, curAnimes, vodResult.serverName);
+              await vodSource.handleAnimes(vodResult.list, queryTitle, curAnimes, vodResult.serverName);
             }
           }
         }
