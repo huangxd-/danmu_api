@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet} from "../utils/http-util.js";
-import { printFirst200Chars } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
 import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
@@ -373,7 +373,7 @@ export default class MangoSource extends BaseSource {
     const tmpAnimes = [];
 
     const processMangoAnimes = await Promise.all(sourceAnimes
-      .filter(s => s.title.includes(queryTitle))
+      .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
         // 电影类型专门处理
         if (anime.type === "电影") {

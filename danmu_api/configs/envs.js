@@ -207,7 +207,8 @@ export class Envs {
       commentCacheMinutes: this.get('COMMENT_CACHE_MINUTES', 1, 'number'), // 弹幕缓存时间配置（分钟，默认 1）
       convertTopBottomToScroll: this.get('CONVERT_TOP_BOTTOM_TO_SCROLL', false, 'boolean'), // 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
       convertColorToWhite: this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean'), // 彩色弹幕转换为纯白弹幕配置（默认 false，禁用转换）
-      danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string') // 弹幕输出格式配置（默认 json，可选值：json, xml）
+      danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
+      strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean') // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
     };
   }
 }

@@ -187,3 +187,42 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 
   return dynamicOrder;
 }
+
+/**
+ * 严格标题匹配函数
+ * @param {string} title - 动漫标题
+ * @param {string} query - 搜索关键词
+ * @returns {boolean} 是否匹配
+ */
+export function strictTitleMatch(title, query) {
+  if (!title || !query) return false;
+
+  const t = String(title).trim();
+  const q = String(query).trim();
+
+  // 完全匹配
+  if (t === q) return true;
+
+  // 标题以搜索词开头，且后面跟着空格、括号等分隔符
+  const separators = [' ', '(', '（', ':', '：', '-', '—', '·', '第', 'S', 's'];
+  for (const sep of separators) {
+    if (t.startsWith(q + sep)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * 根据配置选择匹配模式
+ * @param {string} title - 动漫标题
+ * @param {string} query - 搜索关键词
+ * @returns {boolean} 是否匹配
+ */
+export function titleMatches(title, query) {
+  if (globals.strictTitleMatch) {
+    return strictTitleMatch(title, query);
+  } else {
+    // 宽松模糊匹配
+    return String(title).includes(String(query));
+  }
+}

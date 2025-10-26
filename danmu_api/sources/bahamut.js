@@ -6,6 +6,7 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
+import { strictTitleMatch } from "../utils/common-util.js";
 
 // =====================
 // 获取巴哈姆特弹幕
@@ -156,6 +157,28 @@ export default class BahamutSource extends BaseSource {
       const q = String(queryTitle || "");
       const used = String(searchUsedTitle || "");
 
+      // 如果启用严格匹配模式
+      if (globals.strictTitleMatch) {
+        // 检查原始查询词
+        if (strictTitleMatch(tItem, q)) return true;
+        if (used && strictTitleMatch(tItem, used)) return true;
+
+        // 尝试繁体/简体互转后的严格匹配
+        try {
+          if (strictTitleMatch(tItem, traditionalized(q))) return true;
+          if (strictTitleMatch(tItem, simplized(q))) return true;
+          if (used) {
+            if (strictTitleMatch(tItem, traditionalized(used))) return true;
+            if (strictTitleMatch(tItem, simplized(used))) return true;
+          }
+        } catch (e) {
+          // 转换过程中可能会因为异常输入而抛错；忽略继续
+        }
+
+        return false;
+      }
+
+      // 宽松模糊匹配模式（默认）
       // 直接包含检查
       if (tItem.includes(q)) return true;
       if (used && tItem.includes(used)) return true;

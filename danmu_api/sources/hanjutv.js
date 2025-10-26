@@ -5,6 +5,7 @@ import { httpGet } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { titleMatches } from "../utils/common-util.js";
 
 // =====================
 // 获取韩剧TV弹幕
@@ -136,7 +137,7 @@ export default class HanjutvSource extends BaseSource {
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processHanjutvAnimes = await Promise.all(sourceAnimes
-      .filter(s => s.name.includes(queryTitle))
+      .filter(s => titleMatches(s.name, queryTitle))
       .map(async (anime) => {
         const detail = await this.getDetail(anime.sid);
         const eps = await this.getEpisodes(anime.sid);

@@ -5,6 +5,7 @@ import { httpGet} from "../utils/http-util.js";
 import { parseDanmakuBase64, md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { titleMatches } from "../utils/common-util.js";
 
 // =====================
 // 获取b站弹幕
@@ -352,7 +353,7 @@ export default class BilibiliSource extends BaseSource {
     const tmpAnimes = [];
 
     const processPromises = sourceAnimes
-      .filter(anime => anime.title.includes(queryTitle))
+      .filter(anime => titleMatches(anime.title, queryTitle))
       .map(async (anime) => {
         try {
           const eps = await this.getEpisodes(anime.mediaId);

@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
-import { printFirst200Chars } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
 import { md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
@@ -425,7 +425,7 @@ export default class IqiyiSource extends BaseSource {
     const tmpAnimes = [];
 
     const processIqiyiAnimes = await Promise.all(sourceAnimes
-      .filter(s => s.title.includes(queryTitle))
+      .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
         const eps = await this.getEpisodes(anime.mediaId);
 

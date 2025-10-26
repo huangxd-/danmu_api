@@ -5,6 +5,7 @@ import { getPathname, httpGet, sortedQueryString, updateQueryString } from "../u
 import { autoDecode, createHmacSha256 } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { titleMatches } from "../utils/common-util.js";
 
 // =====================
 // 获取人人视频弹幕
@@ -186,7 +187,7 @@ export default class RenrenSource extends BaseSource {
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processRenrenAnimes = await Promise.all(sourceAnimes
-      .filter(s => s.title.includes(queryTitle))
+      .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
         const eps = await this.getEpisodes(anime.mediaId);
         let links = [];

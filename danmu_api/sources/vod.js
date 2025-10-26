@@ -4,7 +4,7 @@ import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { printFirst200Chars } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
 
 // =====================
 // 获取vod源播放链接
@@ -111,7 +111,9 @@ export default class VodSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
     const tmpAnimes = [];
 
-    const processVodAnimes = await Promise.all(sourceAnimes.map(async (anime) => {
+    const processVodAnimes = await Promise.all(sourceAnimes
+      .filter(anime => titleMatches(anime.vod_name, queryTitle))
+      .map(async (anime) => {
       let vodPlayFromList = anime.vod_play_from.split("$$$");
       vodPlayFromList = vodPlayFromList.map(item => {
         if (item === "mgtv") return "imgo";

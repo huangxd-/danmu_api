@@ -4,6 +4,7 @@ import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { titleMatches } from "../utils/common-util.js";
 
 // =====================
 // 获取360看源播放链接
@@ -107,7 +108,9 @@ export default class Kan360Source extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
-    const process360Animes = await Promise.all(sourceAnimes.map(async (anime) => {
+    const process360Animes = await Promise.all(sourceAnimes
+      .filter(anime => titleMatches(anime.titleTxt, queryTitle))
+      .map(async (anime) => {
       let links = [];
       if (anime.cat_name === "电影") {
         for (const key of Object.keys(anime.playlinks)) {
