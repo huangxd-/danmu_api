@@ -60,6 +60,7 @@ export async function searchAnime(url) {
   const youkuSource = new YoukuSource();
   const iqiyiSource = new IqiyiSource();
   const mangoSource = new MangoSource();
+  const bilibiliSource = new BilibiliSource();
 
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
@@ -143,6 +144,7 @@ export async function searchAnime(url) {
       if (source === "youku") return youkuSource.search(queryTitle);
       if (source === "iqiyi") return iqiyiSource.search(queryTitle);
       if (source === "imgo") return mangoSource.search(queryTitle);
+      if (source === "bilibili") return bilibiliSource.search(queryTitle);
     });
 
     // 执行所有请求并等待结果
@@ -157,7 +159,7 @@ export async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo } = resultData;
+    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of globals.sourceOrderArr) {
@@ -194,6 +196,9 @@ export async function searchAnime(url) {
       } else if (key === 'imgo') {
         // 等待处理Mango来源
         await mangoSource.handleAnimes(animesImgo, queryTitle, curAnimes);
+      } else if (key === 'bilibili') {
+        // 等待处理Bilibili来源
+        await bilibiliSource.handleAnimes(animesBilibili, queryTitle, curAnimes);
       }
     }
   } catch (error) {
