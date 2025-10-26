@@ -115,6 +115,8 @@ export class Envs {
       .map(s => s.trim())
       .filter(s => this.ALLOWED_SOURCES.includes(s));
 
+    this.accessedEnvVars.set('SOURCE_ORDER', orderArr);
+
     return orderArr.length > 0 ? orderArr : ['360', 'vod', 'renren', 'hanjutv'];
   }
 
@@ -128,6 +130,8 @@ export class Envs {
       .split(',')
       .map(s => s.trim())
       .filter(s => this.ALLOWED_PLATFORMS.includes(s));
+
+    this.accessedEnvVars.set('PLATFORM_ORDER', orderArr);
 
     return orderArr.length > 0 ? [...orderArr, null] : [null];
   }

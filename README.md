@@ -33,7 +33,7 @@ LogVar 弹幕 API 服务器
   - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
-  - `GET /api/v2/comment/:commentId?withRelated=true&chConvert=1`：获取指定弹幕评论，支持返回相关评论和字符转换。
+  - `GET /api/v2/comment/:commentId?format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
   - `POST /api/v2/comment/by-url`：通过视频URL直接获取弹幕。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
 - **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
@@ -96,7 +96,7 @@ LogVar 弹幕 API 服务器
    - `POST http://{ip}:9321/87654321/api/v2/match`
    - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
-   - `GET http://{ip}:9321/87654321/api/v2/comment/1?withRelated=true&chConvert=1`
+   - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json`
    - `POST http://{ip}:9321/87654321/api/v2/comment/by-url`
    - `GET http://{ip}:9321/87654321/api/logs`
 

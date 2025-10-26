@@ -3,11 +3,8 @@ require('dotenv').config();
 
 const test = require('node:test');
 const assert = require('node:assert').strict;
-const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment, fetchTencentVideo, fetchIqiyi,
-  fetchMangoTV, fetchBilibili, fetchYouku, fetchOtherServer, httpGet, httpPost,
-  hanjutvSearch, getHanjutvEpisodes, getHanjutvComments, getHanjutvDetail,
-  bahamutSearch, getBahamutEpisodes, getBahamutComments, pingRedis, getRedisKey,
-  setRedisKey, setRedisKeyWithExpiry} = require('./worker');
+const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment,
+  httpGet, httpPost, pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry} = require('./worker');
 
 // Mock Request class for testing
 class MockRequest {
