@@ -97,7 +97,9 @@ export function convertToDanmakuJson(contents, platform) {
   }
 
   if (!items.length) {
-    throw new Error("无效输入，需为 XML 字符串或弹幕数组");
+    // 如果是空数组，直接返回空数组，不抛出异常
+    // 这样可以让兜底逻辑有机会执行
+    return [];
   }
 
   for (const item of items) {

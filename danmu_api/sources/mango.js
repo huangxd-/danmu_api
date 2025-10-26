@@ -49,6 +49,7 @@ export default class MangoSource extends BaseSource {
     // 弹幕和视频信息 API 基础地址
     const api_video_info = "https://pcweb.api.mgtv.com/video/info";
     const api_ctl_barrage = "https://galaxy.bz.mgtv.com/getctlbarrage";
+    const api_rd_barrage = "https://galaxy.bz.mgtv.com/rdbarrage";
 
     // 解析 URL 获取 cid 和 vid
     // 手动解析 URL（没有 URL 对象的情况下）
@@ -89,7 +90,10 @@ export default class MangoSource extends BaseSource {
     log("info", `标题: ${title}`);
 
     // 计算弹幕分段请求
-    const promises = [];
+    let promises = [];
+    let useNewApi = true;
+
+    // 尝试使用新API（支持彩色弹幕）
     try {
       const ctlBarrageUrl = `${api_ctl_barrage}?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid=${vid}&pid=&cid=${cid}&ticket=`;
       const res = await httpGet(ctlBarrageUrl, {
@@ -100,24 +104,52 @@ export default class MangoSource extends BaseSource {
       });
       const ctlBarrage = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
 
-      // 每1分钟一个分段
-      for (let i = 0; i < Math.ceil(time_to_second(time) / 60); i += 1) {
-        const danmakuUrl = `https://${ctlBarrage.data?.cdn_list.split(',')[0]}/${ctlBarrage.data?.cdn_version}/${i}.json`;
-        promises.push(
-          httpGet(danmakuUrl, {
-            headers: {
-              "Content-Type": "application/json",
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            },
-          })
-        );
+      // 检查数据结构
+      if (!ctlBarrage.data || !ctlBarrage.data.cdn_list || !ctlBarrage.data.cdn_version) {
+        log("warn", `新API缺少必要字段，切换到旧API`);
+        useNewApi = false;
+      } else {
+        // 每1分钟一个分段
+        for (let i = 0; i < Math.ceil(time_to_second(time) / 60); i += 1) {
+          const danmakuUrl = `https://${ctlBarrage.data.cdn_list.split(',')[0]}/${ctlBarrage.data.cdn_version}/${i}.json`;
+          promises.push(
+            httpGet(danmakuUrl, {
+              headers: {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              },
+            })
+          );
+        }
+        log("info", `使用新API，弹幕分段数量: ${promises.length}`);
       }
     } catch (error) {
-      log("error", "请求弹幕分片失败:", error);
-      return [];
+      log("warn", "新API请求失败，切换到旧API:", error.message);
+      useNewApi = false;
     }
 
-    log("info", `弹幕分段数量: ${promises.length}`);
+    // 如果新API失败，使用旧API作为兜底
+    if (!useNewApi) {
+      try {
+        const step = 60 * 1000; // 每60秒一个分段
+        const end_time = time_to_second(time) * 1000;
+        for (let i = 0; i < end_time; i += step) {
+          const danmakuUrl = `${api_rd_barrage}?vid=${vid}&cid=${cid}&time=${i}`;
+          promises.push(
+            httpGet(danmakuUrl, {
+              headers: {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              },
+            })
+          );
+        }
+        log("info", `使用旧API，弹幕分段数量: ${promises.length}`);
+      } catch (error) {
+        log("error", "旧API请求失败:", error);
+        return [];
+      }
+    }
 
     // 解析弹幕数据
     let contents = [];
