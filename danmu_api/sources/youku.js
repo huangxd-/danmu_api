@@ -3,7 +3,9 @@ import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet, httpPost } from "../utils/http-util.js";
 import { printFirst200Chars } from "../utils/common-util.js";
-import { md5 } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum } from "../utils/codec-util.js";
+import { generateValidStartDate } from "../utils/time-util.js";
+import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 
 // =====================
 // 获取优酷弹幕
@@ -21,11 +23,328 @@ export default class YoukuSource extends BaseSource {
     return `https://v.youku.com/v_show/id_${vid}.html`;
   }
 
-  async search(keyword) {}
+  /**
+   * 过滤优酷搜索项
+   * @param {Object} component - 搜索组件
+   * @param {string} keyword - 搜索关键词
+   * @returns {Object|null} 过滤后的结果
+   */
+  filterYoukuSearchItem(component, keyword) {
+    const commonData = component.commonData;
+    if (!commonData || !commonData.titleDTO) {
+      return null;
+    }
 
-  async getEpisodes(id) {}
+    // 过滤非优酷内容
+    if (commonData.isYouku !== 1 && commonData.hasYouku !== 1) {
+      return null;
+    }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {}
+    const title = commonData.titleDTO.displayName;
+
+    // 过滤不相关内容
+    const skipKeywords = ["中配版", "抢先看", "非正片", "解读", "揭秘", "赏析", "《"];
+    if (skipKeywords.some(kw => title.includes(kw))) {
+      return null;
+    }
+
+    // 提取年份
+    const yearMatch = commonData.feature.match(/[12][890][0-9][0-9]/);
+    const year = yearMatch ? parseInt(yearMatch[0]) : null;
+
+    // 清理标题 (移除HTML标签和特殊符号)
+    let cleanedTitle = title.replace(/<[^>]+>/g, '').replace(/【.+?】/g, '').trim().replace(/:/g, '：');
+
+    // 提取媒体类型
+    const mediaType = commonData.feature.includes("电影") ? "电影" : "电视剧";
+
+    return {
+      provider: "youku",
+      mediaId: commonData.showId,
+      title: cleanedTitle,
+      type: mediaType,
+      year: year,
+      imageUrl: commonData.posterDTO ? commonData.posterDTO.vThumbUrl : null,
+      episodeCount: commonData.episodeTotal,
+      cats: commonData.cats // 保存分类信息用于后续判断
+    };
+  }
+
+  async search(keyword) {
+    try {
+      log("info", `[Youku] 开始搜索: ${keyword}`);
+
+      const encodedKeyword = encodeURIComponent(keyword);
+      const encodedUA = encodeURIComponent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+      const searchUrl = `https://search.youku.com/api/search?keyword=${encodedKeyword}&userAgent=${encodedUA}&site=1&categories=0&ftype=0&ob=0&pg=1`;
+
+      const response = await httpGet(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://www.youku.com/'
+        }
+      });
+
+      if (!response || !response.data) {
+        log("info", "[Youku] 搜索响应为空");
+        return [];
+      }
+
+      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+      if (!data.pageComponentList) {
+        log("info", "[Youku] 搜索无结果");
+        return [];
+      }
+
+      // 过滤和处理搜索结果
+      const results = [];
+      for (const component of data.pageComponentList) {
+        const filtered = this.filterYoukuSearchItem(component, keyword);
+        if (filtered) {
+          results.push(filtered);
+        }
+      }
+
+      log("info", `[Youku] 搜索找到 ${results.length} 个有效结果`);
+      return results;
+
+    } catch (error) {
+      log("error", "[Youku] 搜索出错:", error.message);
+      return [];
+    }
+  }
+
+  async getEpisodes(id) {
+    try {
+      log("info", `[Youku] 获取分集列表: show_id=${id}`);
+
+      // 第一步：获取第一页以确定总数
+      const pageSize = 100;
+      const firstPage = await this._getEpisodesPage(id, 1, pageSize);
+
+      if (!firstPage || !firstPage.videos || firstPage.videos.length === 0) {
+        log("info", "[Youku] 未找到分集信息");
+        return [];
+      }
+
+      let allEpisodes = [...firstPage.videos];
+      const totalCount = firstPage.total;
+
+      // 第二步：如果有多页，并发获取剩余页面
+      if (totalCount > pageSize) {
+        const totalPages = Math.ceil(totalCount / pageSize);
+        log("info", `[Youku] 检测到 ${totalCount} 个分集，将并发请求 ${totalPages} 页`);
+
+        const pagePromises = [];
+        for (let page = 2; page <= totalPages; page++) {
+          pagePromises.push(this._getEpisodesPage(id, page, pageSize));
+        }
+
+        const results = await Promise.allSettled(pagePromises);
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result.status === 'fulfilled' && result.value && result.value.videos) {
+            allEpisodes.push(...result.value.videos);
+          } else if (result.status === 'rejected') {
+            log("error", `[Youku] 获取分集页面 ${i + 2} 失败:`, result.reason);
+          }
+        }
+
+        log("info", `[Youku] 并发获取完成，共获取 ${allEpisodes.length} 个分集`);
+      }
+
+      log("info", `[Youku] 共获取 ${allEpisodes.length} 集`);
+      return allEpisodes;
+
+    } catch (error) {
+      log("error", "[Youku] 获取分集出错:", error.message);
+      return [];
+    }
+  }
+
+  async _getEpisodesPage(showId, page, pageSize) {
+    const url = `https://openapi.youku.com/v2/shows/videos.json?client_id=53e6cc67237fc59a&package=com.huawei.hwvplayer.youku&ext=show&show_id=${showId}&page=${page}&count=${pageSize}`;
+
+    const response = await httpGet(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response || !response.data) {
+      return null;
+    }
+
+    const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+    return data;
+  }
+
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+    const tmpAnimes = [];
+
+    const processYoukuAnimes = await Promise.all(sourceAnimes
+      .filter(s => s.title.includes(queryTitle))
+      .map(async (anime) => {
+        const eps = await this.getEpisodes(anime.mediaId);
+
+        // 提取媒体类型
+        const mediaType = this._extractMediaType(anime.cats, anime.type);
+
+        // 处理和格式化分集
+        const formattedEps = this._processAndFormatEpisodes(eps, mediaType);
+
+        let links = [];
+        for (const ep of formattedEps) {
+          const fullUrl = ep.link || `https://v.youku.com/v_show/id_${ep.vid}.html`;
+          links.push({
+            "name": ep.episodeIndex,
+            "url": fullUrl,
+            "title": `【youku】 ${ep.title}`
+          });
+        }
+
+        if (links.length > 0) {
+          const numericAnimeId = convertToAsciiSum(anime.mediaId);
+          let transformedAnime = {
+            animeId: numericAnimeId,
+            bangumiId: anime.mediaId,
+            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from youku`,
+            type: anime.type,
+            typeDescription: anime.type,
+            imageUrl: anime.imageUrl,
+            startDate: generateValidStartDate(anime.year),
+            episodeCount: links.length,
+            rating: 0,
+            isFavorited: true,
+          };
+
+          tmpAnimes.push(transformedAnime);
+          addAnime({...transformedAnime, links: links});
+
+          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+        }
+      })
+    );
+
+    this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
+    return processYoukuAnimes;
+  }
+
+  /**
+   * 处理和格式化分集列表
+   * @param {Array} rawEpisodes - 原始分集数据
+   * @param {string} mediaType - 媒体类型 (variety/movie/drama/anime)
+   * @returns {Array} 格式化后的分集列表
+   */
+  _processAndFormatEpisodes(rawEpisodes, mediaType = 'variety') {
+    let filteredEpisodes = [...rawEpisodes];
+
+    // 综艺节目需要倒序处理
+    if (mediaType === 'variety') {
+      log("info", `[Youku] 检测到综艺节目，进行倒序处理`);
+      filteredEpisodes = filteredEpisodes.reverse();
+
+      // 检测特殊格式 "第N期：上/中/下"
+      const specialFormatPattern = /第\d+期\s*[：:]\s*[上中下]\s*[：:]/;
+      const hasSpecialFormat = filteredEpisodes.some(ep => {
+        const displayName = ep.displayName || ep.title;
+        return specialFormatPattern.test(displayName);
+      });
+
+      if (hasSpecialFormat) {
+        log("info", `[Youku] 检测到综艺特殊格式 '第N期：上/中/下'，进行智能过滤`);
+        // 只保留"上"或没有标记的分集
+        const finalFiltered = [];
+        for (const ep of filteredEpisodes) {
+          const displayName = ep.displayName || ep.title;
+          const match = displayName.match(/第(\d+)期\s*[：:]\s*([上中下])/);
+          if (!match || match[2] === '上') {
+            finalFiltered.push(ep);
+          } else {
+            log("debug", `[Youku] 过滤掉综艺分段: ${displayName}`);
+          }
+        }
+        filteredEpisodes = finalFiltered;
+      }
+    }
+
+    // 格式化分集标题
+    const formattedEpisodes = filteredEpisodes.map((ep, index) => {
+      const episodeIndex = index + 1;
+      const title = this._formatEpisodeTitle(ep, episodeIndex, mediaType);
+
+      return {
+        vid: ep.id,
+        title: title,
+        episodeIndex: episodeIndex,
+        link: ep.link
+      };
+    });
+
+    return formattedEpisodes;
+  }
+
+  /**
+   * 根据媒体类型格式化分集标题
+   * @param {Object} ep - 分集对象
+   * @param {number} episodeIndex - 分集索引
+   * @param {string} mediaType - 媒体类型
+   * @returns {string} 格式化后的标题
+   */
+  _formatEpisodeTitle(ep, episodeIndex, mediaType) {
+    // 清理 displayName (移除日期前缀)
+    let cleanDisplayName = ep.displayName || ep.title;
+    const datePattern = /^(?:\d{2,4}-\d{2}-\d{2}|\d{2}-\d{2})\s*(?=(?:第\d+期))|^(?:\d{2,4}-\d{2}-\d{2}|\d{2}-\d{2})\s*:\s*/;
+    cleanDisplayName = cleanDisplayName.replace(datePattern, '').trim();
+
+    // 电影：直接使用原始标题
+    if (mediaType === 'movie') {
+      return cleanDisplayName;
+    }
+
+    // 综艺：使用 "第N期" 格式
+    if (mediaType === 'variety') {
+      const periodMatch = cleanDisplayName.match(/第(\d+)期/);
+      if (periodMatch) {
+        return `第${periodMatch[1]}期`;
+      } else {
+        return `第${episodeIndex}期`;
+      }
+    }
+
+    // 电视剧/动漫：使用 "第N集" 格式 + 原始标题
+    if (/^第\d+集/.test(cleanDisplayName)) {
+      return cleanDisplayName;
+    } else {
+      return `第${episodeIndex}集 ${cleanDisplayName}`;
+    }
+  }
+
+  /**
+   * 从分类信息中提取媒体类型
+   * @param {string} cats - 分类字符串
+   * @param {string} feature - 特征字符串
+   * @returns {string} 媒体类型
+   */
+  _extractMediaType(cats, feature) {
+    const catsLower = (cats || '').toLowerCase();
+    const featureLower = (feature || '').toLowerCase();
+
+    if (catsLower.includes('综艺') || catsLower.includes('variety') || featureLower.includes('综艺')) {
+      return 'variety';
+    } else if (catsLower.includes('电影') || catsLower.includes('movie') || featureLower.includes('电影')) {
+      return 'movie';
+    } else if (catsLower.includes('动漫') || catsLower.includes('anime') || featureLower.includes('动漫')) {
+      return 'anime';
+    } else if (catsLower.includes('电视剧') || catsLower.includes('drama') || featureLower.includes('电视剧')) {
+      return 'drama';
+    }
+
+    // 默认返回综艺
+    return 'variety';
+  }
 
   async getEpisodeDanmu(id) {
     log("info", "开始从本地请求优酷弹幕...", id);

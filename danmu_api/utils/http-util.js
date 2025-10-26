@@ -5,12 +5,12 @@ import { log } from './log-util.js'
 // 请求工具方法
 // =====================
 
-export async function httpGet(url, options) {
+export async function httpGet(url, options = {}) {
 
   log("info", `[请求模拟] HTTP GET: ${url}`);
 
   // 设置超时时间（默认5秒）
-  const timeout = parseInt(globals.vodRequestTimeout);
+  const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
