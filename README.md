@@ -242,8 +242,8 @@ LogVar 弹幕 API 服务器
   4. 保存并部署。
 - 示例请求：`https://{your_domain}.workers.dev/87654321/api/v2/search/anime?keyword=子夜归`
 
-### 手动部署
-创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。
+### ~~手动部署~~
+~~创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。~~
 
 > cf部署可能不稳定，推荐用vercel/netlify部署。
 
@@ -384,10 +384,39 @@ danmu_api/
 │       ├── docker-image.yml
 │       └── sync_fork.yml # vercel自动同步配置文件
 ├── danmu_api/
+│   └── apis/
+│       └── dandan-api.js # 弹弹play兼容接口函数
+│   └── configs/
+│       ├── envs.js       # 环境变量处理脚本
+│       └── globals.js    # 全局变量处理脚本
+│   └── sources/
+│       ├── bahamut.js    # 巴哈姆特源
+│       ├── base.js       # 弹幕源获取基类
+│       ├── bilibili.js   # b站源
+│       ├── hanjutv.js    # 韩剧TV源
+│       ├── iqiyi.js      # 爱奇艺源
+│       ├── kan360.js     # 360看源
+│       ├── mango.js      # 芒果TV源
+│       ├── other.js      # 第三方弹幕服务器
+│       ├── renren.js     # 人人视频源
+│       ├── tencent.js    # 腾讯视频源
+│       ├── vod.js        # vod源
+│       └── youku.js      # 优酷源
+│   └── utils/
+│       ├── cache-util.js    # 缓存数据处理工具
+│       ├── codec-util.js    # 编解码工具
+│       ├── common-util.js   # 通用工具
+│       ├── danmu-util.js    # 弹幕处理工具
+│       ├── http-util.js     # 请求工具
+│       ├── log-util.js      # 日志工具
+│       ├── redis-util.js    # redis工具
+│       ├── time-util.js     # 时间日期工具
+│       ├── tmdb-util.js     # tmdb处理工具
+│       └── zh-util.js       # 中文繁简转换工具
 │   ├── esm-shim.js     # Node.js低版本兼容层
 │   ├── server.js       # 本地node启动脚本
 │   ├── worker.js       # 主 API 服务器代码
-│   ├── worker.test.js  # 测试文件
+│   └── worker.test.js  # 测试文件
 ├── netlify/
 │   └── functions/
 │       └── api.js      # netlify 中间处理逻辑
