@@ -1,9 +1,12 @@
 import BaseSource from './base.js';
+import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet} from "../utils/http-util.js";
 import { printFirst200Chars } from "../utils/common-util.js";
-import { time_to_second } from "../utils/time-util.js";
+import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
+import { convertToAsciiSum } from "../utils/codec-util.js";
+import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 
 // =====================
 // 获取芒果TV弹幕
@@ -37,11 +40,420 @@ export default class MangoSource extends BaseSource {
     return Math.floor((leftColor + rightColor) / 2);
   }
 
-  async search(keyword) {}
+  async search(keyword) {
+    try {
+      log("info", `[Mango] 开始搜索: ${keyword}`);
 
-  async getEpisodes(id) {}
+      const encodedKeyword = encodeURIComponent(keyword);
+      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?q=${encodedKeyword}&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000`;
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {}
+      const response = await httpGet(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://www.mgtv.com/'
+        }
+      });
+
+      if (!response || !response.data) {
+        log("info", "[Mango] 搜索响应为空");
+        return [];
+      }
+
+      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+      if (!data.data || !data.data.contents) {
+        log("info", "[Mango] 搜索无结果");
+        return [];
+      }
+
+      // 处理搜索结果
+      const results = [];
+      for (const content of data.data.contents) {
+        if (content.type !== "media") {
+          continue;
+        }
+
+        for (const item of content.data) {
+          // 只处理芒果TV自有内容 (source为'imgo')
+          if (item.source !== "imgo") {
+            continue;
+          }
+
+          // 从URL中提取 collection_id
+          const urlMatch = item.url ? item.url.match(/\/b\/(\d+)/) : null;
+          if (!urlMatch) {
+            continue;
+          }
+
+          const mediaId = urlMatch[1];
+
+          // 清理标题 (移除HTML标签)
+          const cleanedTitle = item.title ? item.title.replace(/<[^>]+>/g, '').replace(/:/g, '：') : '';
+
+          // 提取年份
+          const yearMatch = item.desc && item.desc[0] ? item.desc[0].match(/[12][890][0-9][0-9]/) : null;
+          const year = yearMatch ? parseInt(yearMatch[0]) : null;
+
+          // 提取类型
+          const typeMatch = item.desc && item.desc[0] ? item.desc[0].split('/')[0].replace("类型:", "").trim() : '';
+          const mediaType = typeMatch === "电影" ? "电影" : "电视剧";
+
+          results.push({
+            provider: "imgo",
+            mediaId: mediaId,
+            title: cleanedTitle,
+            type: mediaType,
+            year: year,
+            imageUrl: item.img || null,
+            episodeCount: item.videoCount || null
+          });
+        }
+      }
+
+      log("info", `[Mango] 搜索找到 ${results.length} 个有效结果`);
+      return results;
+
+    } catch (error) {
+      log("error", "[Mango] 搜索出错:", error.message);
+      return [];
+    }
+  }
+
+  async getEpisodes(id) {
+    try {
+      log("info", `[Mango] 获取分集列表: collection_id=${id}`);
+
+      let allEpisodes = [];
+      let month = "";
+      let pageIndex = 0;
+      let totalPages = 1;
+
+      // 分页获取所有分集（按月份分页）
+      while (pageIndex < totalPages) {
+        const url = `https://pcweb.api.mgtv.com/variety/showlist?allowedRC=1&collection_id=${id}&month=${month}&page=1&_support=10000000`;
+
+        const response = await httpGet(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.mgtv.com/'
+          }
+        });
+
+        if (!response || !response.data) {
+          log("info", "[Mango] 未找到分集信息");
+          break;
+        }
+
+        const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+        if (!data.data || !data.data.list) {
+          log("info", "[Mango] 分集列表为空");
+          break;
+        }
+
+        // 添加当前页的分集
+        if (data.data.list && data.data.list.length > 0) {
+          allEpisodes.push(...data.data.list.filter(ep => ep.src_clip_id === id));
+        }
+
+        // 第一次请求时获取总页数
+        if (pageIndex === 0) {
+          totalPages = data.data.tab_m && data.data.tab_m.length > 0 ? data.data.tab_m.length : 1;
+          log("info", `[Mango] 检测到 ${totalPages} 个月份分页`);
+        }
+
+        // 准备下一页
+        pageIndex++;
+        if (pageIndex < totalPages && data.data.tab_m && data.data.tab_m[pageIndex]) {
+          month = data.data.tab_m[pageIndex].m;
+        }
+      }
+
+      // 芒果TV专属黑名单正则
+      const mangoBlacklist = /^(.*?)(抢先(看|版)|加更(版)?|花絮|预告|特辑|(特别|惊喜|纳凉)?企划|彩蛋|专访|幕后(花絮)?|直播|纯享|未播|衍生|番外|合伙人手记|会员(专享|加长)|片花|精华|看点|速看|解读|reaction|超前营业|超前(vlog)?|陪看(记)?|.{3,}篇|影评)(.*?)$/i;
+
+      // 过滤掉预告片等非正片内容
+      const episodes = allEpisodes.filter(ep => {
+        const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
+
+        // 过滤掉预告片 (isnew === "2")
+        if (ep.isnew === "2") {
+          log("debug", `[Mango] 过滤预告片: ${fullTitle}`);
+          return false;
+        }
+
+        // 使用专属黑名单过滤
+        if (mangoBlacklist.test(fullTitle)) {
+          log("debug", `[Mango] 黑名单过滤: ${fullTitle}`);
+          return false;
+        }
+
+        // 优先保留正片 (isIntact === "1")，或者没有标记的内容
+        return true;
+      });
+
+      // 综艺节目智能处理
+      const processedEpisodes = this._processVarietyEpisodes(episodes);
+
+      log("info", `[Mango] 共获取 ${processedEpisodes.length} 集`);
+      return processedEpisodes;
+
+    } catch (error) {
+      log("error", "[Mango] 获取分集出错:", error.message);
+      return [];
+    }
+  }
+
+  /**
+   * 获取电影正片
+   * @param {string} mediaId - 媒体ID
+   * @returns {Object|null} 电影正片信息
+   */
+  async _getMovieEpisode(mediaId) {
+    try {
+      log("info", `[Mango] 获取电影正片: collection_id=${mediaId}`);
+
+      const url = `https://pcweb.api.mgtv.com/variety/showlist?allowedRC=1&collection_id=${mediaId}&month=&page=1&_support=10000000`;
+
+      const response = await httpGet(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://www.mgtv.com/'
+        }
+      });
+
+      if (!response || !response.data) {
+        log("info", "[Mango] 未找到电影信息");
+        return null;
+      }
+
+      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+      if (!data.data || !data.data.list || data.data.list.length === 0) {
+        log("info", "[Mango] 电影列表为空");
+        return null;
+      }
+
+      // 智能寻找正片：
+      // 1. 优先寻找 isIntact === "1" 的条目
+      let mainFeature = data.data.list.find(ep => ep.isIntact === "1");
+
+      // 2. 如果找不到，寻找第一个不是预告片的条目
+      if (!mainFeature) {
+        mainFeature = data.data.list.find(ep => ep.isnew !== "2");
+      }
+
+      // 3. 最后备用方案，使用第一个条目
+      if (!mainFeature) {
+        mainFeature = data.data.list[0];
+      }
+
+      log("info", `[Mango] 找到电影正片: ${mainFeature.t3 || mainFeature.t1 || '正片'}`);
+      return mainFeature;
+
+    } catch (error) {
+      log("error", "[Mango] 获取电影正片出错:", error.message);
+      return null;
+    }
+  }
+
+  /**
+   * 处理综艺分集，智能过滤和排序
+   * @param {Array} rawEpisodes - 原始分集数据
+   * @returns {Array} 处理后的分集列表
+   */
+  _processVarietyEpisodes(rawEpisodes) {
+    if (!rawEpisodes || rawEpisodes.length === 0) {
+      return [];
+    }
+
+    log("debug", `[Mango] 综艺处理开始，原始分集数: ${rawEpisodes.length}`);
+
+    // 检查是否有"第N期"格式
+    const hasQiFormat = rawEpisodes.some(ep => {
+      const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
+      return /第\d+期/.test(fullTitle);
+    });
+
+    log("debug", `[Mango] 综艺格式分析: 有期数格式=${hasQiFormat}`);
+
+    const episodeInfos = [];
+    const qiInfoMap = new Map(); // 存储期数信息的映射
+
+    for (const ep of rawEpisodes) {
+      const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
+
+      if (hasQiFormat) {
+        // 有"第N期"格式时：只保留纯粹的"第N期"和"第N期上/中/下"
+        const qiUpMidDownMatch = fullTitle.match(/第(\d+)期([上中下])/);
+        const qiPureMatch = fullTitle.match(/第(\d+)期/);
+        const hasUpMidDown = /第\d+期[上中下]/.test(fullTitle);
+
+        if (qiUpMidDownMatch) {
+          // 检查是否包含无效后缀
+          const qiNum = qiUpMidDownMatch[1];
+          const upMidDown = qiUpMidDownMatch[2];
+          const qiUpMidDownText = `第${qiNum}期${upMidDown}`;
+          const afterUpMidDown = fullTitle.substring(fullTitle.indexOf(qiUpMidDownText) + qiUpMidDownText.length);
+          const hasInvalidSuffix = /^(加更|会员版|纯享版|特别版|独家版|Plus|\+|花絮|预告|彩蛋|抢先|精选|未播|回顾|特辑|幕后)/.test(afterUpMidDown);
+
+          if (!hasInvalidSuffix) {
+            qiInfoMap.set(ep, [parseInt(qiNum), upMidDown]);
+            episodeInfos.push(ep);
+            log("debug", `[Mango] 综艺保留上中下格式: ${fullTitle}`);
+          } else {
+            log("debug", `[Mango] 综艺过滤上中下格式+后缀: ${fullTitle}`);
+          }
+        } else if (qiPureMatch && !hasUpMidDown && !/会员版|纯享版|特别版|独家版|加更|Plus|\+|花絮|预告|彩蛋|抢先|精选|未播|回顾|特辑|幕后|访谈|采访|混剪|合集|盘点|总结|删减|未播放|NG|番外|片段|看点|精彩|制作|导演|演员|拍摄|片尾曲|插曲|主题曲|背景音乐|OST|音乐|歌曲/.test(fullTitle)) {
+          // 匹配纯粹的"第N期"格式
+          const qiNum = qiPureMatch[1];
+          qiInfoMap.set(ep, [parseInt(qiNum), '']);
+          episodeInfos.push(ep);
+          log("debug", `[Mango] 综艺保留标准期数: ${fullTitle}`);
+        } else {
+          log("debug", `[Mango] 综艺过滤非标准期数格式: ${fullTitle}`);
+        }
+      } else {
+        // 没有任何"第N期"格式时：全部保留（除了明显的广告）
+        if (fullTitle.includes('广告') || fullTitle.includes('推广')) {
+          log("debug", `[Mango] 跳过广告内容: ${fullTitle}`);
+          continue;
+        }
+
+        episodeInfos.push(ep);
+        log("debug", `[Mango] 综艺保留原始标题: ${fullTitle}`);
+      }
+    }
+
+    // 排序逻辑
+    if (hasQiFormat) {
+      // 有期数格式时，按期数和上中下排序
+      episodeInfos.sort((a, b) => {
+        const infoA = qiInfoMap.get(a) || [0, ''];
+        const infoB = qiInfoMap.get(b) || [0, ''];
+
+        // 先按期数排序
+        if (infoA[0] !== infoB[0]) {
+          return infoA[0] - infoB[0];
+        }
+
+        // 期数相同时，按上中下排序
+        const orderMap = {'': 0, '上': 1, '中': 2, '下': 3};
+        return (orderMap[infoA[1]] || 0) - (orderMap[infoB[1]] || 0);
+      });
+    } else {
+      // 没有期数格式时，按集数排序
+      episodeInfos.sort((a, b) => {
+        const getEpisodeNumber = (ep) => {
+          const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
+          const match = fullTitle.match(/第(\d+)集/);
+          return match ? parseInt(match[1]) : 999999;
+        };
+
+        const numA = getEpisodeNumber(a);
+        const numB = getEpisodeNumber(b);
+
+        // 如果都没有集数，按时间戳排序
+        if (numA === 999999 && numB === 999999) {
+          const timeA = a.ts || "0";
+          const timeB = b.ts || "0";
+          return timeA.localeCompare(timeB);
+        }
+
+        return numA - numB;
+      });
+    }
+
+    log("debug", `[Mango] 综艺处理完成，过滤后分集数: ${episodeInfos.length}`);
+    return episodeInfos;
+  }
+
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+    const tmpAnimes = [];
+
+    const processMangoAnimes = await Promise.all(sourceAnimes
+      .filter(s => s.title.includes(queryTitle))
+      .map(async (anime) => {
+        // 电影类型专门处理
+        if (anime.type === "电影") {
+          const movieEpisode = await this._getMovieEpisode(anime.mediaId);
+          if (!movieEpisode) {
+            return;
+          }
+
+          const fullUrl = `https://www.mgtv.com/b/${anime.mediaId}/${movieEpisode.video_id}.html`;
+          const episodeTitle = movieEpisode.t3 || movieEpisode.t1 || "正片";
+
+          const links = [{
+            "name": "1",
+            "url": fullUrl,
+            "title": `【imgo】 ${episodeTitle}`
+          }];
+
+          const numericAnimeId = convertToAsciiSum(anime.mediaId);
+          let transformedAnime = {
+            animeId: numericAnimeId,
+            bangumiId: anime.mediaId,
+            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
+            type: anime.type,
+            typeDescription: anime.type,
+            imageUrl: anime.imageUrl,
+            startDate: generateValidStartDate(anime.year),
+            episodeCount: 1,
+            rating: 0,
+            isFavorited: true,
+          };
+
+          tmpAnimes.push(transformedAnime);
+          addAnime({...transformedAnime, links: links});
+
+          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          return;
+        }
+
+        // 电视剧/综艺类型处理
+        const eps = await this.getEpisodes(anime.mediaId);
+
+        let links = [];
+        for (let i = 0; i < eps.length; i++) {
+          const ep = eps[i];
+          const fullUrl = `https://www.mgtv.com/b/${anime.mediaId}/${ep.video_id}.html`;
+          const episodeTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
+
+          links.push({
+            "name": String(i + 1),
+            "url": fullUrl,
+            "title": `【imgo】 ${episodeTitle}`
+          });
+        }
+
+        if (links.length > 0) {
+          const numericAnimeId = convertToAsciiSum(anime.mediaId);
+          let transformedAnime = {
+            animeId: numericAnimeId,
+            bangumiId: anime.mediaId,
+            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
+            type: anime.type,
+            typeDescription: anime.type,
+            imageUrl: anime.imageUrl,
+            startDate: generateValidStartDate(anime.year),
+            episodeCount: links.length,
+            rating: 0,
+            isFavorited: true,
+          };
+
+          tmpAnimes.push(transformedAnime);
+          addAnime({...transformedAnime, links: links});
+
+          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+        }
+      })
+    );
+
+    this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
+    return processMangoAnimes;
+  }
 
   async getEpisodeDanmu(id) {
     log("info", "开始从本地请求芒果TV弹幕...", id);
