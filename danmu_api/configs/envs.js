@@ -188,7 +188,7 @@ export class Envs {
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
       vodServers: this.resolveVodServers(env), // vod站点配置，格式：名称@URL,名称@URL
       vodReturnMode: this.get('VOD_RETURN_MODE', 'fastest', 'string').toLowerCase(), // vod返回模式：all（所有站点）或 fastest（最快的站点）
-      vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '5000', 'string'), // vod超时时间
+      vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
       sourceOrderArr: this.resolveSourceOrder(env, deployPlatform), // 源排序
