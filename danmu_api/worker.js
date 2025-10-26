@@ -1,13 +1,8 @@
 import { Globals } from './configs/globals.js';
-import { httpGet, httpPost, jsonResponse } from './utils/http-util.js';
+import { jsonResponse } from './utils/http-util.js';
 import { log, formatLogMessage } from './utils/log-util.js'
-import {
-    pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getRedisCaches, judgeRedisValid
-} from "./utils/redis-util.js";
-import {
-    isSearchCacheValid, setCommentCache, cleanupExpiredIPs, findUrlById, getCommentCache, getSearchCache,
-    isCommentCacheValid, setSearchCache
-} from "./utils/cache-util.js";
+import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
+import { cleanupExpiredIPs, findUrlById, getCommentCache } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 
@@ -287,5 +282,4 @@ export async function netlifyHandler(event, context) {
 }
 
 // 为了测试导出 handleRequest
-export { handleRequest, httpGet, httpPost, pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry, getSearchCache,
-  setSearchCache, isSearchCacheValid, getCommentCache, setCommentCache, isCommentCacheValid};
+export { handleRequest};

@@ -1,10 +1,21 @@
 // 加载 .env 文件
-require('dotenv').config();
+import dotenv from 'dotenv';
+dotenv.config();
 
-const test = require('node:test');
-const assert = require('node:assert').strict;
-const { handleRequest, searchAnime, matchAnime, searchEpisode, getBangumi, getComment,
-  httpGet, httpPost, pingRedis, getRedisKey, setRedisKey, setRedisKeyWithExpiry} = require('./worker');
+import test from 'node:test';
+import assert from 'node:assert';
+import { handleRequest } from './worker.js';
+import { getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
+import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
+import RenrenSource from "./sources/renren.js";
+import HanjutvSource from "./sources/hanjutv.js";
+import BahamutSource from "./sources/bahamut.js";
+import TencentSource from "./sources/tencent.js";
+import IqiyiSource from "./sources/iqiyi.js";
+import MangoSource from "./sources/mango.js";
+import BilibiliSource from "./sources/bilibili.js";
+import YoukuSource from "./sources/youku.js";
+import OtherSource from "./sources/other.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -30,6 +41,16 @@ const urlPrefix = "http://localhost:9321";
 const token = "87654321";
 
 test('worker.js API endpoints', async (t) => {
+  const renrenSource = new RenrenSource();
+  const hanjutvSource = new HanjutvSource();
+  const bahamutSource = new BahamutSource();
+  const tencentSource = new TencentSource();
+  const iqiyiSource = new IqiyiSource();
+  const mangoSource = new MangoSource();
+  const bilibiliSource = new BilibiliSource();
+  const youkuSource = new YoukuSource();
+  const otherSource = new OtherSource();
+
   await t.test('GET / should return welcome message', async () => {
     const req = new MockRequest(urlPrefix, { method: 'GET' });
     const res = await handleRequest(req);
@@ -41,67 +62,67 @@ test('worker.js API endpoints', async (t) => {
   });
 
   // await t.test('GET tencent danmu', async () => {
-  //   const res = await fetchTencentVideo("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html");
+  //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET iqiyi danmu', async () => {
-  //   const res = await fetchIqiyi("https://www.iqiyi.com/v_1ftv9n1m3bg.html");
+  //   const res = await iqiyiSource.getComments("https://www.iqiyi.com/v_1ftv9n1m3bg.html");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET mango danmu', async () => {
-  //   const res = await fetchMangoTV("https://www.mgtv.com/b/771610/23300622.html");
+  //   const res = await mangoSource.getComments("https://www.mgtv.com/b/771610/23300622.html");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET bilibili danmu', async () => {
-  //   const res = await fetchBilibili("https://www.bilibili.com/bangumi/play/ep1231564");
+  //   const res = await bilibiliSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET youku danmu', async () => {
-  //   const res = await fetchYouku("https://v.youku.com/v_show/id_XNjQ3ODMyNjU3Mg==.html");
+  //   const res = await youkuSource.getComments("https://v.youku.com/v_show/id_XNjQ3ODMyNjU3Mg==.html");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET other_server danmu', async () => {
-  //   const res = await fetchOtherServer("https://www.bilibili.com/bangumi/play/ep1231564");
+  //   const res = await otherSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
   // await t.test('GET hanjutv search', async () => {
-  //   const res = await hanjutvSearch("犯罪现场Zero");
+  //   const res = await hanjutvSource.search("犯罪现场Zero");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET hanjutv detail', async () => {
-  //   const res = await gethanjutvDetail("Tc9lkfijFSDQ8SiUCB6T");
+  //   const res = await hanjutvSource.getDetail("Tc9lkfijFSDQ8SiUCB6T");
   //   // assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET hanjutv episodes', async () => {
-  //   const res = await getHanjutvEpisodes("4EuRcD6T6y8XEQePtDsf");
+  //   const res = await hanjutvSource.getEpisodes("4EuRcD6T6y8XEQePtDsf");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET hanjutv danmu', async () => {
-  //   const res = await getHanjutvComments("12tY0Ktjzu5TCBrfTolNO");
+  //   const res = await hanjutvSource.getEpisodeDanmu("12tY0Ktjzu5TCBrfTolNO");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET bahamut search', async () => {
-  //   const res = await bahamutSearch("膽大黨");
+  //   const res = await bahamutSource.search("胆大党");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET bahamut episodes', async () => {
-  //   const res = await getBahamutEpisodes("44243");
+  //   const res = await bahamutSource.getEpisodes("44243");
   //   assert(res.anime.episodes[0].length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
   // await t.test('GET bahamut danmu', async () => {
-  //   const res = await getBahamutComments("44453");
+  //   const res = await bahamutSource.getComments("44453");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
@@ -196,17 +217,17 @@ test('worker.js API endpoints', async (t) => {
   //   const res = await pingRedis();
   //   assert(res.result === "PONG", `Expected res.result === "PONG", but got ${res.result}`);
   // });
-
+  //
   // await t.test('SET redis setRedisKey', async () => {
   //   const res = await setRedisKey('mykey', 'Hello World');
   //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
   // });
-
+  //
   // await t.test('GET redis getRedisKey', async () => {
   //   const res = await getRedisKey('mykey');
   //   assert(res.result.toString() === "\"Hello World\"", `Expected res.result === "\"Hello World\"", but got ${res.result}`);
   // });
-
+  //
   // await t.test('SET redis setRedisKeyWithExpiry', async () => {
   //   const res = await setRedisKeyWithExpiry('expkey', 'Temporary Value', 10);
   //   assert(res.result === "OK", `Expected res.result === "OK", but got ${res.result}`);
