@@ -140,15 +140,22 @@ export default class IqiyiSource extends BaseSource {
       return null;
     }
 
-    // 过滤不相关频道
+    // 提取媒体类型（参考优化后的 youku.js 和 bilibili.js）
     const channel = album.channel || "";
-    let mediaType = "电视剧";
+    let mediaType = "电视剧"; // 默认类型
+    
     if (channel.includes("电影")) {
       mediaType = "电影";
-    } else if (channel.includes("电视剧") || channel.includes("动漫")) {
+    } else if (channel.includes("动漫")) {
+      mediaType = "动漫";
+    } else if (channel.includes("综艺")) {
+      mediaType = "综艺";
+    } else if (channel.includes("纪录片")) {
+      mediaType = "纪录片";
+    } else if (channel.includes("电视剧")) {
       mediaType = "电视剧";
     } else {
-      // 只保留电影、电视剧、动漫
+      // 只保留支持的类型：电影、电视剧、动漫、综艺、纪录片
       return null;
     }
 

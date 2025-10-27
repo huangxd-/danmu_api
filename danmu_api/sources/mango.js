@@ -40,6 +40,43 @@ export default class MangoSource extends BaseSource {
     return Math.floor((leftColor + rightColor) / 2);
   }
 
+  /**
+   * 从类型字符串中提取标准化的媒体类型
+   * @param {string} typeStr - API 返回的类型字符串
+   * @returns {string} 标准化的媒体类型
+   */
+  _extractMediaType(typeStr) {
+    const type = (typeStr || "").toLowerCase();
+    
+    // 电影类型
+    if (type.includes("电影") || type.includes("movie")) {
+      return "电影";
+    }
+    
+    // 动漫类型
+    if (type.includes("动漫") || type.includes("动画") || type.includes("anime")) {
+      return "动漫";
+    }
+    
+    // 综艺类型
+    if (type.includes("综艺") || type.includes("真人秀") || type.includes("variety")) {
+      return "综艺";
+    }
+    
+    // 纪录片类型
+    if (type.includes("纪录片") || type.includes("documentary")) {
+      return "纪录片";
+    }
+    
+    // 电视剧类型
+    if (type.includes("电视剧") || type.includes("剧集") || type.includes("drama") || type.includes("tv")) {
+      return "电视剧";
+    }
+    
+    // 默认返回电视剧（最常见的类型）
+    return "电视剧";
+  }
+
   async search(keyword) {
     try {
       log("info", `[Mango] 开始搜索: ${keyword}`);
@@ -95,9 +132,9 @@ export default class MangoSource extends BaseSource {
           const yearMatch = item.desc && item.desc[0] ? item.desc[0].match(/[12][890][0-9][0-9]/) : null;
           const year = yearMatch ? parseInt(yearMatch[0]) : null;
 
-          // 提取类型
+          // 提取媒体类型（参考优化后的 youku.js 和 bilibili.js）
           const typeMatch = item.desc && item.desc[0] ? item.desc[0].split('/')[0].replace("类型:", "").trim() : '';
-          const mediaType = typeMatch === "电影" ? "电影" : "电视剧";
+          const mediaType = this._extractMediaType(typeMatch);
 
           results.push({
             provider: "imgo",
