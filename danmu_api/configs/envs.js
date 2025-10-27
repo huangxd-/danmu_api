@@ -3,6 +3,8 @@
  * 提供获取和设置环境变量的函数，支持 Cloudflare Workers 和 Node.js
  */
 export class Envs {
+  static env;
+
   // 记录获取过的环境变量
   static accessedEnvVars = new Map();
 
@@ -19,10 +21,8 @@ export class Envs {
    */
   static get(key, defaultValue, type = 'string', encrypt = false) {
     let value;
-    if (typeof env !== 'undefined' && env[key]) {
-      value = env[key]; // Cloudflare Workers
-    } else if (typeof process !== 'undefined' && process.env?.[key]) {
-      value = process.env[key]; // Node.js
+    if (typeof this.env !== 'undefined' && this.env[key]) {
+      value = this.env[key];
     } else {
       value = defaultValue;
     }
@@ -176,6 +176,7 @@ export class Envs {
    * @returns {Object} 配置对象
    */
   static load(env = {}, deployPlatform = 'node') {
+    this.env = env;
     return {
       vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
       allowedPlatforms: this.ALLOWED_PLATFORMS,
