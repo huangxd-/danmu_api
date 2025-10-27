@@ -7,54 +7,110 @@ import { httpGet } from "./http-util.js";
 // ---------------------
 
 // 使用TMDB API 查询日语原名搜索bahamut相关函数
-export async function getTmdbJaOriginalTitle(title) {
+export async function getTmdbJaOriginalTitle(title, signal = null) {
   if (!globals.tmdbApiKey) {
     log("info", "[TMDB] 未配置API密钥，跳过TMDB搜索");
     return null;
   }
 
   try {
-    // ---------------------
-    // 相似度函数
-    // ---------------------
-    function similarity(s1, s2) {
+    // 内部函数：判断单个媒体是否为动画或日语内容
+    const isValidContent = (mediaInfo) => {
+      const genreIds = mediaInfo.genre_ids || [];
+      const genres = mediaInfo.genres || [];
+      const allGenreIds = genreIds.length > 0 ? genreIds : genres.map(g => g.id);
+      const originalLanguage = mediaInfo.original_language || '';
+      const ANIMATION_GENRE_ID = 16;
+      
+      // 动画类型直接通过
+      if (allGenreIds.includes(ANIMATION_GENRE_ID)) {
+        return { isValid: true, reason: "明确动画类型(genre_id: 16)" };
+      }
+      
+      // 日语内容通过（涵盖日剧、日影、日综艺）
+      if (originalLanguage === 'ja') {
+        return { isValid: true, reason: `原始语言为日语(ja),可能是日剧/日影/日综艺` };
+      }
+      
+      return { 
+        isValid: false, 
+        reason: `非动画且非日语内容(language: ${originalLanguage}, genres: ${allGenreIds.join(',')})` 
+      };
+    };
+
+    // 内部函数：批量验证搜索结果
+    const validateResults = (results) => {
+      if (!results || results.length === 0) {
+        return { 
+          hasValid: false, 
+          validCount: 0, 
+          totalCount: 0, 
+          details: "搜索结果为空" 
+        };
+      }
+      
+      let validCount = 0;
+      const validItems = [];
+      
+      for (const item of results) {
+        const validation = isValidContent(item);
+        if (validation.isValid) {
+          validCount++;
+          const itemTitle = item.name || item.title || "未知";
+          validItems.push(`${itemTitle}(${validation.reason})`);
+        }
+      }
+      
+      return {
+        hasValid: validCount > 0,
+        validCount: validCount,
+        totalCount: results.length,
+        details: validCount > 0 
+          ? `找到${validCount}个符合条件的内容: ${validItems.slice(0, 3).join(', ')}${validCount > 3 ? '...' : ''}`
+          : `所有${results.length}个结果均不符合条件(非动画且非日语)`
+      };
+    };
+
+    // 相似度计算函数
+    const similarity = (s1, s2) => {
       const longer = s1.length > s2.length ? s1 : s2;
       const shorter = s1.length > s2.length ? s2 : s1;
       if (longer.length === 0) return 1.0;
-
-      const editDistance = (s1, s2) => {
-        s1 = s1.toLowerCase();
-        s2 = s2.toLowerCase();
+      
+      const editDistance = (str1, str2) => {
+        str1 = str1.toLowerCase();
+        str2 = str2.toLowerCase();
         const costs = [];
-        for (let i = 0; i <= s1.length; i++) {
+        for (let i = 0; i <= str1.length; i++) {
           let lastValue = i;
-          for (let j = 0; j <= s2.length; j++) {
+          for (let j = 0; j <= str2.length; j++) {
             if (i === 0) {
               costs[j] = j;
             } else if (j > 0) {
               let newValue = costs[j - 1];
-              if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+              if (str1.charAt(i - 1) !== str2.charAt(j - 1)) {
                 newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
               }
               costs[j - 1] = lastValue;
               lastValue = newValue;
             }
           }
-          if (i > 0) costs[s2.length] = lastValue;
+          if (i > 0) costs[str2.length] = lastValue;
         }
-        return costs[s2.length];
+        return costs[str2.length];
       };
-
+      
       return (longer.length - editDistance(longer, shorter)) / longer.length;
-    }
+    };
 
-    // ---------------------
-    // 第一步: 中文搜索
-    // ---------------------
+    // 第一步：TMDB搜索
     const searchUrlZh = `https://api.tmdb.org/3/search/multi?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
+    log("info", `[TMDB] 正在搜索: ${title}`);
 
-    log("info", `[TMDB] 正在搜索(中文): ${title}`);
-
+    // 内部中断检查
+    if (signal && signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     const respZh = await httpGet(searchUrlZh, {
       headers: {
         "Content-Type": "application/json",
@@ -63,18 +119,28 @@ export async function getTmdbJaOriginalTitle(title) {
     });
 
     if (!respZh || !respZh.data) {
-      log("info", "[TMDB] 中文搜索结果为空");
+      log("info", "[TMDB] TMDB搜索结果为空");
       return null;
     }
 
     const dataZh = typeof respZh.data === "string" ? JSON.parse(respZh.data) : respZh.data;
 
     if (!dataZh.results || dataZh.results.length === 0) {
-      log("info", "[TMDB] 中文搜索未找到任何结果");
+      log("info", "[TMDB] TMDB未找到任何结果");
       return null;
     }
 
-    // 找到最相似的结果(使用中文标题)
+    // 第二步：类型验证（宽松策略：只要有一个符合就继续）
+    const validationResult = validateResults(dataZh.results);
+    
+    if (!validationResult.hasValid) {
+      log("info", `[TMDB] 类型判断未通过,跳过后续搜索: ${validationResult.details}`);
+      return null;
+    }
+    
+    log("info", `[TMDB] 类型判断通过: ${validationResult.details}`);
+
+    // 第三步：找到最相似的结果
     let bestMatch = dataZh.results[0];
     let bestScore = 0;
 
@@ -87,14 +153,16 @@ export async function getTmdbJaOriginalTitle(title) {
       }
     }
 
-    log("info", `[TMDB] 最佳匹配(中文): ${bestMatch.name || bestMatch.title}, 相似度: ${(bestScore * 100).toFixed(2)}%`);
+    log("info", `[TMDB] TMDB最佳匹配: ${bestMatch.name || bestMatch.title}, 相似度: ${(bestScore * 100).toFixed(2)}%`);
 
-    // ---------------------
-    // 第二步: 使用匹配到的ID,用日语语言查询详情页获取原名
-    // ---------------------
+    // 第四步：获取日语详情
     const mediaType = bestMatch.media_type || (bestMatch.name ? "tv" : "movie");
     const detailUrl = `https://api.tmdb.org/3/${mediaType}/${bestMatch.id}?api_key=${globals.tmdbApiKey}&language=ja-JP`;
 
+    // 内部中断检查
+    if (signal && signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     const detailResp = await httpGet(detailUrl, {
       headers: {
         "Content-Type": "application/json",
@@ -103,7 +171,6 @@ export async function getTmdbJaOriginalTitle(title) {
     });
 
     if (!detailResp || !detailResp.data) {
-      // 获取详情失败,返回中文搜索结果标题
       const fallbackTitle = bestMatch.name || bestMatch.title;
       log("info", `[TMDB] 使用中文搜索结果标题: ${fallbackTitle}`);
       return fallbackTitle;
@@ -111,13 +178,16 @@ export async function getTmdbJaOriginalTitle(title) {
 
     const detail = typeof detailResp.data === "string" ? JSON.parse(detailResp.data) : detailResp.data;
 
-    // 优先使用日语原名 original_name/original_title
     const jaOriginalTitle = detail.original_name || detail.original_title || detail.name || detail.title;
-    log("info", `[TMDB] 找到日语原名: ${jaOriginalTitle} (中文匹配相似度: ${(bestScore * 100).toFixed(2)}%)`);
+    log("info", `[TMDB] 找到日语原名: ${jaOriginalTitle} (相似度: ${(bestScore * 100).toFixed(2)}%)`);
 
     return jaOriginalTitle;
 
   } catch (error) {
+    if (error.name === 'AbortError') {
+      log("info", "[TMDB] 搜索已被中断");
+      return null;
+    }
     log("error", "[TMDB] Search error:", {
       message: error.message,
       name: error.name,

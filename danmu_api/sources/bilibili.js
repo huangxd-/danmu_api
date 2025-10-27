@@ -169,7 +169,8 @@ export default class BilibiliSource extends BaseSource {
         const mediaId = item.season_id ? `ss${item.season_id}` : item.bvid ? `bv${item.bvid}` : "";
         if (!mediaId) continue;
 
-        const mediaType = item.season_type_name === "电影" ? "电影" : "电视剧";
+        // 提取媒体类型（参考 bilibili.py 和优化后的 youku.js）
+        const mediaType = this._extractMediaType(item.season_type_name);
         const episodeCount = mediaType === "电影" ? 1 : (item.ep_size || 0);
 
         // 提取年份
@@ -215,6 +216,46 @@ export default class BilibiliSource extends BaseSource {
       log("error", `[Bilibili] 搜索类型 '${searchType}' 失败:`, error.message);
       return [];
     }
+  }
+
+  /**
+   * 从 season_type_name 提取媒体类型
+   * B站 API 返回的类型包括：电影、番剧、国创、纪录片、综艺、电视剧等
+   * @param {string} seasonTypeName - API 返回的 season_type_name
+   * @returns {string} 标准化的媒体类型
+   */
+  _extractMediaType(seasonTypeName) {
+    const typeName = (seasonTypeName || "").toLowerCase();
+    
+    // 电影类型
+    if (typeName.includes("电影") || typeName.includes("movie")) {
+      return "电影";
+    }
+    
+    // 动漫类型（包括番剧和国创）
+    if (typeName.includes("番剧") || typeName.includes("国创") || 
+        typeName.includes("动漫") || typeName.includes("anime")) {
+      return "动漫";
+    }
+    
+    // 纪录片类型
+    if (typeName.includes("纪录片") || typeName.includes("documentary")) {
+      return "纪录片";
+    }
+    
+    // 综艺类型
+    if (typeName.includes("综艺") || typeName.includes("variety")) {
+      return "综艺";
+    }
+    
+    // 电视剧类型
+    if (typeName.includes("电视剧") || typeName.includes("剧集") || 
+        typeName.includes("drama") || typeName.includes("tv")) {
+      return "电视剧";
+    }
+    
+    // 默认返回电视剧（最常见的类型）
+    return "电视剧";
   }
 
   async search(keyword) {

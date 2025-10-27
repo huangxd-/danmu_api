@@ -194,7 +194,8 @@ export class Envs {
       episodeTitleFilter: this.resolveEpisodeTitleFilter(env), // 剧集标题正则过滤
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
-      proxyUrl: this.get('PROXY_URL', '', 'string'), // 代理地址
+      proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
+      danmuSimplified: this.get('DANMU_SIMPLIFIED', true, 'boolean'), // 弹幕繁体转简体开关
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url
       redisToken: this.get('UPSTASH_REDIS_REST_TOKEN', '', 'string', true), // upstash redis url

@@ -55,8 +55,31 @@ export default class YoukuSource extends BaseSource {
     // 清理标题 (移除HTML标签和特殊符号)
     let cleanedTitle = title.replace(/<[^>]+>/g, '').replace(/【.+?】/g, '').trim().replace(/:/g, '：');
 
-    // 提取媒体类型
-    const mediaType = commonData.feature.includes("电影") ? "电影" : "电视剧";
+    // 提取媒体类型（参考 Python 版本的 _extract_media_type_from_response）
+    let mediaType = "电视剧"; // 默认类型
+    const cats = (commonData.cats || "").toLowerCase();
+    const feature = (commonData.feature || "").toLowerCase();
+    
+    // 优先使用 cats 字段
+    if (cats.includes("动漫") || cats.includes("anime")) {
+      mediaType = "动漫";
+    } else if (cats.includes("电影") || cats.includes("movie")) {
+      mediaType = "电影";
+    } else if (cats.includes("电视剧") || cats.includes("drama")) {
+      mediaType = "电视剧";
+    } else if (cats.includes("综艺") || cats.includes("variety")) {
+      mediaType = "综艺";
+    }
+    // 备用：从 feature 字段提取
+    else if (feature.includes("动漫")) {
+      mediaType = "动漫";
+    } else if (feature.includes("电影")) {
+      mediaType = "电影";
+    } else if (feature.includes("电视剧")) {
+      mediaType = "电视剧";
+    } else if (feature.includes("综艺")) {
+      mediaType = "综艺";
+    }
 
     return {
       provider: "youku",
@@ -323,27 +346,39 @@ export default class YoukuSource extends BaseSource {
   }
 
   /**
-   * 从分类信息中提取媒体类型
+   * 从分类信息中提取媒体类型（参考 Python 版本的 _extract_media_type_from_response）
    * @param {string} cats - 分类字符串
    * @param {string} feature - 特征字符串
-   * @returns {string} 媒体类型
+   * @returns {string} 媒体类型 (variety/movie/anime/drama)
    */
   _extractMediaType(cats, feature) {
     const catsLower = (cats || '').toLowerCase();
     const featureLower = (feature || '').toLowerCase();
 
-    if (catsLower.includes('综艺') || catsLower.includes('variety') || featureLower.includes('综艺')) {
+    // 优先使用 cats 字段
+    if (catsLower.includes('综艺') || catsLower.includes('variety')) {
       return 'variety';
-    } else if (catsLower.includes('电影') || catsLower.includes('movie') || featureLower.includes('电影')) {
+    } else if (catsLower.includes('电影') || catsLower.includes('movie')) {
       return 'movie';
-    } else if (catsLower.includes('动漫') || catsLower.includes('anime') || featureLower.includes('动漫')) {
+    } else if (catsLower.includes('动漫') || catsLower.includes('anime')) {
       return 'anime';
-    } else if (catsLower.includes('电视剧') || catsLower.includes('drama') || featureLower.includes('电视剧')) {
+    } else if (catsLower.includes('电视剧') || catsLower.includes('drama')) {
+      return 'drama';
+    }
+    
+    // 备用：从 feature 字段提取
+    if (featureLower.includes('综艺')) {
+      return 'variety';
+    } else if (featureLower.includes('电影')) {
+      return 'movie';
+    } else if (featureLower.includes('动漫')) {
+      return 'anime';
+    } else if (featureLower.includes('电视剧')) {
       return 'drama';
     }
 
-    // 默认返回综艺
-    return 'variety';
+    // 默认返回电视剧类型
+    return 'drama';
   }
 
   async getEpisodeDanmu(id) {
