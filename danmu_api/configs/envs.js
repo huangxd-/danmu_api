@@ -23,6 +23,8 @@ export class Envs {
     let value;
     if (typeof this.env !== 'undefined' && this.env[key]) {
       value = this.env[key];
+    } else if (typeof process !== 'undefined' && process.env?.[key]) {
+      value = process.env[key];
     } else {
       value = defaultValue;
     }
