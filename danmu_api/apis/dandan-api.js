@@ -24,6 +24,18 @@ import OtherSource from "../sources/other.js";
 // 兼容弹弹play接口
 // =====================
 
+const kan360Source = new Kan360Source();
+const vodSource = new VodSource();
+const renrenSource = new RenrenSource();
+const hanjutvSource = new HanjutvSource();
+const bahamutSource = new BahamutSource();
+const tencentSource = new TencentSource();
+const youkuSource = new YoukuSource();
+const iqiyiSource = new IqiyiSource();
+const mangoSource = new MangoSource();
+const bilibiliSource = new BilibiliSource();
+const otherSource = new OtherSource();
+
 function matchSeason(anime, queryTitle, season) {
   if (anime.animeTitle.includes(queryTitle)) {
     const title = anime.animeTitle.split("(")[0].trim();
@@ -51,17 +63,6 @@ function matchSeason(anime, queryTitle, season) {
 
 // Extracted function for GET /api/v2/search/anime
 export async function searchAnime(url) {
-  const kan360Source = new Kan360Source();
-  const vodSource = new VodSource();
-  const renrenSource = new RenrenSource();
-  const hanjutvSource = new HanjutvSource();
-  const bahamutSource = new BahamutSource();
-  const tencentSource = new TencentSource();
-  const youkuSource = new YoukuSource();
-  const iqiyiSource = new IqiyiSource();
-  const mangoSource = new MangoSource();
-  const bilibiliSource = new BilibiliSource();
-
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
@@ -687,16 +688,6 @@ export async function getBangumi(path) {
 
 // Extracted function for GET /api/v2/comment/:commentId
 export async function getComment(path, queryFormat) {
-  const renrenSource = new RenrenSource();
-  const hanjutvSource = new HanjutvSource();
-  const bahamutSource = new BahamutSource();
-  const tencentSource = new TencentSource();
-  const iqiyiSource = new IqiyiSource();
-  const mangoSource = new MangoSource();
-  const bilibiliSource = new BilibiliSource();
-  const youkuSource = new YoukuSource();
-  const otherSource = new OtherSource();
-
   const commentId = parseInt(path.split("/").pop());
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
@@ -769,13 +760,6 @@ export async function getComment(path, queryFormat) {
 
 // Extracted function for GET /api/v2/comment?url=xxx
 export async function getCommentByUrl(videoUrl, queryFormat) {
-  const tencentSource = new TencentSource();
-  const iqiyiSource = new IqiyiSource();
-  const mangoSource = new MangoSource();
-  const bilibiliSource = new BilibiliSource();
-  const youkuSource = new YoukuSource();
-  const otherSource = new OtherSource();
-
   try {
     // 验证URL参数
     if (!videoUrl || typeof videoUrl !== 'string') {
