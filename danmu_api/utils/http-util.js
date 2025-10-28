@@ -65,7 +65,7 @@ export async function httpGet(url, options = {}) {
       try {
         decodedData = await decompressedStream.text();
       } catch (e) {
-        log("error", "[iOS模拟] 解压缩失败", e);
+        log("error", "[请求模拟] 解压缩失败", e);
         throw e;
       }
 
@@ -110,14 +110,14 @@ export async function httpGet(url, options = {}) {
 
     // 检查是否是超时错误
     if (error.name === 'AbortError') {
-      log("error", `[iOS模拟] 请求超时:`, error.message);
+      log("error", `[请求模拟] 请求超时:`, error.message);
       log("error", '详细诊断:');
       log("error", '- URL:', url);
       log("error", '- 超时时间:', `${timeout}ms`);
       throw new Error(`Request timeout after ${timeout}ms`);
     }
 
-    log("error", `[iOS模拟] 请求失败:`, error.message);
+    log("error", `[请求模拟] 请求失败:`, error.message);
     log("error", '详细诊断:');
     log("error", '- URL:', url);
     log("error", '- 错误类型:', error.name);
@@ -170,7 +170,7 @@ export async function httpPost(url, body, options = {}) {
     };
 
   } catch (error) {
-    log("error", `[iOS模拟] 请求失败:`, error.message);
+    log("error", `[请求模拟] 请求失败:`, error.message);
     log("error", '详细诊断:');
     log("error", '- URL:', url);
     log("error", '- 错误类型:', error.name);

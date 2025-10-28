@@ -694,3 +694,32 @@ export function createHmacSha256(key, message) {
 
     return bytesToBase64(hmacBytes);
 }
+
+// ========== 生成随机SID ==========
+export function generateRandomSid() {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    return Array.from({length: 12}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+// ========== 签名生成函数 ==========
+export function generateSign(path, timestamp, params, secretKey) {
+    let signStr = path + "t" + timestamp;
+
+    if (params) {
+      const sortedKeys = Object.keys(params).sort();
+      sortedKeys.forEach(key => {
+          signStr += key + params[key];
+      });
+    }
+
+    signStr += secretKey;
+    return md5(signStr);
+  }
+
+// ========== X-CA-Sign 生成函数 ==========
+export function generateXCaSign(path, timestamp, queryString, secretKey) {
+    let signStr = `GET\n*/*\ngzip\n\nx-ca-method:1\n${path}`;
+    if (queryString) signStr += `?${queryString}`;
+
+    return createHmacSha256(secretKey, signStr);
+  }

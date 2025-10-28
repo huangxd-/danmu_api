@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { getPathname, httpGet, sortedQueryString, updateQueryString } from "../utils/http-util.js";
-import { autoDecode, createHmacSha256 } from "../utils/codec-util.js";
+import { autoDecode, createHmacSha256, generateRandomSid, generateSign, generateXCaSign } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
@@ -11,6 +11,157 @@ import { titleMatches } from "../utils/common-util.js";
 // 获取人人视频弹幕
 // =====================
 export default class RenrenSource extends BaseSource {
+  API_CONFIG = {
+    SECRET_KEY: "cf65GPholnICgyw1xbrpA79XVkizOdMq",
+    SEARCH_HOST: "api.qwdjapp.com",
+    DRAMA_HOST: "api.zhimeisj.top",
+    DANMU_HOST: "static-dm.qwdjapp.com",
+    USER_AGENT: 'Mozilla/5.0 (Linux; Android 15; PJC110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.7339.207 Mobile Safari/537.36 App/RRSPApp platform/android AppVersion/10.27.4'
+  };
+
+  generateAppCommonHeaders(timestamp, sign, xCaSign = null) {
+    const headers = {
+      'User-Agent': this.API_CONFIG.USER_AGENT,
+      'deviceId': 'fG1vO5jzBm22vJ5mfcCYGp2NrBii5SPysgiy%2FaUb63EOTrtXyXdxHm1cUajUR1zbszl62ApHyWc1GKZtH%2FbmF0UMZWgEetdDy9QVXd9WvPU%3D',
+      'aliId': 'aPuaf9shK3QDAL6WwVdhc7cC',
+      'umId': '380998657e22ed51b5a21f2b519aa5beod',
+      'clientType': 'android_rrsp_xb_RRSP',
+      't': timestamp.toString(),
+      'sign': sign,
+      'isAgree': '1',
+      'cv': '10.27.4'
+    };
+
+    if (xCaSign) {
+      headers['x-ca-sign'] = xCaSign;
+      headers['x-ca-method'] = '1';
+    }
+
+    return headers;
+  }
+
+  async searchAppContent(keyword, size = 15) {
+    try {
+      const timestamp = Date.now();
+      const path = "/search/content";
+      const queryParams = {
+        keywords: keyword,
+        size: size,
+        search_after: "",
+        order: "match",
+        isAgeLimit: false
+      };
+
+      const sign = generateSign(path, timestamp, queryParams, this.API_CONFIG.SECRET_KEY);
+      const queryString = Object.entries(queryParams)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join('&');
+      const xCaSign = generateXCaSign(path, timestamp, queryString, this.API_CONFIG.SECRET_KEY);
+
+      const headers = this.generateAppCommonHeaders(timestamp, sign, xCaSign);
+      headers['Host'] = this.API_CONFIG.SEARCH_HOST;
+
+
+      const resp = await httpGet(`https://${this.API_CONFIG.SEARCH_HOST}${path}?${queryString}`, {
+        headers: headers,
+      });
+
+      if (!resp.data) return [];
+
+      const list = resp?.data?.data?.searchDramaList || [];
+      return list.map((item, idx) => ({
+        provider: "renren",
+        mediaId: String(item.id),
+        title: String(item.title || "").replace(/<[^>]+>/g, "").replace(/:/g, "："),
+        type: "tv_series",
+        season: null,
+        year: item.year,
+        imageUrl: item.cover,
+        episodeCount: item.episodeTotal,
+        currentEpisodeIndex: null,
+      }));
+    } catch (error) {
+      log("error", "getRenrenAppAnimes error:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+      return [];
+    }
+  }
+
+  async getAppDramaDetail(dramaId, episodeSid = "") {
+    try {
+      if (!episodeSid) episodeSid = generateRandomSid();
+
+      const timestamp = Date.now();
+      const path = "/app/drama/page";
+      const queryParams = {
+        isAgeLimit: false,
+        dramaId: dramaId,
+        episodeSid: episodeSid,
+        quality: "SD",
+        subtitle: 3,
+        hsdrOpen: 1,
+        hevcOpen: 1,
+        tria4k: 1
+      };
+
+      const sign = generateSign(path, timestamp, queryParams, this.API_CONFIG.SECRET_KEY);
+      const queryString = Object.entries(queryParams)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join('&');
+
+      const headers = this.generateAppCommonHeaders(timestamp, sign);
+      headers['Host'] = this.API_CONFIG.DRAMA_HOST;
+      headers['ignore'] = 'false';
+
+      const resp = await httpGet(`https://${this.API_CONFIG.DRAMA_HOST}${path}?${queryString}`, {
+        headers: headers
+      });
+
+      if (!resp.data) return null;
+
+      return resp.data;
+    } catch (error) {
+      log("error", "getRenrenAppDramaDetail error:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+      return null;
+    }
+  }
+
+  // ========== 弹幕API ==========
+  async getAppDanmu(episodeSid) {
+    try {
+      const timestamp = Date.now();
+      const path = `/v1/produce/danmu/emo/EPISODE/${episodeSid}`;
+
+      const sign = generateSign(path, timestamp, {}, this.API_CONFIG.SECRET_KEY);
+      const xCaSign = generateXCaSign(path, timestamp, "", this.API_CONFIG.SECRET_KEY);
+
+      const headers = this.generateAppCommonHeaders(timestamp, sign, xCaSign);
+      headers['Host'] = this.API_CONFIG.DANMU_HOST;
+
+      const resp = await httpGet(`https://${this.API_CONFIG.DANMU_HOST}${path}`, {
+        headers: headers
+      });
+
+      if (!resp.data) return null;
+
+      return resp.data;
+    } catch (error) {
+      log("error", "getRenrenDramaDetail error:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+      return null;
+    }
+  }
+
   parseRRSPPFields(pField) {
     const parts = String(pField).split(",");
     const num = (i, cast, dft) => { try { return cast(parts[i]); } catch { return dft; } };
@@ -142,9 +293,14 @@ export default class RenrenSource extends BaseSource {
     const searchTitle = parsedKeyword.title;
     const searchSeason = parsedKeyword.season;
 
-    const lock = { value: false };
-    const lastRequestTime = { value: 0 };
-    let allResults = await this.performNetworkSearch(searchTitle, { lockRef: lock, lastRequestTimeRef: lastRequestTime, minInterval: 400 });
+    let allResults = [];
+    // 先使用APP API进行搜索
+    allResults = await this.searchAppContent(searchTitle);
+    if (allResults.length === 0) {
+      const lock = { value: false };
+      const lastRequestTime = { value: 0 };
+      allResults = await this.performNetworkSearch(searchTitle, { lockRef: lock, lastRequestTimeRef: lastRequestTime, minInterval: 400 });
+    }
 
     if (searchSeason == null) return allResults;
 
@@ -153,12 +309,17 @@ export default class RenrenSource extends BaseSource {
   }
 
   async getDetail(id) {
-    const url = `https://api.rrmj.plus/m-station/drama/page`;
-    const params = { hsdrOpen:0,isAgeLimit:0,dramaId:String(id),hevcOpen:1 };
-    const resp = await this.renrenRequest("GET", url, params);
-    if (!resp.data) return null;
-    const decoded = autoDecode(resp.data);
-    return decoded?.data || null;
+    const resp = await this.getAppDramaDetail(String(id));
+    if (!resp) {
+      const url = `https://api.rrmj.plus/m-station/drama/page`;
+      const params = { hsdrOpen:0,isAgeLimit:0,dramaId:String(id),hevcOpen:1 };
+      const resp = await this.renrenRequest("GET", url, params);
+      if (!resp.data) return null;
+      const decoded = autoDecode(resp.data);
+      return decoded?.data || null;
+    } else {
+      return resp.data;
+    }
   }
 
   async getEpisodes(id) {
@@ -228,24 +389,29 @@ export default class RenrenSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    const ClientProfile = {
-      user_agent: "Mozilla/5.0",
-      origin: "https://rrsp.com.cn",
-      referer: "https://rrsp.com.cn/",
-    };
-    const url = `https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/${id}`;
-    const headers = {
-      "Accept": "application/json",
-      "User-Agent": ClientProfile.user_agent,
-      "Origin": ClientProfile.origin,
-      "Referer": ClientProfile.referer,
-    };
-    const resp = await this.renrenHttpGet(url, { headers });
-    if (!resp.data) return null;
-    const data = autoDecode(resp.data);
-    if (Array.isArray(data)) return data;
-    if (data?.data && Array.isArray(data.data)) return data.data;
-    return null;
+    const resp = await this.getAppDanmu(id);
+    if (!resp) {
+      const ClientProfile = {
+        user_agent: "Mozilla/5.0",
+        origin: "https://rrsp.com.cn",
+        referer: "https://rrsp.com.cn/",
+      };
+      const url = `https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/${id}`;
+      const headers = {
+        "Accept": "application/json",
+        "User-Agent": ClientProfile.user_agent,
+        "Origin": ClientProfile.origin,
+        "Referer": ClientProfile.referer,
+      };
+      const resp = await this.renrenHttpGet(url, { headers });
+      if (!resp.data) return null;
+      const data = autoDecode(resp.data);
+      if (Array.isArray(data)) return data;
+      if (data?.data && Array.isArray(data.data)) return data.data;
+      return null;
+    } else {
+      return resp;
+    }
   }
 
   formatComments(comments) {
