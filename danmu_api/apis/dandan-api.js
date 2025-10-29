@@ -283,7 +283,7 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
   if (season && episode) {
     // 判断剧集
     for (const anime of searchData.animes) {
-      if (preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
+      if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
       if (anime.animeTitle.includes(title)) {
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
@@ -325,7 +325,7 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
   } else {
     // 判断电影
     for (const anime of searchData.animes) {
-      if (preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
+      if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
       const animeTitle = anime.animeTitle.split("(")[0].trim();
       if (animeTitle === title) {
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
