@@ -226,3 +226,20 @@ export function titleMatches(title, query) {
     return String(title).includes(String(query));
   }
 }
+
+/**
+ * 数据类型校验
+ * @param {string} value - 值
+ * @param {string} expectedType - 期望类型
+ * @param {string} fieldName - 参数名称
+ */
+export function validateType(value, expectedType) {
+  const fieldName = value?.constructor?.name;  // 获取字段名
+  if (expectedType === "array") {
+    if (!Array.isArray(value)) {
+      throw new TypeError(`${fieldName} 必须是一个数组`);
+    }
+  } else if (typeof value !== expectedType) {
+    throw new TypeError(`${fieldName} 必须是 ${expectedType}`);
+  }
+}

@@ -1,5 +1,6 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
+import { Anime } from "../models/dandan-model.js";
 
 // =====================
 // cache数据结构处理函数
@@ -140,6 +141,7 @@ export function findTitleById(id) {
 
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
 export function addAnime(anime) {
+    anime = Anime.fromJson(anime);
     try {
         // 确保 anime 有 links 属性且是数组
         if (!anime.links || !Array.isArray(anime.links)) {
@@ -161,7 +163,7 @@ export function addAnime(anime) {
         });
 
         // 创建新的 anime 副本
-        const animeCopy = { ...anime, links: newLinks };
+        const animeCopy = Anime.fromJson({ ...anime, links: newLinks });
 
         // 检查是否已存在相同 animeId 的 anime
         const existingAnimeIndex = globals.animes.findIndex(a => a.animeId === anime.animeId);

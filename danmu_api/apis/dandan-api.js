@@ -19,6 +19,7 @@ import MangoSource from "../sources/mango.js";
 import BilibiliSource from "../sources/bilibili.js";
 import YoukuSource from "../sources/youku.js";
 import OtherSource from "../sources/other.js";
+import {Anime, AnimeMatch, Episodes, Bangumi} from "../models/dandan-model.js";
 
 // =====================
 // 兼容弹弹play接口
@@ -82,7 +83,7 @@ export async function searchAnime(url) {
   // 链接弹幕解析
   const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}(:\d+)?(\/[^\s]*)?$/;
   if (urlRegex.test(queryTitle)) {
-    const tmpAnime = {
+    const tmpAnime = Anime.fromJson({
       "animeId": 111,
       "bangumiId": "string",
       "animeTitle": queryTitle,
@@ -93,7 +94,7 @@ export async function searchAnime(url) {
       "episodeCount": 1,
       "rating": 0,
       "isFavorited": true
-    };
+    });
 
     let platform = "unknown";
     if (queryTitle.includes(".qq.com")) {
@@ -116,7 +117,7 @@ export async function searchAnime(url) {
       "title": `【${platform}】 ${pageTitle}`
     }];
     curAnimes.push(tmpAnime);
-    addAnime({...tmpAnime, links: links});
+    addAnime(Anime.fromJson({...tmpAnime, links: links}));
     if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
 
     // 如果有新的anime获取到，则更新redis
@@ -160,7 +161,10 @@ export async function searchAnime(url) {
     });
 
     // 解构出返回的结果
-    const { vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili } = resultData;
+    const {
+      vod: animesVodResults, 360: animes360, renren: animesRenren, hanjutv: animesHanjutv, bahamut: animesBahamut,
+      tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili
+    } = resultData;
 
     // 按顺序处理每个来源的结果
     for (const key of globals.sourceOrderArr) {
@@ -482,7 +486,7 @@ export async function matchAnime(url, req) {
     if (resEpisode) {
       resData["isMatched"] = true;
       resData["matches"] = [
-        {
+        AnimeMatch.fromJson({
           "episodeId": resEpisode.episodeId,
           "animeId": resAnime.animeId,
           "animeTitle": resAnime.animeTitle,
@@ -491,7 +495,7 @@ export async function matchAnime(url, req) {
           "typeDescription": resAnime.typeDescription,
           "shift": 0,
           "imageUrl": resAnime.imageUrl
-        }
+        })
       ]
     }
 
@@ -574,7 +578,7 @@ export async function searchEpisodes(url) {
 
       // 只有当过滤后还有集数时才添加到结果中
       if (filteredEpisodes.length > 0) {
-        resultAnimes.push({
+        resultAnimes.push(Episodes.fromJson({
           animeId: animeItem.animeId,
           animeTitle: animeItem.animeTitle,
           type: animeItem.type,
@@ -583,7 +587,7 @@ export async function searchEpisodes(url) {
             episodeId: ep.episodeId,
             episodeTitle: ep.episodeTitle
           }))
-        });
+        }));
       }
     }
   }
@@ -624,33 +628,6 @@ export async function getBangumi(path) {
   }
   log("info", `Fetched details for anime ID: ${idParam}`);
 
-  let resData = {
-    errorCode: 0,
-    success: true,
-    errorMessage: "",
-    bangumi: {
-      animeId: anime.animeId,
-      bangumiId: anime.bangumiId,
-      animeTitle: anime.animeTitle,
-      imageUrl: anime.imageUrl,
-      isOnAir: true,
-      airDay: 1,
-      isFavorited: anime.isFavorited,
-      rating: anime.rating,
-      type: anime.type,
-      typeDescription: anime.typeDescription,
-      seasons: [
-        {
-          id: `season-${anime.animeId}`,
-          airDate: anime.startDate,
-          name: "Season 1",
-          episodeCount: anime.episodeCount,
-        },
-      ],
-      episodes: [],
-    },
-  };
-
   // 构建 episodes 列表
   let episodesList = [];
   for (let i = 0; i < anime.links.length; i++) {
@@ -681,9 +658,34 @@ export async function getBangumi(path) {
     }
   }
 
-  resData["bangumi"]["episodes"] = episodesList;
+  const bangumi = Bangumi.fromJson({
+    animeId: anime.animeId,
+    bangumiId: anime.bangumiId,
+    animeTitle: anime.animeTitle,
+    imageUrl: anime.imageUrl,
+    isOnAir: true,
+    airDay: 1,
+    isFavorited: anime.isFavorited,
+    rating: anime.rating,
+    type: anime.type,
+    typeDescription: anime.typeDescription,
+    seasons: [
+      {
+        id: `season-${anime.animeId}`,
+        airDate: anime.startDate,
+        name: "Season 1",
+        episodeCount: anime.episodeCount,
+      },
+    ],
+    episodes: episodesList,
+  });
 
-  return jsonResponse(resData);
+  return jsonResponse({
+    errorCode: 0,
+    success: true,
+    errorMessage: "",
+    bangumi: bangumi
+  });
 }
 
 // Extracted function for GET /api/v2/comment/:commentId
