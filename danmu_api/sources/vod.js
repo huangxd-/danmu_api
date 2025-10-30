@@ -94,7 +94,7 @@ export default class VodSource extends BaseSource {
   }
 
   async search(keyword) {
-      if (!globals.vodServers || globals.vodServers.length === 0) {
+    if (!globals.vodServers || globals.vodServers.length === 0) {
       return [];
     }
 

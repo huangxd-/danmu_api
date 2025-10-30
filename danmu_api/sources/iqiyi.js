@@ -264,7 +264,7 @@ export default class IqiyiSource extends BaseSource {
       }
 
       // 第一步：将 video_id 转换为 entity_id
-      const entityId = this._videoIdToEntityId(id);
+      const entityId = /^\d+$/.test(id) ? id : this._videoIdToEntityId(id);
       if (!entityId) {
         log("error", `[iQiyi] 无法将 media_id '${id}' 转换为 entity_id`);
         return [];
