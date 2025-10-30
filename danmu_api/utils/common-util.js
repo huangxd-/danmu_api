@@ -237,9 +237,9 @@ export function validateType(value, expectedType) {
   const fieldName = value?.constructor?.name;  // 获取字段名
   if (expectedType === "array") {
     if (!Array.isArray(value)) {
-      throw new TypeError(`${fieldName} 必须是一个数组`);
+      throw new TypeError(`${value} 必须是一个数组，但传入的是 ${fieldName}`);
     }
   } else if (typeof value !== expectedType) {
-    throw new TypeError(`${fieldName} 必须是 ${expectedType}`);
+    throw new TypeError(`${value} 必须是 ${expectedType}，但传入的是 ${fieldName}`);
   }
 }

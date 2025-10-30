@@ -116,7 +116,7 @@ export default class Kan360Source extends BaseSource {
         for (const key of Object.keys(anime.playlinks)) {
           if (globals.vodAllowedPlatforms.includes(key)) {
             links.push({
-              "name": key,
+              "name": key.toString(),
               "url": anime.playlinks[key],
               "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
             });
@@ -127,7 +127,7 @@ export default class Kan360Source extends BaseSource {
           for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
             const item = anime.seriesPlaylinks[i];
             links.push({
-              "name": i + 1,
+              "name": (i + 1).toString(),
               "url": item.url,
               "title": `【${anime.seriesSite}】 第${i + 1}集`
             });

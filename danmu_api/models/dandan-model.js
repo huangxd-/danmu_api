@@ -20,17 +20,51 @@ export class Anime {
     validateType(isFavorited, "boolean");
     validateType(links, "array");
 
+    // 将 links 转换为 Link 实例数组
+    this.links = links.map(linkData => Link.fromJson(linkData));
+
     // 直接解构并赋值给 this
     Object.assign(this, { animeId, bangumiId, animeTitle, type, typeDescription, imageUrl, startDate,
-      episodeCount, rating, isFavorited, links });
+      episodeCount, rating, isFavorited });
   }
 
-  // ---- 静态方法：从 JSON 创建 User 对象 ----
+  // ---- 静态方法：从 JSON 创建 Anime 对象 ----
   static fromJson(json) {
     if (typeof json !== "object" || json === null) {
       throw new TypeError("fromJson 参数必须是对象");
     }
-    return new Anime(json);
+
+    const links = json.links.map(link => Link.fromJson(link));
+    return new Anime({ ...json, links });
+  }
+
+  // ---- 转换为纯 JSON ----
+  toJson() {
+    return {
+      ...this,  // 将 this 中的其他属性直接展开
+      links: this.links.map(link => link.toJson())  // 转换每个 link 为 JSON
+    };
+  }
+}
+
+// 定义 Link 模型
+class Link {
+  constructor({ name = "", url = "", title = "", id = 10001 } = {}) {
+    validateType(name, "string");
+    validateType(url, "string");
+    validateType(title, "string");
+    validateType(id, "number");
+
+    // 直接解构并赋值给 this
+    Object.assign(this, { name, url, title, id });
+  }
+
+  // ---- 静态方法：从 JSON 创建 Link 对象 ----
+  static fromJson(json) {
+    if (typeof json !== "object" || json === null) {
+      throw new TypeError("fromJson 参数必须是对象");
+    }
+    return new Link(json);
   }
 
   // ---- 转换为纯 JSON ----
@@ -161,7 +195,7 @@ export class Season {
 // 数据模型：BangumiEpisode
 // =====================
 export class BangumiEpisode {
-  constructor({ seasonId = "", episodeId = "", episodeTitle = "", episodeNumber = "",
+  constructor({ seasonId = "", episodeId = 10001, episodeTitle = "", episodeNumber = "",
                 airDate = "" } = {}) {
     validateType(seasonId, "string");
     validateType(episodeId, "number");

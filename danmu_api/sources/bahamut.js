@@ -312,7 +312,7 @@ export default class BahamutSource extends BaseSource {
         for (const ep of eps) {
           const epTitle = `第${ep.episode}集`;
           links.push({
-            "name": ep.episode,
+            "name": ep.episode.toString(),
             "url": ep.videoSn.toString(),
             "title": `【bahamut】 ${epTitle}`
           });

@@ -354,7 +354,7 @@ export default class RenrenSource extends BaseSource {
         let links = [];
         for (const ep of eps) {
           links.push({
-            "name": ep.episodeIndex,
+            "name": ep.episodeIndex.toString(),
             "url": ep.episodeId,
             "title": `【${ep.provider}】 ${ep.title}`
           });

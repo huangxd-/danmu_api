@@ -222,7 +222,7 @@ export default class YoukuSource extends BaseSource {
         for (const ep of formattedEps) {
           const fullUrl = ep.link || `https://v.youku.com/v_show/id_${ep.vid}.html`;
           links.push({
-            "name": ep.episodeIndex,
+            "name": ep.episodeIndex.toString(),
             "url": fullUrl,
             "title": `【youku】 ${ep.title}`
           });

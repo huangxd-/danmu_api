@@ -353,7 +353,7 @@ export default class TencentSource extends BaseSource {
           // 构建完整URL: https://v.qq.com/x/cover/{cid}/{vid}.html
           const fullUrl = `https://v.qq.com/x/cover/${anime.mediaId}/${ep.vid}.html`;
           links.push({
-            "name": i + 1,
+            "name": (i + 1).toString(),
             "url": fullUrl,
             "title": `【qq】 ${epTitle}`
           });

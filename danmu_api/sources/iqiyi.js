@@ -641,7 +641,7 @@ export default class IqiyiSource extends BaseSource {
         for (const ep of eps) {
           const fullUrl = ep.link || `https://www.iqiyi.com/v_${anime.mediaId}.html`;
           links.push({
-            "name": ep.order,
+            "name": ep.order.toString(),
             "url": fullUrl,
             "title": `【iqiyi】 ${ep.title}`
           });
