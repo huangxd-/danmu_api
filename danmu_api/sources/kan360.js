@@ -108,67 +108,77 @@ export default class Kan360Source extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[360kan] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const process360Animes = await Promise.all(sourceAnimes
       .filter(anime => titleMatches(anime.titleTxt, queryTitle))
       .map(async (anime) => {
-      let links = [];
-      if (anime.cat_name === "电影") {
-        for (const key of Object.keys(anime.playlinks)) {
-          if (globals.vodAllowedPlatforms.includes(key)) {
-            links.push({
-              "name": key.toString(),
-              "url": anime.playlinks[key],
-              "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
-            });
-          }
-        }
-      } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
-        if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
-          for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
-            const item = anime.seriesPlaylinks[i];
-            links.push({
-              "name": (i + 1).toString(),
-              "url": item.url,
-              "title": `【${anime.seriesSite}】 第${i + 1}集`
-            });
-          }
-        }
-      } else if (anime.cat_name === "综艺") {
-        const zongyiLinks = await Promise.all(
-            Object.keys(anime.playlinks_year).map(async (site) => {
-              if (globals.vodAllowedPlatforms.includes(site)) {
-                const yearLinks = await Promise.all(
-                    anime.playlinks_year[site].map(async (year) => {
-                      return await this.get360Zongyi(anime.titleTxt, anime.id, site, year);
-                    })
-                );
-                return yearLinks.flat(); // 将每个年份的子链接合并到一个数组
+        try {
+          let links = [];
+          if (anime.cat_name === "电影") {
+            for (const key of Object.keys(anime.playlinks)) {
+              if (globals.vodAllowedPlatforms.includes(key)) {
+                links.push({
+                  "name": key.toString(),
+                  "url": anime.playlinks[key],
+                  "title": `【${key}】 ${anime.titleTxt}(${anime.year})`
+                });
               }
-              return [];
-            })
-        );
-        links = zongyiLinks.flat(); // 扁平化所有返回的子链接
-      }
+            }
+          } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
+            if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
+              for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
+                const item = anime.seriesPlaylinks[i];
+                links.push({
+                  "name": (i + 1).toString(),
+                  "url": item.url,
+                  "title": `【${anime.seriesSite}】 第${i + 1}集`
+                });
+              }
+            }
+          } else if (anime.cat_name === "综艺") {
+            const zongyiLinks = await Promise.all(
+                Object.keys(anime.playlinks_year).map(async (site) => {
+                  if (globals.vodAllowedPlatforms.includes(site)) {
+                    const yearLinks = await Promise.all(
+                        anime.playlinks_year[site].map(async (year) => {
+                          return await this.get360Zongyi(anime.titleTxt, anime.id, site, year);
+                        })
+                    );
+                    return yearLinks.flat(); // 将每个年份的子链接合并到一个数组
+                  }
+                  return [];
+                })
+            );
+            links = zongyiLinks.flat(); // 扁平化所有返回的子链接
+          }
 
-      if (links.length > 0) {
-        let transformedAnime = {
-          animeId: Number(anime.id),
-          bangumiId: String(anime.id),
-          animeTitle: `${anime.titleTxt}(${anime.year})【${anime.cat_name}】from 360`,
-          type: anime.cat_name,
-          typeDescription: anime.cat_name,
-          imageUrl: anime.cover,
-          startDate: generateValidStartDate(anime.year),
-          episodeCount: links.length,
-          rating: 0,
-          isFavorited: true,
-        };
+          if (links.length > 0) {
+            let transformedAnime = {
+              animeId: Number(anime.id),
+              bangumiId: String(anime.id),
+              animeTitle: `${anime.titleTxt}(${anime.year})【${anime.cat_name}】from 360`,
+              type: anime.cat_name,
+              typeDescription: anime.cat_name,
+              imageUrl: anime.cover,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
 
-        tmpAnimes.push(transformedAnime);
-        addAnime({...transformedAnime, links: links});
-        if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-      }
-    }));
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[360kan] Error processing anime: ${error.message}`);
+        }
+      }));
 
     this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
 

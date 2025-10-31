@@ -409,45 +409,52 @@ export default class MangoSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Mango] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const processMangoAnimes = await Promise.all(sourceAnimes
       .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
-        // 电影类型专门处理
-        if (anime.type === "电影") {
-          const movieEpisode = await this._getMovieEpisode(anime.mediaId);
-          if (!movieEpisode) {
+        try {
+          // 电影类型专门处理
+          if (anime.type === "电影") {
+            const movieEpisode = await this._getMovieEpisode(anime.mediaId);
+            if (!movieEpisode) {
+              return;
+            }
+
+            const fullUrl = `https://www.mgtv.com/b/${anime.mediaId}/${movieEpisode.video_id}.html`;
+            const episodeTitle = movieEpisode.t3 || movieEpisode.t1 || "正片";
+
+            const links = [{
+              "name": "1",
+              "url": fullUrl,
+              "title": `【imgo】 ${episodeTitle}`
+            }];
+
+            const numericAnimeId = convertToAsciiSum(anime.mediaId);
+            let transformedAnime = {
+              animeId: numericAnimeId,
+              bangumiId: anime.mediaId,
+              animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: 1,
+              rating: 0,
+              isFavorited: true,
+            };
+
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
+
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
             return;
           }
-
-          const fullUrl = `https://www.mgtv.com/b/${anime.mediaId}/${movieEpisode.video_id}.html`;
-          const episodeTitle = movieEpisode.t3 || movieEpisode.t1 || "正片";
-
-          const links = [{
-            "name": "1",
-            "url": fullUrl,
-            "title": `【imgo】 ${episodeTitle}`
-          }];
-
-          const numericAnimeId = convertToAsciiSum(anime.mediaId);
-          let transformedAnime = {
-            animeId: numericAnimeId,
-            bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: 1,
-            rating: 0,
-            isFavorited: true,
-          };
-
-          tmpAnimes.push(transformedAnime);
-          addAnime({...transformedAnime, links: links});
-
-          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-          return;
-        }
 
         // 电视剧/综艺类型处理
         const eps = await this.getEpisodes(anime.mediaId);
@@ -465,25 +472,28 @@ export default class MangoSource extends BaseSource {
           });
         }
 
-        if (links.length > 0) {
-          const numericAnimeId = convertToAsciiSum(anime.mediaId);
-          let transformedAnime = {
-            animeId: numericAnimeId,
-            bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: links.length,
-            rating: 0,
-            isFavorited: true,
-          };
+          if (links.length > 0) {
+            const numericAnimeId = convertToAsciiSum(anime.mediaId);
+            let transformedAnime = {
+              animeId: numericAnimeId,
+              bangumiId: anime.mediaId,
+              animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from imgo`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
 
-          tmpAnimes.push(transformedAnime);
-          addAnime({...transformedAnime, links: links});
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
 
-          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[Mango] Error processing anime: ${error.message}`);
         }
       })
     );

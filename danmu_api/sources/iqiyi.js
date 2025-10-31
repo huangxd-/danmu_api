@@ -631,43 +631,53 @@ export default class IqiyiSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[iQiyi] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const processIqiyiAnimes = await Promise.all(sourceAnimes
       .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
-        const eps = await this.getEpisodes(anime.mediaId);
+        try {
+          const eps = await this.getEpisodes(anime.mediaId);
 
-        // 格式化分集列表
-        const links = [];
-        for (const ep of eps) {
-          const fullUrl = ep.link || `https://www.iqiyi.com/v_${anime.mediaId}.html`;
-          links.push({
-            "name": ep.order.toString(),
-            "url": fullUrl,
-            "title": `【iqiyi】 ${ep.title}`
-          });
-        }
-
-        if (links.length > 0) {
-          const numericAnimeId = convertToAsciiSum(anime.mediaId);
-          const transformedAnime = {
-            animeId: numericAnimeId,
-            bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from iqiyi`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: links.length,
-            rating: 0,
-            isFavorited: true,
-          };
-
-          tmpAnimes.push(transformedAnime);
-          addAnime({...transformedAnime, links: links});
-
-          if (globals.animes.length > globals.MAX_ANIMES) {
-            removeEarliestAnime();
+          // 格式化分集列表
+          const links = [];
+          for (const ep of eps) {
+            const fullUrl = ep.link || `https://www.iqiyi.com/v_${anime.mediaId}.html`;
+            links.push({
+              "name": ep.order.toString(),
+              "url": fullUrl,
+              "title": `【iqiyi】 ${ep.title}`
+            });
           }
+
+          if (links.length > 0) {
+            const numericAnimeId = convertToAsciiSum(anime.mediaId);
+            const transformedAnime = {
+              animeId: numericAnimeId,
+              bangumiId: anime.mediaId,
+              animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from iqiyi`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
+
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
+
+            if (globals.animes.length > globals.MAX_ANIMES) {
+              removeEarliestAnime();
+            }
+          }
+        } catch (error) {
+          log("error", `[iQiyi] Error processing anime: ${error.message}`);
         }
       })
     );

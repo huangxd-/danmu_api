@@ -207,46 +207,56 @@ export default class YoukuSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Youku] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const processYoukuAnimes = await Promise.all(sourceAnimes
       .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
-        const eps = await this.getEpisodes(anime.mediaId);
+        try {
+          const eps = await this.getEpisodes(anime.mediaId);
 
-        // 提取媒体类型
-        const mediaType = this._extractMediaType(anime.cats, anime.type);
+          // 提取媒体类型
+          const mediaType = this._extractMediaType(anime.cats, anime.type);
 
-        // 处理和格式化分集
-        const formattedEps = this._processAndFormatEpisodes(eps, mediaType);
+          // 处理和格式化分集
+          const formattedEps = this._processAndFormatEpisodes(eps, mediaType);
 
-        let links = [];
-        for (const ep of formattedEps) {
-          const fullUrl = ep.link || `https://v.youku.com/v_show/id_${ep.vid}.html`;
-          links.push({
-            "name": ep.episodeIndex.toString(),
-            "url": fullUrl,
-            "title": `【youku】 ${ep.title}`
-          });
-        }
+          let links = [];
+          for (const ep of formattedEps) {
+            const fullUrl = ep.link || `https://v.youku.com/v_show/id_${ep.vid}.html`;
+            links.push({
+              "name": ep.episodeIndex.toString(),
+              "url": fullUrl,
+              "title": `【youku】 ${ep.title}`
+            });
+          }
 
-        if (links.length > 0) {
-          const numericAnimeId = convertToAsciiSum(anime.mediaId);
-          let transformedAnime = {
-            animeId: numericAnimeId,
-            bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from youku`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: links.length,
-            rating: 0,
-            isFavorited: true,
-          };
+          if (links.length > 0) {
+            const numericAnimeId = convertToAsciiSum(anime.mediaId);
+            let transformedAnime = {
+              animeId: numericAnimeId,
+              bangumiId: anime.mediaId,
+              animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from youku`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
 
-          tmpAnimes.push(transformedAnime);
-          addAnime({...transformedAnime, links: links});
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
 
-          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[Youku] Error processing anime: ${error.message}`);
         }
       })
     );

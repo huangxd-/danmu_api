@@ -296,49 +296,53 @@ export default class BahamutSource extends BaseSource {
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processBahamutAnimes = await Promise.all(filtered.map(async (anime) => {
-      const epData = await this.getEpisodes(anime.video_sn);
-      const detail = epData.video;
+      try {
+        const epData = await this.getEpisodes(anime.video_sn);
+        const detail = epData.video;
 
-      // 处理 episodes 对象中的多个键（"0", "1", "2" 等）
-      // 某些内容（如电影）可能在不同的键中
-      let eps = null;
-      if (epData.anime.episodes) {
-        // 优先使用 "0" 键，如果不存在则使用第一个可用的键
-        eps = epData.anime.episodes["0"] || Object.values(epData.anime.episodes)[0];
-      }
-
-      let links = [];
-      if (eps && Array.isArray(eps)) {
-        for (const ep of eps) {
-          const epTitle = `第${ep.episode}集`;
-          links.push({
-            "name": ep.episode.toString(),
-            "url": ep.videoSn.toString(),
-            "title": `【bahamut】 ${epTitle}`
-          });
+        // 处理 episodes 对象中的多个键（"0", "1", "2" 等）
+        // 某些内容（如电影）可能在不同的键中
+        let eps = null;
+        if (epData.anime.episodes) {
+          // 优先使用 "0" 键，如果不存在则使用第一个可用的键
+          eps = epData.anime.episodes["0"] || Object.values(epData.anime.episodes)[0];
         }
-      }
 
-      if (links.length > 0) {
-        let yearMatch = (anime.info || "").match(/(\d{4})/);
-        let transformedAnime = {
-          animeId: anime.video_sn,
-          bangumiId: String(anime.video_sn),
-          animeTitle: `${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
-          type: "动漫",
-          typeDescription: "动漫",
-          imageUrl: anime.cover,
-          startDate: generateValidStartDate(new Date(epData.anime.seasonStart).getFullYear()),
-          episodeCount: links.length,
-          rating: detail.rating,
-          isFavorited: true,
-        };
+        let links = [];
+        if (eps && Array.isArray(eps)) {
+          for (const ep of eps) {
+            const epTitle = `第${ep.episode}集`;
+            links.push({
+              "name": ep.episode.toString(),
+              "url": ep.videoSn.toString(),
+              "title": `【bahamut】 ${epTitle}`
+            });
+          }
+        }
 
-        tmpAnimes.push(transformedAnime);
+        if (links.length > 0) {
+          let yearMatch = (anime.info || "").match(/(\d{4})/);
+          let transformedAnime = {
+            animeId: anime.video_sn,
+            bangumiId: String(anime.video_sn),
+            animeTitle: `${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
+            type: "动漫",
+            typeDescription: "动漫",
+            imageUrl: anime.cover,
+            startDate: generateValidStartDate(new Date(epData.anime.seasonStart).getFullYear()),
+            episodeCount: links.length,
+            rating: detail.rating,
+            isFavorited: true,
+          };
 
-        addAnime({...transformedAnime, links: links});
+          tmpAnimes.push(transformedAnime);
 
-        if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          addAnime({...transformedAnime, links: links});
+
+          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+        }
+      } catch (error) {
+        log("error", `[Bahamut] Error processing anime: ${error.message}`);
       }
     }));
 

@@ -346,39 +346,49 @@ export default class RenrenSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Renren] sourceAnimes is not a valid array");
+      return [];
+    }
+
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processRenrenAnimes = await Promise.all(sourceAnimes
       .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
-        const eps = await this.getEpisodes(anime.mediaId);
-        let links = [];
-        for (const ep of eps) {
-          links.push({
-            "name": ep.episodeIndex.toString(),
-            "url": ep.episodeId,
-            "title": `【${ep.provider}】 ${ep.title}`
-          });
-        }
+        try {
+          const eps = await this.getEpisodes(anime.mediaId);
+          let links = [];
+          for (const ep of eps) {
+            links.push({
+              "name": ep.episodeIndex.toString(),
+              "url": ep.episodeId,
+              "title": `【${ep.provider}】 ${ep.title}`
+            });
+          }
 
-        if (links.length > 0) {
-          let transformedAnime = {
-            animeId: Number(anime.mediaId),
-            bangumiId: String(anime.mediaId),
-            animeTitle: `${anime.title}(${anime.year})【${anime.type}】from renren`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: links.length,
-            rating: 0,
-            isFavorited: true,
-          };
+          if (links.length > 0) {
+            let transformedAnime = {
+              animeId: Number(anime.mediaId),
+              bangumiId: String(anime.mediaId),
+              animeTitle: `${anime.title}(${anime.year})【${anime.type}】from renren`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
 
-          tmpAnimes.push(transformedAnime);
+            tmpAnimes.push(transformedAnime);
 
-          addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links});
 
-          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[Renren] Error processing anime: ${error.message}`);
         }
       })
     );

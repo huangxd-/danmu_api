@@ -111,56 +111,66 @@ export default class VodSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[VOD] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const processVodAnimes = await Promise.all(sourceAnimes
       .filter(anime => titleMatches(anime.vod_name, queryTitle))
       .map(async (anime) => {
-      let vodPlayFromList = anime.vod_play_from.split("$$$");
-      vodPlayFromList = vodPlayFromList.map(item => {
-        if (item === "mgtv") return "imgo";
-        if (item === "bilibili") return "bilibili1";
-        return item;
-      });
-
-      const vodPlayUrlList = anime.vod_play_url.split("$$$");
-      const validIndices = vodPlayFromList
-          .map((item, index) => globals.vodAllowedPlatforms.includes(item) ? index : -1)
-          .filter(index => index !== -1);
-
-      let links = [];
-      let count = 0;
-      for (const num of validIndices) {
-        const platform = vodPlayFromList[num];
-        const eps = vodPlayUrlList[num].split("#");
-        for (const ep of eps) {
-          const epInfo = ep.split("$");
-          count++;
-          links.push({
-            "name": count.toString(),
-            "url": epInfo[1],
-            "title": `【${platform}】 ${epInfo[0]}`
+        try {
+          let vodPlayFromList = anime.vod_play_from.split("$$$");
+          vodPlayFromList = vodPlayFromList.map(item => {
+            if (item === "mgtv") return "imgo";
+            if (item === "bilibili") return "bilibili1";
+            return item;
           });
+
+          const vodPlayUrlList = anime.vod_play_url.split("$$$");
+          const validIndices = vodPlayFromList
+              .map((item, index) => globals.vodAllowedPlatforms.includes(item) ? index : -1)
+              .filter(index => index !== -1);
+
+          let links = [];
+          let count = 0;
+          for (const num of validIndices) {
+            const platform = vodPlayFromList[num];
+            const eps = vodPlayUrlList[num].split("#");
+            for (const ep of eps) {
+              const epInfo = ep.split("$");
+              count++;
+              links.push({
+                "name": count.toString(),
+                "url": epInfo[1],
+                "title": `【${platform}】 ${epInfo[0]}`
+              });
+            }
+          }
+
+          if (links.length > 0) {
+            let transformedAnime = {
+              animeId: Number(anime.vod_id),
+              bangumiId: String(anime.vod_id),
+              animeTitle: `${anime.vod_name}(${anime.vod_year})【${anime.type_name}】from ${vodName}`,
+              type: anime.type_name,
+              typeDescription: anime.type_name,
+              imageUrl: anime.vod_pic,
+              startDate: generateValidStartDate(anime.vod_year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
+
+            tmpAnimes.push(transformedAnime);
+            addAnime({...transformedAnime, links: links});
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[VOD] Error processing anime: ${error.message}`);
         }
-      }
-
-      if (links.length > 0) {
-        let transformedAnime = {
-          animeId: Number(anime.vod_id),
-          bangumiId: String(anime.vod_id),
-          animeTitle: `${anime.vod_name}(${anime.vod_year})【${anime.type_name}】from ${vodName}`,
-          type: anime.type_name,
-          typeDescription: anime.type_name,
-          imageUrl: anime.vod_pic,
-          startDate: generateValidStartDate(anime.vod_year),
-          episodeCount: links.length,
-          rating: 0,
-          isFavorited: true,
-        };
-
-        tmpAnimes.push(transformedAnime);
-        addAnime({...transformedAnime, links: links});
-        if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-      }
-    }));
+      }));
 
     this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
 

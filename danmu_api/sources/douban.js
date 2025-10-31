@@ -56,75 +56,86 @@ export default class DoubanSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
     const doubanAnimes = [];
 
-    const processDoubanAnimes = await Promise.all(sourceAnimes.map(async (anime) => {
-      const doubanId = anime.target_id;
-      log("info", "doubanId: ", doubanId);
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Douban] sourceAnimes is not a valid array");
+      return [];
+    }
 
-      // 获取平台详情页面url
-      const response = await httpGet(
-        `https://m.douban.com/rexxar/api/v2/movie/${doubanId}?for_mobile=1`,
-        {
-          headers: {
-            "Referer": `https://m.douban.com/movie/subject/${doubanId}/?dt_dapp=1`,
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-        }
-      );
+    const processDoubanAnimes = await Promise.allSettled(sourceAnimes.map(async (anime) => {
+      try {
+        const doubanId = anime.target_id;
+        log("info", "doubanId: ", doubanId);
 
-      const results = [];
+        // 获取平台详情页面url
+        const response = await httpGet(
+          `https://m.douban.com/rexxar/api/v2/movie/${doubanId}?for_mobile=1`,
+          {
+            headers: {
+              "Referer": `https://m.douban.com/movie/subject/${doubanId}/?dt_dapp=1`,
+              "Content-Type": "application/json",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            },
+          }
+        );
 
-      for (const vendor of response.data?.vendors ?? []) {
-        if (!vendor) {
-          continue;
+        const results = [];
+
+        for (const vendor of response.data?.vendors ?? []) {
+          if (!vendor) {
+            continue;
+          }
+          log("info", "vendor uri: ", vendor.uri);
+          const tmpAnimes = [{
+            title: response.data?.title,
+            year: response.data?.year,
+            type: anime?.type_name,
+            imageUrl: anime?.target?.cover_url,
+          }];
+          switch (vendor.id) {
+            case "qq": {
+              const cid = new URL(vendor.uri).searchParams.get('cid');
+              if (cid) {
+                tmpAnimes[0].provider = "tencent";
+                tmpAnimes[0].mediaId = cid;
+                await this.tencentSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
+              }
+              break;
+            }
+            case "iqiyi": {
+              const tvid = new URL(vendor.uri).searchParams.get('tvid');
+              if (tvid) {
+                tmpAnimes[0].provider = "iqiyi";
+                tmpAnimes[0].mediaId = anime?.type_name === '电影' ? `movie_${tvid}` : tvid;
+                await this.iqiyiSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
+              }
+              break;
+            }
+            case "youku": {
+              const showId = new URL(vendor.uri).searchParams.get('showid');
+              if (showId) {
+                tmpAnimes[0].provider = "youku";
+                tmpAnimes[0].mediaId = showId;
+                await this.youkuSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
+              }
+              break;
+            }
+            case "bilibili": {
+              const seasonId = new URL(vendor.uri).pathname.split('/').pop();
+              if (seasonId) {
+                tmpAnimes[0].provider = "bilibili";
+                tmpAnimes[0].mediaId = `ss${seasonId}`;
+                await this.bilibiliSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
+              }
+              break;
+            }
+          }
         }
-        log("info", "vendor uri: ", vendor.uri);
-        const tmpAnimes = [{
-          title: response.data?.title,
-          year: response.data?.year,
-          type: anime?.type_name,
-          imageUrl: anime?.target?.cover_url,
-        }];
-        switch (vendor.id) {
-          case "qq": {
-            const cid = new URL(vendor.uri).searchParams.get('cid');
-            if (cid) {
-              tmpAnimes[0].provider = "tencent";
-              tmpAnimes[0].mediaId = cid;
-              await this.tencentSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
-            }
-            break;
-          }
-          case "iqiyi": {
-            const tvid = new URL(vendor.uri).searchParams.get('tvid');
-            if (tvid) {
-              tmpAnimes[0].provider = "iqiyi";
-              tmpAnimes[0].mediaId = anime?.type_name === '电影' ? `movie_${tvid}` : tvid;
-              await this.iqiyiSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
-            }
-            break;
-          }
-          case "youku": {
-            const showId = new URL(vendor.uri).searchParams.get('showid');
-            if (showId) {
-              tmpAnimes[0].provider = "youku";
-              tmpAnimes[0].mediaId = showId;
-              await this.youkuSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
-            }
-            break;
-          }
-          case "bilibili": {
-            const seasonId = new URL(vendor.uri).pathname.split('/').pop();
-            if (seasonId) {
-              tmpAnimes[0].provider = "bilibili";
-              tmpAnimes[0].mediaId = `ss${seasonId}`;
-              await this.bilibiliSource.handleAnimes(tmpAnimes, queryTitle, doubanAnimes)
-            }
-            break;
-          }
-        }
+        return results;
+      } catch (error) {
+        log("error", `[Douban] Error processing anime: ${error.message}`);
+        return [];
       }
-      return results;
     }));
 
     this.sortAndPushAnimesByYear(doubanAnimes, curAnimes);

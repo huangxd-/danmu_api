@@ -393,6 +393,12 @@ export default class BilibiliSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Bilibili] sourceAnimes is not a valid array");
+      return [];
+    }
+
     const processPromises = sourceAnimes
       .filter(anime => titleMatches(anime.title, queryTitle))
       .map(async (anime) => {

@@ -340,46 +340,56 @@ export default class TencentSource extends BaseSource {
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
+    // 添加错误处理，确保sourceAnimes是数组
+    if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
+      log("error", "[Tencent] sourceAnimes is not a valid array");
+      return [];
+    }
+
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processTencentAnimes = await Promise.all(sourceAnimes
       .filter(s => titleMatches(s.title, queryTitle))
       .map(async (anime) => {
-        const eps = await this.getEpisodes(anime.mediaId);
-        let links = [];
+        try {
+          const eps = await this.getEpisodes(anime.mediaId);
+          let links = [];
 
-        for (let i = 0; i < eps.length; i++) {
-          const ep = eps[i];
-          const epTitle = ep.unionTitle || ep.title || `第${i + 1}集`;
-          // 构建完整URL: https://v.qq.com/x/cover/{cid}/{vid}.html
-          const fullUrl = `https://v.qq.com/x/cover/${anime.mediaId}/${ep.vid}.html`;
-          links.push({
-            "name": (i + 1).toString(),
-            "url": fullUrl,
-            "title": `【qq】 ${epTitle}`
-          });
-        }
+          for (let i = 0; i < eps.length; i++) {
+            const ep = eps[i];
+            const epTitle = ep.unionTitle || ep.title || `第${i + 1}集`;
+            // 构建完整URL: https://v.qq.com/x/cover/{cid}/{vid}.html
+            const fullUrl = `https://v.qq.com/x/cover/${anime.mediaId}/${ep.vid}.html`;
+            links.push({
+              "name": (i + 1).toString(),
+              "url": fullUrl,
+              "title": `【qq】 ${epTitle}`
+            });
+          }
 
-        if (links.length > 0) {
-          // 将字符串mediaId转换为数字ID (使用哈希函数)
-          const numericAnimeId = convertToAsciiSum(anime.mediaId);
-          let transformedAnime = {
-            animeId: numericAnimeId,
-            bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year})【${anime.type}】from tencent`,
-            type: anime.type,
-            typeDescription: anime.type,
-            imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
-            episodeCount: links.length,
-            rating: 0,
-            isFavorited: true,
-          };
+          if (links.length > 0) {
+            // 将字符串mediaId转换为数字ID (使用哈希函数)
+            const numericAnimeId = convertToAsciiSum(anime.mediaId);
+            let transformedAnime = {
+              animeId: numericAnimeId,
+              bangumiId: anime.mediaId,
+              animeTitle: `${anime.title}(${anime.year})【${anime.type}】from tencent`,
+              type: anime.type,
+              typeDescription: anime.type,
+              imageUrl: anime.imageUrl,
+              startDate: generateValidStartDate(anime.year),
+              episodeCount: links.length,
+              rating: 0,
+              isFavorited: true,
+            };
 
-          tmpAnimes.push(transformedAnime);
+            tmpAnimes.push(transformedAnime);
 
-          addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links});
 
-          if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+          }
+        } catch (error) {
+          log("error", `[Tencent] Error processing anime: ${error.message}`);
         }
       })
     );
