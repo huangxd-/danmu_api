@@ -73,13 +73,22 @@ LogVar 弹幕 API 服务器
    npm install
    ```
 
-3. **启动服务器**：
+3. **配置应用**（可选）：
+
+   本项目支持三种配置方式，优先级从高到低：
+   1. **系统环境变量**（最高优先级）
+   2. **.env 文件**（中等优先级）- 复制 `.env.example` 为 `.env` 并修改
+   3. **config.yaml 文件**（最低优先级）- 复制 `config.yaml.example` 为 `config.yaml` 并修改
+
+   如果某个系统无法编辑 `.env` 文件，可以使用 `config.yaml` 文件替代。
+
+4. **启动服务器**：
    ```bash
    npm start
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
 
-   **热更新支持**：修改 `.env` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+   **热更新支持**：修改 `.env` 或 `config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
 
    或者使用下面的命令
    ```bash
@@ -89,7 +98,7 @@ LogVar 弹幕 API 服务器
    node --test ./danmu_api/worker.test.js
    ```
 
-4. **测试 API**：
+5. **测试 API**：
    使用 Postman 或 curl 测试：
    - `GET http://{ip}:9321/87654321`
    - `GET http://{ip}:9321/87654321/api/v2/search/anime?keyword=生万物`
@@ -136,9 +145,9 @@ LogVar 弹幕 API 服务器
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
-   **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
+   **热更新支持**：如需支持环境变量热更新（修改 `.env` 或 `config.yaml` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env --env-file .env logvar/danmu-api:latest
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env -v $(pwd)/config.yaml:/app/config.yaml --env-file .env logvar/danmu-api:latest
    ```
 
    或使用 docker compose 部署（**推荐，支持环境变量热更新**）：
@@ -148,9 +157,10 @@ LogVar 弹幕 API 服务器
        image: logvar/danmu-api:latest
        ports:
          - "9321:9321"
-       # 热更新支持：挂载 .env 文件，修改后容器会自动重新加载配置（无需重启容器）
+       # 热更新支持：挂载 .env 和 config.yaml 文件，修改后容器会自动重新加载配置（无需重启容器）
        volumes:
          - ./.env:/app/.env
+         - ./config.yaml:/app/config.yaml
        restart: unless-stopped
    ```
 
@@ -429,7 +439,8 @@ danmu_api/
 ├── node-functions/
 │   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
 │   └── index.js        # edgeone pages 中间处理逻辑
-├── .env.example
+├── .env.example        # .env 配置文件示例
+├── config.yaml.example # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── .gitignore
 ├── Dockerfile
 ├── edgeone.json        # edgeone pages 配置文件
@@ -444,9 +455,10 @@ danmu_api/
 ## 注意事项
 
 ### 热更新相关
-- **本地运行**：修改 `.env` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
-- **Docker 部署**：需要使用 Volume 挂载 `.env` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改 `.env` 文件容器会自动重新加载配置。
+- **本地运行**：修改 `.env` 或 `config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+- **Docker 部署**：需要使用 Volume 挂载 `.env` 和/或 `config.yaml` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改配置文件容器会自动重新加载配置。
 - **Vercel/Netlify/Cloudflare**：需要在平台的环境变量设置中修改，然后重新部署才能生效。
+- **配置优先级**：系统环境变量 > .env 文件 > config.yaml 文件
 
 ### 其他注意事项
 - 日志存储在内存中，服务器重启后会清空。

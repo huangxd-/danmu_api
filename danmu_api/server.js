@@ -4,12 +4,68 @@
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
+const yaml = require('js-yaml');
 
-// .env 文件在项目根目录（server.js 的上一级目录）
+// 配置文件路径在项目根目录（server.js 的上一级目录）
 const envPath = path.join(__dirname, '..', '.env');
+const yamlPath = path.join(__dirname, '..', 'config.yaml');
+
+/**
+ * 从 YAML 文件加载配置
+ * @returns {Object} 解析后的配置对象
+ */
+function loadYamlConfig() {
+  try {
+    if (!fs.existsSync(yamlPath)) {
+      return {};
+    }
+    const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+    const config = yaml.load(yamlContent) || {};
+    console.log('[server] config.yaml file loaded successfully');
+    return config;
+  } catch (e) {
+    console.log('[server] Error loading config.yaml:', e.message);
+    return {};
+  }
+}
+
+/**
+ * 将 YAML 配置对象转换为环境变量
+ * @param {Object} config YAML 配置对象
+ */
+function applyYamlConfig(config) {
+  if (!config || typeof config !== 'object') {
+    return;
+  }
+
+  // 递归处理嵌套对象，转换为 UPPER_SNAKE_CASE 环境变量
+  const flattenConfig = (obj, prefix = '') => {
+    for (const [key, value] of Object.entries(obj)) {
+      const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
+
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        // 递归处理嵌套对象
+        flattenConfig(value, envKey);
+      } else if (Array.isArray(value)) {
+        // 数组转换为逗号分隔的字符串
+        process.env[envKey] = value.join(',');
+      } else {
+        // 基本类型直接转换为字符串
+        process.env[envKey] = String(value);
+      }
+    }
+  };
+
+  flattenConfig(config);
+}
 
 function loadEnv() {
   try {
+    // 先加载 YAML 配置（优先级较低）
+    const yamlConfig = loadYamlConfig();
+    applyYamlConfig(yamlConfig);
+
+    // 再加载 .env 文件（优先级较高，会覆盖 YAML 配置）
     dotenv.config({ path: envPath, override: true });
     console.log('[server] .env file loaded successfully');
   } catch (e) {
@@ -20,21 +76,28 @@ function loadEnv() {
 // 初始加载
 loadEnv();
 
-// 监听 .env 文件变化（仅在文件存在时）
+// 监听 .env 和 config.yaml 文件变化（仅在文件存在时）
 let envWatcher = null;
 let reloadTimer = null;
 let mainServer = null;
 let proxyServer = null;
 
 function setupEnvWatcher() {
-  if (!fs.existsSync(envPath)) {
-    console.log('[server] .env file not found, skipping file watcher');
+  const envExists = fs.existsSync(envPath);
+  const yamlExists = fs.existsSync(yamlPath);
+
+  if (!envExists && !yamlExists) {
+    console.log('[server] Neither .env nor config.yaml found, skipping file watcher');
     return;
   }
 
   try {
     const chokidar = require('chokidar');
-    envWatcher = chokidar.watch(envPath, {
+    const watchPaths = [];
+    if (envExists) watchPaths.push(envPath);
+    if (yamlExists) watchPaths.push(yamlPath);
+
+    envWatcher = chokidar.watch(watchPaths, {
       persistent: true,
       awaitWriteFinish: {
         stabilityThreshold: 100,
@@ -42,33 +105,53 @@ function setupEnvWatcher() {
       }
     });
 
-    envWatcher.on('change', () => {
+    envWatcher.on('change', (changedPath) => {
       // 防抖：避免短时间内多次触发
       if (reloadTimer) {
         clearTimeout(reloadTimer);
       }
 
       reloadTimer = setTimeout(() => {
-        console.log(`[server] .env file changed, reloading environment variables...`);
+        const fileName = path.basename(changedPath);
+        console.log(`[server] ${fileName} changed, reloading environment variables...`);
 
-        // 读取新的 .env 文件内容
+        // 读取新的配置文件内容
         try {
-          const envContent = fs.readFileSync(envPath, 'utf8');
-          const lines = envContent.split('\n');
-
-          // 解析 .env 文件中的所有键
           const newEnvKeys = new Set();
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed && !trimmed.startsWith('#')) {
-              const match = trimmed.match(/^([^=]+)=/);
-              if (match) {
-                newEnvKeys.add(match[1]);
+
+          // 如果是 .env 文件变化
+          if (changedPath === envPath && fs.existsSync(envPath)) {
+            const envContent = fs.readFileSync(envPath, 'utf8');
+            const lines = envContent.split('\n');
+
+            // 解析 .env 文件中的所有键
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed && !trimmed.startsWith('#')) {
+                const match = trimmed.match(/^([^=]+)=/);
+                if (match) {
+                  newEnvKeys.add(match[1]);
+                }
               }
             }
           }
 
-          // 删除 process.env 中旧的键（不在新 .env 文件中的键）
+          // 如果是 config.yaml 文件变化
+          if (changedPath === yamlPath && fs.existsSync(yamlPath)) {
+            const yamlConfig = loadYamlConfig();
+            const flattenKeys = (obj, prefix = '') => {
+              for (const [key, value] of Object.entries(obj)) {
+                const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
+                newEnvKeys.add(envKey);
+                if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                  flattenKeys(value, envKey);
+                }
+              }
+            };
+            flattenKeys(yamlConfig);
+          }
+
+          // 删除 process.env 中旧的键（不在新配置文件中的键）
           for (const key of Object.keys(process.env)) {
             if (!newEnvKeys.has(key)) {
               delete process.env[key];
@@ -82,24 +165,26 @@ function setupEnvWatcher() {
           console.log('[server] Environment variables reloaded successfully');
           console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
         } catch (error) {
-          console.log('[server] Error reloading .env file:', error.message);
+          console.log('[server] Error reloading configuration files:', error.message);
         }
 
         reloadTimer = null;
       }, 200); // 200ms 防抖
     });
 
-    envWatcher.on('unlink', () => {
-      console.log('[server] .env file deleted, using default environment variables');
+    envWatcher.on('unlink', (deletedPath) => {
+      const fileName = path.basename(deletedPath);
+      console.log(`[server] ${fileName} deleted, using remaining configuration files`);
     });
 
     envWatcher.on('error', (error) => {
       console.log('[server] File watcher error:', error.message);
     });
 
-    console.log('[server] .env file watcher started');
+    const watchedFiles = watchPaths.map(p => path.basename(p)).join(' and ');
+    console.log(`[server] Configuration file watcher started for: ${watchedFiles}`);
   } catch (e) {
-    console.log('[server] chokidar not available, .env hot reload disabled');
+    console.log('[server] chokidar not available, configuration hot reload disabled');
   }
 }
 
