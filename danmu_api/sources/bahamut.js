@@ -6,7 +6,7 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
-import { strictTitleMatch } from "../utils/common-util.js";
+import { strictTitleMatch, normalizeSpaces } from "../utils/common-util.js";
 
 // =====================
 // 获取巴哈姆特弹幕
@@ -252,17 +252,21 @@ export default class BahamutSource extends BaseSource {
       }
 
       // 宽松模糊匹配模式（默认）
-      // 直接包含检查
-      if (tItem.includes(q)) return true;
-      if (used && tItem.includes(used)) return true;
+      // 规范化空格后进行直接包含检查
+      const normalizedItem = normalizeSpaces(tItem);
+      const normalizedQ = normalizeSpaces(q);
+      const normalizedUsed = used ? normalizeSpaces(used) : '';
+
+      if (normalizedItem.includes(normalizedQ)) return true;
+      if (normalizedUsed && normalizedItem.includes(normalizedUsed)) return true;
 
       // 尝试繁体/简体互转（双向匹配）
       try {
-        if (tItem.includes(traditionalized(q))) return true;
-        if (tItem.includes(simplized(q))) return true;
-        if (used) {
-          if (tItem.includes(traditionalized(used))) return true;
-          if (tItem.includes(simplized(used))) return true;
+        if (normalizedItem.includes(normalizeSpaces(traditionalized(q)))) return true;
+        if (normalizedItem.includes(normalizeSpaces(simplized(q)))) return true;
+        if (normalizedUsed) {
+          if (normalizedItem.includes(normalizeSpaces(traditionalized(used)))) return true;
+          if (normalizedItem.includes(normalizeSpaces(simplized(used)))) return true;
         }
       } catch (e) {
         // 转换过程中可能会因为异常输入而抛错；忽略继续
@@ -270,8 +274,8 @@ export default class BahamutSource extends BaseSource {
 
       // 尝试不区分大小写的拉丁字母匹配
       try {
-        if (tItem.toLowerCase().includes(q.toLowerCase())) return true;
-        if (used && tItem.toLowerCase().includes(used.toLowerCase())) return true;
+        if (normalizedItem.toLowerCase().includes(normalizedQ.toLowerCase())) return true;
+        if (normalizedUsed && normalizedItem.toLowerCase().includes(normalizedUsed.toLowerCase())) return true;
       } catch (e) { }
 
       return false;

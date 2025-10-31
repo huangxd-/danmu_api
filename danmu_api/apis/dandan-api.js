@@ -7,7 +7,7 @@ import {
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap
 } from "../utils/cache-util.js";
 import { formatDanmuResponse } from "../utils/danmu-util.js";
-import { extractTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder } from "../utils/common-util.js";
+import { extractTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
 import DoubanSource from "../sources/douban.js";
@@ -40,10 +40,13 @@ const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
 
 function matchSeason(anime, queryTitle, season) {
-  if (anime.animeTitle.includes(queryTitle)) {
-    const title = anime.animeTitle.split("(")[0].trim();
-    if (title.startsWith(queryTitle)) {
-      const afterTitle = title.substring(queryTitle.length).trim();
+  const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
+  const normalizedQueryTitle = normalizeSpaces(queryTitle);
+
+  if (normalizedAnimeTitle.includes(normalizedQueryTitle)) {
+    const title = normalizedAnimeTitle.split("(")[0].trim();
+    if (title.startsWith(normalizedQueryTitle)) {
+      const afterTitle = title.substring(normalizedQueryTitle.length).trim();
       if (afterTitle === '' && season === 1) {
         return true;
       }
@@ -289,9 +292,10 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
   let resEpisode;
   if (season && episode) {
     // 判断剧集
+    const normalizedTitle = normalizeSpaces(title);
     for (const anime of searchData.animes) {
       if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
-      if (anime.animeTitle.includes(title)) {
+      if (normalizeSpaces(anime.animeTitle).includes(normalizedTitle)) {
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
         const bangumiData = await bangumiRes.json();

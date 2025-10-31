@@ -189,6 +189,17 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 }
 
 /**
+ * 规范化标题中的空格（移除所有空格以便进行空格无关的匹配）
+ * @param {string} str - 输入字符串
+ * @returns {string} 规范化后的字符串（移除所有空格）
+ */
+export function normalizeSpaces(str) {
+  if (!str) return '';
+  // 移除所有空格（包括多个连续空格、制表符等）
+  return String(str).trim().replace(/\s+/g, '');
+}
+
+/**
  * 严格标题匹配函数
  * @param {string} title - 动漫标题
  * @param {string} query - 搜索关键词
@@ -197,8 +208,8 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 export function strictTitleMatch(title, query) {
   if (!title || !query) return false;
 
-  const t = String(title).trim();
-  const q = String(query).trim();
+  const t = normalizeSpaces(title);
+  const q = normalizeSpaces(query);
 
   // 完全匹配
   if (t === q) return true;
@@ -222,8 +233,10 @@ export function titleMatches(title, query) {
   if (globals.strictTitleMatch) {
     return strictTitleMatch(title, query);
   } else {
-    // 宽松模糊匹配
-    return String(title).includes(String(query));
+    // 宽松模糊匹配（规范化空格后进行匹配）
+    const normalizedTitle = normalizeSpaces(title);
+    const normalizedQuery = normalizeSpaces(query);
+    return normalizedTitle.includes(normalizedQuery);
   }
 }
 
