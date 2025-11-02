@@ -667,6 +667,12 @@ export async function getBangumi(path) {
         404
       );
     }
+
+    // 重新排序episodeNumber
+    episodesList = episodesList.map((episode, index) => ({
+      ...episode,
+      episodeNumber: `${index+1}`
+    }));
   }
 
   const bangumi = Bangumi.fromJson({
