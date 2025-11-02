@@ -152,7 +152,7 @@ export default class HanjutvSource extends BaseSource {
           for (const ep of eps) {
             const epTitle = ep.title && ep.title.trim() !== "" ? `第${ep.serialNo}集：${ep.title}` : `第${ep.serialNo}集`;
             links.push({
-              "name": ep.title.toString(),
+              "name": epTitle,
               "url": ep.pid,
               "title": `【hanjutv】 ${epTitle}`
             });
