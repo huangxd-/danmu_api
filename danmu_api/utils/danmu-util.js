@@ -6,6 +6,17 @@ import { jsonResponse, xmlResponse } from "./http-util.js";
 // danmu处理相关函数
 // =====================
 
+/**
+ * 生成随机的颜色值（十进制）
+ * @returns {number} 随机颜色值
+ */
+function getRandomColor() {
+  const r = Math.floor(Math.random() * 256);
+  const g = Math.floor(Math.random() * 256);
+  const b = Math.floor(Math.random() * 256);
+  return r * 256 * 256 + g * 256 + b;
+}
+
 export function groupDanmusByMinute(filteredDanmus, n) {
   // 如果 n 为 0，直接返回原始数据
   if (n === 0) {
@@ -186,9 +197,10 @@ export function convertToDanmakuJson(contents, platform) {
 
   // 应用弹幕转换规则（在去重之后）
   let convertedDanmus = groupedDanmus;
-  if (globals.convertTopBottomToScroll || globals.convertColorToWhite) {
+  if (globals.convertTopBottomToScroll || globals.convertColorToWhite || globals.enableRandomColorDanmu) {
     let topBottomCount = 0;
     let colorCount = 0;
+    let randomColorCount = 0;
 
     convertedDanmus = groupedDanmus.map(danmu => {
       const pValues = danmu.p.split(',');
@@ -211,6 +223,13 @@ export function convertToDanmakuJson(contents, platform) {
         color = 16777215;
         modified = true;
       }
+      
+      // 3. 将所有弹幕转为彩色弹幕，颜色随机生成
+      if (globals.enableRandomColorDanmu && color === 16777215) { // 仅当弹幕颜色为白色时才进行转换
+        randomColorCount++;
+        color = getRandomColor();
+        modified = true;
+      }
 
       if (modified) {
         const newP = [pValues[0], mode, color, ...pValues.slice(3)].join(',');
@@ -226,6 +245,12 @@ export function convertToDanmakuJson(contents, platform) {
     if (colorCount > 0) {
       log("info", `[danmu convert] 转换了 ${colorCount} 条彩色弹幕为纯白弹幕`);
     }
+    if (randomColorCount > 0) {
+      log("info", `[danmu convert] 转换了 ${randomColorCount} 条弹幕为随机彩色弹幕`);
+    }
+  } else {
+    // 即使没有进行转换，也记录配置状态，方便调试
+    log("info", `[danmu convert] 随机彩色弹幕功能：${globals.enableRandomColorDanmu ? '已启用' : '已禁用'}`);
   }
 
   log("info", `danmus_original: ${danmus.length}`);
