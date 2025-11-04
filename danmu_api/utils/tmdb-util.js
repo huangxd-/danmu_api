@@ -6,6 +6,45 @@ import { httpGet } from "./http-util.js";
 // TMDB API 工具方法
 // ---------------------
 
+// TMDB API 请求
+async function tmdbApiGet(url) {
+  const tmdbApi = "https://api.tmdb.org/3/";
+  const tartgetUrl = `${tmdbApi}${url}`;
+  const nextUrl = globals.proxyUrl ? `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(tartgetUrl)}` : tartgetUrl;
+
+  try {
+    const response = await httpGet(nextUrl, {
+      method: 'GET',
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+      }
+    });
+    if (response.status != 200) return null;
+
+    return response;
+  } catch (error) {
+    log("error", "[TMDB] Api error:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    return null;
+  }
+}
+
+// 使用 TMDB API 查询片名
+export async function searchImdbTitles(title) {
+  const url = `search/multi?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
+  return await tmdbApiGet(url);
+}
+
+// 使用 TMDB API 获取日语详情
+export async function getTmdbJpDetail(mediaType, tmdbId) {
+  const url = `${mediaType}/${tmdbId}?api_key=${globals.tmdbApiKey}&language=ja-JP`;
+  return await tmdbApiGet(url);
+}
+
 // 使用TMDB API 查询日语原名搜索bahamut相关函数
 export async function getTmdbJaOriginalTitle(title, signal = null) {
   if (!globals.tmdbApiKey) {
@@ -104,20 +143,13 @@ export async function getTmdbJaOriginalTitle(title, signal = null) {
     };
 
     // 第一步：TMDB搜索
-    const targetSearchUrl = `https://api.tmdb.org/3/search/multi?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
-    const searchUrlZh = globals.proxyUrl ? `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(targetSearchUrl)}` : targetSearchUrl;
     log("info", `[TMDB] 正在搜索: ${title}`);
 
     // 内部中断检查
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    const respZh = await httpGet(searchUrlZh, {
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-    });
+    const respZh = await searchImdbTitles(title);
 
     if (!respZh || !respZh.data) {
       log("info", "[TMDB] TMDB搜索结果为空");
@@ -158,19 +190,12 @@ export async function getTmdbJaOriginalTitle(title, signal = null) {
 
     // 第四步：获取日语详情
     const mediaType = bestMatch.media_type || (bestMatch.name ? "tv" : "movie");
-    const targetDetailUrl = `https://api.tmdb.org/3/${mediaType}/${bestMatch.id}?api_key=${globals.tmdbApiKey}&language=ja-JP`;
-    const detailUrl = globals.proxyUrl ? `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(targetDetailUrl)}` : targetDetailUrl;
 
     // 内部中断检查
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    const detailResp = await httpGet(detailUrl, {
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-    });
+    const detailResp = await getTmdbJpDetail(mediaType, bestMatch.id);
 
     if (!detailResp || !detailResp.data) {
       const fallbackTitle = bestMatch.name || bestMatch.title;

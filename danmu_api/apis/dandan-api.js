@@ -72,6 +72,16 @@ export async function searchAnime(url) {
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
+  // 关键字为空直接返回，不用多余查询
+  if (queryTitle === "") {
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: [],
+    });
+  }
+
   // 检查搜索缓存
   const cachedResults = getSearchCache(queryTitle);
   if (cachedResults !== null) {
