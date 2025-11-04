@@ -1,4 +1,3 @@
-import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { httpGet } from "./http-util.js";
 

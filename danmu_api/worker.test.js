@@ -9,6 +9,7 @@ import { getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTmdbJpDetail, searchImdbTitles } from "./utils/tmdb-util.js";
+import { getDoubanDetail, getDoubanIdByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
 import RenrenSource from "./sources/renren.js";
 import HanjutvSource from "./sources/hanjutv.js";
 import BahamutSource from "./sources/bahamut.js";
@@ -251,5 +252,23 @@ test('worker.js API endpoints', async (t) => {
   // await t.test('GET TMDB JP detail', async () => {
   //   const res = await getTmdbJpDetail("tv", 95396);
   //   assert(res.data.original_name === "Severance", `Expected res.data.Severance === "Severance", but got ${res.data.original_name}`);
+  // });
+
+  // // 测试douban获取titles
+  // await t.test('GET DOUBAN titles', async () => {
+  //   const res = await searchDoubanTitles("卧虎藏龙");
+  //   assert(res.data.subjects.items.length > 3, `Expected res.data.subjects.items.length > 3, but got ${res.data.subjects.items.length}`);
+  // });
+
+  // // 测试douban获取detail
+  // await t.test('GET DOUBAN detail', async () => {
+  //   const res = await getDoubanDetail(36448279);
+  //   assert(res.data.title === "罗小黑战记2", `Expected res.data.title === "罗小黑战记2", but got ${res.data.title}`);
+  // });
+
+  // // 测试douban从imdbId获取doubanId
+  // await t.test('GET DOUBAN doubanId by imdbId', async () => {
+  //   const res = await getDoubanIdByImdbId("tt0071562");
+  //   assert(res === "1299131", `Expected res === 1299131, but got ${res}`);
   // });
 });

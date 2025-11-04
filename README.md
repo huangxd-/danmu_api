@@ -423,11 +423,13 @@ danmu_api/
 │       ├── codec-util.js    # 编解码工具
 │       ├── common-util.js   # 通用工具
 │       ├── danmu-util.js    # 弹幕处理工具
+│       ├── douban-util.js   # 豆瓣API请求工具
 │       ├── http-util.js     # 请求工具
+│       ├── imdb-util.js     # IMDB API请求工具
 │       ├── log-util.js      # 日志工具
 │       ├── redis-util.js    # redis工具
 │       ├── time-util.js     # 时间日期工具
-│       ├── tmdb-util.js     # tmdb处理工具
+│       ├── tmdb-util.js     # TMDB API请求处理工具
 │       └── zh-util.js       # 中文繁简转换工具
 │   ├── esm-shim.js     # Node.js低版本兼容层
 │   ├── server.js       # 本地node启动脚本

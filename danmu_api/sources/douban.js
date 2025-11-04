@@ -1,6 +1,6 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
-import { httpGet } from "../utils/http-util.js";
+import { getDoubanDetail, searchDoubanTitles } from "../utils/douban-util.js";
 
 // =====================
 // 获取豆瓣源播放链接
@@ -16,16 +16,7 @@ export default class DoubanSource extends BaseSource {
 
   async search(keyword) {
     try {
-      const response = await httpGet(
-        `https://m.douban.com/rexxar/api/v2/search?q=${keyword}&start=0&count=20&type=movie`,
-        {
-          headers: {
-            "Referer": "https://m.douban.com/movie/",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-        }
-      );
+      const response = await searchDoubanTitles(keyword);
 
       const data = response.data;
 
@@ -70,16 +61,7 @@ export default class DoubanSource extends BaseSource {
         log("info", "doubanId: ", doubanId, anime?.target?.title, animeType);
 
         // 获取平台详情页面url
-        const response = await httpGet(
-          `https://m.douban.com/rexxar/api/v2/movie/${doubanId}?for_mobile=1`,
-          {
-            headers: {
-              "Referer": `https://m.douban.com/movie/subject/${doubanId}/?dt_dapp=1`,
-              "Content-Type": "application/json",
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            },
-          }
-        );
+        const response = await getDoubanDetail(doubanId);
 
         const results = [];
 
