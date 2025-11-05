@@ -108,11 +108,6 @@ CONVERT_TOP_BOTTOM_TO_SCROLL: false
 # 说明：启用后，所有非白色的弹幕颜色会被转换为纯白色（16777215）
 # 可选值：true, false
 CONVERT_COLOR_TO_WHITE: false
-# 是否启用随机彩色弹幕
-# 默认值：false（不转换）
-# 说明：启用后，所有弹幕的颜色将被随机生成（仅当弹幕颜色为白色时才进行转换）
-# 可选值：true, false
-ENABLE_RANDOM_COLOR_DANMU: true
 
 # 是否启用颜色循环弹幕
 # 默认值：false（不转换）

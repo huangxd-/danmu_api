@@ -141,8 +141,7 @@ export class Envs {
    * @returns {RegExp} 过滤正则表达式
    */
   static resolveEpisodeTitleFilter(env) {
-    const defaultFilter = '(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|' +
-      '特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|' +
+    const defaultFilter = '(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|' +
       '花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|' +
       'NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|' +
       '剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|采访|陪看(记)?|' +
@@ -207,7 +206,6 @@ export class Envs {
       convertTopBottomToScroll: this.get('CONVERT_TOP_BOTTOM_TO_SCROLL', false, 'boolean'), // 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
       convertColorToWhite: this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean'), // 彩色弹幕转换为纯白弹幕配置（默认 false，禁用转换）
       enableRandomColorDanmu: this.get('ENABLE_RANDOM_COLOR_DANMU', false, 'boolean'), // 启用随机彩色弹幕（默认 false，禁用）
-      randomDanmuColorList: this.resolveRandomDanmuColorList(), // 随机彩色弹幕颜色列表（十进制或十六进制）
       enableColorCycleDanmu: this.get('ENABLE_COLOR_CYCLE_DANMU', false, 'boolean'), // 启用颜色循环弹幕（默认 false，禁用）
       colorCycleDanmuList: this.resolveColorCycleDanmuList(), // 颜色循环弹幕颜色列表（十进制或十六进制）
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
@@ -215,30 +213,6 @@ export class Envs {
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）
     };
-  }
-
-  /**
-   * 解析随机彩色弹幕颜色列表
-   * @returns {Array<number>} 颜色列表（十进制）
-   */
-  static resolveRandomDanmuColorList() {
-    const colorListStr = this.get('RANDOM_DANMU_COLOR_LIST', '', 'string').trim();
-    if (!colorListStr) {
-      return [];
-    }
-    return colorListStr.split(',').map(color => {
-      let parsedColor;
-      if (color.startsWith('0x')) {
-        parsedColor = parseInt(color, 16); // 处理十六进制
-      } else {
-        parsedColor = parseInt(color, 10); // 处理十进制
-      }
-      if (isNaN(parsedColor) || parsedColor < 0 || parsedColor > 0xFFFFFF) {
-        log("warn", `Invalid color in RANDOM_DANMU_COLOR_LIST: ${color}. Skipping.`);
-        return null;
-      }
-      return parsedColor;
-    }).filter(color => color !== null);
   }
 
   /**
