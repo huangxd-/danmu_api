@@ -34,7 +34,7 @@ async function tmdbApiGet(url) {
 }
 
 // 使用 TMDB API 查询片名
-export async function searchImdbTitles(title) {
+export async function searchTmdbTitles(title) {
   const url = `search/multi?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
   return await tmdbApiGet(url);
 }
@@ -42,6 +42,12 @@ export async function searchImdbTitles(title) {
 // 使用 TMDB API 获取日语详情
 export async function getTmdbJpDetail(mediaType, tmdbId) {
   const url = `${mediaType}/${tmdbId}?api_key=${globals.tmdbApiKey}&language=ja-JP`;
+  return await tmdbApiGet(url);
+}
+
+// 使用 TMDB API 获取external_ids
+export async function getTmdbExternalIds(mediaType, tmdbId) {
+  const url = `${mediaType}/${tmdbId}/external_ids?api_key=${globals.tmdbApiKey}`;
   return await tmdbApiGet(url);
 }
 
@@ -149,7 +155,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null) {
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    const respZh = await searchImdbTitles(title);
+    const respZh = await searchTmdbTitles(title);
 
     if (!respZh || !respZh.data) {
       log("info", "[TMDB] TMDB搜索结果为空");

@@ -10,6 +10,7 @@ import { formatDanmuResponse } from "../utils/danmu-util.js";
 import { extractTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
+import TmdbSource from "../sources/tmdb.js";
 import DoubanSource from "../sources/douban.js";
 import RenrenSource from "../sources/renren.js";
 import HanjutvSource from "../sources/hanjutv.js";
@@ -38,6 +39,7 @@ const mangoSource = new MangoSource();
 const bilibiliSource = new BilibiliSource();
 const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
+const tmdbSource = new TmdbSource(doubanSource);
 
 function matchSeason(anime, queryTitle, season) {
   const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
@@ -154,6 +156,7 @@ export async function searchAnime(url) {
     const requestPromises = globals.sourceOrderArr.map(source => {
       if (source === "360") return kan360Source.search(queryTitle);
       if (source === "vod") return vodSource.search(queryTitle);
+      if (source === "tmdb") return tmdbSource.search(queryTitle);
       if (source === "douban") return doubanSource.search(queryTitle);
       if (source === "renren") return renrenSource.search(queryTitle);
       if (source === "hanjutv") return hanjutvSource.search(queryTitle);
@@ -178,9 +181,9 @@ export async function searchAnime(url) {
 
     // 解构出返回的结果
     const {
-      vod: animesVodResults, 360: animes360, douban: animesDouban, renren: animesRenren, hanjutv: animesHanjutv,
-      bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo,
-      bilibili: animesBilibili
+      vod: animesVodResults, 360: animes360, tmdb: animesTmdb, douban: animesDouban, renren: animesRenren,
+      hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi,
+      imgo: animesImgo, bilibili: animesBilibili
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -197,6 +200,9 @@ export async function searchAnime(url) {
             }
           }
         }
+      } else if (key === 'tmdb') {
+        // 等待处理TMDB来源
+        await tmdbSource.handleAnimes(animesTmdb, queryTitle, curAnimes);
       } else if (key === 'douban') {
         // 等待处理Douban来源
         await doubanSource.handleAnimes(animesDouban, queryTitle, curAnimes);

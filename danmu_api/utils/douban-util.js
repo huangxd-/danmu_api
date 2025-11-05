@@ -70,10 +70,8 @@ export async function getDoubanDetail(doubanId) {
   return await doubanApiGet(url);
 }
 
-// 通过 imdbId 使用 豆瓣 API 查询 doubanId
-export async function getDoubanIdByImdbId(imdbId) {
+// 通过 imdbId 使用 豆瓣 API 查询 doubanInfo
+export async function getDoubanInfoByImdbId(imdbId) {
   const url = `/movie/imdb/${imdbId}`;
-  const response = await doubanApiPost(url);
-  const doubanId = response.data?.id?.split("/")?.pop();
-  return doubanId;
+  return await doubanApiPost(url);
 }
