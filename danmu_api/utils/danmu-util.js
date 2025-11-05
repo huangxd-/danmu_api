@@ -197,12 +197,19 @@ export function convertToDanmakuJson(contents, platform) {
 
   // 应用弹幕转换规则（在去重之后）
   let convertedDanmus = groupedDanmus;
-  if (globals.convertTopBottomToScroll || globals.convertColorToWhite || globals.enableRandomColorDanmu) {
+  if (globals.convertTopBottomToScroll || globals.convertColorToWhite || globals.enableRandomColorDanmu || globals.enableColorCycleDanmu) {
     let topBottomCount = 0;
     let colorCount = 0;
     let randomColorCount = 0;
+    let colorCycleCount = 0;
+    
+    // 颜色循环索引
+    let colorCycleIndex = 0;
+    const colorCycleList = globals.colorCycleDanmuList && globals.colorCycleDanmuList.length > 0 
+      ? globals.colorCycleDanmuList 
+      : [11193542, 11513775, 14474460, 12632297, 13484213]; // 默认颜色列表
 
-    convertedDanmus = groupedDanmus.map(danmu => {
+    convertedDanmus = groupedDanmus.map((danmu, index) => {
       const pValues = danmu.p.split(',');
       if (pValues.length < 3) return danmu;
 
@@ -230,6 +237,14 @@ export function convertToDanmakuJson(contents, platform) {
         color = getRandomColor();
         modified = true;
       }
+      
+      // 4. 将所有弹幕转为颜色循环
+      if (globals.enableColorCycleDanmu) {
+        colorCycleCount++;
+        color = colorCycleList[colorCycleIndex % colorCycleList.length];
+        colorCycleIndex++;
+        modified = true;
+      }
 
       if (modified) {
         const newP = [pValues[0], mode, color, ...pValues.slice(3)].join(',');
@@ -248,9 +263,13 @@ export function convertToDanmakuJson(contents, platform) {
     if (randomColorCount > 0) {
       log("info", `[danmu convert] 转换了 ${randomColorCount} 条弹幕为随机彩色弹幕`);
     }
+    if (colorCycleCount > 0) {
+      log("info", `[danmu convert] 转换了 ${colorCycleCount} 条弹幕为颜色循环弹幕`);
+    }
   } else {
     // 即使没有进行转换，也记录配置状态，方便调试
     log("info", `[danmu convert] 随机彩色弹幕功能：${globals.enableRandomColorDanmu ? '已启用' : '已禁用'}`);
+    log("info", `[danmu convert] 颜色循环弹幕功能：${globals.enableColorCycleDanmu ? '已启用' : '已禁用'}`);
   }
 
   log("info", `danmus_original: ${danmus.length}`);

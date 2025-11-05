@@ -54,6 +54,8 @@ LogVar 弹幕 API 服务器
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
   - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
   - 将彩色弹幕转换为纯白弹幕（`CONVERT_COLOR_TO_WHITE`）
+  - 将所有弹幕转换为随机彩色弹幕（`ENABLE_RANDOM_COLOR_DANMU`）
+  - 将所有弹幕转换为颜色循环弹幕（`ENABLE_COLOR_CYCLE_DANMU`）
   - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
 
 ## 前置条件
@@ -330,6 +332,10 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不去重       |
 | CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
 | CONVERT_COLOR_TO_WHITE    | 【可选】是否将彩色弹幕转换为纯白弹幕，默认为`false`（不转换），启用后所有非白色的弹幕颜色会被转换为纯白色（16777215），可选值：`true`、`false`       |
+| ENABLE_RANDOM_COLOR_DANMU    | 【可选】是否启用随机彩色弹幕，默认为`false`（不转换），启用后所有弹幕的颜色将被随机生成，可选值：`true`、`false`       |
+| RANDOM_DANMU_COLOR_LIST    | 【可选】随机彩色弹幕颜色列表，十进制或十六进制颜色值用逗号分隔，示例：`11193542,11513775,14474460,12632297,13484213`，默认为空（随机生成所有颜色）       |
+| ENABLE_COLOR_CYCLE_DANMU    | 【可选】是否启用颜色循环弹幕，默认为`false`（不转换），启用后所有弹幕的颜色将按照指定的颜色列表循环使用，可选值：`true`、`false`       |
+| COLOR_CYCLE_DANMU_LIST    | 【可选】颜色循环弹幕颜色列表，十进制或十六进制颜色值用逗号分隔，示例：`11193542,11513775,14474460,12632297,13484213`（淡灰蓝,雾霾灰,米白灰,浅卡其,莫兰迪粉），默认为`11193542,11513775,14474460,12632297,13484213`       |
 | DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | DANMU_SIMPLIFIED    | 【可选】是否将繁体弹幕转换为简体，目前只对巴哈姆特生效，默认为`true`（转换），可选值：`false`（不转换）       |
 | PROXY_URL    | 【可选】巴哈代理/反代地址，示例: `http://127.0.0.1:7897`（代理） `RP@http://127.0.0.1`（反代），目前只对巴哈姆特生效（注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址或者反代（[反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |

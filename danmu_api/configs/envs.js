@@ -208,6 +208,8 @@ export class Envs {
       convertColorToWhite: this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean'), // 彩色弹幕转换为纯白弹幕配置（默认 false，禁用转换）
       enableRandomColorDanmu: this.get('ENABLE_RANDOM_COLOR_DANMU', false, 'boolean'), // 启用随机彩色弹幕（默认 false，禁用）
       randomDanmuColorList: this.resolveRandomDanmuColorList(), // 随机彩色弹幕颜色列表（十进制或十六进制）
+      enableColorCycleDanmu: this.get('ENABLE_COLOR_CYCLE_DANMU', false, 'boolean'), // 启用颜色循环弹幕（默认 false，禁用）
+      colorCycleDanmuList: this.resolveColorCycleDanmuList(), // 颜色循环弹幕颜色列表（十进制或十六进制）
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
       strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean'), // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
@@ -233,6 +235,32 @@ export class Envs {
       }
       if (isNaN(parsedColor) || parsedColor < 0 || parsedColor > 0xFFFFFF) {
         log("warn", `Invalid color in RANDOM_DANMU_COLOR_LIST: ${color}. Skipping.`);
+        return null;
+      }
+      return parsedColor;
+    }).filter(color => color !== null);
+  }
+
+  /**
+   * 解析颜色循环弹幕颜色列表
+   * @returns {Array<number>} 颜色列表（十进制）
+   */
+  static resolveColorCycleDanmuList() {
+    // 默认颜色列表：淡灰蓝 #A9B7C6, 雾霾灰 #B0B0B0, 米白灰 #DCDCDC, 浅卡其 #C0C0A9, 莫兰迪粉 #CDB7B5
+    const defaultColors = '11193542,11513775,14474460,12632297,13484213';
+    const colorListStr = this.get('COLOR_CYCLE_DANMU_LIST', defaultColors, 'string').trim();
+    if (!colorListStr) {
+      return [];
+    }
+    return colorListStr.split(',').map(color => {
+      let parsedColor;
+      if (color.startsWith('0x')) {
+        parsedColor = parseInt(color, 16); // 处理十六进制
+      } else {
+        parsedColor = parseInt(color, 10); // 处理十进制
+      }
+      if (isNaN(parsedColor) || parsedColor < 0 || parsedColor > 0xFFFFFF) {
+        log("warn", `Invalid color in COLOR_CYCLE_DANMU_LIST: ${color}. Skipping.`);
         return null;
       }
       return parsedColor;
