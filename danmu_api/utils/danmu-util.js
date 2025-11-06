@@ -167,7 +167,7 @@ export function convertToDanmakuJson(contents, platform) {
   }
 
   // 切割字符串成正则表达式数组
-  const regexArray = globals.blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
+  const regexArray = globals.blockedWords.split(/,(?=\/)/).map(str => {
     // 去除两端的斜杠并转换为正则对象
     const pattern = str.trim();
     if (pattern.startsWith('/') && pattern.endsWith('/')) {

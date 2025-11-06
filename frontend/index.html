@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Danmu API 控制面板</title>
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <!-- Keen UI -->
+    <link href="https://cdn.jsdelivr.net/npm/keen-ui@1.2.0/dist/keen-ui.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/keen-ui@1.2.0/dist/keen-ui.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 2rem;
+            background-color: #f5f5f5;
+        }
+        #app {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 1rem 1.5rem;
+            align-items: center;
+            margin-top: 1rem;
+        }
+        .config-item {
+            display: contents;
+        }
+        .config-item label {
+            font-weight: bold;
+            justify-self: end;
+            text-align: right;
+        }
+        .ui-textbox[type=textarea] {
+            height: 120px;
+        }
+        .log-viewer {
+            padding-top: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .log-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div v-if="!authenticated" class="login-container">
+            <h1>请输入密码</h1>
+            <ui-textbox
+                v-model="password"
+                type="password"
+                placeholder="TOKEN"
+                @keydown.enter="login"
+            ></ui-textbox>
+            <br>
+            <ui-button color="primary" @click="login">登录</ui-button>
+            <ui-alert type="error" v-if="error" @dismiss="error = ''" style="margin-top: 1rem;">{{ error }}</ui-alert>
+        </div>
+
+        <div v-else>
+            <h1>弹幕 API 控制面板</h1>
+            <p>在这里你可以修改 API 的配置。修改后会自动保存并热重载。</p>
+
+            <ui-tabs>
+                <ui-tab title="常用配置">
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <label>API 访问令牌 (TOKEN)</label>
+                            <ui-textbox v-model="config.TOKEN"></ui-textbox>
+                        </div>
+                         <div class="config-item">
+                            <label>数据源查询顺序 (SOURCE_ORDER)</label>
+                            <ui-textbox v-model="config.SOURCE_ORDER" placeholder="用逗号分隔"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>弹幕输出格式</label>
+                             <ui-select
+                                v-model="config.DANMU_OUTPUT_FORMAT"
+                                :options="[{label: 'JSON', value: 'json'}, {label: 'XML', value: 'xml'}]"
+                             ></ui-select>
+                        </div>
+                         <div class="config-item">
+                             <label>日志级别 (LOG_LEVEL)</label>
+                             <ui-select
+                                v-model="config.LOG_LEVEL"
+                                :options="[{label: 'Info', value: 'info'}, {label: 'Warn', value: 'warn'}, {label: 'Error', value: 'error'}]"
+                             ></ui-select>
+                        </div>
+                        <div class="config-item">
+                             <label>分钟内合并去重 (GROUP_MINUTE)</label>
+                             <ui-textbox type="number" v-model="config.GROUP_MINUTE" help="0为不去重"></ui-textbox>
+                        </div>
+                    </div>
+                </ui-tab>
+
+                <ui-tab title="VOD 配置">
+                    <div class="config-grid">
+                        <div class="config-item">
+                             <label>VOD 服务器 (VOD_SERVERS)</label>
+                             <ui-textbox type="textarea" v-model="config.VOD_SERVERS" placeholder="格式：名称@URL,名称@URL,..."></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>VOD 返回模式</label>
+                             <ui-select
+                                v-model="config.VOD_RETURN_MODE"
+                                :options="[{label: '最快(fastest)', value: 'fastest'}, {label: '全部(all)', value: 'all'}]"
+                             ></ui-select>
+                        </div>
+                        <div class="config-item">
+                             <label>VOD 请求超时 (毫秒)</label>
+                             <ui-textbox type="number" v-model="config.VOD_REQUEST_TIMEOUT"></ui-textbox>
+                        </div>
+                    </div>
+                </ui-tab>
+
+                <ui-tab title="过滤&屏蔽">
+                    <div class="config-grid">
+                        <div class="config-item">
+                             <label>剧集标题过滤 (EPISODE_TITLE_FILTER)</label>
+                             <ui-textbox type="textarea" v-model="config.EPISODE_TITLE_FILTER"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>屏蔽词列表 (BLOCKED_WORDS)</label>
+                             <ui-textbox type="textarea" v-model="config.BLOCKED_WORDS"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                            <label>启用剧集过滤 (ENABLE_EPISODE_FILTER)</label>
+                            <ui-switch v-model="config.ENABLE_EPISODE_FILTER"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                            <label>严格标题匹配 (STRICT_TITLE_MATCH)</label>
+                            <ui-switch v-model="config.STRICT_TITLE_MATCH"></ui-switch>
+                        </div>
+                    </div>
+                </ui-tab>
+                
+                <ui-tab title="弹幕转换">
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <label>顶/底->滚动 (CONVERT_TOP_BOTTOM_TO_SCROLL)</label>
+                            <ui-switch v-model="config.CONVERT_TOP_BOTTOM_TO_SCROLL"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                            <label>彩色->纯白 (CONVERT_COLOR_TO_WHITE)</label>
+                            <ui-switch v-model="config.CONVERT_COLOR_TO_WHITE"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                            <label>随机彩色 (ENABLE_RANDOM_COLOR_DANMU)</label>
+                            <ui-switch v-model="config.ENABLE_RANDOM_COLOR_DANMU"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                            <label>颜色循环 (ENABLE_COLOR_CYCLE_DANMU)</label>
+                            <ui-switch v-model="config.ENABLE_COLOR_CYCLE_DANMU"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                             <label>颜色循环列表 (COLOR_CYCLE_DANMU_LIST)</label>
+                             <ui-textbox v-model="config.COLOR_CYCLE_DANMU_LIST" placeholder="用逗号分隔"></ui-textbox>
+                        </div>
+                         <div class="config-item">
+                            <label>繁->简 (DANMU_SIMPLIFIED)</label>
+                            <ui-switch v-model="config.DANMU_SIMPLIFIED"></ui-switch>
+                        </div>
+                    </div>
+                </ui-tab>
+
+                <ui-tab title="性能&缓存">
+                    <div class="config-grid">
+                        <div class="config-item">
+                             <label>优酷并发数 (YOUKU_CONCURRENCY)</label>
+                             <ui-textbox type="number" v-model="config.YOUKU_CONCURRENCY"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>搜索缓存(分钟) (SEARCH_CACHE_MINUTES)</label>
+                             <ui-textbox type="number" v-model="config.SEARCH_CACHE_MINUTES"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>弹幕缓存(分钟) (COMMENT_CACHE_MINUTES)</label>
+                             <ui-textbox type="number" v-model="config.COMMENT_CACHE_MINUTES"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>API 限流 (RATE_LIMIT_MAX_REQUESTS)</label>
+                             <ui-textbox type="number" v-model="config.RATE_LIMIT_MAX_REQUESTS" help="0为不限流"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                            <label>记住手动选择 (REMEMBER_LAST_SELECT)</label>
+                            <ui-switch v-model="config.REMEMBER_LAST_SELECT"></ui-switch>
+                        </div>
+                        <div class="config-item">
+                             <label>偏好缓存大小 (MAX_LAST_SELECT_MAP)</label>
+                             <ui-textbox type="number" v-model="config.MAX_LAST_SELECT_MAP"></ui-textbox>
+                        </div>
+                    </div>
+                </ui-tab>
+
+                <ui-tab title="其他配置">
+                     <div class="config-grid">
+                        <div class="config-item">
+                             <label>其他服务器地址 (OTHER_SERVER)</label>
+                             <ui-textbox v-model="config.OTHER_SERVER"></ui-textbox>
+                        </div>
+                        <div class="config-item">
+                             <label>Bilibili Cookie</label>
+                             <ui-textbox type="password" v-model="config.BILIBILI_COOKIE"></ui-textbox>
+                        </div>
+                     </div>
+                </ui-tab>
+
+                <ui-tab title="日志查看">
+                    <div class="log-viewer">
+                        <div class="log-controls">
+                            <ui-button @click="fetchLogFiles">刷新日志列表</ui-button>
+                        </div>
+                        <ui-select
+                            v-model="selectedLog"
+                            :options="logFiles"
+                            placeholder="选择一个日期"
+                            has-search
+                        ></ui-select>
+                        <ui-button color="primary" @click="openLog" :disabled="!selectedLog">在新窗口中打开日志</ui-button>
+                    </div>
+                </ui-tab>
+            </ui-tabs>
+            <br>
+            <ui-button color="primary" @click="saveConfig">保存</ui-button>
+            <ui-button @click="logout" style="margin-left: 1rem;">退出登录</ui-button>
+        </div>
+
+        <ui-snackbar-container ref="snackbar"></ui-snackbar-container>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                authenticated: false,
+                password: '',
+                error: '',
+                config: {},
+                originalToken: '',
+                logFiles: [],
+                selectedLog: null
+            },
+            methods: {
+                showSnackbar(message) {
+                    this.$refs.snackbar.create({ message: message });
+                },
+                login() {
+                    const token = this.password;
+                    fetch('/api/config', {
+                        headers: {
+                            'Authorization': 'Bearer ' + token
+                        }
+                    })
+                    .then(res => {
+                        if (!res.ok) {
+                            if (res.status === 401) {
+                                throw new Error('密码错误！');
+                            }
+                            throw new Error('无法加载配置，请检查后端服务是否正常。');
+                        }
+                        return res.json();
+                    })
+                    .then(data => {
+                        this.authenticated = true;
+                        this.error = '';
+                        localStorage.setItem('danmu-api-token', token);
+                        this.loadConfig(data);
+                        this.fetchLogFiles();
+                    })
+                    .catch(err => {
+                        this.error = err.message;
+                    });
+                },
+                logout() {
+                    this.authenticated = false;
+                    localStorage.removeItem('danmu-api-token');
+                    this.password = '';
+                },
+                loadConfig(data) {
+                    // Convert string 'true'/'false' to boolean for switches
+                    Object.keys(data).forEach(key => {
+                        if (data[key] === 'true') data[key] = true;
+                        if (data[key] === 'false') data[key] = false;
+                    });
+                    this.config = data;
+                    this.originalToken = data.TOKEN;
+                },
+                fetchConfig() {
+                    const token = localStorage.getItem('danmu-api-token');
+                    if (!token) return;
+
+                    fetch('/api/config', {
+                         headers: {
+                            'Authorization': 'Bearer ' + token
+                        }
+                    })
+                        .then(res => {
+                            if (!res.ok) {
+                                localStorage.removeItem('danmu-api-token');
+                                throw new Error('会话已过期，请重新登录。');
+                            }
+                            return res.json();
+                        })
+                        .then(data => {
+                            this.authenticated = true;
+                            this.loadConfig(data);
+                            this.fetchLogFiles();
+                        }).catch(err => {
+                            console.error(err);
+                            this.error = err.message;
+                        });
+                },
+                saveConfig() {
+                     const token = localStorage.getItem('danmu-api-token');
+                     if (!token) {
+                         this.error = '登录Token已失效，请重新登录。';
+                         this.authenticated = false;
+                         return;
+                     }
+                    fetch('/api/config', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        },
+                        body: JSON.stringify(this.config)
+                    }).then(res => {
+                         if (!res.ok) {
+                             this.showSnackbar('保存失败！');
+                             console.error('保存失败');
+                         } else {
+                            this.showSnackbar('配置已保存!');
+                            console.log('配置已保存!');
+                            // If token is changed, update original token and re-auth
+                            if (this.config.TOKEN !== this.originalToken) {
+                                this.originalToken = this.config.TOKEN;
+                                localStorage.setItem('danmu-api-token', this.config.TOKEN);
+                            }
+                         }
+                    });
+                },
+                fetchLogFiles() {
+                    const token = localStorage.getItem('danmu-api-token');
+                    if (!token) return;
+
+                    fetch('/api/logs', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    })
+                    .then(res => {
+                        if (!res.ok) throw new Error('无法加载日志列表');
+                        return res.json();
+                    })
+                    .then(files => {
+                        this.logFiles = files.map(file => ({ label: file.replace('.log', ''), value: file }));
+                    })
+                    .catch(err => {
+                        this.showSnackbar('加载日志列表失败！');
+                        console.error(err);
+                    });
+                },
+                openLog() {
+                    if (!this.selectedLog || !this.selectedLog.value) {
+                        this.showSnackbar('请先选择一个日志文件。');
+                        return;
+                    }
+                    const filename = this.selectedLog.value;
+                    const token = localStorage.getItem('danmu-api-token');
+
+                    fetch(`/api/logs/${filename}`, {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    })
+                    .then(res => {
+                        if (!res.ok) throw new Error('无法加载日志内容');
+                        return res.text();
+                    })
+                    .then(text => {
+                        const newWindow = window.open('', '_blank');
+                        if (newWindow) {
+                            newWindow.document.open();
+                            const escapedText = text.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+                            newWindow.document.write(`
+                                <!DOCTYPE html>
+                                <html>
+                                    <head>
+                                        <meta charset="UTF-8">
+                                        <title>${filename}</title>
+                                        <style>
+                                            body { margin: 0; font-family: monospace; }
+                                            pre { margin: 0; padding: 1rem; background-color: #1e1e1e; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word; min-height: 100vh; box-sizing: border-box; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <pre>${escapedText}</pre>
+                                    </body>
+                                </html>
+                            `);
+                            newWindow.document.close();
+                        } else {
+                            this.showSnackbar('无法打开新窗口，请检查浏览器是否阻止了弹出窗口。');
+                        }
+                    })
+                    .catch(err => {
+                        this.showSnackbar('加载日志内容失败！');
+                        console.error(err);
+                    });
+                }
+            },
+            created() {
+                // Initialize Keen UI
+                this.Keen = window.Keen;
+                // Attempt to fetch config with stored token
+                this.fetchConfig();
+            }
+        });
+    </script>
+</body>
+</html>

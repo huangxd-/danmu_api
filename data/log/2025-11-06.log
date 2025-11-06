@@ -1,0 +1,9 @@
+2025-11-06T19:17:01.360+08:00 [INFO] request url: "http://127.0.0.1:9321/favicon.ico"
+2025-11-06T19:17:01.360+08:00 [INFO] request path: /favicon.ico
+2025-11-06T19:17:01.360+08:00 [INFO] client ip: 127.0.0.1
+2025-11-06T19:17:05.326+08:00 [INFO] client ip: 127.0.0.1
+2025-11-06T19:17:05.325+08:00 [INFO] request url: "http://127.0.0.1:9321/favicon.ico"
+2025-11-06T19:17:05.326+08:00 [INFO] request path: /favicon.ico
+2025-11-06T19:17:08.355+08:00 [INFO] request url: "http://127.0.0.1:9321/favicon.ico"
+2025-11-06T19:17:08.355+08:00 [INFO] client ip: 127.0.0.1
+2025-11-06T19:17:08.355+08:00 [INFO] request path: /favicon.ico

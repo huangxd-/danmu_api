@@ -231,6 +231,116 @@ const http = require('http');
 const https = require('https');
 const url = require('url');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const express = require('express');
+const bodyParser = require('body-parser');
+
+const app = express();
+app.use(bodyParser.json());
+
+// 静态文件服务
+const frontendPath = path.join(__dirname, '..', 'frontend');
+app.use(express.static(frontendPath));
+
+// 主页路由，确保返回 index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
+
+// API: 获取配置
+app.get('/api/config', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+
+    if (!token || token !== envConfig.TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        const yamlConfig = loadYamlConfig();
+        const combinedConfig = { ...yamlConfig, ...envConfig };
+        res.json(combinedConfig);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to read config file' });
+    }
+});
+
+// API: 更新配置
+app.post('/api/config', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+
+    if (!token || token !== envConfig.TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    const newConfig = req.body;
+    let envContent = '';
+    for (const key in newConfig) {
+        if (Object.prototype.hasOwnProperty.call(newConfig, key)) {
+            // 修复：允许写入新的配置项，如 Bilibili Cookie
+            envContent += `${key}=${newConfig[key]}\n`;
+        }
+    }
+
+    try {
+        fs.writeFileSync(envPath, envContent);
+        res.status(200).send('Config updated');
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to write config file' });
+    }
+});
+
+// API: 获取日志文件列表
+app.get('/api/logs', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+
+    if (!token || token !== envConfig.TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    const logDir = path.join(process.cwd(), 'data', 'log');
+    if (!fs.existsSync(logDir)) {
+        return res.json([]);
+    }
+
+    fs.readdir(logDir, (err, files) => {
+        if (err) {
+            return res.status(500).json({ error: 'Failed to read log directory' });
+        }
+        res.json(files.filter(file => file.endsWith('.log')).sort().reverse());
+    });
+});
+
+// API: 获取特定日志文件的内容
+app.get('/api/logs/:filename', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+
+    if (!token || token !== envConfig.TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
+
+    const filename = req.params.filename;
+    // Basic security check to prevent directory traversal
+    if (filename.includes('..')) {
+        return res.status(400).send('Invalid filename');
+    }
+
+    const logFilePath = path.join(process.cwd(), 'data', 'log', filename);
+
+    if (!fs.existsSync(logFilePath)) {
+        return res.status(404).send('Log file not found');
+    }
+
+    fs.readFile(logFilePath, 'utf8', (err, data) => {
+        if (err) {
+            return res.status(500).json({ error: 'Failed to read log file' });
+        }
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(data);
+    });
+});
 
 // --- 版本兼容性检测工具 ---
 // 辅助函数：比较两个版本号字符串
@@ -280,16 +390,15 @@ function needsAsyncStartup() {
 }
 
 // --- 核心 HTTP 服务器（端口 9321）逻辑 ---
-// 创建主业务服务器实例（将 Node.js 请求转换为 Web API Request，并调用 worker.js 处理）
-function createServer() {
-  // 导入所需的 fetch 兼容对象
-  const fetch = require('node-fetch');
-  const { Request, Response } = fetch;
-  // 导入核心请求处理逻辑
-  const { handleRequest } = require('./worker.js'); // 直接导入 handleRequest 函数
-
-  return http.createServer(async (req, res) => {
+// 将原有的 server 逻辑集成到 Express 的中间件中作为回退
+app.use(async (req, res) => {
     try {
+      // 导入所需的 fetch 兼容对象
+      const fetch = require('node-fetch');
+      const { Request, Response } = fetch;
+      // 导入核心请求处理逻辑
+      const { handleRequest } = require('./worker.js'); // 直接导入 handleRequest 函数
+      
       // 构造完整的请求 URL
       const fullUrl = `http://${req.headers.host}${req.url}`;
 
@@ -343,13 +452,15 @@ function createServer() {
       });
       // 发送响应体
       const responseText = await webResponse.text();
-      res.end(responseText);
+      res.send(responseText);
     } catch (error) {
       console.error('Server error:', error);
-      res.statusCode = 500;
-      res.end('Internal Server Error');
+      res.status(500).send('Internal Server Error');
     }
-  });
+});
+
+function createServer() {
+    return http.createServer(app);
 }
 
 // 代理服务器逻辑（用于5321端口）

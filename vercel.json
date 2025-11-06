@@ -4,24 +4,24 @@
     {
       "src": "danmu_api/worker.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "frontend/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
-    {
-      "src": "/",
-      "dest": "/danmu_api/worker.js"
-    },
     {
       "src": "/api/(.*)",
       "dest": "/danmu_api/worker.js"
     },
     {
-      "src": "/([^/]+)/api/(.*)",
-      "dest": "/danmu_api/worker.js"
+      "src": "/([^/]+\\.html)",
+      "dest": "/frontend/$1"
     },
     {
-      "src": "/(.*)",
-      "dest": "/danmu_api/worker.js"
+      "src": "/",
+      "dest": "/frontend/index.html"
     }
   ]
 }
