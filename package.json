@@ -9,11 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "body-parser": "^2.2.0",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
     "esbuild": "^0.25.10",
-    "express": "^5.1.0",
     "https-proxy-agent": "^7.0.6",
     "js-yaml": "^4.1.0",
     "node-fetch": "^3.3.2"
