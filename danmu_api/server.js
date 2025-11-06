@@ -393,9 +393,8 @@ function needsAsyncStartup() {
 // 将原有的 server 逻辑集成到 Express 的中间件中作为回退
 app.use(async (req, res) => {
     try {
-      // 导入所需的 fetch 兼容对象
-      const fetch = require('node-fetch');
-      const { Request, Response } = fetch;
+      // 动态导入 node-fetch 以兼容 ESM
+      const { default: fetch, Request, Response } = await import('node-fetch');
       // 导入核心请求处理逻辑
       const { handleRequest } = require('./worker.js'); // 直接导入 handleRequest 函数
       
