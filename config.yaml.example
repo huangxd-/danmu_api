@@ -60,7 +60,7 @@ YOUKU_CONCURRENCY: 8
 # ==================== 源排序配置 ====================
 
 # 数据源查询顺序
-# 可选值：360, vod, douban, tencent, youku, iqiyi, imgo, bilibili, renren, hanjutv, bahamut
+# 可选值：360, vod, tmdb, douban, tencent, youku, iqiyi, imgo, bilibili, renren, hanjutv, bahamut
 # 默认值：360,vod,renren,hanjutv
 SOURCE_ORDER: "360,vod,renren,hanjutv"
 

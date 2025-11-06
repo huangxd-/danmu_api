@@ -43,7 +43,7 @@ export async function getImdbSeasons(imdbId) {
 }
 
 // 使用 IMDB API 查询season
-export async function getImdbepisodes(imdbId) {
-  const url = `/titles/${imdbId}/episodes`;
+export async function getImdbepisodes(imdbId, season) {
+  const url = `/titles/${imdbId}/episodes?season=${season}`;
   return await imdbApiGet(url);
 }

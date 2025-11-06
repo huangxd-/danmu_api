@@ -13,6 +13,22 @@ export default class TmdbSource extends BaseSource {
     this.doubanSource = doubanSource;
   }
 
+  async _getDoubanInfo(finalImdbId, mediaType, doubanIds) {
+    const doubanInfo = await getDoubanInfoByImdbId(finalImdbId);
+    const url = doubanInfo?.data?.id; // "https://api.douban.com/movie/1299131"
+    if (url) {
+      const parts = url.split("/"); // ["https:", "", "api.douban.com", "movie", "1299131"]
+      const doubanId = parts.pop(); // 最后一个就是 ID
+      const typeName = mediaType === 'movie' ? '电影' : '电视剧';
+      if (doubanId) {
+        doubanIds.push({
+          layout: "subject", target_id: doubanId, type_name: typeName,
+          target: {cover_url: doubanInfo.data?.image, title: doubanInfo.data?.alt_title}
+        });
+      }
+    }
+  }
+
   async getDoubanIdByTmdbId(mediaType, tmdbId) {
     try {
       const doubanIds = [];
@@ -21,27 +37,31 @@ export default class TmdbSource extends BaseSource {
 
       const imdbId = response.data?.imdb_id;
 
-      if (!imdbId) return null;
+      if (!imdbId) return [];
 
-      const seasons = await getImdbSeasons(imdbId);
-      const episodes = await getImdbepisodes(imdbId);
-      for (const season of seasons.data?.seasons ?? []) {
-        let finalImdbId = imdbId;
-        if (Number(season.season) !== 1) {
-          finalImdbId = episodes.data?.episodes.find((ep) => ep.episodeNumber === 1)?.id ?? "";
-        }
-        const doubanInfo = await getDoubanInfoByImdbId(finalImdbId);
-        const url = doubanInfo.data?.id; // "https://api.douban.com/movie/1299131"
-        if (!url) continue;
-        const parts = url.split("/"); // ["https:", "", "api.douban.com", "movie", "1299131"]
-        const doubanId  = parts.pop(); // 最后一个就是 ID
-        const typeName = mediaType === 'movie' ? '电影' : '电视剧';
-        if (doubanId) {
-          doubanIds.push({
-              layout: "subject", target_id: doubanId, type_name: typeName,
-              target: { cover_url: doubanInfo.data?.image, title: doubanInfo.data?.alt_title }
-          });
-        }
+      if (mediaType === 'movie') {
+        await this._getDoubanInfo(imdbId, mediaType, doubanIds);
+      } else {
+        const seasons = await getImdbSeasons(imdbId);
+        log("info", "imdb seasons:", seasons.data.seasons);
+
+        const seasonPromises = (seasons?.data?.seasons ?? []).map(async (season) => {
+          let finalImdbId = imdbId;
+          log("info", "imdb season:", season.season);
+
+          try {
+            if (Number(season.season) !== 1) {
+              const episodes = await getImdbepisodes(imdbId, season.season);
+              finalImdbId = episodes.data?.episodes.find((ep) => ep.episodeNumber === 1)?.id ?? "";
+            }
+
+            await this._getDoubanInfo(finalImdbId, mediaType, doubanIds);
+          } catch (error) {
+            log("error", `处理第 ${season.season} 季失败，继续执行其他季:`, error);
+          }
+        });
+
+        await Promise.all(seasonPromises);
       }
 
       return doubanIds;
@@ -65,15 +85,23 @@ export default class TmdbSource extends BaseSource {
 
       let tmdbItems = [];
       if (data?.results?.length > 0) {
-        tmdbItems = data.results.filter(item => item.name === keyword);
+        tmdbItems = data.results.filter(item => (item.name || item.title) === keyword);
       }
 
       log("info", `tmdb items.length: ${tmdbItems.length}`);
 
-      for (const tmdbItem of tmdbItems) {
-        const doubanIds = await this.getDoubanIdByTmdbId(tmdbItem.media_type, tmdbItem.id);
-        tmpAnimes = [...tmpAnimes, ...doubanIds];
-      }
+      const doubanPromises = tmdbItems.map(async (tmdbItem) => {
+        try {
+          const doubanIds = await this.getDoubanIdByTmdbId(tmdbItem.media_type, tmdbItem.id);
+          return doubanIds;
+        } catch (error) {
+          log("error", `获取 TMDB ID ${tmdbItem.id} 的豆瓣 ID 失败，继续处理其他条目:`, error);
+          return []; // 失败返回空数组，不中断合并
+        }
+      });
+
+      const doubanResults = await Promise.all(doubanPromises);
+      tmpAnimes = [...tmpAnimes, ...doubanResults.flat()];
 
       return tmpAnimes;
     } catch (error) {
