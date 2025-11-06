@@ -7,7 +7,7 @@ import {
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap
 } from "../utils/cache-util.js";
 import { formatDanmuResponse } from "../utils/danmu-util.js";
-import { extractTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
+import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
 import TmdbSource from "../sources/tmdb.js";
@@ -327,8 +327,8 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
         log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
         if (platform) {
-          const firstIndex = filteredEpisodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
-          const indexCount = filteredEpisodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
+          const firstIndex = filteredEpisodes.findIndex(episode => extractEpisodeTitle(episode.episodeTitle) === platform);
+          const indexCount = filteredEpisodes.filter(episode => extractEpisodeTitle(episode.episodeTitle) === platform).length;
           if (indexCount > 0 && indexCount >= episode) {
             // 先判断season
             if (matchSeason(anime, title, season)) {
@@ -361,8 +361,8 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
         log("info", bangumiData);
 
         if (platform) {
-          const firstIndex = bangumiData.bangumi.episodes.findIndex(episode => extractTitle(episode.episodeTitle) === platform);
-          const indexCount = bangumiData.bangumi.episodes.filter(episode => extractTitle(episode.episodeTitle) === platform).length;
+          const firstIndex = bangumiData.bangumi.episodes.findIndex(episode => extractEpisodeTitle(episode.episodeTitle) === platform);
+          const indexCount = bangumiData.bangumi.episodes.filter(episode => extractEpisodeTitle(episode.episodeTitle) === platform).length;
           if (indexCount > 0) {
             resEpisode = bangumiData.bangumi.episodes[firstIndex];
             resAnime = anime;

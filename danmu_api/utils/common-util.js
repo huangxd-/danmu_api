@@ -23,11 +23,14 @@ export function printFirst200Chars(data) {
   log("info", dataToPrint.slice(0, 200));  // 打印前200个字符
 }
 
-// 正则表达式：提取【】中的内容
-export const extractTitle = (title) => {
+// 正则表达式：提取episode标题中的内容
+export const extractEpisodeTitle = (title) => {
   const match = title.match(/【(.*?)】/);  // 匹配【】中的内容
   return match ? match[1] : null;  // 返回方括号中的内容，若没有匹配到，则返回null
 };
+
+// 正则表达式：提取anime标题中的内容
+export const extractAnimeTitle = (str) => str.split('(')[0].trim();
 
 // 提取年份的辅助函数
 export function extractYear(animeTitle) {
