@@ -440,7 +440,7 @@ function createProxyServer() {
           if (finalReverseProxy === universalRP) {
             // 万能反代：追加原始完整URL
             // 路径格式：/反代路径/原始完整URL
-            options.path = baseReversePath + '/' + targetUrl;
+            options.path = baseReversePath + '/' + targetUrl.replace(':/', '');
             logMessage = `[Proxy Server] Universal RP rewriting to: ${protocol === https ? 'https' : 'http'}://${options.hostname}:${options.port}${options.path}`;
           } else {
             // 专用反代：路径合并模式
