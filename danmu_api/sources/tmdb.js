@@ -14,7 +14,9 @@ export default class TmdbSource extends BaseSource {
   }
 
   async _getDoubanInfo(finalImdbId, mediaType, doubanIds) {
+    if (!finalImdbId) return;
     const doubanInfo = await getDoubanInfoByImdbId(finalImdbId);
+    if (!doubanInfo || !doubanInfo?.data) return;
     const url = doubanInfo?.data?.id; // "https://api.douban.com/movie/1299131"
     if (url) {
       const parts = url.split("/"); // ["https:", "", "api.douban.com", "movie", "1299131"]
