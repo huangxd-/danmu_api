@@ -58,6 +58,7 @@ export default class DoubanSource extends BaseSource {
         if (anime?.layout !== "subject") return;
         const doubanId = anime.target_id;
         let animeType = anime?.type_name;
+        if (animeType !== "电影" && animeType !== "电视剧") return;
         log("info", "doubanId: ", doubanId, anime?.target?.title, animeType);
 
         // 获取平台详情页面url

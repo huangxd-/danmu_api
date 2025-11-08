@@ -186,7 +186,10 @@ export function addAnime(anime) {
             }
         }
 
-        log("info", `animes: ${JSON.stringify(globals.animes)}`);
+        log("info", `animes: ${JSON.stringify(
+          globals.animes,
+          (key, value) => key === 'links' ? value.length : value
+        )}`);
 
         return true;
     } catch (error) {
