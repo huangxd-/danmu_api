@@ -40,8 +40,8 @@ export const Globals = {
    * @param {string} deployPlatform 部署平台
    * @returns {Object} 全局配置对象
    */
-  init(env = {}, deployPlatform = 'node') {
-    this.envs = Envs.load(env, deployPlatform);
+  init(env = {}) {
+    this.envs = Envs.load(env);
     this.originalEnvVars = Object.fromEntries(Envs.getOriginalEnvVars());
     this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
     return this.getConfig();

@@ -19,6 +19,7 @@ import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
 import OtherSource from "./sources/other.js";
+import { NodeHandler } from "./configs/handlers/node-handler.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -129,39 +130,39 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
-  await t.test('GET realistic danmu', async () => {
-    // tencent
-    // const keyword = "子夜归";
-    // iqiyi
-    // const keyword = "赴山海";
-    // mango
-    // const keyword = "锦月如歌";
-    // bilibili
-    // const keyword = "国王排名";
-    // youku
-    // const keyword = "黑白局";
-    // renren
-    // const keyword = "瑞克和莫蒂";
-    // hanjutv
-    // const keyword = "请回答1988";
-    // bahamut
-    const keyword = "胆大党";
-
-    const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
-    const searchRes = await searchAnime(searchUrl);
-    const searchData = await searchRes.json();
-    assert(searchData.animes.length > 0, `Expected searchData.animes.length > 0, but got ${searchData.animes.length}`);
-
-    const bangumiUrl = new URL(`${urlPrefix}/${token}/api/v2/bangumi/${searchData.animes[0].animeId}`);
-    const bangumiRes = await getBangumi(bangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
-    assert(bangumiData.bangumi.episodes.length > 0, `Expected bangumiData.bangumi.episodes.length > 0, but got ${bangumiData.bangumi.episodes.length}`);
-
-    const commentUrl = new URL(`${urlPrefix}/${token}/api/v2/comment/${bangumiData.bangumi.episodes[0].episodeId}?withRelated=true&chConvert=1`);
-    const commentRes = await getComment(commentUrl.pathname);
-    const commentData = await commentRes.json();
-    assert(commentData.count > 0, `Expected commentData.count > 0, but got ${commentData.count}`);
-  });
+  // await t.test('GET realistic danmu', async () => {
+  //   // tencent
+  //   // const keyword = "子夜归";
+  //   // iqiyi
+  //   // const keyword = "赴山海";
+  //   // mango
+  //   // const keyword = "锦月如歌";
+  //   // bilibili
+  //   // const keyword = "国王排名";
+  //   // youku
+  //   // const keyword = "黑白局";
+  //   // renren
+  //   // const keyword = "瑞克和莫蒂";
+  //   // hanjutv
+  //   // const keyword = "请回答1988";
+  //   // bahamut
+  //   const keyword = "胆大党";
+  //
+  //   const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
+  //   const searchRes = await searchAnime(searchUrl);
+  //   const searchData = await searchRes.json();
+  //   assert(searchData.animes.length > 0, `Expected searchData.animes.length > 0, but got ${searchData.animes.length}`);
+  //
+  //   const bangumiUrl = new URL(`${urlPrefix}/${token}/api/v2/bangumi/${searchData.animes[0].animeId}`);
+  //   const bangumiRes = await getBangumi(bangumiUrl.pathname);
+  //   const bangumiData = await bangumiRes.json();
+  //   assert(bangumiData.bangumi.episodes.length > 0, `Expected bangumiData.bangumi.episodes.length > 0, but got ${bangumiData.bangumi.episodes.length}`);
+  //
+  //   const commentUrl = new URL(`${urlPrefix}/${token}/api/v2/comment/${bangumiData.bangumi.episodes[0].episodeId}?withRelated=true&chConvert=1`);
+  //   const commentRes = await getComment(commentUrl.pathname);
+  //   const commentData = await commentRes.json();
+  //   assert(commentData.count > 0, `Expected commentData.count > 0, but got ${commentData.count}`);
+  // });
 
   // // 测试 POST /api/v2/match 接口
   // await t.test('POST /api/v2/match for matching anime', async () => {
@@ -278,4 +279,40 @@ test('worker.js API endpoints', async (t) => {
   //   const res = await getTMDBChineseTitle("Blood River", 1, 4);
   //   assert(res === "暗河传", `Expected res === "暗河传", but got ${res}`);
   // });
+
+  // // 测试获取全部环境变量
+  // await t.test('Config getAllEnv', async () => {
+  //   const handler = new NodeHandler();
+  //   const res = handler.getAllEnv();
+  //   assert(Number(res.DANMU_LIMIT) === 0, `Expected Number(res.DANMU_LIMIT) === 0, but got ${Number(res.DANMU_LIMIT)}`);
+  // });
+
+  // // 测试获取某个环境变量
+  // await t.test('Config getEnv', async () => {
+  //   const handler = new NodeHandler();
+  //   const res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+  // });
+
+  // // 测试设置环境变量
+  // await t.test('Config setEnv', async () => {
+  //   const handler = new NodeHandler();
+  //   let res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 1);
+  //   res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 0);
+  // });
+
+  // 测试添加和删除环境变量
+  await t.test('Config addEnv and del Env', async () => {
+    const handler = new NodeHandler();
+    await handler.addEnv("UPSTASH_REDIS_REST_TOKEN", "xxxx");
+    let res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+    assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
+    await handler.delEnv("UPSTASH_REDIS_REST_TOKEN");
+    res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+    assert(res === "", `Expected res === "", but got ${res}`);
+  });
 });

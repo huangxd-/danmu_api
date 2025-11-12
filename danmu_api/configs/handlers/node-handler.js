@@ -1,17 +1,106 @@
 import BaseHandler from "./base-handler.js";
 import fs from 'fs';
 import path from 'path';
-import yaml from 'yaml';
+import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
+import { Globals } from '../globals.js';
+import { log } from "../../utils/log-util.js";
 
 // =====================
 // Node环境变量处理类
 // =====================
 
 export class NodeHandler extends BaseHandler {
-  // 在本地配置文件中设置环境变量
+  /**
+   * 重新加载环境变量
+   * 从 .env 和 config.yaml 文件读取并更新 process.env
+   */
+  reloadEnvFromFiles() {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const envPath = path.join(__dirname, '..', '..', '..', '.env');
+    const yamlPath = path.join(__dirname, '..', '..', '..', 'config.yaml');
+
+    // 读取 .env 文件
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      const lines = envContent.split('\n');
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        // 跳过空行和注释
+        if (!trimmed || trimmed.startsWith('#')) return;
+
+        const match = trimmed.match(/^([^=]+)=(.*)$/);
+        if (match) {
+          const key = match[1].trim();
+          const value = match[2].trim();
+          // 移除可能的引号
+          const cleanValue = value.replace(/^["']|["']$/g, '');
+          process.env[key] = cleanValue;
+        }
+      });
+      log("info", '[server] Reloaded environment variables from .env');
+    }
+
+    // 读取 config.yaml 文件
+    if (fs.existsSync(yamlPath)) {
+      const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+      const yamlConfig = yaml.load(yamlContent);
+
+      if (yamlConfig) {
+        // 将嵌套的 YAML 配置扁平化为环境变量
+        this.flattenYamlToEnv(yamlConfig);
+        log("info", '[server] Reloaded environment variables from config.yaml');
+      }
+    }
+  }
+
+  /**
+   * 将嵌套的 YAML 配置扁平化为环境变量
+   * 例如: { database: { host: 'localhost' } } -> DATABASE_HOST=localhost
+   */
+  flattenYamlToEnv(obj, prefix = '') {
+    for (const key in obj) {
+      const value = obj[key];
+      const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
+
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        // 递归处理嵌套对象
+        this.flattenYamlToEnv(value, envKey);
+      } else {
+        // 设置环境变量
+        process.env[envKey] = String(value);
+      }
+    }
+  }
+
+  /**
+   * 重新初始化全局配置
+   * 调用 Globals.init() 重新加载所有配置
+   */
+  reinitializeGlobals() {
+    try {
+      // 清空 Envs 类的缓存
+      if (typeof Globals.envs === 'object') {
+        Globals.envs = {};
+      }
+
+      // 重新初始化
+      Globals.init(process.env);
+      log("info", '[server] Global configuration reinitialized successfully');
+
+      return true;
+    } catch (error) {
+      log("error", '[server] Error reinitializing globals:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 在本地配置文件中设置环境变量
+   */
   updateConfigValue(key, value) {
-    // 在 ES6 模块中获取 __dirname 和 __filename
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
@@ -39,7 +128,7 @@ export class NodeHandler extends BaseHandler {
           const trimmed = lines[i].trim();
           if (trimmed && !trimmed.startsWith('#')) {
             const match = trimmed.match(/^([^=]+)=/);
-            if (match && match[1] === key) {
+            if (match && match[1].trim() === key) {
               lines[i] = `${key}=${value}`;
               keyFound = true;
               break;
@@ -47,9 +136,8 @@ export class NodeHandler extends BaseHandler {
           }
         }
 
-        // 如果键不存在，添加到文件末尾
+        // 如果键不存在,添加到文件末尾
         if (!keyFound) {
-          // 确保文件末尾有换行符
           if (lines[lines.length - 1] !== '') {
             lines.push('');
           }
@@ -57,17 +145,16 @@ export class NodeHandler extends BaseHandler {
         }
 
         fs.writeFileSync(envPath, lines.join('\n'), 'utf8');
-        console.log(`[server] Updated ${key} in .env`);
+        log("info", `[server] Updated ${key} in .env`);
         updated = true;
       }
 
       // 更新 config.yaml 文件
       if (yamlExists) {
         const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-        const yamlConfig = yaml.parse(yamlContent) || {};
+        let yamlConfig = yaml.load(yamlContent) || {};
 
         // 将扁平的环境变量键转换为嵌套对象路径
-        // 例如: API_KEY -> apiKey, DATABASE_HOST -> database.host
         const keys = key.toLowerCase().split('_');
         let current = yamlConfig;
 
@@ -80,32 +167,149 @@ export class NodeHandler extends BaseHandler {
           current = current[k];
         }
 
-        // 设置最后一层的值
+        // 设置最后一层的值,尝试智能转换类型
         const lastKey = keys[keys.length - 1];
-        current[lastKey] = value;
+        let parsedValue = value;
+
+        // 尝试转换为数字
+        if (!isNaN(value) && value !== '') {
+          parsedValue = Number(value);
+        }
+        // 尝试转换为布尔值
+        else if (value === 'true') {
+          parsedValue = true;
+        } else if (value === 'false') {
+          parsedValue = false;
+        }
+
+        current[lastKey] = parsedValue;
 
         // 写回文件
-        fs.writeFileSync(yamlPath, yaml.stringify(yamlConfig), 'utf8');
-        console.log(`[server] Updated ${key} in config.yaml`);
+        fs.writeFileSync(yamlPath, yaml.dump(yamlConfig), 'utf8');
+        log("info", `[server] Updated ${key} in config.yaml`);
         updated = true;
       }
 
-      if (updated) {
-        // 更新 process.env
-        process.env[key] = value;
-        console.log(`[server] Configuration updated successfully: ${key}=${value}`);
-        return true;
-      }
-
-      return false;
+      return updated;
     } catch (error) {
-      console.error('[server] Error updating configuration:', error.message);
+      log("error", '[server] Error updating configuration:', error.message);
       throw error;
     }
   }
 
+  /**
+   * 设置环境变量并重新初始化全局配置
+   */
   async setEnv(key, value) {
-    console.log('set env: ', key, value);
-    this.updateConfigValue(key, value);
+    log("info", '[server] Setting environment variable:', key, '=', value);
+
+    try {
+      // 1. 更新配置文件
+      const updated = this.updateConfigValue(key, value);
+
+      if (!updated) {
+        throw new Error('Failed to update configuration files');
+      }
+
+      // 2. 立即更新 process.env (避免重新加载文件的开销)
+      process.env[key] = value;
+
+      // 3. 重新加载所有环境变量(确保一致性)
+      this.reloadEnvFromFiles();
+
+      // 4. 重新初始化全局配置
+      this.reinitializeGlobals();
+
+      log("info", `[server] ✓ Environment variable updated successfully: ${key}`);
+      return true;
+
+    } catch (error) {
+      log("error", '[server] ✗ Failed to set environment variable:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 添加新的环境变量
+   */
+  async addEnv(key, value) {
+    // addEnv 和 setEnv 在这个场景下逻辑相同
+    return await this.setEnv(key, value);
+  }
+
+  /**
+   * 删除环境变量
+   */
+  async delEnv(key) {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+
+    const envPath = path.join(__dirname, '..', '..', '..', '.env');
+    const yamlPath = path.join(__dirname, '..', '..', '..', 'config.yaml');
+
+    let deleted = false;
+
+    try {
+      // 从 .env 文件删除
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const lines = envContent.split('\n');
+        const filteredLines = lines.filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) return true;
+          const match = trimmed.match(/^([^=]+)=/);
+          return !(match && match[1].trim() === key);
+        });
+
+        fs.writeFileSync(envPath, filteredLines.join('\n'), 'utf8');
+        log("info", `[server] Deleted ${key} from .env`);
+        deleted = true;
+      }
+
+      // 从 config.yaml 文件删除
+      if (fs.existsSync(yamlPath)) {
+        const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+        let yamlConfig = yaml.load(yamlContent) || {};
+
+        const keys = key.toLowerCase().split('_');
+        let current = yamlConfig;
+
+        // 遍历到倒数第二层
+        for (let i = 0; i < keys.length - 1; i++) {
+          const k = keys[i];
+          if (!current[k]) return;
+          current = current[k];
+        }
+
+        // 删除最后一层的键
+        const lastKey = keys[keys.length - 1];
+        if (current && lastKey in current) {
+          delete current[lastKey];
+          fs.writeFileSync(yamlPath, yaml.dump(yamlConfig), 'utf8');
+          log("info", `[server] Deleted ${key} from config.yaml`);
+          deleted = true;
+        }
+      }
+
+      if (deleted) {
+        // 从 process.env 删除
+        delete process.env[key];
+
+        // 重新加载环境变量
+        this.reloadEnvFromFiles();
+
+        // 重新初始化全局配置
+        this.reinitializeGlobals();
+
+        log("info", `[server] ✓ Environment variable deleted successfully: ${key}`);
+        return true;
+      }
+
+      return false;
+
+    } catch (error) {
+      log("error", '[server] ✗ Failed to delete environment variable:', error.message);
+      throw error;
+    }
   }
 }

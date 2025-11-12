@@ -10,7 +10,7 @@ let globals;
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
   // 加载全局变量和环境变量配置
-  globals = Globals.init(env, deployPlatform);
+  globals = Globals.init(env);
 
   const url = new URL(req.url);
   let path = url.pathname;

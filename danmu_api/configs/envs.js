@@ -79,10 +79,9 @@ export class Envs {
 
   /**
    * 解析 VOD 服务器配置
-   * @param {Object} env 环境对象
    * @returns {Array} 服务器列表
    */
-  static resolveVodServers(env) {
+  static resolveVodServers() {
     const defaultVodServers = '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top';
     let vodServersConfig = this.get('VOD_SERVERS', defaultVodServers, 'string');
 
@@ -106,11 +105,9 @@ export class Envs {
 
   /**
    * 解析源排序
-   * @param {Object} env 环境对象
-   * @param {string} deployPlatform 部署平台
    * @returns {Array} 源排序数组
    */
-  static resolveSourceOrder(env, deployPlatform) {
+  static resolveSourceOrder() {
     let sourceOrder = this.get('SOURCE_ORDER', '360,vod,renren,hanjutv', 'string');
 
     const orderArr = sourceOrder
@@ -125,10 +122,9 @@ export class Envs {
 
   /**
    * 解析平台排序
-   * @param {Object} env 环境对象
    * @returns {Array} 平台排序数组
    */
-  static resolvePlatformOrder(env) {
+  static resolvePlatformOrder() {
     const orderArr = this.get('PLATFORM_ORDER', '', 'string')
       .split(',')
       .map(s => s.trim())
@@ -141,10 +137,9 @@ export class Envs {
 
   /**
    * 解析剧集标题过滤正则
-   * @param {Object} env 环境对象
    * @returns {RegExp} 过滤正则表达式
    */
-  static resolveEpisodeTitleFilter(env) {
+  static resolveEpisodeTitleFilter() {
     const defaultFilter = '(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|' +
       '特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|' +
       '花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|' +
@@ -189,21 +184,21 @@ export class Envs {
    * @param {string} deployPlatform 部署平台
    * @returns {Object} 配置对象
    */
-  static load(env = {}, deployPlatform = 'node') {
+  static load(env = {}) {
     this.env = env;
     return {
       vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
       allowedPlatforms: this.ALLOWED_PLATFORMS,
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
-      vodServers: this.resolveVodServers(env), // vod站点配置，格式：名称@URL,名称@URL
+      vodServers: this.resolveVodServers(), // vod站点配置，格式：名称@URL,名称@URL
       vodReturnMode: this.get('VOD_RETURN_MODE', 'fastest', 'string').toLowerCase(), // vod返回模式：all（所有站点）或 fastest（最快的站点）
       vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
-      sourceOrderArr: this.resolveSourceOrder(env, deployPlatform), // 源排序
-      platformOrderArr: this.resolvePlatformOrder(env), // 自动匹配优选平台
-      episodeTitleFilter: this.resolveEpisodeTitleFilter(env), // 剧集标题正则过滤
+      sourceOrderArr: this.resolveSourceOrder(), // 源排序
+      platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
+      episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
