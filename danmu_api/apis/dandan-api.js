@@ -311,7 +311,8 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
     // 判断剧集
     const normalizedTitle = normalizeSpaces(title);
     for (const anime of searchData.animes) {
-      if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
+      if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString() &&
+          anime.animeId.toString() !== preferAnimeId.toString()) continue;
       if (normalizeSpaces(anime.animeTitle).includes(normalizedTitle)) {
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
