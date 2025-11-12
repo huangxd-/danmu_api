@@ -6,6 +6,7 @@ export class Envs {
   static env;
 
   // 记录获取过的环境变量
+  static originalEnvVars = new Map();
   static accessedEnvVars = new Map();
 
   static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq']; // vod允许的播放平台
@@ -23,10 +24,13 @@ export class Envs {
     let value;
     if (typeof this.env !== 'undefined' && this.env[key]) {
       value = this.env[key];
+      this.originalEnvVars.set(key, value);
     } else if (typeof process !== 'undefined' && process.env?.[key]) {
       value = process.env[key];
+      this.originalEnvVars.set(key, value);
     } else {
       value = defaultValue;
+      this.originalEnvVars.set(key, "");
     }
 
     let parsedValue;
@@ -161,6 +165,14 @@ export class Envs {
       console.warn(`Invalid EPISODE_TITLE_FILTER format, using default.`);
       return new RegExp(`^(.*?)(?:${defaultFilter})(.*?)$`);
     }
+  }
+
+  /**
+   * 获取记录的原始环境变量 JSON
+   * @returns {Map<any, any>} JSON 字符串
+   */
+  static getOriginalEnvVars() {
+    return this.originalEnvVars;
   }
 
   /**

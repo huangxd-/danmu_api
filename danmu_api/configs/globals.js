@@ -8,6 +8,7 @@ import { Envs } from './envs.js';
 export const Globals = {
   // 缓存环境变量
   envs: {},
+  originalEnvVars: {},
   accessedEnvVars: {},
 
   // 静态常量
@@ -41,6 +42,7 @@ export const Globals = {
    */
   init(env = {}, deployPlatform = 'node') {
     this.envs = Envs.load(env, deployPlatform);
+    this.originalEnvVars = Object.fromEntries(Envs.getOriginalEnvVars());
     this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
     return this.getConfig();
   },
