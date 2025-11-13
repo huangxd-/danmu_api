@@ -1,102 +1,16 @@
 import BaseHandler from "./base-handler.js";
+import { log } from "../../utils/log-util.js";
+import { globals } from '../globals.js';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
-import { Globals } from '../globals.js';
-import { log } from "../../utils/log-util.js";
 
 // =====================
 // Node环境变量处理类
 // =====================
 
 export class NodeHandler extends BaseHandler {
-  /**
-   * 重新加载环境变量
-   * 从 .env 和 config.yaml 文件读取并更新 process.env
-   */
-  reloadEnvFromFiles() {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const envPath = path.join(__dirname, '..', '..', '..', '.env');
-    const yamlPath = path.join(__dirname, '..', '..', '..', 'config.yaml');
-
-    // 读取 .env 文件
-    if (fs.existsSync(envPath)) {
-      const envContent = fs.readFileSync(envPath, 'utf8');
-      const lines = envContent.split('\n');
-
-      lines.forEach(line => {
-        const trimmed = line.trim();
-        // 跳过空行和注释
-        if (!trimmed || trimmed.startsWith('#')) return;
-
-        const match = trimmed.match(/^([^=]+)=(.*)$/);
-        if (match) {
-          const key = match[1].trim();
-          const value = match[2].trim();
-          // 移除可能的引号
-          const cleanValue = value.replace(/^["']|["']$/g, '');
-          process.env[key] = cleanValue;
-        }
-      });
-      log("info", '[server] Reloaded environment variables from .env');
-    }
-
-    // 读取 config.yaml 文件
-    if (fs.existsSync(yamlPath)) {
-      const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-      const yamlConfig = yaml.load(yamlContent);
-
-      if (yamlConfig) {
-        // 将嵌套的 YAML 配置扁平化为环境变量
-        this.flattenYamlToEnv(yamlConfig);
-        log("info", '[server] Reloaded environment variables from config.yaml');
-      }
-    }
-  }
-
-  /**
-   * 将嵌套的 YAML 配置扁平化为环境变量
-   * 例如: { database: { host: 'localhost' } } -> DATABASE_HOST=localhost
-   */
-  flattenYamlToEnv(obj, prefix = '') {
-    for (const key in obj) {
-      const value = obj[key];
-      const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
-
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        // 递归处理嵌套对象
-        this.flattenYamlToEnv(value, envKey);
-      } else {
-        // 设置环境变量
-        process.env[envKey] = String(value);
-      }
-    }
-  }
-
-  /**
-   * 重新初始化全局配置
-   * 调用 Globals.init() 重新加载所有配置
-   */
-  reinitializeGlobals() {
-    try {
-      // 清空 Envs 类的缓存
-      if (typeof Globals.envs === 'object') {
-        Globals.envs = {};
-      }
-
-      // 重新初始化
-      Globals.init(process.env);
-      log("info", '[server] Global configuration reinitialized successfully');
-
-      return true;
-    } catch (error) {
-      log("error", '[server] Error reinitializing globals:', error.message);
-      throw error;
-    }
-  }
-
   /**
    * 在本地配置文件中设置环境变量
    */
@@ -212,13 +126,14 @@ export class NodeHandler extends BaseHandler {
       }
 
       // 2. 立即更新 process.env (避免重新加载文件的开销)
-      process.env[key] = value;
+      if (typeof globals.env !== 'undefined') {
+        globals.env[key] = value;
+      } else if (typeof process !== 'undefined') {
+        process.env[key] = value;
+      }
 
-      // 3. 重新加载所有环境变量(确保一致性)
-      this.reloadEnvFromFiles();
-
-      // 4. 重新初始化全局配置
-      this.reinitializeGlobals();
+      // 3. 重新初始化全局配置
+      globals.reInit();
 
       log("info", `[server] ✓ Environment variable updated successfully: ${key}`);
       return true;
@@ -293,13 +208,14 @@ export class NodeHandler extends BaseHandler {
 
       if (deleted) {
         // 从 process.env 删除
-        delete process.env[key];
-
-        // 重新加载环境变量
-        this.reloadEnvFromFiles();
+        if (typeof globals.env !== 'undefined' && globals.env[key]) {
+          delete globals.env[key];
+        } else if (typeof process !== 'undefined' && process.env?.[key]) {
+          delete process.env[key];
+        }
 
         // 重新初始化全局配置
-        this.reinitializeGlobals();
+        globals.reInit();
 
         log("info", `[server] ✓ Environment variable deleted successfully: ${key}`);
         return true;

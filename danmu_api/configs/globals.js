@@ -7,6 +7,7 @@ import { Envs } from './envs.js';
  */
 export const Globals = {
   // 缓存环境变量
+  env: {},
   envs: {},
   originalEnvVars: {},
   accessedEnvVars: {},
@@ -37,11 +38,22 @@ export const Globals = {
   /**
    * 初始化全局变量，加载环境变量依赖
    * @param {Object} env 环境对象
-   * @param {string} deployPlatform 部署平台
    * @returns {Object} 全局配置对象
    */
   init(env = {}) {
-    this.envs = Envs.load(env);
+    this.env = env;
+    this.envs = Envs.load(this.env);
+    this.originalEnvVars = Object.fromEntries(Envs.getOriginalEnvVars());
+    this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
+    return this.getConfig();
+  },
+
+  /**
+   * 重新初始化全局变量，加载环境变量依赖
+   * @returns {Object} 全局配置对象
+   */
+  reInit() {
+    this.envs = Envs.load(this.env);
     this.originalEnvVars = Object.fromEntries(Envs.getOriginalEnvVars());
     this.accessedEnvVars = Object.fromEntries(Envs.getAccessedEnvVars());
     return this.getConfig();

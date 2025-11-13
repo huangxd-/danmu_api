@@ -294,16 +294,16 @@ test('worker.js API endpoints', async (t) => {
   //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
   // });
 
-  // // 测试设置环境变量
-  // await t.test('Config setEnv', async () => {
-  //   const handler = new NodeHandler();
-  //   let res = handler.getEnv("DANMU_LIMIT");
-  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
-  //   await handler.setEnv("DANMU_LIMIT", 1);
-  //   res = handler.getEnv("DANMU_LIMIT");
-  //   assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
-  //   await handler.setEnv("DANMU_LIMIT", 0);
-  // });
+  // 测试设置环境变量
+  await t.test('Config setEnv', async () => {
+    const handler = new NodeHandler();
+    let res = handler.getEnv("DANMU_LIMIT");
+    assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+    await handler.setEnv("DANMU_LIMIT", 1);
+    res = handler.getEnv("DANMU_LIMIT");
+    assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
+    await handler.setEnv("DANMU_LIMIT", 0);
+  });
 
   // 测试添加和删除环境变量
   await t.test('Config addEnv and del Env', async () => {
