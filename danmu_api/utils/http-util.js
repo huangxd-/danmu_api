@@ -199,11 +199,14 @@ export async function httpPost(url, body, options = {}) {
 
       clearTimeout(timeoutId);
 
+      const data = await response.text();
+
+
       if (!response.ok) {
+        log("error", `[请求模拟] response data: `, data);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.text();
       let parsedData;
       try {
         parsedData = JSON.parse(data);  // 尝试将文本解析为 JSON
@@ -258,6 +261,107 @@ export async function httpPost(url, body, options = {}) {
   // 所有重试都失败，抛出最后一个错误
   log("error", `[请求模拟] 所有重试均失败 (${maxRetries + 1} 次尝试)`);
   throw lastError;
+}
+
+export async function httpPatch(url, body, options = {}) {
+  log("info", `[请求模拟] HTTP PATCH: ${url}`);
+
+  // 处理请求头、body 和其他参数
+  const { headers = {}, params, allow_redirects = true } = options;
+  const fetchOptions = {
+    method: 'PATCH',
+    headers: {
+      ...headers,
+    },
+    body: body
+  };
+
+  try {
+    const response = await fetch(url, fetchOptions);
+
+    const data = await response.text();
+
+    if (!response.ok) {
+      log("error", `[请求模拟] response data: `, data);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(data);  // 尝试将文本解析为 JSON
+    } catch (e) {
+      parsedData = data;  // 如果解析失败，保留原始文本
+    }
+
+    // 模拟 iOS 环境：返回 { data: ... } 结构
+    return {
+      data: parsedData,
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries())
+    };
+
+  } catch (error) {
+    log("error", `[请求模拟] 请求失败:`, error.message);
+    log("error", '详细诊断:');
+    log("error", '- URL:', url);
+    log("error", '- 错误类型:', error.name);
+    log("error", '- 消息:', error.message);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+    throw error;
+  }
+}
+
+export async function httpDelete(url, options = {}) {
+  log("info", `[请求模拟] HTTP DELETE: ${url}`);
+
+  // 处理请求头、body 和其他参数
+  const { headers = {}, params, allow_redirects = true } = options;
+  const fetchOptions = {
+    method: 'DELETE',
+    headers: {
+      ...headers,
+    },
+  };
+
+  try {
+    const response = await fetch(url, fetchOptions);
+
+    const data = await response.text();
+
+    if (!response.ok) {
+      log("error", `[请求模拟] response data: `, data);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(data);  // 尝试将文本解析为 JSON
+    } catch (e) {
+      parsedData = data;  // 如果解析失败，保留原始文本
+    }
+
+    // 模拟 iOS 环境：返回 { data: ... } 结构
+    return {
+      data: parsedData,
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries())
+    };
+
+  } catch (error) {
+    log("error", `[请求模拟] 请求失败:`, error.message);
+    log("error", '详细诊断:');
+    log("error", '- URL:', url);
+    log("error", '- 错误类型:', error.name);
+    log("error", '- 消息:', error.message);
+    if (error.cause) {
+      log("error", '- 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- 原因:', error.cause.message);
+    }
+    throw error;
+  }
 }
 
 export async function getPageTitle(url) {

@@ -1,6 +1,5 @@
 import BaseHandler from "./base-handler.js";
 import { log } from "../../utils/log-util.js";
-import { globals } from '../globals.js';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -118,29 +117,16 @@ export class NodeHandler extends BaseHandler {
     log("info", '[server] Setting environment variable:', key, '=', value);
 
     try {
-      // 1. 更新配置文件
+      // 更新配置文件
       const updated = this.updateConfigValue(key, value);
 
       if (!updated) {
         throw new Error('Failed to update configuration files');
       }
 
-      // 2. 立即更新 process.env (避免重新加载文件的开销)
-      if (typeof globals.env !== 'undefined') {
-        globals.env[key] = value;
-      } else if (typeof process !== 'undefined') {
-        process.env[key] = value;
-      }
-
-      // 3. 重新初始化全局配置
-      globals.reInit();
-
-      log("info", `[server] ✓ Environment variable updated successfully: ${key}`);
-      return true;
-
+      return this.updateLocalEnv(key, value);
     } catch (error) {
       log("error", '[server] ✗ Failed to set environment variable:', error.message);
-      throw error;
     }
   }
 
@@ -207,25 +193,12 @@ export class NodeHandler extends BaseHandler {
       }
 
       if (deleted) {
-        // 从 process.env 删除
-        if (typeof globals.env !== 'undefined' && globals.env[key]) {
-          delete globals.env[key];
-        } else if (typeof process !== 'undefined' && process.env?.[key]) {
-          delete process.env[key];
-        }
-
-        // 重新初始化全局配置
-        globals.reInit();
-
-        log("info", `[server] ✓ Environment variable deleted successfully: ${key}`);
-        return true;
+        return this.delLocalEnv(key);
       }
 
       return false;
-
     } catch (error) {
       log("error", '[server] ✗ Failed to delete environment variable:', error.message);
-      throw error;
     }
   }
 }

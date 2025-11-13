@@ -1,4 +1,5 @@
 import { globals } from '../globals.js';
+import { log } from "../../utils/log-util.js";
 
 // =====================
 // 环境变量处理基类
@@ -7,6 +8,38 @@ import { globals } from '../globals.js';
 export default class BaseHandler {
   constructor() {
     // 构造函数，初始化通用配置
+  }
+
+  // 更新本地环境变量
+  updateLocalEnv(key, value) {
+    // 立即更新 (避免重新加载文件的开销)
+    if (typeof globals.env !== 'undefined') {
+      globals.env[key] = value;
+    } else if (typeof process !== 'undefined') {
+      process.env[key] = value;
+    }
+
+    // 重新初始化全局配置
+    globals.reInit();
+
+    log("info", `[server] ✓ Environment variable updated successfully: ${key}`);
+    return true;
+  }
+
+
+  delLocalEnv(key) {
+    // 删除
+    if (typeof globals.env !== 'undefined' && globals.env[key]) {
+      delete globals.env[key];
+    } else if (typeof process !== 'undefined' && process.env?.[key]) {
+      delete process.env[key];
+    }
+
+    // 重新初始化全局配置
+    globals.reInit();
+
+    log("info", `[server] ✓ Environment variable deleted successfully: ${key}`);
+    return true;
   }
 
   // 获取所有环境变量
