@@ -2,7 +2,7 @@ import { Globals } from './configs/globals.js';
 import { jsonResponse } from './utils/http-util.js';
 import { log, formatLogMessage } from './utils/log-util.js'
 import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
-import { cleanupExpiredIPs, findUrlById, getCommentCache } from "./utils/cache-util.js";
+import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 
@@ -16,12 +16,16 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
+  judgeLocalCacheValid(path),
   await judgeRedisValid(path);
 
   log("info", `request url: ${JSON.stringify(url)}`);
   log("info", `request path: ${path}`);
   log("info", `client ip: ${clientIp}`);
 
+  if (globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    await getLocalCaches();
+  }
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getRedisCaches();
   }
@@ -33,6 +37,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       version: globals.VERSION,
       envs: {
         ...globals.accessedEnvVars,
+        localCacheValid: globals.localCacheValid,
         redisValid: globals.redisValid
       },
       repository: "https://github.com/huangxd-/danmu_api.git",

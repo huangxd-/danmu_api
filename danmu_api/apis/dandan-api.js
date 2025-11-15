@@ -4,7 +4,8 @@ import { log } from '../utils/log-util.js'
 import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
-    getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap
+    getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
+    updateLocalCaches
 } from "../utils/cache-util.js";
 import { formatDanmuResponse } from "../utils/danmu-util.js";
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
@@ -138,6 +139,10 @@ export async function searchAnime(url) {
     addAnime(Anime.fromJson({...tmpAnime, links: links}));
     if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
 
+    // 如果有新的anime获取到，则更新本地缓存
+    if (globals.localCacheValid && curAnimes.length !== 0) {
+      await updateLocalCaches();
+    }
     // 如果有新的anime获取到，则更新redis
     if (globals.redisValid && curAnimes.length !== 0) {
       await updateRedisCaches();
@@ -276,9 +281,13 @@ export async function searchAnime(url) {
     curAnimes.push(...validAnimes);
   }
 
+  // 如果有新的anime获取到，则更新本地缓存
+  if (globals.localCacheValid && curAnimes.length !== 0) {
+    await updateLocalCaches();
+  }
   // 如果有新的anime获取到，则更新redis
   if (globals.redisValid && curAnimes.length !== 0) {
-      await updateRedisCaches();
+    await updateRedisCaches();
   }
 
   // 缓存搜索结果
@@ -788,6 +797,9 @@ export async function getComment(path, queryFormat) {
 
   const animeId = findAnimeIdByCommentId(commentId);
   setPreferByAnimeId(animeId);
+  if (globals.localCacheValid && animeId) {
+    writeCacheToFile('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
+  }
   if (globals.redisValid && animeId) {
     await setRedisKey('lastSelectMap', globals.lastSelectMap);
   }

@@ -48,6 +48,7 @@ LogVar 弹幕 API 服务器
   - 弹幕缓存（可通过 `COMMENT_CACHE_MINUTES` 配置，默认5分钟）
   - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
   - Redis 分布式缓存支持（可选）
+  - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔播放链接可获取弹幕，如`senplayer`。
@@ -164,6 +165,7 @@ LogVar 弹幕 API 服务器
        volumes:
          - ./.env:/app/.env
          - ./config.yaml:/app/config.yaml
+         - ./.chche:/app/.cache    # 配置.chche目录，会将缓存实时保存在本地文件
        restart: unless-stopped
    ```
 
@@ -497,6 +499,7 @@ danmu_api/
 - TMDB源请求逻辑：search tmdb -> tmdbId -> imdbId -> doubanId -> playUrl；优点：emby通过tmdb刮削，标题通过tmdb搜索，返回的信息可能更加匹配；缺点：链条过长，请求时长5-10s左右，中间一环数据有缺失，就没有返回结果。
 - TMDB源在SOURCE_ORDER添加tmdb的同时，需要添加TMDB_API_KEY环境变量
 - 弹幕分片下载请求已加入重试机制，重试次数为1次
+- 如果同时配置了本地缓存和redis缓存，则以redis缓存优先
 
 ### 关联项目
 [喂饭教程1：danmu_api vercel 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)

@@ -1,6 +1,10 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
+import { simpleHash } from "./codec-util.js";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // =====================
 // cache数据结构处理函数
@@ -302,5 +306,107 @@ export function cleanupExpiredIPs(currentTime) {
 
   if (cleanedCount > 0) {
     log("info", `[Rate Limit] Cleanup completed: removed ${cleanedCount} expired IP records`);
+  }
+}
+
+// 从本地缓存目录读取缓存数据
+export function readCacheFromFile(key) {
+  const cacheFilePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache', `${key}`);
+  if (fs.existsSync(cacheFilePath)) {
+    const fileContent = fs.readFileSync(cacheFilePath, 'utf8');
+    return JSON.parse(fileContent);
+  }
+  return null;
+}
+
+// 将缓存数据写入本地缓存文件
+export function writeCacheToFile(key, value) {
+  const cacheFilePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache', `${key}`);
+  fs.writeFileSync(cacheFilePath, JSON.stringify(value), 'utf8');
+}
+
+// 从本地获取缓存
+export async function getLocalCaches() {
+  if (!globals.localCacheInitialized) {
+    try {
+      log("info", 'getLocalCaches start.');
+
+      // 从本地缓存文件读取数据并恢复到 globals 中
+      globals.animes = JSON.parse(readCacheFromFile('animes')) || globals.animes;
+      globals.episodeIds = JSON.parse(readCacheFromFile('episodeIds')) || globals.episodeIds;
+      globals.episodeNum = JSON.parse(readCacheFromFile('episodeNum')) || globals.episodeNum;
+
+      // 恢复 lastSelectMap 并转换为 Map 对象
+      const lastSelectMapData = readCacheFromFile('lastSelectMap');
+      if (lastSelectMapData) {
+        globals.lastSelectMap = new Map(Object.entries(JSON.parse(lastSelectMapData)));
+        log("info", `Restored lastSelectMap from local cache with ${globals.lastSelectMap.size} entries`);
+      }
+
+      // 更新哈希值
+      globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
+      globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
+      globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
+      globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
+
+      globals.localCacheInitialized = true;
+      log("info", 'getLocalCaches completed successfully.');
+    } catch (error) {
+      log("error", `getLocalCaches failed: ${error.message}`, error.stack);
+      globals.localCacheInitialized = true; // 标记为已初始化，避免重复尝试
+    }
+  }
+}
+
+// 更新本地缓存
+export async function updateLocalCaches() {
+  try {
+    log("info", 'updateLocalCaches start.');
+    const updates = [];
+
+    // 检查每个变量的哈希值
+    const variables = [
+      { key: 'animes', value: globals.animes },
+      { key: 'episodeIds', value: globals.episodeIds },
+      { key: 'episodeNum', value: globals.episodeNum },
+      { key: 'lastSelectMap', value: globals.lastSelectMap }
+    ];
+
+    for (const { key, value } of variables) {
+      // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
+      const serializedValue = key === 'lastSelectMap' ? JSON.stringify(Object.fromEntries(value)) : JSON.stringify(value);
+      const currentHash = simpleHash(serializedValue);
+      if (currentHash !== globals.lastHashes[key]) {
+        writeCacheToFile(key, serializedValue);
+        updates.push({ key, hash: currentHash });
+      }
+    }
+
+    // 输出更新日志
+    if (updates.length > 0) {
+      log("info", `Updated local caches for keys: ${updates.map(u => u.key).join(', ')}`);
+      updates.forEach(({ key, hash }) => {
+        globals.lastHashes[key] = hash; // 更新本地哈希
+      });
+    } else {
+      log("info", 'No changes detected, skipping local cache update.');
+    }
+
+  } catch (error) {
+    log("error", `updateLocalCaches failed: ${error.message}`, error.stack);
+    log("error", `Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
+  }
+}
+
+// 判断是否有效的本地缓存目录
+export function judgeLocalCacheValid(urlPath) {
+  if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
+    const cacheDirPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache');
+
+    if (fs.existsSync(cacheDirPath)) {
+      globals.localCacheValid = true;
+    } else {
+      globals.localCacheValid = false;
+    }
   }
 }
