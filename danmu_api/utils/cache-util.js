@@ -2,8 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
-import fs from 'fs';
-import path from 'path';
+let fs, path;
 
 // =====================
 // cache数据结构处理函数
@@ -409,7 +408,11 @@ export async function updateLocalCaches() {
 }
 
 // 判断是否有效的本地缓存目录
-export function judgeLocalCacheValid(urlPath) {
+export async function judgeLocalCacheValid(urlPath, deployPlatform) {
+  if (deployPlatform === 'node') {
+    fs = await import('fs');
+    path = await import('path');
+  }
   if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
     const cacheDirPath = path.join(getDirname(), '..', '..', '.cache');
 
