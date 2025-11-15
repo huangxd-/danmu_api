@@ -11,7 +11,7 @@ export class NetlifyHandler extends BaseHandler {
   async setEnv(key, value) {
     try {
       // 更新云端环境变量
-      const url = `https://api.netlify.com/api/v1/accounts/{account_id}/env${globals.deployPlatformProject}/env/${envItem.id}`;
+      const url = `https://api.netlify.com/api/v1/accounts/${globals.deployPlatformAccount}/env?site_id=${globals.deployPlatformProject}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
