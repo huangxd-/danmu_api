@@ -16,14 +16,16 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
-  judgeLocalCacheValid(path),
+  if (deployPlatform === "node") {
+    judgeLocalCacheValid(path);
+  }
   await judgeRedisValid(path);
 
   log("info", `request url: ${JSON.stringify(url)}`);
   log("info", `request path: ${path}`);
   log("info", `client ip: ${clientIp}`);
 
-  if (globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+  if (deployPlatform === "node" && globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getLocalCaches();
   }
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {

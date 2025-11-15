@@ -309,9 +309,20 @@ export function cleanupExpiredIPs(currentTime) {
   }
 }
 
+// 获取当前文件目录的兼容方式
+function getDirname() {
+  if (typeof __dirname !== 'undefined') {
+    // CommonJS 环境 (Vercel)
+    return __dirname;
+  }
+  // ES Module 环境 (本地)
+  // 假设 cache-util.js 在 danmu_api/utils/ 目录下
+  return path.join(process.cwd(), 'danmu_api', 'utils');
+}
+
 // 从本地缓存目录读取缓存数据
 export function readCacheFromFile(key) {
-  const cacheFilePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache', `${key}`);
+  const cacheFilePath = path.join(getDirname(), '..', '..', '.cache', `${key}`);
   if (fs.existsSync(cacheFilePath)) {
     const fileContent = fs.readFileSync(cacheFilePath, 'utf8');
     return JSON.parse(fileContent);
@@ -321,7 +332,7 @@ export function readCacheFromFile(key) {
 
 // 将缓存数据写入本地缓存文件
 export function writeCacheToFile(key, value) {
-  const cacheFilePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache', `${key}`);
+  const cacheFilePath = path.join(getDirname(), '..', '..', '.cache', `${key}`);
   fs.writeFileSync(cacheFilePath, JSON.stringify(value), 'utf8');
 }
 
@@ -401,7 +412,7 @@ export async function updateLocalCaches() {
 // 判断是否有效的本地缓存目录
 export function judgeLocalCacheValid(urlPath) {
   if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
-    const cacheDirPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.cache');
+    const cacheDirPath = path.join(getDirname(), '..', '..', '.cache');
 
     if (fs.existsSync(cacheDirPath)) {
       globals.localCacheValid = true;
