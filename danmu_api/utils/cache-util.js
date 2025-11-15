@@ -2,9 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+let fs, path;
 
 // =====================
 // cache数据结构处理函数
@@ -410,13 +408,23 @@ export async function updateLocalCaches() {
 }
 
 // 判断是否有效的本地缓存目录
-export function judgeLocalCacheValid(urlPath) {
-  if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
-    const cacheDirPath = path.join(getDirname(), '..', '..', '.cache');
+export async function judgeLocalCacheValid(urlPath, deployPlatform) {
+  if (deployPlatform === 'node') {
+    try {
+      fs = await import('fs');
+      path = await import('path');
 
-    if (fs.existsSync(cacheDirPath)) {
-      globals.localCacheValid = true;
-    } else {
+      if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
+        const cacheDirPath = path.join(getDirname(), '..', '..', '.cache');
+
+        if (fs.existsSync(cacheDirPath)) {
+          globals.localCacheValid = true;
+        } else {
+          globals.localCacheValid = false;
+        }
+      }
+    } catch (error) {
+      console.warn('Node.js modules not available:', error.message);
       globals.localCacheValid = false;
     }
   }

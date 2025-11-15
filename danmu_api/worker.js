@@ -17,7 +17,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   const method = req.method;
 
   if (deployPlatform === "node") {
-    judgeLocalCacheValid(path);
+    await judgeLocalCacheValid(path, deployPlatform);
   }
   await judgeRedisValid(path);
 
