@@ -354,6 +354,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务       |
 | DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务       |
 | DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务       |
 
@@ -418,7 +419,8 @@ danmu_api/
 │       └── handlers/     # 部署平台API调用及环境变量处理类
 │           ├── base-handler.js
 │           ├── node-handler.js
-│           └── vercel-handler.js
+│           ├── vercel-handler.js
+│           └── netlify-handler.js
 │       ├── envs.js       # 环境变量处理脚本
 │       └── globals.js    # 全局变量处理脚本
 │   └── models/

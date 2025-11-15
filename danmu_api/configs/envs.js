@@ -219,6 +219,7 @@ export class Envs {
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）
+      deployPlatformAccount: this.get('DEPLOY_PLATFROM_ACCOUNT', '', 'string', true), // 部署平台账号ID配置（默认空）
       deployPlatformProject: this.get('DEPLOY_PLATFROM_PROJECT', '', 'string', true), // 部署平台项目名称配置（默认空）
       deployPlatformToken: this.get('DEPLOY_PLATFROM_TOKEN', '', 'string', true), // 部署平台项目名称配置（默认空）
     };
