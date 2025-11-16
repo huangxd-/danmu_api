@@ -8,14 +8,21 @@ import { httpGet, httpPost, httpPatch, httpDelete } from "../../utils/http-util.
 // =====================
 
 export class VercelHandler extends BaseHandler {
+  API_URL = 'https://api.vercel.com';
+
+  async _getAllEnvs(projectId, token) {
+    const url = `${(this.API_URL)}/v10/projects/${projectId}/env`;
+    const options = {
+      headers: {Authorization: `Bearer ${token}`},
+    };
+    const res = await httpGet(url, options);
+    const allEnv = res.data.envs;
+    return allEnv;
+  }
+
   async _getEevId(key) {
     try {
-      const url = `https://api.vercel.com/v10/projects/${globals.deployPlatformProject}/env`;
-      const options = {
-        headers: { Authorization: `Bearer ${globals.deployPlatformToken}` },
-      };
-      const res = await httpGet(url, options);
-      const allEnv = res.data.envs;
+      const allEnv = await this._getAllEnvs(globals.deployPlatformProject, globals.deployPlatformToken);
 
       // 查找第一个 key 字段匹配的元素
       const envItem = allEnv.find(env => env.key === key);
@@ -42,7 +49,7 @@ export class VercelHandler extends BaseHandler {
 
     try {
       // 更新云端环境变量
-      const url = `https://api.vercel.com/v9/projects/${globals.deployPlatformProject}/env/${envItem.id}`;
+      const url = `${this.API_URL}/v9/projects/${globals.deployPlatformProject}/env/${envItem.id}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
@@ -51,7 +58,7 @@ export class VercelHandler extends BaseHandler {
         value: value.toString(),
         target: envItem.target,
         type: envItem.type,
-      }
+      };
       await httpPatch(url, JSON.stringify(data), options);
 
       return this.updateLocalEnv(key, value);
@@ -63,7 +70,7 @@ export class VercelHandler extends BaseHandler {
   async addEnv(key, value) {
     try {
       // 更新云端环境变量
-      const url = `https://api.vercel.com/v10/projects/${globals.deployPlatformProject}/env`;
+      const url = `${this.API_URL}/v10/projects/${globals.deployPlatformProject}/env`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
@@ -76,7 +83,7 @@ export class VercelHandler extends BaseHandler {
           'development',
         ],
         type: 'encrypted',
-      }
+      };
       await httpPost(url, JSON.stringify(data), options);
 
       return this.updateLocalEnv(key, value);
@@ -95,7 +102,7 @@ export class VercelHandler extends BaseHandler {
 
     try {
       // 更新云端环境变量
-      const url = `https://api.vercel.com/v9/projects/${globals.deployPlatformProject}/env/${envItem.id}`;
+      const url = `${this.API_URL}/v9/projects/${globals.deployPlatformProject}/env/${envItem.id}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
@@ -104,6 +111,16 @@ export class VercelHandler extends BaseHandler {
       return this.delLocalEnv(key);
     } catch (error) {
       log("error", '[server] ✗ Failed to add environment variable:', error.message);
+    }
+  }
+
+  async checkParams(accountId, projectId, token) {
+    try {
+      await this._getAllEnvs(projectId, token);
+      return true;
+    } catch (error) {
+      log("error", 'checkParams failed! projectId or token is not valid:', error.message);
+      return false;
     }
   }
 }

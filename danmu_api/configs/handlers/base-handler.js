@@ -66,4 +66,9 @@ export default class BaseHandler {
   async delEnv(key) {
     throw new Error("Method 'delEnv' must be implemented");
   }
+
+  // 校验必填参数
+  async checkParams(accountId, projectId, token) {
+    throw new Error("Method 'checkParams' must be implemented");
+  }
 }

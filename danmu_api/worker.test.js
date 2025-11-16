@@ -21,6 +21,7 @@ import YoukuSource from "./sources/youku.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
 import { VercelHandler } from "./configs/handlers/vercel-handler.js";
+import { NetlifyHandler } from "./configs/handlers/netlify-handler.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -317,9 +318,38 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res === "", `Expected res === "", but got ${res}`);
   // });
 
-  // 测试Vercel设置环境变量
-  await t.test('Vercel Config setEnv', async () => {
-    const handler = new VercelHandler();
+  // // 测试Vercel设置环境变量
+  // await t.test('Vercel Config setEnv', async () => {
+  //   const handler = new VercelHandler();
+  //   let res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 1);
+  //   res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 0);
+  // });
+  //
+  // // 测试Vercel添加和删除环境变量
+  // await t.test('Vercel Config addEnv and del Env', async () => {
+  //   const handler = new VercelHandler();
+  //   await handler.addEnv("UPSTASH_REDIS_REST_TOKEN", "xxxx");
+  //   let res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
+  //   await handler.delEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   assert(res === "", `Expected res === "", but got ${res}`);
+  // });
+
+  // // 测试Vercel添加和删除环境变量
+  // await t.test('Vercel Check Params', async () => {
+  //   const handler = new VercelHandler();
+  //   const res = await handler.checkParams("", "", "");
+  //   assert(res, `Expected res is true, but got ${res}`);
+  // });
+
+  // 测试Netlify设置环境变量
+  await t.test('Netlify Config setEnv', async () => {
+    const handler = new NetlifyHandler();
     let res = handler.getEnv("DANMU_LIMIT");
     assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
     await handler.setEnv("DANMU_LIMIT", 1);
@@ -328,9 +358,9 @@ test('worker.js API endpoints', async (t) => {
     await handler.setEnv("DANMU_LIMIT", 0);
   });
 
-  // 测试Vercel添加和删除环境变量
-  await t.test('Vercel Config addEnv and del Env', async () => {
-    const handler = new VercelHandler();
+  // 测试Netlify添加和删除环境变量
+  await t.test('Netlify Config addEnv and del Env', async () => {
+    const handler = new NetlifyHandler();
     await handler.addEnv("UPSTASH_REDIS_REST_TOKEN", "xxxx");
     let res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
     assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
@@ -338,4 +368,11 @@ test('worker.js API endpoints', async (t) => {
     res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
     assert(res === "", `Expected res === "", but got ${res}`);
   });
+
+  // // 测试Netlify添加和删除环境变量
+  // await t.test('Netlify Check Params', async () => {
+  //   const handler = new NetlifyHandler();
+  //   const res = await handler.checkParams("", "", "");
+  //   assert(res, `Expected res is true, but got ${res}`);
+  // });
 });

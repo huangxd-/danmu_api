@@ -1,27 +1,37 @@
 import BaseHandler from "./base-handler.js";
 import { globals } from '../globals.js';
 import { log } from "../../utils/log-util.js";
-import { httpGet, httpPost, httpPatch, httpDelete } from "../../utils/http-util.js";
+import { httpGet, httpPost, httpDelete, httpPut } from "../../utils/http-util.js";
 
 // =====================
 // Netlify环境变量处理类
 // =====================
 
 export class NetlifyHandler extends BaseHandler {
+  API_URL = 'https://api.netlify.com';
+
+  async _getAllEnvs(accountId, projectId, token) {
+    const url = `${this.API_URL}/api/v1/accounts/${accountId}/env?site_id=${projectId}`;
+    const options = {
+      headers: {Authorization: `Bearer ${token}`},
+    };
+    return await httpGet(url, options);
+  }
+
   async setEnv(key, value) {
     try {
       // 更新云端环境变量
-      const url = `https://api.netlify.com/api/v1/accounts/${globals.deployPlatformAccount}/env?site_id=${globals.deployPlatformProject}`;
+      const url = `${this.API_URL}/api/v1/accounts/${globals.deployPlatformAccount}/env/${key}?site_id=${globals.deployPlatformProject}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
       const data = {
         key: key,
-        value: value.toString(),
-        target: envItem.target,
-        type: envItem.type,
-      }
-      await httpPatch(url, JSON.stringify(data), options);
+        values: [
+          { context: 'all', value: value.toString() },
+        ]
+      };
+      await httpPut(url, JSON.stringify(data), options);
 
       return this.updateLocalEnv(key, value);
     } catch (error) {
@@ -32,20 +42,16 @@ export class NetlifyHandler extends BaseHandler {
   async addEnv(key, value) {
     try {
       // 更新云端环境变量
-      const url = `https://api.vercel.com/v10/projects/${globals.deployPlatformProject}/env`;
+      const url = `${this.API_URL}/api/v1/accounts/${globals.deployPlatformAccount}/env?site_id=${globals.deployPlatformProject}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
-      const data = {
+      const data = [{
         key: key,
-        value: value.toString(),
-        target: [
-          'production',
-          'preview',
-          'development',
+        values: [
+          { context: 'all', value: value },
         ],
-        type: 'encrypted',
-      }
+      }];
       await httpPost(url, JSON.stringify(data), options);
 
       return this.updateLocalEnv(key, value);
@@ -55,16 +61,9 @@ export class NetlifyHandler extends BaseHandler {
   }
 
   async delEnv(key) {
-    // 首先获取云端环境变量
-    const envItem = await this._getEevId(key);
-    if (!envItem) {
-      log("error", '[server] Error setEnv: 没有找到对应的环境变量！');
-      return;
-    }
-
     try {
       // 更新云端环境变量
-      const url = `https://api.vercel.com/v9/projects/${globals.deployPlatformProject}/env/${envItem.id}`;
+      const url = `${this.API_URL}/api/v1/accounts/${globals.deployPlatformAccount}/env/${key}?site_id=${globals.deployPlatformProject}`;
       const options = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
       };
@@ -73,6 +72,16 @@ export class NetlifyHandler extends BaseHandler {
       return this.delLocalEnv(key);
     } catch (error) {
       log("error", '[server] ✗ Failed to add environment variable:', error.message);
+    }
+  }
+
+  async checkParams(accountId, projectId, token) {
+    try {
+      await this._getAllEnvs(accountId, projectId, token);
+      return true;
+    } catch (error) {
+      log("error", 'checkParams failed! accountId, projectId or token is not valid:', error.message);
+      return false;
     }
   }
 }
