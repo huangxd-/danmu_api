@@ -13,7 +13,7 @@ export class VercelHandler extends BaseHandler {
   async _getAllEnvs(projectId, token) {
     const url = `${(this.API_URL)}/v10/projects/${projectId}/env`;
     const options = {
-      headers: {Authorization: `Bearer ${token}`},
+      headers: { Authorization: `Bearer ${token}` },
     };
     const res = await httpGet(url, options);
     const allEnv = res.data.envs;

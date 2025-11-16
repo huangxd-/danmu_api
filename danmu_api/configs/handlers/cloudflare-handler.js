@@ -4,14 +4,14 @@ import { log } from "../../utils/log-util.js";
 import { httpGet, httpPost, httpDelete, httpPut } from "../../utils/http-util.js";
 
 // =====================
-// Netlify环境变量处理类
+// Cloudflare环境变量处理类
 // =====================
 
-export class NetlifyHandler extends BaseHandler {
-  API_URL = 'https://api.netlify.com';
+export class CloudflareHandler extends BaseHandler {
+  API_URL = 'https://api.cloudflare.com';
 
   async _getAllEnvs(accountId, projectId, token) {
-    const url = `${this.API_URL}/api/v1/accounts/${accountId}/env?site_id=${projectId}`;
+    const url = `${this.API_URL}/client/v4/accounts/${accountId}/workers/scripts/${projectId}/settings`;
     const options = {
       headers: { Authorization: `Bearer ${token}` },
     };
