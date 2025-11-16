@@ -34,7 +34,7 @@ export class Anime {
       throw new TypeError("fromJson 参数必须是对象");
     }
 
-    const links = json.links.map(link => Link.fromJson(link));
+    const links = (json.links || []).map(link => Link.fromJson(link));
     return new Anime({ ...json, links });
   }
 
