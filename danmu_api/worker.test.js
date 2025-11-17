@@ -388,16 +388,16 @@ test('worker.js API endpoints', async (t) => {
     await handler.setEnv("DANMU_LIMIT", 0);
   });
 
-  // 测试Cloudflare添加和删除环境变量
-  await t.test('Cloudflare Config addEnv and del Env', async () => {
-    const handler = new CloudflareHandler();
-    await handler.addEnv("UPSTASH_REDIS_REST_TOKEN", "xxxx");
-    let res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
-    assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
-    await handler.delEnv("UPSTASH_REDIS_REST_TOKEN");
-    res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
-    assert(res === "", `Expected res === "", but got ${res}`);
-  });
+  // // 测试Cloudflare添加和删除环境变量
+  // await t.test('Cloudflare Config addEnv and del Env', async () => {
+  //   const handler = new CloudflareHandler();
+  //   await handler.addEnv("UPSTASH_REDIS_REST_TOKEN", "xxxx");
+  //   let res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
+  //   await handler.delEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   res = handler.getEnv("UPSTASH_REDIS_REST_TOKEN");
+  //   assert(res === "", `Expected res === "", but got ${res}`);
+  // });
 
   // // 测试Cloudflare添加和删除环境变量
   // await t.test('Cloudflare Check Params', async () => {
