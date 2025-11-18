@@ -23,22 +23,34 @@ export class CloudflareHandler extends BaseHandler {
     }
   }
 
+  /**
+   * 设置/删除环境变量
+   * @param {Array} envs   环境变量数组（每个元素 {name, text, type}）
+   * @param {string} key    变量名
+   * @param {string|null|undefined} value
+   *        - 字符串：新增或修改为该值
+   * @returns {Array} 返回处理后的 envs（直接修改原数组并返回）
+   */
   _setEnv(envs, key, value) {
-    // 遍历环境变量列表，查找是否存在 key
-    for (let i = 0; i < envs.length; i++) {
-      if (envs[i].name === key) {
-        // 存在则修改 text 字段
-        envs[i].text = value;
-        return envs; // 返回修改后的列表
-      }
-    }
+    // 查找已有项的索引
+    const idx = envs.findIndex(item => item.name === key);
 
-    // 不存在则新增一条
-    envs.push({
-      name: key,
-      text: value,
-      type: "plain_text"
-    });
+    if (value === null || value === undefined) {
+      // 删除：value 为 null/undefined 时删除该变量
+      if (idx !== -1) {
+        envs.splice(idx, 1);
+      }
+    } else if (idx !== -1) {
+      // 已存在 → 修改
+      envs[idx].text = value;
+    } else {
+      // 不存在 → 新增
+      envs.push({
+        name: key,
+        text: value,
+        type: "plain_text"
+      });
+    }
 
     return envs;
   }
@@ -59,7 +71,7 @@ export class CloudflareHandler extends BaseHandler {
       };
       const formData = new FormData();
       const settings = {
-        bindings: this._setEnv(envs, key, value.toString())
+        bindings: this._setEnv(envs, key, value == null ? null : value.toString())
       };
       formData.append(
         "settings",
@@ -75,23 +87,13 @@ export class CloudflareHandler extends BaseHandler {
   }
 
   async addEnv(key, value) {
-    // addEnv 和 setEnv 在这个场景下逻辑相同
+    // addEnv 和 setEnv 在这个场景下逻辑相同，只是不存在该key
     return await this.setEnv(key, value);
   }
 
   async delEnv(key) {
-    try {
-      // 更新云端环境变量
-      const url = `${this.API_URL}/api/v1/accounts/${globals.deployPlatformAccount}/env/${key}?site_id=${globals.deployPlatformProject}`;
-      const options = {
-        headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
-      };
-      await httpDelete(url, options);
-
-      return this.delLocalEnv(key);
-    } catch (error) {
-      log("error", '[server] ✗ Failed to add environment variable:', error.message);
-    }
+    // addEnv 和 setEnv 在这个场景下逻辑相同，只是value设置为null
+    return await this.setEnv(key, null);
   }
 
   async checkParams(accountId, projectId, token) {
