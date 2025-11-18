@@ -248,6 +248,7 @@ export default class YoukuSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "youku",
             };
 
             tmpAnimes.push(transformedAnime);

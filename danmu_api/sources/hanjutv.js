@@ -170,6 +170,7 @@ export default class HanjutvSource extends BaseSource {
               episodeCount: links.length,
               rating: detail.rank,
               isFavorited: true,
+              source: "hanjutv",
             };
 
             tmpAnimes.push(transformedAnime);

@@ -667,6 +667,7 @@ export default class IqiyiSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "iqiyi",
             };
 
             tmpAnimes.push(transformedAnime);

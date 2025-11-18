@@ -59,48 +59,79 @@ export default class VodSource extends BaseSource {
   }
 
   // 查询vod站点影片信息（返回最快的结果）
-  async getVodAnimesFromFastestServer(title, servers) {
+  async getVodAnimesFromFastestServer(title, servers, preferAnimeId = null, preferSource = null) {
     if (!servers || servers.length === 0) {
       return [];
     }
 
-    // 使用 Promise.race 获取最快响应的服务器
     const promises = servers.map(server =>
       this.getVodAnimes(title, server.url, server.name)
     );
 
+    let fastest;
     try {
-      // race 会返回第一个成功的结果
-      const result = await Promise.race(promises);
-
-      // 检查结果是否有效（有数据）
-      if (result && result.list && result.list.length > 0) {
-        log("info", `[VOD fastest mode] 使用最快的服务器: ${result.serverName}`);
-        return [result];
-      }
-
-      // 如果最快的服务器没有数据，继续尝试其他服务器
-      log("info", `[VOD fastest mode] 最快的服务器 ${result.serverName} 无数据，尝试其他服务器`);
-      const allResults = await Promise.allSettled(promises);
-      const validResults = allResults
-        .filter(r => r.status === 'fulfilled' && r.value && r.value.list && r.value.list.length > 0)
-        .map(r => r.value);
-
-      return validResults.length > 0 ? [validResults[0]] : [];
-    } catch (error) {
-      log("error", `[VOD fastest mode] 所有服务器查询失败:`, error.message);
+      fastest = await Promise.race(promises);  // 最快完成的一个（无论成功还是失败）
+    } catch (err) {
+      log("error", `[VOD fastest mode] 所有服务器直接抛错`, err);
       return [];
     }
+
+    // 判断整个 result 字符串是否包含 preferAnimeId（大小写不敏感）
+    const stringContainsPreferId = (result) => {
+      if (!preferAnimeId || preferSource !== "vod") return true;
+      const str = JSON.stringify(result)?.toLowerCase() || "";
+      return str.includes(String(preferAnimeId).toLowerCase());
+    };
+
+    // 1. 最快返回的这个，字符串里包含 preferAnimeId → 直接用（不管有没有 list 数据）
+    if (stringContainsPreferId(fastest) && fastest && fastest.list && fastest.list.length > 0) {
+      log("info", `[VOD fastest mode] 最快服务器 ${fastest.serverName}${preferSource === "vod" ?
+          " 字符串包含 preferAnimeId → 优先使用" : ""}`);
+      return [fastest];
+    }
+
+    log("info", `[VOD fastest mode] 最快服务器 ${fastest.serverName} 不含 preferAnimeId，等待其他服务器…`);
+
+    // 2. 等待所有请求完成
+    const allSettled = await Promise.allSettled(promises);
+
+    // 先遍历所有 fulfilled 的结果，找第一个字符串包含 preferAnimeId 的
+    if (preferAnimeId) {
+      for (const settled of allSettled) {
+        if (settled.status === "fulfilled" && stringContainsPreferId(settled.value) &&
+            settled.value && settled.value.list && settled.value.list.length > 0) {
+          log("info", `[VOD fastest mode] 找到包含 preferAnimeId 的服务器: ${settled.value.serverName}`);
+          return [settled.value];
+        }
+      }
+      log("info", `[VOD fastest mode] 所有服务器都不包含 preferAnimeId，回退到“真正有数据”的最快服务器`);
+    }
+
+    // 3. 兜底：没有任何服务器包含 preferAnimeId，或根本没传 preferAnimeId
+    //    → 严格保留你原来的判断：必须 result && result.list && result.list.length > 0
+    const validResults = allSettled
+      .filter(r => r.status === "fulfilled")
+      .map(r => r.value)
+      .filter(result => result && result.list && result.list.length > 0);  // ← 严格保留这行！
+
+    if (validResults.length > 0) {
+      const chosen = validResults[0];  // 完成顺序最快的一个有数据的
+      log("info", `[VOD fastest mode] 使用最快有数据的服务器: ${chosen.serverName}`);
+      return [chosen];
+    }
+
+    log("error", `[VOD fastest mode] 所有服务器均无有效数据`);
+    return [];
   }
 
-  async search(keyword) {
+  async search(keyword, preferAnimeId = null, preferSource = null) {
     if (!globals.vodServers || globals.vodServers.length === 0) {
       return [];
     }
 
     // 根据 vodReturnMode 决定查询策略
     if (globals.vodReturnMode === "fastest") {
-      return await this.getVodAnimesFromFastestServer(keyword, globals.vodServers);
+      return await this.getVodAnimesFromFastestServer(keyword, globals.vodServers, preferAnimeId, preferSource);
     } else {
       return await this.getVodAnimesFromAllServersImpl(keyword, globals.vodServers);
     }
@@ -161,6 +192,7 @@ export default class VodSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "vod",
             };
 
             tmpAnimes.push(transformedAnime);

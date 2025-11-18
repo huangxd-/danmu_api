@@ -72,7 +72,7 @@ function matchSeason(anime, queryTitle, season) {
 }
 
 // Extracted function for GET /api/v2/search/anime
-export async function searchAnime(url) {
+export async function searchAnime(url, preferAnimeId = null, preferSource = null) {
   const queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
@@ -161,7 +161,7 @@ export async function searchAnime(url) {
     log("info", `Search sourceOrderArr: ${globals.sourceOrderArr}`);
     const requestPromises = globals.sourceOrderArr.map(source => {
       if (source === "360") return kan360Source.search(queryTitle);
-      if (source === "vod") return vodSource.search(queryTitle);
+      if (source === "vod") return vodSource.search(queryTitle, preferAnimeId, preferSource);
       if (source === "tmdb") return tmdbSource.search(queryTitle);
       if (source === "douban") return doubanSource.search(queryTitle);
       if (source === "renren") return renrenSource.search(queryTitle);
@@ -464,6 +464,17 @@ export async function matchAnime(url, req) {
       title = match[1].trim();
       season = parseInt(match[2]);
       episode = parseInt(match[3]);
+
+      // 优先提取中文部分作为标题（最常用、最干净）
+      const chineseMatch = title.match(/^[\u4e00-\u9fa5]+/);  // 开头的连续中文
+      if (chineseMatch) {
+        title = chineseMatch[0];
+      } else {
+        // 如果没有中文，再清理年份
+        title = title
+          .replace(/\.\d{4}$/i, '')
+          .trim();
+      }
     } else {
       // 没有 S##E## 格式，尝试提取第一个片段作为标题
       // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
@@ -483,14 +494,14 @@ export async function matchAnime(url, req) {
 
     log("info", "Parsed title, season, episode", { title, season, episode });
 
+    // 获取prefer animeIdgetPreferAnimeId
+    const [preferAnimeId, preferSource] = getPreferAnimeId(title);
+    log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
+
     let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));
-    const searchRes = await searchAnime(originSearchUrl);
+    const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource);
     const searchData = await searchRes.json();
     log("info", `searchData: ${searchData.animes}`);
-
-    // 获取prefer animeId
-    const preferAnimeId = getPreferAnimeId(title);
-    log("info", `prefer animeId: ${preferAnimeId}`);
 
     let resAnime;
     let resEpisode;
@@ -795,8 +806,8 @@ export async function getComment(path, queryFormat) {
     danmus = await otherSource.getComments(url, "other_server");
   }
 
-  const animeId = findAnimeIdByCommentId(commentId);
-  setPreferByAnimeId(animeId);
+  const [animeId, source] = findAnimeIdByCommentId(commentId);
+  setPreferByAnimeId(animeId, source);
   if (globals.localCacheValid && animeId) {
     writeCacheToFile('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
   }

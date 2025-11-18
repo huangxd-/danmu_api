@@ -381,6 +381,7 @@ export default class RenrenSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "renren",
             };
 
             tmpAnimes.push(transformedAnime);

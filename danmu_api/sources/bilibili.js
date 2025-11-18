@@ -428,6 +428,7 @@ export default class BilibiliSource extends BaseSource {
             episodeCount: links.length,
             rating: 0,
             isFavorited: true,
+            source: "bilibili",
           };
 
           tmpAnimes.push(transformedAnime);

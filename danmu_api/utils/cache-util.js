@@ -258,18 +258,19 @@ export function findAnimeIdByCommentId(commentId) {
   for (const anime of globals.animes) {
     for (const link of anime.links) {
       if (link.id === commentId) {
-        return anime.animeId;
+        return [anime.animeId, anime.source];
       }
     }
   }
-  return null;
+  return [null, null];
 }
 
 // 通过 animeId 查找 lastSelectMap 中 animeIds 包含该 animeId 的 key，并设置其 prefer 为 animeId
-export function setPreferByAnimeId(animeId) {
+export function setPreferByAnimeId(animeId, source) {
   for (const [key, value] of globals.lastSelectMap.entries()) {
     if (value.animeIds && value.animeIds.includes(animeId)) {
       value.prefer = animeId;
+      value.source = source;
       globals.lastSelectMap.set(key, value); // 确保更新被保存
       return key; // 返回被修改的 key
     }
@@ -281,9 +282,9 @@ export function setPreferByAnimeId(animeId) {
 export function getPreferAnimeId(title) {
   const value = globals.lastSelectMap.get(title);
   if (!value || !value.prefer) {
-    return null;
+    return [null, null];
   }
-  return value.prefer;
+  return [value.prefer, value.source];
 }
 
 // 清理所有过期的 IP 记录（超过 1 分钟没有请求的 IP）

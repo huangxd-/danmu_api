@@ -6,7 +6,7 @@ import { validateType } from "../utils/common-util.js";
 export class Anime {
   constructor({ animeId = 111, bangumiId = "", animeTitle = "", type = "",
                 typeDescription = "", imageUrl = "", startDate = "", episodeCount = 1,
-                rating = 0, isFavorited = true, links = [] } = {}) {
+                rating = 0, isFavorited = true, source = "", links = [] } = {}) {
     // ---- 类型检查 ----
     validateType(animeId, "number");
     validateType(bangumiId, "string");
@@ -18,6 +18,7 @@ export class Anime {
     validateType(episodeCount, "number");
     validateType(rating, "number");
     validateType(isFavorited, "boolean");
+    validateType(source, "string");
     validateType(links, "array");
 
     // 将 links 转换为 Link 实例数组
@@ -25,7 +26,7 @@ export class Anime {
 
     // 直接解构并赋值给 this
     Object.assign(this, { animeId, bangumiId, animeTitle, type, typeDescription, imageUrl, startDate,
-      episodeCount, rating, isFavorited });
+      episodeCount, rating, isFavorited, source });
   }
 
   // ---- 静态方法：从 JSON 创建 Anime 对象 ----

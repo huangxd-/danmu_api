@@ -380,6 +380,7 @@ export default class TencentSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "tencent",
             };
 
             tmpAnimes.push(transformedAnime);

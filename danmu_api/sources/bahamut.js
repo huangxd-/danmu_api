@@ -330,6 +330,7 @@ export default class BahamutSource extends BaseSource {
             episodeCount: links.length,
             rating: detail.rating,
             isFavorited: true,
+            source: "bahamut",
           };
 
           tmpAnimes.push(transformedAnime);

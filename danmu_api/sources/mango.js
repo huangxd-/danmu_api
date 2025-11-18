@@ -447,6 +447,7 @@ export default class MangoSource extends BaseSource {
               episodeCount: 1,
               rating: 0,
               isFavorited: true,
+              source: "imgo",
             };
 
             tmpAnimes.push(transformedAnime);
@@ -485,6 +486,7 @@ export default class MangoSource extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "imgo",
             };
 
             tmpAnimes.push(transformedAnime);

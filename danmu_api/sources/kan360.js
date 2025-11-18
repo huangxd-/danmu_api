@@ -169,6 +169,7 @@ export default class Kan360Source extends BaseSource {
               episodeCount: links.length,
               rating: 0,
               isFavorited: true,
+              source: "360",
             };
 
             tmpAnimes.push(transformedAnime);
