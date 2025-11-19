@@ -1,7 +1,7 @@
 import BaseHandler from "./base-handler.js";
 import { globals } from '../globals.js';
 import { log } from "../../utils/log-util.js";
-import { httpGet, httpDelete, httpPatch } from "../../utils/http-util.js";
+import { httpGet, httpPatch } from "../../utils/http-util.js";
 
 // =====================
 // Cloudflare环境变量处理类
@@ -93,7 +93,8 @@ export class CloudflareHandler extends BaseHandler {
 
   async delEnv(key) {
     // addEnv 和 setEnv 在这个场景下逻辑相同，只是value设置为null
-    return await this.setEnv(key, null);
+    await this.setEnv(key, null);
+    return this.delLocalEnv(key);
   }
 
   async checkParams(accountId, projectId, token) {

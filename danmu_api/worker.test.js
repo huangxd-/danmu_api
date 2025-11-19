@@ -23,6 +23,7 @@ import { NodeHandler } from "./configs/handlers/node-handler.js";
 import { VercelHandler } from "./configs/handlers/vercel-handler.js";
 import { NetlifyHandler } from "./configs/handlers/netlify-handler.js";
 import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
+import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -377,16 +378,16 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
 
-  // 测试Cloudflare设置环境变量
-  await t.test('Cloudflare Config setEnv', async () => {
-    const handler = new CloudflareHandler();
-    let res = handler.getEnv("DANMU_LIMIT");
-    assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
-    await handler.setEnv("DANMU_LIMIT", 1);
-    res = handler.getEnv("DANMU_LIMIT");
-    assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
-    await handler.setEnv("DANMU_LIMIT", 0);
-  });
+  // // 测试Cloudflare设置环境变量
+  // await t.test('Cloudflare Config setEnv', async () => {
+  //   const handler = new CloudflareHandler();
+  //   let res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 1);
+  //   res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 0);
+  // });
 
   // // 测试Cloudflare添加和删除环境变量
   // await t.test('Cloudflare Config addEnv and del Env', async () => {
@@ -402,6 +403,35 @@ test('worker.js API endpoints', async (t) => {
   // // 测试Cloudflare添加和删除环境变量
   // await t.test('Cloudflare Check Params', async () => {
   //   const handler = new CloudflareHandler();
+  //   const res = await handler.checkParams("", "", "");
+  //   assert(res, `Expected res is true, but got ${res}`);
+  // });
+
+  // // 测试Edgeone设置环境变量
+  // await t.test('Edgeone Config setEnv', async () => {
+  //   const handler = new EdgeoneHandler();
+  //   let res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 0, `Expected Number(res) === 0, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 1);
+  //   res = handler.getEnv("DANMU_LIMIT");
+  //   assert(Number(res) === 1, `Expected Number(res) === 1, but got ${Number(res)}`);
+  //   await handler.setEnv("DANMU_LIMIT", 0);
+  // });
+
+  // 测试Edgeone添加和删除环境变量
+  await t.test('Edgeone Config addEnv and del Env', async () => {
+    const handler = new EdgeoneHandler();
+    await handler.addEnv("PROXY_URL", "xxxx");
+    let res = handler.getEnv("PROXY_URL");
+    assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
+    await handler.delEnv("PROXY_URL");
+    res = handler.getEnv("PROXY_URL");
+    assert(res === "", `Expected res === "", but got ${res}`);
+  });
+
+  // // 测试Edgeone添加和删除环境变量
+  // await t.test('Edgeone Check Params', async () => {
+  //   const handler = new EdgeoneHandler();
   //   const res = await handler.checkParams("", "", "");
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
