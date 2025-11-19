@@ -71,4 +71,9 @@ export default class BaseHandler {
   async checkParams(accountId, projectId, token) {
     throw new Error("Method 'checkParams' must be implemented");
   }
+
+  // 部署
+  async deploy(accountId, projectId, token) {
+    throw new Error("Method 'deploy' must be implemented");
+  }
 }

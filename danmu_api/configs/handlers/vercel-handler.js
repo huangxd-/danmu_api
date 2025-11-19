@@ -123,4 +123,45 @@ export class VercelHandler extends BaseHandler {
       return false;
     }
   }
+
+  async deploy() {
+    try {
+      // 获取上一次部署id
+      const urlList = `${(this.API_URL)}/v6/deployments?projectId=${globals.deployPlatformProject}&limit=1`;
+      const optionsList = {
+        headers: { Authorization: `Bearer ${globals.deployPlatformToken}` },
+      };
+      const resList = await httpGet(urlList, optionsList);
+
+      let lastestDeployId;
+      if (resList?.data && resList?.data?.deployments && resList?.data?.deployments.length > 0) {
+        lastestDeployId = resList.data.deployments[0].uid;
+      } else {
+        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        return false;
+      }
+
+      // 触发云端部署
+      const url = `${this.API_URL}/v13/deployments`;
+      const options = {
+        headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
+      };
+      const data = {
+        name: globals.deployPlatformProject,
+        deploymentId: lastestDeployId,
+        target: "production"
+      };
+
+      const res = await httpPost(url, JSON.stringify(data), options);
+
+      if (!res?.data?.id) {
+        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      log("error", '[server] ✗ Failed to deploy:', error.message);
+      return false;
+    }
+  }
 }

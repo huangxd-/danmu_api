@@ -85,4 +85,27 @@ export class EdgeoneHandler extends BaseHandler {
       return false;
     }
   }
+
+  async deploy() {
+    try {
+      // 触发云端部署
+      const data = {
+        Action: "CreatePagesDeployment",
+        ProjectId: globals.deployPlatformProject,
+        RepoBranch: "main",
+        ViaMeta: "Github",
+        Provider: "Github"
+      };
+
+      const res = await this._httpPost(globals.deployPlatformToken, data);
+      if (res?.data?.Code !== 0) {
+        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      log("error", '[server] ✗ Failed to deploy:', error.message);
+      return false;
+    }
+  }
 }

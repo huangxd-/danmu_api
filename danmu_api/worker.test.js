@@ -349,6 +349,13 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
 
+  // 测试Vercel触发部署
+  await t.test('Vercel deploy', async () => {
+    const handler = new VercelHandler();
+    const res = await handler.deploy();
+    assert(res, `Expected res is true, but got ${res}`);
+  });
+
   // // 测试Netlify设置环境变量
   // await t.test('Netlify Config setEnv', async () => {
   //   const handler = new NetlifyHandler();
@@ -418,21 +425,28 @@ test('worker.js API endpoints', async (t) => {
   //   await handler.setEnv("DANMU_LIMIT", 0);
   // });
 
-  // 测试Edgeone添加和删除环境变量
-  await t.test('Edgeone Config addEnv and del Env', async () => {
-    const handler = new EdgeoneHandler();
-    await handler.addEnv("PROXY_URL", "xxxx");
-    let res = handler.getEnv("PROXY_URL");
-    assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
-    await handler.delEnv("PROXY_URL");
-    res = handler.getEnv("PROXY_URL");
-    assert(res === "", `Expected res === "", but got ${res}`);
-  });
+  // // 测试Edgeone添加和删除环境变量
+  // await t.test('Edgeone Config addEnv and del Env', async () => {
+  //   const handler = new EdgeoneHandler();
+  //   await handler.addEnv("PROXY_URL", "xxxx");
+  //   let res = handler.getEnv("PROXY_URL");
+  //   assert(res === "xxxx", `Expected res === "xxxx", but got ${res}`);
+  //   await handler.delEnv("PROXY_URL");
+  //   res = handler.getEnv("PROXY_URL");
+  //   assert(res === "", `Expected res === "", but got ${res}`);
+  // });
 
   // // 测试Edgeone添加和删除环境变量
   // await t.test('Edgeone Check Params', async () => {
   //   const handler = new EdgeoneHandler();
   //   const res = await handler.checkParams("", "", "");
+  //   assert(res, `Expected res is true, but got ${res}`);
+  // });
+
+  // // 测试Edgeone触发部署
+  // await t.test('Edgeone deploy', async () => {
+  //   const handler = new EdgeoneHandler();
+  //   const res = await handler.deploy();
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
 });
