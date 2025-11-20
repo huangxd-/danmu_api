@@ -300,7 +300,10 @@ export async function getPageTitle(url) {
 export function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*"
+    }
   });
 }
 
@@ -313,7 +316,10 @@ export function xmlResponse(data, status = 200) {
   // 直接返回 XML 字符串作为 Response 的 body
   return new Response(data, {
     status,
-    headers: { "Content-Type": "application/xml" },
+    headers: { 
+      "Content-Type": "application/xml",
+      "Access-Control-Allow-Origin": "*"
+    }
   });
 }
 
