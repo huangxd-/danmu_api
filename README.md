@@ -270,6 +270,8 @@ LogVar 弹幕 API 服务器
 ## API食用指南
 支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna 等支持弹幕API的播放器。
 
+配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
+
 以`senplayer`为例：
 1. 获取到部署之后的API地址，如 `http://192.168.1.7:9321/87654321` ，其中`87654321`是默认token（默认为87654321的情况下也可以不带token），如果有自定义环境变量TOKEN，请替换成相应的token
 2. 将API地址填入自定义弹幕API，在`设置 - 弹幕设置 - 自定义弹幕API`

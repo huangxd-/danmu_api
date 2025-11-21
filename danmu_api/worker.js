@@ -53,8 +53,15 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleHomepage();
   }
 
-  if (path === "/favicon.ico" || path === "/robots.txt") {
-    return new Response(null, { status: 204 });
+  if (path === "/favicon.ico" || path === "/robots.txt" || method === "OPTIONS") {
+    return new Response(null, {
+        status: 204,
+        headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, User-Agent"
+        }
+    });
   }
 
   // --- 校验 token ---
