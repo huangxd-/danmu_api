@@ -462,19 +462,39 @@ export async function matchAnime(url, req) {
     if (match) {
       // 匹配到 S##E## 格式
       title = match[1].trim();
-      season = parseInt(match[2]);
-      episode = parseInt(match[3]);
+      season = parseInt(match[2], 10);
+      episode = parseInt(match[3], 10);
 
-      // 优先提取中文部分作为标题（最常用、最干净）
-      const chineseMatch = title.match(/^[\u4e00-\u9fa5]+/);  // 开头的连续中文
-      if (chineseMatch) {
-        title = chineseMatch[0];
-      } else {
-        // 如果没有中文，再清理年份
-        title = title
-          .replace(/\.\d{4}$/i, '')
-          .trim();
+      // ============ 新标题提取逻辑（重点）============
+      // 目标：
+      // 1. 优先保留最干净、最像剧名的那一段（通常是开头）
+      // 2. 支持：纯中文、纯英文、中英混排、带年份的、中文+单个字母（如亲爱的X）
+      // 3. 自动去掉后面的年份、技术参数等垃圾
+
+      // 情况1：开头是中文（最常见的中文字幕组文件名）
+      const chineseStart = title.match(/^[\u4e00-\u9fa5·]+(?:[A-Za-z0-9]?)/); // 允许中文后面紧跟一个字母/数字，如 亲爱的X、无忧渡
+      if (chineseStart) {
+        title = chineseStart[0];
       }
+      // 情况2：开头是英文（欧美剧常见，如 Blood.River）
+      else if (/^[A-Za-z0-9]/.test(title)) {
+        // 从开头一直取到第一个明显的技术字段或年份之前
+        const engMatch = title.match(/^([A-Za-z0-9.&\s]+?)(?=\.\d{4}|$)/);
+        if (engMatch) {
+          title = engMatch[1].trim().replace(/[._]/g, ' '); // Blood.River → Blood River（也可以保留.看你喜好）
+          // 如果你想保留原样点号，就去掉上面这行 replace
+        }
+      }
+      // 情况3：中文+英文混排（如 爱情公寓.ipartment.2009）
+      else {
+        // 先尝试取到第一个年份或分辨率之前的所有内容，再优先保留中文开头部分
+        const beforeYear = title.split(/\.(?:19|20)\d{2}|2160p|1080p|720p|H265|iPhone/)[0];
+        const chineseInMixed = beforeYear.match(/^[\u4e00-\u9fa5·]+/);
+        title = chineseInMixed ? chineseInMixed[0] : beforeYear.trim();
+      }
+
+      // 最后再保险清理一次常见的年份尾巴（防止漏网）
+      title = title.replace(/\.\d{4}$/i, '').trim();
     } else {
       // 没有 S##E## 格式，尝试提取第一个片段作为标题
       // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）

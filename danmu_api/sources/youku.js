@@ -275,35 +275,6 @@ export default class YoukuSource extends BaseSource {
   _processAndFormatEpisodes(rawEpisodes, mediaType = 'variety') {
     let filteredEpisodes = [...rawEpisodes];
 
-    // 综艺节目需要倒序处理
-    if (mediaType === 'variety') {
-      log("info", `[Youku] 检测到综艺节目，进行倒序处理`);
-      filteredEpisodes = filteredEpisodes.reverse();
-
-      // 检测特殊格式 "第N期：上/中/下"
-      const specialFormatPattern = /第\d+期\s*[：:]\s*[上中下]\s*[：:]/;
-      const hasSpecialFormat = filteredEpisodes.some(ep => {
-        const displayName = ep.displayName || ep.title;
-        return specialFormatPattern.test(displayName);
-      });
-
-      if (hasSpecialFormat) {
-        log("info", `[Youku] 检测到综艺特殊格式 '第N期：上/中/下'，进行智能过滤`);
-        // 只保留"上"或没有标记的分集
-        const finalFiltered = [];
-        for (const ep of filteredEpisodes) {
-          const displayName = ep.displayName || ep.title;
-          const match = displayName.match(/第(\d+)期\s*[：:]\s*([上中下])/);
-          if (!match || match[2] === '上') {
-            finalFiltered.push(ep);
-          } else {
-            log("debug", `[Youku] 过滤掉综艺分段: ${displayName}`);
-          }
-        }
-        filteredEpisodes = finalFiltered;
-      }
-    }
-
     // 格式化分集标题
     const formattedEpisodes = filteredEpisodes.map((ep, index) => {
       const episodeIndex = index + 1;
@@ -342,9 +313,9 @@ export default class YoukuSource extends BaseSource {
     if (mediaType === 'variety') {
       const periodMatch = cleanDisplayName.match(/第(\d+)期/);
       if (periodMatch) {
-        return `第${periodMatch[1]}期`;
+        return `第${periodMatch[1]}期 ${ep.published?.split(' ')[0] ?? ''} ${cleanDisplayName}`;
       } else {
-        return `第${episodeIndex}期`;
+        return `第${episodeIndex}期 ${ep.published?.split(' ')[0] ?? ''} ${cleanDisplayName}`;
       }
     }
 
