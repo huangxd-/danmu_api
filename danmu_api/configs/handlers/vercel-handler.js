@@ -11,7 +11,7 @@ export class VercelHandler extends BaseHandler {
   API_URL = 'https://api.vercel.com';
 
   async _getAllEnvs(projectId, token) {
-    const url = `${(this.API_URL)}/v10/projects/${projectId}/env`;
+    const url = `${this.API_URL}/v10/projects/${projectId}/env`;
     const options = {
       headers: { Authorization: `Bearer ${token}` },
     };
@@ -127,7 +127,7 @@ export class VercelHandler extends BaseHandler {
   async deploy() {
     try {
       // 获取上一次部署id
-      const urlList = `${(this.API_URL)}/v6/deployments?projectId=${globals.deployPlatformProject}&limit=1`;
+      const urlList = `${this.API_URL}/v6/deployments?projectId=${globals.deployPlatformProject}&limit=1`;
       const optionsList = {
         headers: { Authorization: `Bearer ${globals.deployPlatformToken}` },
       };
@@ -137,7 +137,7 @@ export class VercelHandler extends BaseHandler {
       if (resList?.data && resList?.data?.deployments && resList?.data?.deployments.length > 0) {
         lastestDeployId = resList.data.deployments[0].uid;
       } else {
-        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(resList?.data));
         return false;
       }
 

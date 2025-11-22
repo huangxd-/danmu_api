@@ -84,4 +84,26 @@ export class NetlifyHandler extends BaseHandler {
       return false;
     }
   }
+
+  async deploy() {
+    try {
+      // 触发云端部署
+      const url = `${this.API_URL}/api/v1/sites/${globals.deployPlatformProject}/builds`;
+      const options = {
+        headers: { Authorization: `Bearer ${globals.deployPlatformToken}`, 'Content-Type': 'application/json' },
+      };
+      const data = {};
+
+      const res = await httpPost(url, JSON.stringify(data), options);
+
+      if (!res?.data?.id) {
+        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      log("error", '[server] ✗ Failed to deploy:', error.message);
+      return false;
+    }
+  }
 }
