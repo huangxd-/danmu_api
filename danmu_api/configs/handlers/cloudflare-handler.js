@@ -106,4 +106,9 @@ export class CloudflareHandler extends BaseHandler {
       return false;
     }
   }
+
+  async deploy() {
+    log("log", 'After modifying the environment variables on the cloudflare platform, it will be automatically deployed.');
+    return true;
+  }
 }
