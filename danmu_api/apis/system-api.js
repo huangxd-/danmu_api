@@ -1,17 +1,14 @@
 import * as fs from 'fs';
 import * as pathModule from 'path';
-import { fileURLToPath } from 'url';
 import { globals } from "../configs/globals.js";
 import { log } from "../utils/log-util.js";
 import { jsonResponse } from "../utils/http-util.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = pathModule.dirname(__filename);
+import { getDirname } from "../utils/cache-util.js";
 
 export function handleUI() {
   try {
     // 读取 HTML 文件
-    const htmlPath = pathModule.join(__dirname, '..', 'ui', 'index.html');
+    const htmlPath = pathModule.join(getDirname(), '..', 'ui', 'index.html');
     const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
 
     log("info", "Accessed UI page");
@@ -50,7 +47,7 @@ export function handleUiStatic(path) {
   try {
     // 移除 /ui/ 前缀，获取相对路径
     const relativePath = path.substring(4); // 去掉 "/ui/"
-    const filePath = pathModule.join(__dirname, '..', 'ui', relativePath);
+    const filePath = pathModule.join(getDirname(), '..', 'ui', relativePath);
 
     // 检查文件是否存在
     if (!fs.existsSync(filePath)) {

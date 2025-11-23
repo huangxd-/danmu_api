@@ -118,3 +118,44 @@ body {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* footer 样式 */
+.footer {
+    padding: 20px;
+    background: transparent;
+    text-align: center;
+    font-size: 14px;
+}
+
+/* footer 文字样式 */
+.footer-text {
+    color: #ffeb3b;
+    margin: 10px 0;
+}
+
+/* footer 链接样式 */
+.footer-links {
+    margin: 10px 0;
+}
+
+.footer-link {
+    margin: 0 10px;
+    text-decoration: none;
+    color: #ffc107;
+}
+
+.footer-link:hover {
+    color: #ffeb3b;  /* 可选，增加 hover 效果 */
+}
+
+/* GitHub 链接特定样式 */
+.github-link {
+    display: inline-flex;
+    align-items: center;
+}
+
+.github-icon {
+    width: 14px;
+    vertical-align: middle;
+    margin-right: 5px;
+}

@@ -309,7 +309,7 @@ export function cleanupExpiredIPs(currentTime) {
 }
 
 // 获取当前文件目录的兼容方式
-function getDirname() {
+export function getDirname() {
   if (typeof __dirname !== 'undefined') {
     // CommonJS 环境 (Vercel)
     return __dirname;
