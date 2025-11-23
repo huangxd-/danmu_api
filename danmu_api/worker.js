@@ -5,6 +5,12 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
+import * as fs from 'fs';
+import * as pathModule from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = pathModule.dirname(__filename);
 
 let globals;
 
@@ -48,9 +54,79 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     });
   }
 
+  function handleUI() {
+    try {
+      // 读取 HTML 文件
+      const htmlPath = pathModule.join(__dirname, 'ui', 'index.html');
+      const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+
+      log("info", "Accessed UI page");
+
+      return new Response(htmlContent, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    } catch (error) {
+      log("error", `Failed to load UI page: ${error.message}`);
+      return jsonResponse(
+        { errorCode: 500, success: false, errorMessage: "Failed to load UI page" },
+        500
+      );
+    }
+  }
+
+  // GET /ui/* - 处理所有 UI 静态资源
+  if (path.startsWith("/ui/") && method === "GET") {
+    try {
+      // 移除 /ui/ 前缀，获取相对路径
+      const relativePath = path.substring(4); // 去掉 "/ui/"
+      const filePath = pathModule.join(__dirname, 'ui', relativePath);
+
+      // 检查文件是否存在
+      if (!fs.existsSync(filePath)) {
+        return jsonResponse({ errorCode: 404, success: false, errorMessage: "File not found" }, 404);
+      }
+
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+
+      // 根据文件扩展名设置 Content-Type
+      const ext = pathModule.extname(filePath).toLowerCase();
+      const contentTypeMap = {
+        '.html': 'text/html; charset=utf-8',
+        '.css': 'text/css; charset=utf-8',
+        '.js': 'application/javascript; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml'
+      };
+      const contentType = contentTypeMap[ext] || 'text/plain; charset=utf-8';
+
+      log("info", `Accessed static file: ${relativePath}`);
+
+      return new Response(fileContent, {
+        headers: {
+          "Content-Type": contentType,
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
+    } catch (error) {
+      log("error", `Failed to load static file: ${error.message}`);
+      return jsonResponse(
+        { errorCode: 500, success: false, errorMessage: "Failed to load file" },
+        500
+      );
+    }
+  }
+
   // GET /
   if (path === "/" && method === "GET") {
-    return handleHomepage();
+    // return handleHomepage();
+    return handleUI();
   }
 
   if (path === "/favicon.ico" || path === "/robots.txt" || method === "OPTIONS") {
@@ -139,7 +215,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   
   // GET /
   if (path === "/" && method === "GET") {
-    return handleHomepage();
+    // return handleHomepage();
+    return handleUI();
   }
 
   // GET /api/v2/search/anime
