@@ -5,9 +5,8 @@ let editingKey = null;
 let logs = [];
 
 // 版本信息
-const currentVersion = 'v2.1.3';
-const latestVersion = 'v2.2.0';
-const hasUpdate = true;
+let currentVersion = '';
+let latestVersion = '';
 
 // API 配置
 const apiConfigs = {
@@ -49,6 +48,9 @@ const apiConfigs = {
 
 // 初始化
 function init() {
+    loadConfig().then(r => {
+        getDockerVersion();
+    });
     loadSampleData();
     renderEnvList();
     renderPreview();
@@ -91,6 +93,65 @@ function loadSampleData() {
               options: ['auth', 'payment', 'analytics', 'notification', 'export', 'import'] }
         ]
     };
+}
+
+// 加载配置信息
+async function loadConfig() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const config = await response.json();
+
+    currentVersion = config.version;
+    // envVariables = config.envs || {};
+
+    console.log('Config loaded:', config);
+
+    await updateVersionInfo();
+
+  } catch (error) {
+    console.error('Failed to load config:', error);
+    currentVersion = 'Error';
+  }
+}
+
+// 更新版本信息显示
+function updateVersionInfo() {
+  const versionElement = document.getElementById('current-version');
+  if (versionElement) {
+    versionElement.textContent = currentVersion;
+  }
+
+  const updateBadge = document.getElementById('update-badge');
+  if (updateBadge) {
+    updateBadge.style.display = 'inline-block';
+  }
+}
+
+function getDockerVersion() {
+  const url = "https://img.shields.io/docker/v/logvar/danmu-api?sort=semver";
+
+  fetch(url)
+    .then(response => response.text())
+    .then(svgContent => {
+      // 使用正则表达式从 SVG 中提取版本号
+      const versionMatch = svgContent.match(/version<\/text><text.*?>(v[\d\.]+)/);
+
+      if (versionMatch && versionMatch[1]) {
+        console.log("Version:", versionMatch[1]);
+        const latestVersionElement = document.getElementById('latest-version');
+        if (latestVersionElement) {
+          latestVersionElement.textContent = versionMatch[1];
+        }
+      } else {
+        console.log("Version not found");
+      }
+    })
+    .catch(error => {
+      console.error("Error fetching the SVG:", error);
+    });
 }
 
 // 切换导航
@@ -384,33 +445,6 @@ function testApi() {
         document.getElementById('api-response').textContent = JSON.stringify(mockResponse, null, 2);
         addLog('接口调用成功', 'success');
     }, 500);
-}
-
-// 检查更新
-function checkUpdate() {
-    addLog('正在检查更新...', 'info');
-
-    setTimeout(() => {
-        if (hasUpdate) {
-            const updateMsg = `发现新版本: ${latestVersion}\n当前版本: ${currentVersion}\n\n更新内容:\n• 优化界面性能\n• 新增批量导入功能\n• 修复已知问题\n\n是否立即更新?`;
-
-            if (confirm(updateMsg)) {
-                addLog('开始下载更新...', 'info');
-                setTimeout(() => {
-                    addLog('更新下载完成,准备安装...', 'success');
-                    setTimeout(() => {
-                        alert('更新成功!页面即将重新加载。');
-                        addLog('系统已更新至 ' + latestVersion, 'success');
-                    }, 1000);
-                }, 2000);
-            } else {
-                addLog('已取消更新', 'warn');
-            }
-        } else {
-            alert('当前已是最新版本!');
-            addLog('当前已是最新版本: ' + currentVersion, 'info');
-        }
-    }, 800);
 }
 
 // 渲染值输入控件

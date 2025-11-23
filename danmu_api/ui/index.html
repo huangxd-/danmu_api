@@ -22,50 +22,24 @@
                 <div class="header-info">
                     <h1>LogVar弹幕API后台配置管理系统</h1>
                     <div class="version-info">
-                        <span class="version-badge">当前版本: v2.1.3</span>
-                        <span class="update-badge" onclick="checkUpdate()" title="点击检查更新">
-                            🎉 v2.2.0 可更新
+                        <span class="version-badge">当前版本: <span id="current-version">加载中...</span></span>
+                        <span class="update-badge" id="update-badge" style="display: none;">
+                            🎉 最新版本: <span id="latest-version">加载中...</span>
                         </span>
                     </div>
                 </div>
             </div>
             <div class="nav-buttons">
-                <button class="nav-btn active" onclick="switchSection('env')">环境变量</button>
-                <button class="nav-btn" onclick="switchSection('preview')">配置预览</button>
+                <button class="nav-btn active" onclick="switchSection('preview')">配置预览</button>
                 <button class="nav-btn" onclick="switchSection('logs')">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api')">接口调试</button>
+                <button class="nav-btn" onclick="switchSection('env')">变量配置</button>
             </div>
         </div>
 
         <div class="content">
-            <!-- 环境变量配置 -->
-            <div class="section active" id="env-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                    <h2 style="margin: 0;">环境变量配置</h2>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button class="btn btn-danger" onclick="clearCache()" title="清理系统缓存">
-                            🗑️ 清理缓存
-                        </button>
-                        <button class="btn btn-success" onclick="deploySystem()" title="重新部署系统">
-                            🚀 重新部署
-                        </button>
-                    </div>
-                </div>
-
-                <div class="env-categories">
-                    <button class="category-btn active" onclick="switchCategory('database')">数据库配置</button>
-                    <button class="category-btn" onclick="switchCategory('redis')">Redis配置</button>
-                    <button class="category-btn" onclick="switchCategory('api')">API配置</button>
-                    <button class="category-btn" onclick="switchCategory('system')">系统配置</button>
-                </div>
-
-                <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
-
-                <div class="env-list" id="env-list"></div>
-            </div>
-
             <!-- 配置预览 -->
-            <div class="section" id="preview-section">
+            <div class="section active" id="preview-section">
                 <h2>配置预览</h2>
                 <p style="color: #666; margin-bottom: 20px;">当前生效的环境变量配置</p>
                 <div class="preview-area" id="preview-area"></div>
@@ -110,6 +84,32 @@
                     <h3 style="margin: 20px 0 10px;">响应结果</h3>
                     <div class="api-response" id="api-response"></div>
                 </div>
+            </div>
+
+            <!-- 变量配置 -->
+            <div class="section" id="env-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                    <h2 style="margin: 0;">环境变量配置</h2>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn btn-danger" onclick="clearCache()" title="清理系统缓存">
+                            🗑️ 清理缓存
+                        </button>
+                        <button class="btn btn-success" onclick="deploySystem()" title="重新部署系统">
+                            🚀 重新部署
+                        </button>
+                    </div>
+                </div>
+
+                <div class="env-categories">
+                    <button class="category-btn active" onclick="switchCategory('database')">数据库配置</button>
+                    <button class="category-btn" onclick="switchCategory('redis')">Redis配置</button>
+                    <button class="category-btn" onclick="switchCategory('api')">API配置</button>
+                    <button class="category-btn" onclick="switchCategory('system')">系统配置</button>
+                </div>
+
+                <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
+
+                <div class="env-list" id="env-list"></div>
             </div>
         </div>
     </div>
@@ -168,6 +168,24 @@
             </form>
         </div>
     </div>
+
+    <!-- 项目声明 -->
+    <footer class="footer">
+        <p class="footer-text">
+            一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+        </p>
+        <p class="footer-text">本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。</p>
+        <p class="footer-links">
+            <a href="https://t.me/ddjdd_bot" target="_blank" class="footer-link">💬 TG MSG ROBOT</a>
+            <a href="https://t.me/logvar_danmu_group" target="_blank" class="footer-link">👥 TG GROUP</a>
+            <a href="https://t.me/logvar_danmu_channel" target="_blank" class="footer-link">📢 TG CHANNEL</a>
+            <a href="https://github.com/huangxd-/danmu_api" target="_blank" class="footer-link github-link">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg" alt="GitHub" class="github-icon">
+                GitHub Repo
+            </a>
+        </p>
+        <p>有问题提issue或私信机器人都ok</p>
+    </footer>
 
     <script src="ui/js/main.js" defer></script>
 </body>
