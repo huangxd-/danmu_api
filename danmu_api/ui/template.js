@@ -1,5 +1,6 @@
 import { cssContent } from "./css/css-content.js";
 import { jsContent } from "./js/script.js";
+import { globals } from "../configs/globals.js";
 
 export const HTML_TEMPLATE = `
 <!DOCTYPE html>
@@ -23,8 +24,8 @@ export const HTML_TEMPLATE = `
                 <div class="header-info">
                     <h1>LogVar弹幕API后台配置管理系统</h1>
                     <div class="version-info">
-                        <span class="version-badge">当前版本: <span id="current-version">加载中...</span></span>
-                        <span class="update-badge" id="update-badge" style="display: none;">
+                        <span class="version-badge">当前版本: <span id="current-version">v${globals.version}</span></span>
+                        <span class="update-badge" id="update-badge">
                             🎉 最新版本: <span id="latest-version">加载中...</span>
                         </span>
                     </div>

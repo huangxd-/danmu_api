@@ -1,3 +1,5 @@
+import { globals } from "../../configs/globals.js";
+
 export const jsContent = `
 // 数据存储
 let envVariables = {};
@@ -49,9 +51,10 @@ const apiConfigs = {
 
 // 初始化
 function init() {
-    loadConfig().then(r => {
-        getDockerVersion();
-    });
+    // loadConfig().then(r => {
+    //    
+    // });
+    getDockerVersion();
     loadSampleData();
     renderEnvList();
     renderPreview();
@@ -62,7 +65,7 @@ function init() {
 function loadSampleData() {
     envVariables = {
         database: [
-            { key: 'DB_HOST', value: 'localhost', description: '数据库主机地址', type: 'text' },
+            { key: 'DB_HOST', value: '${globals.version}', description: '数据库主机地址', type: 'text' },
             { key: 'DB_PORT', value: '3306', description: '数据库端口', type: 'text' },
             { key: 'DB_NAME', value: 'myapp', description: '数据库名称', type: 'text' },
             { key: 'DB_POOL_SIZE', value: '10', description: '连接池大小 (1-100)', type: 'number', min: 1, max: 100 },
