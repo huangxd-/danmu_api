@@ -4,28 +4,35 @@ import { globals } from "../configs/globals.js";
 import { log } from "../utils/log-util.js";
 import { jsonResponse } from "../utils/http-util.js";
 import { getDirname } from "../utils/cache-util.js";
+import { HTML_TEMPLATE } from "../ui/template.js";
 
 export function handleUI() {
-  try {
-    // 读取 HTML 文件
-    const htmlPath = pathModule.join(getDirname(), '..', 'ui', 'index.html');
-    const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
-
-    log("info", "Accessed UI page");
-
-    return new Response(htmlContent, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*"
-      }
-    });
-  } catch (error) {
-    log("error", `Failed to load UI page: ${error.message}`);
-    return jsonResponse(
-      { errorCode: 500, success: false, errorMessage: "Failed to load UI page" },
-      500
-    );
-  }
+  // try {
+  //   // 读取 HTML 文件
+  //   const htmlPath = pathModule.join(getDirname(), '..', 'ui', 'index.html');
+  //   const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+  //
+  //   log("info", "Accessed UI page");
+  //
+  //   return new Response(htmlContent, {
+  //     headers: {
+  //       "Content-Type": "text/html; charset=utf-8",
+  //       "Access-Control-Allow-Origin": "*"
+  //     }
+  //   });
+  // } catch (error) {
+  //   log("error", `Failed to load UI page: ${error.message}`);
+  //   return jsonResponse(
+  //     { errorCode: 500, success: false, errorMessage: "Failed to load UI page" },
+  //     500
+  //   );
+  // }
+  return new Response(HTML_TEMPLATE, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
 }
 
 export function handleConfig() {
