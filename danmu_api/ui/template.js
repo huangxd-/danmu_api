@@ -2,7 +2,8 @@ import { cssContent } from "./css/css-content.js";
 import { jsContent } from "./js/script.js";
 import { globals } from "../configs/globals.js";
 
-export const HTML_TEMPLATE = `
+// language=HTML
+export const HTML_TEMPLATE = /* html */ `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>

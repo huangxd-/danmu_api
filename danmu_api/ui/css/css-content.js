@@ -1,4 +1,5 @@
-export const cssContent = `
+// language=CSS
+export const cssContent = /* css */ `
 /* 基础样式 */
 * {
     margin: 0;

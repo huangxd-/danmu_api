@@ -1,6 +1,7 @@
 import { globals } from "../../configs/globals.js";
 
-export const jsContent = `
+// language=JavaScript
+export const jsContent = /* javascript */ `
 // 数据存储
 let envVariables = {};
 let currentCategory = 'database';
