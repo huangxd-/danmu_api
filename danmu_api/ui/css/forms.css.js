@@ -1,3 +1,5 @@
+// language=CSS
+export const formsCssContent = /* css */ `
 /* 表单样式 */
 .form-group {
     margin-bottom: 15px;
@@ -311,3 +313,4 @@ input:checked + .slider:before {
     background: #e8eaf6 !important;
     border-color: #667eea !important;
 }
+`;

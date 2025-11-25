@@ -1,3 +1,5 @@
+// language=CSS
+export const responsiveCssContent = /* css */ `
 /* 响应式样式 */
 @media (max-width: 768px) {
     .logo {
@@ -43,3 +45,4 @@
         flex: 1;
     }
 }
+`;

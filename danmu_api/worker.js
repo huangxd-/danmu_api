@@ -5,7 +5,6 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-// import { handleConfig, handleUI, handleUiStatic } from "./apis/system-api.js";
 import { handleConfig, handleUI } from "./apis/system-api.js";
 
 let globals;
@@ -33,11 +32,6 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getRedisCaches();
   }
-
-  // GET /ui/* - 处理所有 UI 静态资源
-  // if (path.startsWith("/ui/") && method === "GET") {
-  //   return handleUiStatic(path);
-  // }
 
   // GET /api/config - 获取配置信息
   if (path === "/api/config" && method === "GET") {

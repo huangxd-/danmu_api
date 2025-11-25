@@ -1,3 +1,5 @@
+// language=CSS
+export const componentsCssContent = /* css */ `
 /* 组件样式 */
 .nav-buttons {
     display: flex;
@@ -354,3 +356,4 @@
     font-size: 14px;
     color: #666;
 }
+`;

@@ -1,3 +1,7 @@
+import { globals } from "../../configs/globals.js";
+
+// language=JavaScript
+export const jsContent = /* javascript */ `
 // 数据存储
 let envVariables = {};
 let currentCategory = 'database';
@@ -48,9 +52,10 @@ const apiConfigs = {
 
 // 初始化
 function init() {
-    loadConfig().then(r => {
-        getDockerVersion();
-    });
+    // loadConfig().then(r => {
+    //    
+    // });
+    getDockerVersion();
     loadSampleData();
     renderEnvList();
     renderPreview();
@@ -61,7 +66,7 @@ function init() {
 function loadSampleData() {
     envVariables = {
         database: [
-            { key: 'DB_HOST', value: 'localhost', description: '数据库主机地址', type: 'text' },
+            { key: 'DB_HOST', value: '${globals.version}', description: '数据库主机地址', type: 'text' },
             { key: 'DB_PORT', value: '3306', description: '数据库端口', type: 'text' },
             { key: 'DB_NAME', value: 'myapp', description: '数据库名称', type: 'text' },
             { key: 'DB_POOL_SIZE', value: '10', description: '连接池大小 (1-100)', type: 'number', min: 1, max: 100 },
@@ -100,7 +105,7 @@ async function loadConfig() {
   try {
     const response = await fetch('/api/config');
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(\`HTTP error! status: \${response.status}\`);
     }
     const config = await response.json();
 
@@ -137,7 +142,7 @@ function getDockerVersion() {
     .then(response => response.text())
     .then(svgContent => {
       // 使用正则表达式从 SVG 中提取版本号
-      const versionMatch = svgContent.match(/version<\/text><text.*?>(v[\d\.]+)/);
+      const versionMatch = svgContent.match(/version<\\/text><text.*?>(v[\\d\\.]+)/);
 
       if (versionMatch && versionMatch[1]) {
         console.log("Version:", versionMatch[1]);
@@ -159,10 +164,10 @@ function switchSection(section) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
-    document.getElementById(`${section}-section`).classList.add('active');
+    document.getElementById(\`\${section}-section\`).classList.add('active');
     event.target.classList.add('active');
 
-    addLog(`切换到${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块`, 'info');
+    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
 }
 
 // 切换类别
@@ -190,19 +195,19 @@ function renderEnvList() {
                          item.type === 'multi-select' ? '多选' : '文本';
         const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
-        return `
+        return \`
             <div class="env-item">
                 <div class="env-info">
-                    <strong>${item.key}<span class="value-type-badge ${badgeClass}">${typeLabel}</span></strong>
-                    <div style="color: #666;">${item.value}</div>
-                    <div style="color: #999; font-size: 12px; margin-top: 5px;">${item.description || '无描述'}</div>
+                    <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
+                    <div style="color: #666;">\${item.value}</div>
+                    <div style="color: #999; font-size: 12px; margin-top: 5px;">\${item.description || '无描述'}</div>
                 </div>
                 <div class="env-actions">
-                    <button class="btn btn-primary" onclick="editEnv(${index})">编辑</button>
-                    <button class="btn btn-danger" onclick="deleteEnv(${index})">删除</button>
+                    <button class="btn btn-primary" onclick="editEnv(\${index})">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteEnv(\${index})">删除</button>
                 </div>
             </div>
-        `;
+        \`;
     }).join('');
 }
 
@@ -212,14 +217,14 @@ function renderPreview() {
     let html = '';
 
     Object.keys(envVariables).forEach(category => {
-        html += `<h3 style="color: #667eea; margin-bottom: 10px;">${getCategoryName(category)}</h3>`;
+        html += \`<h3 style="color: #667eea; margin-bottom: 10px;">\${getCategoryName(category)}</h3>\`;
         envVariables[category].forEach(item => {
-            html += `
+            html += \`
                 <div class="preview-item">
-                    <strong>${item.key}</strong> = ${item.value}
-                    ${item.description ? `<div style="color: #999; font-size: 12px; margin-top: 3px;">${item.description}</div>` : ''}
+                    <strong>\${item.key}</strong> = \${item.value}
+                    \${item.description ? \`<div style="color: #999; font-size: 12px; margin-top: 3px;">\${item.description}</div>\` : ''}
                 </div>
-            `;
+            \`;
         });
     });
 
@@ -270,7 +275,7 @@ function deleteEnv(index) {
         envVariables[currentCategory].splice(index, 1);
         renderEnvList();
         renderPreview();
-        addLog(`删除配置项: ${item.key}`, 'warn');
+        addLog(\`删除配置项: \${item.key}\`, 'warn');
     }
 }
 
@@ -321,10 +326,10 @@ document.getElementById('env-form').addEventListener('submit', function(e) {
 
     if (editingKey !== null) {
         envVariables[currentCategory][editingKey] = itemData;
-        addLog(`更新配置项: ${key} = ${value}`, 'success');
+        addLog(\`更新配置项: \${key} = \${value}\`, 'success');
     } else {
         envVariables[category].push(itemData);
-        addLog(`添加配置项: ${key} = ${value}`, 'success');
+        addLog(\`添加配置项: \${key} = \${value}\`, 'success');
     }
 
     if (category !== currentCategory) {
@@ -350,7 +355,7 @@ function addLog(message, type = 'info') {
 function renderLogs() {
     const container = document.getElementById('log-container');
     container.innerHTML = logs.map(log =>
-        `<div class="log-entry ${log.type}">[${log.timestamp}] ${log.message}</div>`
+        \`<div class="log-entry \${log.type}">[\${log.timestamp}] \${log.message}</div>\`
     ).join('');
     container.scrollTop = container.scrollHeight;
 }
@@ -358,7 +363,7 @@ function renderLogs() {
 function refreshLogs() {
     addLog('刷新日志', 'info');
     addLog('系统运行正常', 'success');
-    addLog(`当前配置项总数: ${Object.values(envVariables).reduce((sum, arr) => sum + arr.length, 0)}`, 'info');
+    addLog(\`当前配置项总数: \${Object.values(envVariables).reduce((sum, arr) => sum + arr.length, 0)}\`, 'info');
 }
 
 function clearLogs() {
@@ -391,21 +396,21 @@ function loadApiParams() {
 
     formDiv.innerHTML = config.params.map(param => {
         if (param.type === 'select') {
-            return `
+            return \`
                 <div class="form-group">
-                    <label>${param.label}${param.required ? ' *' : ''}</label>
-                    <select id="param-${param.name}">
-                        ${param.options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+                    <label>\${param.label}\${param.required ? ' *' : ''}</label>
+                    <select id="param-\${param.name}">
+                        \${param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('')}
                     </select>
                 </div>
-            `;
+            \`;
         }
-        return `
+        return \`
             <div class="form-group">
-                <label>${param.label}${param.required ? ' *' : ''}</label>
-                <input type="${param.type}" id="param-${param.name}" placeholder="请输入${param.label}" ${param.required ? 'required' : ''}>
+                <label>\${param.label}\${param.required ? ' *' : ''}</label>
+                <input type="\${param.type}" id="param-\${param.name}" placeholder="请输入\${param.label}" \${param.required ? 'required' : ''}>
             </div>
-        `;
+        \`;
     }).join('');
 }
 
@@ -422,12 +427,12 @@ function testApi() {
     const params = {};
 
     config.params.forEach(param => {
-        const value = document.getElementById(`param-${param.name}`).value;
+        const value = document.getElementById(\`param-\${param.name}\`).value;
         if (value) params[param.name] = value;
     });
 
-    addLog(`调用接口: ${config.name} (${config.method} ${config.path})`, 'info');
-    addLog(`请求参数: ${JSON.stringify(params)}`, 'info');
+    addLog(\`调用接口: \${config.name} (\${config.method} \${config.path})\`, 'info');
+    addLog(\`请求参数: \${JSON.stringify(params)}\`, 'info');
 
     // 模拟API响应
     setTimeout(() => {
@@ -456,16 +461,16 @@ function renderValueInput(item) {
     if (type === 'boolean') {
         // 布尔开关
         const checked = value === 'true' || value === true;
-        container.innerHTML = `
+        container.innerHTML = \`
             <label>值</label>
             <div class="switch-container">
                 <label class="switch">
-                    <input type="checkbox" id="bool-value" ${checked ? 'checked' : ''}>
+                    <input type="checkbox" id="bool-value" \${checked ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
-                <span class="switch-label" id="bool-label">${checked ? '启用' : '禁用'}</span>
+                <span class="switch-label" id="bool-label">\${checked ? '启用' : '禁用'}</span>
             </div>
-        `;
+        \`;
 
         document.getElementById('bool-value').addEventListener('change', function(e) {
             document.getElementById('bool-label').textContent = e.target.checked ? '启用' : '禁用';
@@ -477,94 +482,94 @@ function renderValueInput(item) {
         const max = item && item.max !== undefined ? item.max : 100;
         const currentValue = value || min;
 
-        container.innerHTML = `
-            <label>值 (${min}-${max})</label>
+        container.innerHTML = \`
+            <label>值 (\${min}-\${max})</label>
             <div class="number-picker">
                 <div class="number-controls">
                     <button type="button" class="number-btn" onclick="adjustNumber(1)">▲</button>
                     <button type="button" class="number-btn" onclick="adjustNumber(-1)">▼</button>
                 </div>
-                <div class="number-display" id="num-value">${currentValue}</div>
+                <div class="number-display" id="num-value">\${currentValue}</div>
             </div>
             <div class="number-range">
-                <input type="range" id="num-slider" min="${min}" max="${max}" value="${currentValue}"
+                <input type="range" id="num-slider" min="\${min}" max="\${max}" value="\${currentValue}"
                        oninput="updateNumberDisplay(this.value)">
             </div>
-        `;
+        \`;
 
     } else if (type === 'select') {
         // 标签选择
         const options = item && item.options ? item.options : ['option1', 'option2', 'option3'];
-        const optionsInput = item ? '' : `
+        const optionsInput = item ? '' : \`
             <div class="form-group" style="margin-bottom: 15px;">
                 <label>可选项 (逗号分隔)</label>
                 <input type="text" id="select-options" placeholder="例如: debug,info,warn,error"
-                       value="${options.join(',')}" onchange="updateTagOptions()">
+                       value="\${options.join(',')}" onchange="updateTagOptions()">
             </div>
-        `;
+        \`;
 
-        container.innerHTML = `
-            ${optionsInput}
+        container.innerHTML = \`
+            \${optionsInput}
             <label>选择值</label>
             <div class="tag-selector" id="tag-selector">
-                ${options.map(opt => `
-                    <div class="tag-option ${opt === value ? 'selected' : ''}"
-                         data-value="${opt}" onclick="selectTag(this)">
-                        ${opt}
+                \${options.map(opt => \`
+                    <div class="tag-option \${opt === value ? 'selected' : ''}"
+                         data-value="\${opt}" onclick="selectTag(this)">
+                        \${opt}
                     </div>
-                `).join('')}
+                \`).join('')}
             </div>
-        `;
+        \`;
 
     } else if (type === 'multi-select') {
         // 多选标签（可拖动排序）
         const options = item && item.options ? item.options : ['option1', 'option2', 'option3', 'option4'];
         const selectedValues = value ? value.split(',').map(v => v.trim()).filter(v => v) : [];
 
-        const optionsInput = item ? '' : `
+        const optionsInput = item ? '' : \`
             <div class="form-group" style="margin-bottom: 15px;">
                 <label>可选项 (逗号分隔)</label>
                 <input type="text" id="multi-options" placeholder="例如: auth,payment,analytics"
-                       value="${options.join(',')}" onchange="updateMultiOptions()">
+                       value="\${options.join(',')}" onchange="updateMultiOptions()">
             </div>
-        `;
+        \`;
 
-        container.innerHTML = `
-            ${optionsInput}
+        container.innerHTML = \`
+            \${optionsInput}
             <label>已选择 (拖动调整顺序)</label>
             <div class="multi-select-container">
-                <div class="selected-tags ${selectedValues.length === 0 ? 'empty' : ''}" id="selected-tags">
-                    ${selectedValues.map(val => `
-                        <div class="selected-tag" draggable="true" data-value="${val}">
-                            <span class="tag-text">${val}</span>
+                <div class="selected-tags \${selectedValues.length === 0 ? 'empty' : ''}" id="selected-tags">
+                    \${selectedValues.map(val => \`
+                        <div class="selected-tag" draggable="true" data-value="\${val}">
+                            <span class="tag-text">\${val}</span>
                             <button type="button" class="remove-btn" onclick="removeSelectedTag(this)">×</button>
                         </div>
-                    `).join('')}
+                    \`).join('')}
                 </div>
                 <label>可选项 (点击添加)</label>
                 <div class="available-tags" id="available-tags">
-                    ${options.map(opt => {
-                        const isSelected = selectedValues.includes(opt);
-                        return `
-                            <div class="available-tag ${isSelected ? 'disabled' : ''}"
-                                 data-value="${opt}" onclick="addSelectedTag(this)">
-                                ${opt}
+                    \${options.map(opt => {
+    const isSelected = selectedValues.includes(opt);
+    return \`
+                            <div class="available-tag \${isSelected ? 'disabled' : ''}"
+                                 data-value="\${opt}" onclick="addSelectedTag(this)">
+                                \${opt}
                             </div>
-                        `;
-                    }).join('')}
+                        \`;
+}).join('')}
                 </div>
             </div>
-        `;
+        \`;
 
         // 设置拖动事件
         setupDragAndDrop();
 
     } else {
         // 文本输入
-        container.innerHTML = `
+        container.innerHTML = \`
             <label>变量值</label>
-            <input type="text" id="text-value" placeholder="例如: localhost" value="${value}" required>
-        `;
+            <input type="text" id="text-value" placeholder="例如: localhost" value="\${value}" required>
+        \`;
     }
 }
 
@@ -597,11 +602,11 @@ function updateTagOptions() {
     const options = input.value.split(',').map(s => s.trim()).filter(s => s);
     const container = document.getElementById('tag-selector');
 
-    container.innerHTML = options.map(opt => `
-        <div class="tag-option" data-value="${opt}" onclick="selectTag(this)">
-            ${opt}
+    container.innerHTML = options.map(opt => \`
+        <div class="tag-option" data-value="\${opt}" onclick="selectTag(this)">
+            \${opt}
         </div>
-    `).join('');
+    \`).join('');
 }
 
 // 添加已选标签
@@ -619,10 +624,10 @@ function addSelectedTag(element) {
     tag.className = 'selected-tag';
     tag.draggable = true;
     tag.dataset.value = value;
-    tag.innerHTML = `
-        <span class="tag-text">${value}</span>
+    tag.innerHTML = \`
+        <span class="tag-text">\${value}</span>
         <button type="button" class="remove-btn" onclick="removeSelectedTag(this)">×</button>
-    `;
+    \`;
 
     container.appendChild(tag);
 
@@ -648,7 +653,7 @@ function removeSelectedTag(button) {
     }
 
     // 启用对应的可选项
-    const availableTag = document.querySelector(`.available-tag[data-value="${value}"]`);
+    const availableTag = document.querySelector(\`.available-tag[data-value="\${value}"]\`);
     if (availableTag) {
         availableTag.classList.remove('disabled');
     }
@@ -664,12 +669,12 @@ function updateMultiOptions() {
     const container = document.getElementById('available-tags');
     container.innerHTML = options.map(opt => {
         const isSelected = selectedValues.includes(opt);
-        return `
-            <div class="available-tag ${isSelected ? 'disabled' : ''}"
-                 data-value="${opt}" onclick="addSelectedTag(this)">
-                ${opt}
+        return \`
+            <div class="available-tag \${isSelected ? 'disabled' : ''}"
+                 data-value="\${opt}" onclick="addSelectedTag(this)">
+                \${opt}
             </div>
-        `;
+        \`;
     }).join('');
 }
 
@@ -745,7 +750,7 @@ function handleDrop(e) {
 
 // 清理缓存
 function clearCache() {
-    if (!confirm('确定要清理所有缓存吗？这将清除:\n• Redis缓存\n• 文件缓存\n• 会话缓存\n\n清理后可能需要重新登录。')) {
+    if (!confirm('确定要清理所有缓存吗？这将清除:\\n• Redis缓存\\n• 文件缓存\\n• 会话缓存\\n\\n清理后可能需要重新登录。')) {
         return;
     }
 
@@ -781,13 +786,13 @@ function clearCache() {
     setTimeout(() => {
         hideLoading();
         addLog('缓存清理完成，释放空间: 125.8 MB', 'success');
-        alert('✅ 缓存清理成功！\n\n已清理:\n• Redis: 234 个键\n• 文件缓存: 1,892 个文件\n• 释放空间: 125.8 MB');
+        alert('✅ 缓存清理成功！\\n\\n已清理:\\n• Redis: 234 个键\\n• 文件缓存: 1,892 个文件\\n• 释放空间: 125.8 MB');
     }, 4000);
 }
 
 // 重新部署系统
 function deploySystem() {
-    if (!confirm('确定要重新部署系统吗？\n\n部署过程中:\n• 系统将短暂不可用\n• 所有配置将重新加载\n• 服务将自动重启\n\n预计耗时: 2-3分钟')) {
+    if (!confirm('确定要重新部署系统吗？\\n\\n部署过程中:\\n• 系统将短暂不可用\\n• 所有配置将重新加载\\n• 服务将自动重启\\n\\n预计耗时: 2-3分钟')) {
         return;
     }
 
@@ -824,9 +829,9 @@ function deploySystem() {
     setTimeout(() => {
         hideLoading();
         addLog('===== 部署完成 =====', 'success');
-        addLog(`部署版本: ${latestVersion}`, 'info');
+        addLog(\`部署版本: \${latestVersion}\`, 'info');
         addLog('系统已更新并重启', 'success');
-        alert('🎉 部署成功！\n\n✅ 代码已更新\n✅ 服务已重启\n✅ 配置已生效\n\n系统版本: ' + latestVersion);
+        alert('🎉 部署成功！\\n\\n✅ 代码已更新\\n✅ 服务已重启\\n✅ 配置已生效\\n\\n系统版本: ' + latestVersion);
     }, 9000);
 }
 
@@ -861,3 +866,4 @@ function updateProgress(percent) {
 
 // 页面加载完成后初始化
 init();
+`;

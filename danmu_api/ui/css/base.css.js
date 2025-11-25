@@ -1,3 +1,5 @@
+// language=CSS
+export const baseCssContent = /* css */ `
 /* 基础样式 */
 * {
     margin: 0;
@@ -159,3 +161,4 @@ body {
     vertical-align: middle;
     margin-right: 5px;
 }
+`;

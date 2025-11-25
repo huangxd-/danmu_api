@@ -1,6 +1,9 @@
-import { cssContent } from "./css/css-content.js";
-import { jsContent } from "./js/script.js";
 import { globals } from "../configs/globals.js";
+import { baseCssContent } from "./css/base.css.js";
+import { componentsCssContent } from "./css/components.css.js";
+import { formsCssContent } from "./css/forms.css.js";
+import { responsiveCssContent } from "./css/responsive.css.js";
+import { jsContent } from "./js/main.js";
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -10,7 +13,10 @@ export const HTML_TEMPLATE = /* html */ `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LogVar弹幕API后台配置管理系统</title>
-    <style>${cssContent}</style>
+    <style>${baseCssContent}</style>
+    <style>${componentsCssContent}</style>
+    <style>${formsCssContent}</style>
+    <style>${responsiveCssContent}</style>
 </head>
 <body>
     <div class="container">
