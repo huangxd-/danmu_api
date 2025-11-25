@@ -67,7 +67,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // 如果 token 是默认值 87654321
   if (globals.token === "87654321") {
     // 检查第一段是否是已知的 API 路径（不是 token）
-    const knownApiPaths = ["api", "v1", "v2"];
+    const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
 
     if (parts.length > 0) {
       // 如果第一段是正确的默认 token

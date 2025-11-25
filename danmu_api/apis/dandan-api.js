@@ -17,6 +17,7 @@ import DoubanSource from "../sources/douban.js";
 import RenrenSource from "../sources/renren.js";
 import HanjutvSource from "../sources/hanjutv.js";
 import BahamutSource from "../sources/bahamut.js";
+import DandanSource from "../sources/dandan.js";
 import TencentSource from "../sources/tencent.js";
 import IqiyiSource from "../sources/iqiyi.js";
 import MangoSource from "../sources/mango.js";
@@ -34,6 +35,7 @@ const vodSource = new VodSource();
 const renrenSource = new RenrenSource();
 const hanjutvSource = new HanjutvSource();
 const bahamutSource = new BahamutSource();
+const dandanSource = new DandanSource();
 const tencentSource = new TencentSource();
 const youkuSource = new YoukuSource();
 const iqiyiSource = new IqiyiSource();
@@ -167,6 +169,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       if (source === "renren") return renrenSource.search(queryTitle);
       if (source === "hanjutv") return hanjutvSource.search(queryTitle);
       if (source === "bahamut") return bahamutSource.search(queryTitle);
+      if (source === "dandan") return dandanSource.search(queryTitle);
       if (source === "tencent") return tencentSource.search(queryTitle);
       if (source === "youku") return youkuSource.search(queryTitle);
       if (source === "iqiyi") return iqiyiSource.search(queryTitle);
@@ -188,8 +191,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     // 解构出返回的结果
     const {
       vod: animesVodResults, 360: animes360, tmdb: animesTmdb, douban: animesDouban, renren: animesRenren,
-      hanjutv: animesHanjutv, bahamut: animesBahamut, tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi,
-      imgo: animesImgo, bilibili: animesBilibili
+      hanjutv: animesHanjutv, bahamut: animesBahamut, dandan: animesDandan, tencent: animesTencent, youku: animesYouku,
+      iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -221,6 +224,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       } else if (key === 'bahamut') {
         // 等待处理Bahamut来源
         await bahamutSource.handleAnimes(animesBahamut, queryTitle, curAnimes);
+      } else if (key === 'dandan') {
+        // 等待处理弹弹play来源
+        await dandanSource.handleAnimes(animesDandan, queryTitle, curAnimes);
       } else if (key === 'tencent') {
         // 等待处理Tencent来源
         await tencentSource.handleAnimes(animesTencent, queryTitle, curAnimes);
@@ -423,6 +429,69 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisod
   return {resEpisode, resAnime};
 }
 
+export async function extractTitleSeasonEpisode(cleanFileName) {
+  const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
+  const match = cleanFileName.match(regex);
+
+  let title, season, episode;
+
+  if (match) {
+    // 匹配到 S##E## 格式
+    title = match[1].trim();
+    season = parseInt(match[2], 10);
+    episode = parseInt(match[3], 10);
+
+    // ============ 新标题提取逻辑（重点）============
+    // 目标：
+    // 1. 优先保留最干净、最像剧名的那一段（通常是开头）
+    // 2. 支持：纯中文、纯英文、中英混排、带年份的、中文+单个字母（如亲爱的X）
+    // 3. 自动去掉后面的年份、技术参数等垃圾
+
+    // 情况1：开头是中文（最常见的中文字幕组文件名）
+    const chineseStart = title.match(/^[\u4e00-\u9fa5·]+[^\.\r\n]*/); // 允许中文后面紧跟非.符号，如 亲爱的X、宇宙Marry Me?
+    if (chineseStart) {
+      title = chineseStart[0];
+    }
+    // 情况2：开头是英文（欧美剧常见，如 Blood.River）
+    else if (/^[A-Za-z0-9]/.test(title)) {
+      // 从开头一直取到第一个明显的技术字段或年份之前
+      const engMatch = title.match(/^([A-Za-z0-9.&\s]+?)(?=\.\d{4}|$)/);
+      if (engMatch) {
+        title = engMatch[1].trim().replace(/[._]/g, ' '); // Blood.River → Blood River（也可以保留.看你喜好）
+        // 如果你想保留原样点号，就去掉上面这行 replace
+      }
+    }
+    // 情况3：中文+英文混排（如 爱情公寓.ipartment.2009）
+    else {
+      // 先尝试取到第一个年份或分辨率之前的所有内容，再优先保留中文开头部分
+      const beforeYear = title.split(/\.(?:19|20)\d{2}|2160p|1080p|720p|H265|iPhone/)[0];
+      const chineseInMixed = beforeYear.match(/^[\u4e00-\u9fa5·]+/);
+      title = chineseInMixed ? chineseInMixed[0] : beforeYear.trim();
+    }
+
+    // 最后再保险清理一次常见的年份尾巴（防止漏网）
+    title = title.replace(/\.\d{4}$/i, '').trim();
+  } else {
+    // 没有 S##E## 格式，尝试提取第一个片段作为标题
+    // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
+    const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|E\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
+    const titleMatch = cleanFileName.match(titleRegex);
+
+    title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
+    season = null;
+    episode = null;
+  }
+
+  // 如果外语标题转换中文开关已开启，则尝试获取中文标题
+  if (globals.titleToChinese) {
+    // 如果title中包含.，则用空格替换
+    title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
+  }
+
+  log("info", "Parsed title, season, episode", {title, season, episode});
+  return {title, season, episode};
+}
+
 // Extracted function for POST /api/v2/match
 export async function matchAnime(url, req) {
   try {
@@ -454,65 +523,7 @@ export async function matchAnime(url, req) {
     log("info", `Processing anime match for query: ${fileName}`);
     log("info", `Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
-    const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
-    const match = cleanFileName.match(regex);
-
-    let title, season, episode;
-
-    if (match) {
-      // 匹配到 S##E## 格式
-      title = match[1].trim();
-      season = parseInt(match[2], 10);
-      episode = parseInt(match[3], 10);
-
-      // ============ 新标题提取逻辑（重点）============
-      // 目标：
-      // 1. 优先保留最干净、最像剧名的那一段（通常是开头）
-      // 2. 支持：纯中文、纯英文、中英混排、带年份的、中文+单个字母（如亲爱的X）
-      // 3. 自动去掉后面的年份、技术参数等垃圾
-
-      // 情况1：开头是中文（最常见的中文字幕组文件名）
-      const chineseStart = title.match(/^[\u4e00-\u9fa5·]+(?:[A-Za-z0-9]?)/); // 允许中文后面紧跟一个字母/数字，如 亲爱的X、无忧渡
-      if (chineseStart) {
-        title = chineseStart[0];
-      }
-      // 情况2：开头是英文（欧美剧常见，如 Blood.River）
-      else if (/^[A-Za-z0-9]/.test(title)) {
-        // 从开头一直取到第一个明显的技术字段或年份之前
-        const engMatch = title.match(/^([A-Za-z0-9.&\s]+?)(?=\.\d{4}|$)/);
-        if (engMatch) {
-          title = engMatch[1].trim().replace(/[._]/g, ' '); // Blood.River → Blood River（也可以保留.看你喜好）
-          // 如果你想保留原样点号，就去掉上面这行 replace
-        }
-      }
-      // 情况3：中文+英文混排（如 爱情公寓.ipartment.2009）
-      else {
-        // 先尝试取到第一个年份或分辨率之前的所有内容，再优先保留中文开头部分
-        const beforeYear = title.split(/\.(?:19|20)\d{2}|2160p|1080p|720p|H265|iPhone/)[0];
-        const chineseInMixed = beforeYear.match(/^[\u4e00-\u9fa5·]+/);
-        title = chineseInMixed ? chineseInMixed[0] : beforeYear.trim();
-      }
-
-      // 最后再保险清理一次常见的年份尾巴（防止漏网）
-      title = title.replace(/\.\d{4}$/i, '').trim();
-    } else {
-      // 没有 S##E## 格式，尝试提取第一个片段作为标题
-      // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
-      const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|E\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
-      const titleMatch = cleanFileName.match(titleRegex);
-
-      title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
-      season = null;
-      episode = null;
-    }
-
-    // 如果外语标题转换中文开关已开启，则尝试获取中文标题
-    if (globals.titleToChinese) {
-      // 如果title中包含.，则用空格替换
-      title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
-    }
-
-    log("info", "Parsed title, season, episode", { title, season, episode });
+    let {title, season, episode} = await extractTitleSeasonEpisode(cleanFileName);
 
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
@@ -818,6 +829,8 @@ export async function getComment(path, queryFormat) {
       danmus = await hanjutvSource.getComments(url, plat);
     } else if (plat === "bahamut") {
       danmus = await bahamutSource.getComments(url, plat);
+    } else if (plat === "dandan") {
+      danmus = await dandanSource.getComments(url, plat);
     }
   }
 

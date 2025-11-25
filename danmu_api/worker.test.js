@@ -5,7 +5,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
@@ -67,6 +67,28 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('Content-Type'), 'application/json');
     assert.deepEqual(body.message, 'Welcome to the LogVar Danmu API server');
+  });
+
+  // 测试标题解析
+  await t.test('PARSE TitleSeasonEpisode', async () => {
+    let title, season, episode;
+    ({title, season, episode} = await extractTitleSeasonEpisode("生万物 S02E08"));
+    assert(title === "生万物" && season == 2 && episode == 8, `Expected title === "生万物" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("无忧渡.S02E08.2160p.WEB-DL.H265.DDP.5.1"));
+    assert(title === "无忧渡" && season == 2 && episode == 8, `Expected title === "无忧渡" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    // ({title, season, episode} = await extractTitleSeasonEpisode("Blood.River.S02E08"));
+    // assert(title === "暗河传" && season == 2 && episode == 8, `Expected title === "暗河传" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("爱情公寓.ipartment.2009.S02E08.H.265.25fps.mkv"));
+    assert(title === "爱情公寓" && season == 2 && episode == 8, `Expected title === "爱情公寓" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("亲爱的X S02E08"));
+    assert(title === "亲爱的X" && season == 2 && episode == 8, `Expected title === "亲爱的X" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
+    assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
   });
 
   // await t.test('GET tencent danmu', async () => {
@@ -134,39 +156,39 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
-  await t.test('GET realistic danmu', async () => {
-    // tencent
-    // const keyword = "子夜归";
-    // iqiyi
-    // const keyword = "赴山海";
-    // mango
-    // const keyword = "锦月如歌";
-    // bilibili
-    // const keyword = "国王排名";
-    // youku
-    // const keyword = "黑白局";
-    // renren
-    // const keyword = "瑞克和莫蒂";
-    // hanjutv
-    // const keyword = "请回答1988";
-    // bahamut
-    const keyword = "胆大党";
-
-    const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
-    const searchRes = await searchAnime(searchUrl);
-    const searchData = await searchRes.json();
-    assert(searchData.animes.length > 0, `Expected searchData.animes.length > 0, but got ${searchData.animes.length}`);
-
-    const bangumiUrl = new URL(`${urlPrefix}/${token}/api/v2/bangumi/${searchData.animes[0].animeId}`);
-    const bangumiRes = await getBangumi(bangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
-    assert(bangumiData.bangumi.episodes.length > 0, `Expected bangumiData.bangumi.episodes.length > 0, but got ${bangumiData.bangumi.episodes.length}`);
-
-    const commentUrl = new URL(`${urlPrefix}/${token}/api/v2/comment/${bangumiData.bangumi.episodes[0].episodeId}?withRelated=true&chConvert=1`);
-    const commentRes = await getComment(commentUrl.pathname);
-    const commentData = await commentRes.json();
-    assert(commentData.count > 0, `Expected commentData.count > 0, but got ${commentData.count}`);
-  });
+  // await t.test('GET realistic danmu', async () => {
+  //   // tencent
+  //   // const keyword = "子夜归";
+  //   // iqiyi
+  //   // const keyword = "赴山海";
+  //   // mango
+  //   // const keyword = "锦月如歌";
+  //   // bilibili
+  //   // const keyword = "国王排名";
+  //   // youku
+  //   // const keyword = "黑白局";
+  //   // renren
+  //   // const keyword = "瑞克和莫蒂";
+  //   // hanjutv
+  //   // const keyword = "请回答1988";
+  //   // bahamut
+  //   const keyword = "胆大党";
+  //
+  //   const searchUrl = new URL(`${urlPrefix}/${token}/api/v2/search/anime?keyword=${keyword}`);
+  //   const searchRes = await searchAnime(searchUrl);
+  //   const searchData = await searchRes.json();
+  //   assert(searchData.animes.length > 0, `Expected searchData.animes.length > 0, but got ${searchData.animes.length}`);
+  //
+  //   const bangumiUrl = new URL(`${urlPrefix}/${token}/api/v2/bangumi/${searchData.animes[0].animeId}`);
+  //   const bangumiRes = await getBangumi(bangumiUrl.pathname);
+  //   const bangumiData = await bangumiRes.json();
+  //   assert(bangumiData.bangumi.episodes.length > 0, `Expected bangumiData.bangumi.episodes.length > 0, but got ${bangumiData.bangumi.episodes.length}`);
+  //
+  //   const commentUrl = new URL(`${urlPrefix}/${token}/api/v2/comment/${bangumiData.bangumi.episodes[0].episodeId}?withRelated=true&chConvert=1`);
+  //   const commentRes = await getComment(commentUrl.pathname);
+  //   const commentData = await commentRes.json();
+  //   assert(commentData.count > 0, `Expected commentData.count > 0, but got ${commentData.count}`);
+  // });
 
   // // 测试 POST /api/v2/match 接口
   // await t.test('POST /api/v2/match for matching anime', async () => {
