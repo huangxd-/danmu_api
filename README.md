@@ -334,7 +334,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，实际最少只需取 `SESSDATA=xxxx` 字段    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,renren,hanjutv,bahamut,dandan`       |
-| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, renren, hanjutv, bahamut`  |
+| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, renren, hanjutv, bahamut, dandan`  |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
 | ENABLE_EPISODE_FILTER    | 【可选】是否在手动选择接口中启用集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
 | STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
