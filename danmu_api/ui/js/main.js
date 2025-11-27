@@ -432,22 +432,46 @@ function testApi() {
     addLog(\`调用接口: \${config.name} (\${config.method} \${config.path})\`, 'info');
     addLog(\`请求参数: \${JSON.stringify(params)}\`, 'info');
 
-    // 模拟API响应
-    setTimeout(() => {
-        const mockResponse = {
-            code: 200,
-            message: 'success',
-            data: {
-                timestamp: new Date().toISOString(),
-                requestParams: params,
-                result: '接口调用成功(模拟数据)'
-            }
-        };
+    // 构建请求URL
+    let url = config.path;
+    if (config.method === 'GET') {
+        const queryString = new URLSearchParams(params).toString();
+        url = \`\${url}?\${queryString}\`;
+    }
 
-        document.getElementById('api-response-container').style.display = 'block';
-        document.getElementById('api-response').textContent = JSON.stringify(mockResponse, null, 2);
-        addLog('接口调用成功', 'success');
-    }, 500);
+    // 配置请求选项
+    const requestOptions = {
+        method: config.method,
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    };
+
+    if (config.method === 'POST') {
+        requestOptions.body = JSON.stringify(params);
+    }
+
+    // 发送真实API请求
+    fetch(url, requestOptions)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(\`HTTP error! status: \${response.status}\`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // 显示响应结果
+            document.getElementById('api-response-container').style.display = 'block';
+            document.getElementById('api-response').textContent = JSON.stringify(data, null, 2);
+            addLog('接口调用成功', 'success');
+        })
+        .catch(error => {
+            // 处理错误
+            const errorMessage = \`API请求失败: \${error.message}\`;
+            document.getElementById('api-response-container').style.display = 'block';
+            document.getElementById('api-response').textContent = errorMessage;
+            addLog(errorMessage, 'error');
+        });
 }
 
 // 渲染值输入控件
@@ -547,14 +571,14 @@ function renderValueInput(item) {
                 <label>可选项 (点击添加)</label>
                 <div class="available-tags" id="available-tags">
                     \${options.map(opt => {
-    const isSelected = selectedValues.includes(opt);
-    return \`
+                        const isSelected = selectedValues.includes(opt);
+                        return \`
                             <div class="available-tag \${isSelected ? 'disabled' : ''}"
                                  data-value="\${opt}" onclick="addSelectedTag(this)">
                                 \${opt}
                             </div>
                         \`;
-}).join('')}
+                    }).join('')}
                 </div>
             </div>
         \`;
