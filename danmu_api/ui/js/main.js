@@ -14,38 +14,36 @@ let latestVersion = '';
 
 // API 配置
 const apiConfigs = {
-    getUserInfo: {
-        name: '获取用户信息',
+    searchAnime: {
+        name: '搜索动漫',
         method: 'GET',
-        path: '/api/user/info',
+        path: '/api/v2/search/anime',
         params: [
-            { name: 'userId', label: '用户ID', type: 'text', required: true }
+            { name: 'keyword', label: '关键词', type: 'text', required: true }
         ]
     },
-    updateConfig: {
-        name: '更新配置',
+    matchAnime: {
+        name: '匹配动漫',
         method: 'POST',
-        path: '/api/config/update',
+        path: '/api/v2/match',
         params: [
-            { name: 'key', label: '配置键', type: 'text', required: true },
-            { name: 'value', label: '配置值', type: 'text', required: true },
-            { name: 'category', label: '类别', type: 'select', options: ['database', 'redis', 'api', 'system'] }
+            { name: 'fileName', label: '文件名', type: 'text', required: true }
         ]
     },
-    getSystemStatus: {
-        name: '系统状态',
+    getBangumi: {
+        name: '获取番剧详情',
         method: 'GET',
-        path: '/api/system/status',
-        params: []
-    },
-    testDatabase: {
-        name: '测试数据库连接',
-        method: 'POST',
-        path: '/api/test/database',
+        path: '/api/v2/bangumi/:animeId',
         params: [
-            { name: 'host', label: '主机地址', type: 'text', required: true },
-            { name: 'port', label: '端口', type: 'number', required: true },
-            { name: 'database', label: '数据库名', type: 'text', required: true }
+            { name: 'animeId', label: '动漫ID', type: 'text', required: true }
+        ]
+    },
+    getComment: {
+        name: '获取弹幕',
+        method: 'GET',
+        path: '/api/v2/comment/:commentId',
+        params: [
+            { name: 'commentId', label: '弹幕ID', type: 'text', required: true }
         ]
     }
 };

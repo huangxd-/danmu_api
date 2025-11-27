@@ -75,10 +75,10 @@ export const HTML_TEMPLATE = /* html */ `
                         <label>选择接口</label>
                         <select id="api-select" onchange="loadApiParams()">
                             <option value="">请选择接口</option>
-                            <option value="getUserInfo">获取用户信息 - /api/user/info</option>
-                            <option value="updateConfig">更新配置 - /api/config/update</option>
-                            <option value="getSystemStatus">系统状态 - /api/system/status</option>
-                            <option value="testDatabase">测试数据库连接 - /api/test/database</option>
+                            <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
+                            <option value="matchAnime">匹配动漫 - /api/v2/match</option>
+                            <option value="getBangumi">获取番剧详情 - /api/v2/bangumi/:animeId</option>
+                            <option value="getComment">获取弹幕 - /api/v2/comment/:commentId</option>
                         </select>
                     </div>
                 </div>
