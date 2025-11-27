@@ -236,20 +236,81 @@ export const componentsCssContent = /* css */ `
     background: white;
     padding: 30px;
     border-radius: 12px;
-    max-width: 500px;
+    max-width: 600px;
     width: 100%;
     box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    position: relative;
+    top: 0;
+    left: 0;
 }
 
 .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
 }
 
 .modal-header h3 {
     color: #667eea;
+    margin: 0;
+}
+
+.modal-body {
+    margin-bottom: 25px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.confirmation-list {
+    padding-left: 20px;
+    margin: 0;
+    list-style: none;
+}
+
+.confirmation-list li {
+    position: relative;
+    padding-left: 10px;
+    margin: 8px 0;
+}
+
+.confirmation-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #667eea;
+    font-size: 16px;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 15px;
+    border-radius: 6px;
+    margin-top: 15px;
+    margin-bottom: 20px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+    color: #667eea;
+    margin: 0;
 }
 
 .close-btn {
@@ -273,6 +334,45 @@ export const componentsCssContent = /* css */ `
     border-radius: 12px;
     font-size: 11px;
     margin-left: 8px;
+}
+
+/* 确认模态框样式 */
+.confirmation-list {
+    padding-left: 20px;
+    margin: 0;
+    list-style: none;
+}
+
+.confirmation-list li {
+    position: relative;
+    padding-left: 10px;
+    margin: 8px 0;
+}
+
+.confirmation-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #667eea;
+    font-size: 16px;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 15px;
+    border-radius: 6px;
+    margin-top: 15px;
+    margin-bottom: 20px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
 }
 
 .value-type-badge.multi {

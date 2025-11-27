@@ -748,12 +748,19 @@ function handleDrop(e) {
     return false;
 }
 
-// 清理缓存
-function clearCache() {
-    if (!confirm('确定要清理所有缓存吗？这将清除:\\n• Redis缓存\\n• 文件缓存\\n• 会话缓存\\n\\n清理后可能需要重新登录。')) {
-        return;
-    }
+// 显示清理缓存确认模态框
+function showClearCacheModal() {
+    document.getElementById('clear-cache-modal').classList.add('active');
+}
 
+// 隐藏清理缓存确认模态框
+function hideClearCacheModal() {
+    document.getElementById('clear-cache-modal').classList.remove('active');
+}
+
+// 确认清理缓存
+function confirmClearCache() {
+    hideClearCacheModal();
     showLoading('正在清理缓存...', '清除中，请稍候');
     addLog('开始清理缓存', 'info');
 
@@ -790,12 +797,19 @@ function clearCache() {
     }, 4000);
 }
 
-// 重新部署系统
-function deploySystem() {
-    if (!confirm('确定要重新部署系统吗？\\n\\n部署过程中:\\n• 系统将短暂不可用\\n• 所有配置将重新加载\\n• 服务将自动重启\\n\\n预计耗时: 2-3分钟')) {
-        return;
-    }
+// 显示重新部署确认模态框
+function showDeploySystemModal() {
+    document.getElementById('deploy-system-modal').classList.add('active');
+}
 
+// 隐藏重新部署确认模态框
+function hideDeploySystemModal() {
+    document.getElementById('deploy-system-modal').classList.remove('active');
+}
+
+// 确认重新部署系统
+function confirmDeploySystem() {
+    hideDeploySystemModal();
     showLoading('准备部署...', '正在检查系统状态');
     addLog('===== 开始系统部署 =====', 'info');
 

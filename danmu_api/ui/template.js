@@ -99,14 +99,63 @@ export const HTML_TEMPLATE = /* html */ `
             <div class="section" id="env-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <h2 style="margin: 0;">环境变量配置</h2>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button class="btn btn-danger" onclick="clearCache()" title="清理系统缓存">
-                            🗑️ 清理缓存
-                        </button>
-                        <button class="btn btn-success" onclick="deploySystem()" title="重新部署系统">
-                            🚀 重新部署
-                        </button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
+                        🗑️ 清理缓存
+                    </button>
+                    <button class="btn btn-success" onclick="showDeploySystemModal()" title="重新部署系统">
+                        🚀 重新部署
+                    </button>
+                </div>
+
+                <!-- 清理缓存确认模态框 -->
+                <div class="modal" id="clear-cache-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>确认清理缓存</h3>
+                            <button class="close-btn" onclick="hideClearCacheModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p style="margin-bottom: 20px;">确定要清理所有缓存吗？这将清除：</p>
+                            <ul class="confirmation-list">
+                                <li>Redis缓存</li>
+                                <li>文件缓存</li>
+                                <li>会话缓存</li>
+                            </ul>
+                            <p style="color: #666; margin-top: 20px;">清理后可能需要重新登录</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-success" onclick="confirmClearCache()">确认清理</button>
+                            <button class="btn btn-danger" onclick="hideClearCacheModal()">取消</button>
+                        </div>
                     </div>
+                </div>
+
+                <!-- 重新部署确认模态框 -->
+                <div class="modal" id="deploy-system-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>确认重新部署</h3>
+                            <button class="close-btn" onclick="hideDeploySystemModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p style="margin-bottom: 20px;">确定要重新部署系统吗？</p>
+                            <div class="warning-box">
+                                <p style="margin: 0;">部署过程中：</p>
+                                <ul class="confirmation-list">
+                                    <li>系统将短暂不可用</li>
+                                    <li>所有配置将重新加载</li>
+                                    <li>服务将自动重启</li>
+                                </ul>
+                                <p style="margin-top: 10px;">预计耗时：2-3分钟</p>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-success" onclick="confirmDeploySystem()">确认部署</button>
+                            <button class="btn btn-danger" onclick="hideDeploySystemModal()">取消</button>
+                        </div>
+                    </div>
+                </div>
                 </div>
 
                 <div class="env-categories">
