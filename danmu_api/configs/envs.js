@@ -164,6 +164,16 @@ export class Envs {
   }
 
   /**
+   * 解析弹幕转换颜色
+   * @returns {string} 弹幕转换颜色
+   */
+  static resolveConvertColor() {
+    // CONVERT_COLOR_TO_WHITE 变量向前兼容处理
+    let convertColorToWhite = this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean');
+    return this.get('CONVERT_COLOR', convertColorToWhite ? 'white': 'default', 'string');
+  }
+
+  /**
    * 获取记录的环境变量 JSON
    * @returns {Map<any, any>} JSON 字符串
    */
@@ -206,7 +216,7 @@ export class Envs {
       searchCacheMinutes: this.get('SEARCH_CACHE_MINUTES', 1, 'number'), // 搜索结果缓存时间配置（分钟，默认 1）
       commentCacheMinutes: this.get('COMMENT_CACHE_MINUTES', 1, 'number'), // 弹幕缓存时间配置（分钟，默认 1）
       convertTopBottomToScroll: this.get('CONVERT_TOP_BOTTOM_TO_SCROLL', false, 'boolean'), // 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
-      convertColorToWhite: this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean'), // 彩色弹幕转换为纯白弹幕配置（默认 false，禁用转换）
+      convertColor: this.resolveConvertColor(), // 弹幕转换颜色配置，支持 default、white、color（默认 default，禁用转换）
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
       strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean'), // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
