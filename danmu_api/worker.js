@@ -279,6 +279,12 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return new Response(logText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
 
+  // POST /api/logs/clear
+  if (path === "/api/logs/clear" && method === "POST") {
+    globals.logBuffer = [];
+    return jsonResponse({ success: true, message: "Logs cleared" }, 200);
+  }
+
   return jsonResponse({ message: "Not found" }, 404);
 }
 

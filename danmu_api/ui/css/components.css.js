@@ -165,6 +165,19 @@ export const componentsCssContent = /* css */ `
     gap: 10px;
 }
 
+/* 自动刷新按钮样式 */
+.btn-success.active {
+    background: #1e7e34;
+    box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.5); }
+    70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
+
 .log-container {
     background: #1e1e1e;
     color: #d4d4d4;
@@ -187,6 +200,8 @@ export const componentsCssContent = /* css */ `
 .log-entry.warn { color: #ffb74d; }
 .log-entry.error { color: #e57373; }
 .log-entry.success { color: #81c784; }
+
+
 
 /* 表单帮助文本 */
 .form-help {

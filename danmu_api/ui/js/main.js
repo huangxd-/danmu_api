@@ -6,7 +6,7 @@ export const jsContent = /* javascript */ `
 let envVariables = {};
 let currentCategory = 'database';
 let editingKey = null;
-let logs = [];
+let logs = []; // 保留本地日志数组，用于UI显示
 
 // 版本信息
 let currentVersion = '';
@@ -367,18 +367,88 @@ function renderLogs() {
     container.scrollTop = container.scrollHeight;
 }
 
-function refreshLogs() {
-    addLog('刷新日志', 'info');
-    addLog('系统运行正常', 'success');
-    addLog(\`当前配置项总数: \${Object.values(envVariables).reduce((sum, arr) => sum + arr.length, 0)}\`, 'info');
+// 从API获取真实日志数据
+async function fetchRealLogs() {
+    try {
+        const response = await fetch('/api/logs');
+        if (!response.ok) {
+            throw new Error(\`HTTP error! status: \${response.status}\`);
+        }
+        const logText = await response.text();
+        // 解析日志文本为数组
+        const logLines = logText.split('\\n').filter(line => line.trim() !== '');
+        // 转换为logs数组格式
+        logs = logLines.map(line => {
+            // 解析日志行，提取时间戳、级别和消息
+            const match = line.match(/\\[([^\\]]+)\\] (\\w+): (.*)/);
+            if (match) {
+                return {
+                    timestamp: match[1],
+                    type: match[2],
+                    message: match[3]
+                };
+            }
+            // 如果无法解析，返回原始行
+            return {
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'info',
+                message: line
+            };
+        });
+        renderLogs();
+    } catch (error) {
+        console.error('Failed to fetch logs:', error);
+        addLog(\`获取日志失败: \${error.message}\`, 'error');
+    }
 }
 
-function clearLogs() {
+function refreshLogs() {
+    // 从API获取真实日志数据
+    fetchRealLogs();
+}
+
+async function clearLogs() {
     if (confirm('确定要清空所有日志吗?')) {
-        logs = [];
-        renderLogs();
-        addLog('日志已清空', 'warn');
+        try {
+            const response = await fetch('/api/logs/clear', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(\`HTTP error! status: \${response.status}\`);
+            }
+            
+            const result = await response.json();
+            if (result.success) {
+                // 清空前端显示的日志
+                logs = [];
+                renderLogs();
+                addLog('日志已清空', 'warn');
+            } else {
+                addLog(\`清空日志失败: \${result.message}\`, 'error');
+            }
+        } catch (error) {
+            console.error('Failed to clear logs:', error);
+            addLog(\`清空日志失败: \${error.message}\`, 'error');
+        }
     }
+}
+
+// 页面加载完成后初始化时获取一次日志
+function init() {
+    // loadConfig().then(r => {
+    //    
+    // });
+    getDockerVersion();
+    loadSampleData();
+    renderEnvList();
+    renderPreview();
+    addLog('系统初始化完成', 'success');
+    // 获取真实日志数据
+    fetchRealLogs();
 }
 
 // 接口调试相关
