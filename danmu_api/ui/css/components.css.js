@@ -188,6 +188,14 @@ export const componentsCssContent = /* css */ `
 .log-entry.error { color: #e57373; }
 .log-entry.success { color: #81c784; }
 
+/* 表单帮助文本 */
+.form-help {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+    font-style: italic;
+}
+
 /* API调试样式 */
 .api-selector {
     margin-bottom: 20px;
@@ -210,6 +218,61 @@ export const componentsCssContent = /* css */ `
     font-family: 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
+}
+
+/* XML响应样式 */
+.api-response.xml {
+    color: #88ccff;
+}
+
+/* JSON高亮样式 */
+.json-response {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 15px;
+    border-radius: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+
+.json-response .key {
+    color: #9cdcfe;
+}
+
+.json-response .string {
+    color: #ce9178;
+}
+
+.json-response .number {
+    color: #b5cea8;
+}
+
+.json-response .boolean {
+    color: #569cd6;
+}
+
+.json-response .null {
+    color: #569cd6;
+}
+
+.json-response .undefined {
+    color: #569cd6;
+}
+
+.error-response {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 15px;
+    border-radius: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    border-left: 4px solid #dc3545;
 }
 
 /* 模态框 */

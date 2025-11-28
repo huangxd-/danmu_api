@@ -19,7 +19,15 @@ const apiConfigs = {
         method: 'GET',
         path: '/api/v2/search/anime',
         params: [
-            { name: 'keyword', label: '关键词', type: 'text', required: true }
+            { name: 'keyword', label: '关键词', type: 'text', required: true, placeholder: '示例: 生万物' }
+        ]
+    },
+    searchEpisodes: {
+        name: '搜索剧集',
+        method: 'GET',
+        path: '/api/v2/search/episodes',
+        params: [
+            { name: 'anime', label: '动漫名称', type: 'text', required: true, placeholder: '示例: 生万物' }
         ]
     },
     matchAnime: {
@@ -27,7 +35,7 @@ const apiConfigs = {
         method: 'POST',
         path: '/api/v2/match',
         params: [
-            { name: 'fileName', label: '文件名', type: 'text', required: true }
+            { name: 'fileName', label: '文件名', type: 'text', required: true, placeholder: '示例: 生万物 S02E08, 无忧渡.S02E08.2160p.WEB-DL.H265.DDP.5.1, 爱情公寓.ipartment.2009.S02E08.H.265.25fps.mkv, 亲爱的X S02E08, 宇宙Marry Me? S02E08' }
         ]
     },
     getBangumi: {
@@ -35,7 +43,7 @@ const apiConfigs = {
         method: 'GET',
         path: '/api/v2/bangumi/:animeId',
         params: [
-            { name: 'animeId', label: '动漫ID', type: 'text', required: true }
+            { name: 'animeId', label: '动漫ID', type: 'text', required: true, placeholder: '示例: 236379' }
         ]
     },
     getComment: {
@@ -43,7 +51,8 @@ const apiConfigs = {
         method: 'GET',
         path: '/api/v2/comment/:commentId',
         params: [
-            { name: 'commentId', label: '弹幕ID', type: 'text', required: true }
+            { name: 'commentId', label: '弹幕ID', type: 'text', required: true, placeholder: '示例: 10009' },
+            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] }
         ]
     }
 };
@@ -394,19 +403,27 @@ function loadApiParams() {
 
     formDiv.innerHTML = config.params.map(param => {
         if (param.type === 'select') {
+            // 为select类型参数添加默认选项
+            let optionsHtml = '<option value="">-- 请选择 --</option>';
+            if (param.options) {
+                optionsHtml += param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('');
+            }
             return \`
                 <div class="form-group">
                     <label>\${param.label}\${param.required ? ' *' : ''}</label>
                     <select id="param-\${param.name}">
-                        \${param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('')}
+                        \${optionsHtml}
                     </select>
+                    \${param.placeholder ? \`<div class="form-help">\${param.placeholder}</div>\` : ''}
                 </div>
             \`;
         }
+        // 使用placeholder属性显示示例参数
+        const placeholder = param.placeholder ? param.placeholder : "请输入" + param.label;
         return \`
             <div class="form-group">
                 <label>\${param.label}\${param.required ? ' *' : ''}</label>
-                <input type="\${param.type}" id="param-\${param.name}" placeholder="请输入\${param.label}" \${param.required ? 'required' : ''}>
+                <input type="\${param.type}" id="param-\${param.name}" placeholder="\${placeholder}" \${param.required ? 'required' : ''}>
             </div>
         \`;
     }).join('');
@@ -434,9 +451,43 @@ function testApi() {
 
     // 构建请求URL
     let url = config.path;
-    if (config.method === 'GET') {
-        const queryString = new URLSearchParams(params).toString();
-        url = \`\${url}?\${queryString}\`;
+    
+    // 检查是否为路径参数接口
+    const isPathParameterApi = config.path.includes(':');
+    
+    if (isPathParameterApi) {
+        // 处理路径参数接口 (/api/v2/comment 和 /api/v2/bangumi)
+        // 先分离路径参数和查询参数
+        const pathParams = {};
+        const queryParams = {};
+        
+        // 分类参数
+        for (const [key, value] of Object.entries(params)) {
+            // 检查参数是否为路径参数
+            if (config.path.includes(':' + key)) {
+                pathParams[key] = value;
+            } else {
+                // 其他参数作为查询参数
+                queryParams[key] = value;
+            }
+        }
+        
+        // 替换路径参数
+        for (const [key, value] of Object.entries(pathParams)) {
+            url = url.replace(':' + key, encodeURIComponent(value));
+        }
+        
+        // 添加查询参数
+        if (config.method === 'GET' && Object.keys(queryParams).length > 0) {
+            const queryString = new URLSearchParams(queryParams).toString();
+            url = url + '?' + queryString;
+        }
+    } else {
+        // 保持原来的逻辑，用于 search/anime 等接口
+        if (config.method === 'GET') {
+            const queryString = new URLSearchParams(params).toString();
+            url = url + '?' + queryString;
+        }
     }
 
     // 配置请求选项
@@ -457,12 +508,38 @@ function testApi() {
             if (!response.ok) {
                 throw new Error(\`HTTP error! status: \${response.status}\`);
             }
-            return response.json();
+            
+            // 检查format参数以确定如何处理响应
+            const formatParam = params.format || 'json';
+            
+            if (formatParam.toLowerCase() === 'xml') {
+                // 对于XML格式，返回文本内容
+                return response.text().then(text => ({
+                    data: text,
+                    format: 'xml'
+                }));
+            } else {
+                // 对于JSON格式或其他情况，返回JSON对象
+                return response.json().then(json => ({
+                    data: json,
+                    format: 'json'
+                }));
+            }
         })
-        .then(data => {
+        .then(result => {
             // 显示响应结果
             document.getElementById('api-response-container').style.display = 'block';
-            document.getElementById('api-response').textContent = JSON.stringify(data, null, 2);
+            
+            if (result.format === 'xml') {
+                // 显示XML响应
+                document.getElementById('api-response').textContent = result.data;
+                document.getElementById('api-response').className = 'api-response xml'; // 使用XML专用样式类
+            } else {
+                // 显示JSON响应
+                document.getElementById('api-response').className = 'json-response';
+                document.getElementById('api-response').innerHTML = highlightJSON(result.data);
+            }
+            
             addLog('接口调用成功', 'success');
         })
         .catch(error => {
@@ -470,6 +547,8 @@ function testApi() {
             const errorMessage = \`API请求失败: \${error.message}\`;
             document.getElementById('api-response-container').style.display = 'block';
             document.getElementById('api-response').textContent = errorMessage;
+            // 添加错误信息的CSS类
+            document.getElementById('api-response').className = 'error-response';
             addLog(errorMessage, 'error');
         });
 }
@@ -898,6 +977,30 @@ function updateLoadingText(text, detail) {
 // 更新进度条
 function updateProgress(percent) {
     document.getElementById('progress-bar').style.width = percent + '%';
+}
+
+// JSON高亮函数
+function highlightJSON(obj) {
+    let json = JSON.stringify(obj, null, 2);
+    // 转义HTML特殊字符
+    json = json.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+    
+    // 高亮JSON语法
+    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'number';
+        if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+                cls = 'key';
+            } else {
+                cls = 'string';
+            }
+        } else if (/true|false/.test(match)) {
+            cls = 'boolean';
+        } else if (/null/.test(match)) {
+            cls = 'null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+    });
 }
 
 // 页面加载完成后初始化
