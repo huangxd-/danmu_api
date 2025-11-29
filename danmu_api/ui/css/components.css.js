@@ -165,13 +165,6 @@ export const componentsCssContent = /* css */ `
     gap: 10px;
 }
 
-/* 自动刷新按钮样式 */
-.btn-success.active {
-    background: #1e7e34;
-    box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
-    animation: pulse 1.5s infinite;
-}
-
 @keyframes pulse {
     0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.5); }
     70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
