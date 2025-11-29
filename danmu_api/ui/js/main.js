@@ -57,18 +57,6 @@ const apiConfigs = {
     }
 };
 
-// 初始化
-function init() {
-    // loadConfig().then(r => {
-    //    
-    // });
-    getDockerVersion();
-    loadSampleData();
-    renderEnvList();
-    renderPreview();
-    addLog('系统初始化完成', 'success');
-}
-
 // 加载示例数据
 function loadSampleData() {
     envVariables = {
@@ -107,39 +95,35 @@ function loadSampleData() {
     };
 }
 
-// 加载配置信息
-async function loadConfig() {
-  try {
-    const response = await fetch('/api/config');
-    if (!response.ok) {
-      throw new Error(\`HTTP error! status: \${response.status}\`);
-    }
-    const config = await response.json();
-
-    currentVersion = config.version;
-    // envVariables = config.envs || {};
-
-    console.log('Config loaded:', config);
-
-    await updateVersionInfo();
-
-  } catch (error) {
-    console.error('Failed to load config:', error);
-    currentVersion = 'Error';
-  }
-}
-
-// 更新版本信息显示
-function updateVersionInfo() {
-  const versionElement = document.getElementById('current-version');
-  if (versionElement) {
-    versionElement.textContent = currentVersion;
-  }
-
-  const updateBadge = document.getElementById('update-badge');
-  if (updateBadge) {
-    updateBadge.style.display = 'inline-block';
-  }
+// 更新API端点信息
+function updateApiEndpoint() {
+  // 从服务器获取配置信息以获取token
+  fetch('/api/config')
+    .then(response => response.json())
+    .then(config => {
+      // 获取当前页面的协议、主机和端口
+      const protocol = window.location.protocol;
+      const host = window.location.host;
+      const token = config.envs?.token || '87654321'; // 默认token值
+      
+      // 构造API端点URL
+      const apiEndpoint = protocol + '//' + host + '/' + token;
+      const apiEndpointElement = document.getElementById('api-endpoint');
+      if (apiEndpointElement) {
+        apiEndpointElement.textContent = apiEndpoint;
+      }
+    })
+    .catch(error => {
+      console.error('获取配置信息失败:', error);
+      // 出错时显示默认值
+      const protocol = window.location.protocol;
+      const host = window.location.host;
+      const apiEndpoint = protocol + '//' + host + '/87654321';
+      const apiEndpointElement = document.getElementById('api-endpoint');
+      if (apiEndpointElement) {
+        apiEndpointElement.textContent = apiEndpoint;
+      }
+    });
 }
 
 function getDockerVersion() {
@@ -222,12 +206,12 @@ function renderEnvList() {
 // 获取类别名称
 function getCategoryName(category) {
     const names = {
-        api: 'API配置',
-        source: '源配置',
-        match: '匹配配置',
-        danmu: '弹幕配置',
-        cache: '缓存配置',
-        system: '系统配置'
+        api: '🔗 API配置',
+        source: '📜 源配置',
+        match: '🔍 匹配配置',
+        danmu: '🔣 弹幕配置',
+        cache: '💾 缓存配置',
+        system: '⚙️ 系统配置'
     };
     return names[category] || category;
 }
@@ -459,9 +443,7 @@ async function clearLogs() {
 
 // 页面加载完成后初始化时获取一次日志
 function init() {
-    // loadConfig().then(r => {
-    //    
-    // });
+    updateApiEndpoint();
     getDockerVersion();
     loadSampleData();
     renderEnvList();
@@ -1091,6 +1073,34 @@ function highlightJSON(obj) {
         }
         return '<span class="' + cls + '">' + match + '</span>';
     });
+}
+
+// 复制API端点到剪贴板
+function copyApiEndpoint() {
+    const apiEndpointElement = document.getElementById('api-endpoint');
+    if (apiEndpointElement) {
+        const apiEndpoint = apiEndpointElement.textContent;
+        navigator.clipboard.writeText(apiEndpoint)
+            .then(() => {
+                // 临时改变显示文本以提供反馈
+                const originalText = apiEndpointElement.textContent;
+                apiEndpointElement.textContent = '已复制!';
+                apiEndpointElement.style.color = '#ff6b6b';
+                
+                // 2秒后恢复原始文本
+                setTimeout(() => {
+                    apiEndpointElement.textContent = originalText;
+                    apiEndpointElement.style.color = '#4CAF50';
+                }, 2000);
+                
+                addLog('API端点已复制到剪贴板: ' + apiEndpoint, 'success');
+            })
+            .catch(err => {
+                console.error('复制失败:', err);
+                alert('复制失败: ' + err);
+                addLog('复制API端点失败: ' + err, 'error');
+            });
+    }
 }
 
 // 页面加载完成后初始化

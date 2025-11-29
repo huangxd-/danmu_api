@@ -35,6 +35,9 @@ export const HTML_TEMPLATE = /* html */ `
                         <span class="update-badge" id="update-badge">
                             🎉 最新版本: <span id="latest-version">加载中...</span>
                         </span>
+                        <span class="api-endpoint-badge">
+                            API端点: <span id="api-endpoint" title="点击复制API端点" style="cursor: pointer; color: #4CAF50; font-weight: bold;" onclick="copyApiEndpoint()">加载中...</span>
+                        </span>
                     </div>
                 </div>
             </div>
