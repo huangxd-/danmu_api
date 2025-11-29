@@ -5,7 +5,7 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs } from "./apis/system-api.js";
 
 let globals;
 
@@ -270,19 +270,12 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/logs
   if (path === "/api/logs" && method === "GET") {
-    const logText = globals.logBuffer
-      .map(
-        (log) =>
-          `[${log.timestamp}] ${log.level}: ${formatLogMessage(log.message)}`
-      )
-      .join("\n");
-    return new Response(logText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return handleLogs();
   }
 
   // POST /api/logs/clear
   if (path === "/api/logs/clear" && method === "POST") {
-    globals.logBuffer = [];
-    return jsonResponse({ success: true, message: "Logs cleared" }, 200);
+    return handleClearLogs();
   }
 
   return jsonResponse({ message: "Not found" }, 404);
