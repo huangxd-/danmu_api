@@ -163,21 +163,20 @@ export class Envs {
   }
 
   /**
-<<<<<<< HEAD
    * 获取记录的原始环境变量 JSON
    * @returns {Map<any, any>} JSON 字符串
    */
   static getOriginalEnvVars() {
     return this.originalEnvVars;
-=======
-   * 解析弹幕转换颜色
+  }
+  
+  /** 解析弹幕转换颜色
    * @returns {string} 弹幕转换颜色
    */
   static resolveConvertColor() {
     // CONVERT_COLOR_TO_WHITE 变量向前兼容处理
     let convertColorToWhite = this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean');
     return this.get('CONVERT_COLOR', convertColorToWhite ? 'white': 'default', 'string');
->>>>>>> main
   }
 
   /**
