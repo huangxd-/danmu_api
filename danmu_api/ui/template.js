@@ -96,7 +96,7 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
             </div>
 
-            <!-- 变量配置 -->
+            <!-- 系统配置 -->
             <div class="section" id="env-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <h2 style="margin: 0;">环境变量配置</h2>

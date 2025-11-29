@@ -195,6 +195,55 @@ export class Envs {
    */
   static load(env = {}) {
     this.env = env;
+    
+    // 环境变量分类和描述映射
+    const envVarConfig = {
+      // API配置
+      'TOKEN': { category: 'api', description: 'API访问令牌' },
+      'OTHER_SERVER': { category: 'api', description: '第三方弹幕服务器' },
+      'RATE_LIMIT_MAX_REQUESTS': { category: 'api', description: '限流配置：1分钟内最大请求次数' },
+
+      // 源配置
+      'VOD_SERVERS': { category: 'source', description: 'VOD站点配置' },
+      'VOD_RETURN_MODE': { category: 'source', description: 'VOD返回模式' },
+      'VOD_REQUEST_TIMEOUT': { category: 'source', description: 'VOD请求超时时间' },
+      'BILIBILI_COOKIE': { category: 'source', description: 'B站Cookie' },
+      'YOUKU_CONCURRENCY': { category: 'source', description: '优酷并发配置' },
+      'SOURCE_ORDER': { category: 'source', description: '源排序配置' },
+      
+      // 匹配配置
+      'PLATFORM_ORDER': { category: 'match', description: '平台排序配置' },
+      'EPISODE_TITLE_FILTER': { category: 'match', description: '剧集标题过滤规则' },
+      'ENABLE_EPISODE_FILTER': { category: 'match', description: '集标题过滤开关' },
+      'STRICT_TITLE_MATCH': { category: 'match', description: '严格标题匹配模式' },
+      'TITLE_TO_CHINESE': { category: 'match', description: '外语标题转换中文开关' },
+
+      // 弹幕配置
+      'BLOCKED_WORDS': { category: 'danmu', description: '屏蔽词列表' },
+      'GROUP_MINUTE': { category: 'danmu', description: '分钟内合并去重' },
+      'DANMU_LIMIT': { category: 'danmu', description: '弹幕数量限制' },
+      'DANMU_SIMPLIFIED': { category: 'danmu', description: '弹幕繁体转简体开关' },
+      'CONVERT_TOP_BOTTOM_TO_SCROLL': { category: 'danmu', description: '顶部/底部弹幕转换为浮动弹幕' },
+      'CONVERT_COLOR': { category: 'danmu', description: '弹幕转换颜色配置' },
+      'DANMU_OUTPUT_FORMAT': { category: 'danmu', description: '弹幕输出格式' },
+
+      // 缓存配置
+      'SEARCH_CACHE_MINUTES': { category: 'cache', description: '搜索结果缓存时间(分钟)' },
+      'COMMENT_CACHE_MINUTES': { category: 'cache', description: '弹幕缓存时间(分钟)' },
+      'REMEMBER_LAST_SELECT': { category: 'cache', description: '记住手动选择结果' },
+      'MAX_LAST_SELECT_MAP': { category: 'cache', description: '记住上次选择映射缓存大小限制' },
+      'UPSTASH_REDIS_REST_URL': { category: 'cache', description: 'Upstash Redis请求链接' },
+      'UPSTASH_REDIS_REST_TOKEN': { category: 'cache', description: 'Upstash Redis访问令牌' },
+
+      // 系统配置
+      'PROXY_URL': { category: 'system', description: '代理/反代地址' },
+      'TMDB_API_KEY': { category: 'system', description: 'TMDB API密钥' },
+      'LOG_LEVEL': { category: 'system', description: '日志级别配置' },
+      'DEPLOY_PLATFROM_ACCOUNT': { category: 'system', description: '部署平台账号ID' },
+      'DEPLOY_PLATFROM_PROJECT': { category: 'system', description: '部署平台项目名称' },
+      'DEPLOY_PLATFROM_TOKEN': { category: 'system', description: '部署平台访问令牌' }
+    };
+    
     return {
       vodAllowedPlatforms: this.VOD_ALLOWED_PLATFORMS,
       allowedPlatforms: this.ALLOWED_PLATFORMS,
@@ -231,6 +280,7 @@ export class Envs {
       deployPlatformAccount: this.get('DEPLOY_PLATFROM_ACCOUNT', '', 'string', true), // 部署平台账号ID配置（默认空）
       deployPlatformProject: this.get('DEPLOY_PLATFROM_PROJECT', '', 'string', true), // 部署平台项目名称配置（默认空）
       deployPlatformToken: this.get('DEPLOY_PLATFROM_TOKEN', '', 'string', true), // 部署平台项目名称配置（默认空）
+      envVarConfig: envVarConfig // 环境变量分类和描述映射
     };
   }
 }
