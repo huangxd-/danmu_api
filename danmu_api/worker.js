@@ -5,7 +5,7 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 
 let globals;
@@ -293,6 +293,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/env/del - 删除环境变量
   if (path === "/api/env/del" && method === "POST") {
     return handleDelEnv(req);
+  }
+
+  // POST /api/deploy - 重新部署
+  if (path === "/api/deploy" && method === "POST") {
+    return handleDeploy();
   }
 
   return jsonResponse({ message: "Not found" }, 404);

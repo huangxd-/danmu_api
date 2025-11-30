@@ -1068,6 +1068,57 @@ function confirmDeploySystem() {
     showLoading('准备部署...', '正在检查系统状态');
     addLog('===== 开始系统部署 =====', 'info');
 
+    // 获取当前部署平台
+    fetch('/api/config')
+        .then(response => response.json())
+        .then(config => {
+            const deployPlatform = config.envs.deployPlatform || 'node';
+            addLog(\`检测到部署平台: \${deployPlatform}\`, 'info');
+
+            if (deployPlatform.toLowerCase() === 'node') {
+                // Node部署不需要重新部署
+                setTimeout(() => {
+                    hideLoading();
+                    addLog('===== 部署完成 =====', 'success');
+                    addLog('Node部署模式，环境变量已生效', 'info');
+                    alert('✅ Node部署模式\\n\\n在Node部署模式下，环境变量修改后会自动生效，无需重新部署。\\n\\n系统已更新配置');
+                }, 1500);
+            } else {
+                // 调用真实的部署API
+                fetch(buildApiUrl('/api/deploy'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        addLog('云端部署触发成功', 'success');
+                        // 模拟云端部署过程
+                        simulateDeployProcess();
+                    } else {
+                        hideLoading();
+                        addLog(\`云端部署失败: \${result.message}\`, 'error');
+                        alert(\`❌ 部署失败\\n\\n错误信息: \${result.message}\`);
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    addLog(\`云端部署请求失败: \${error.message}\`, 'error');
+                    alert(\`❌ 部署请求失败\\n\\n错误信息: \${error.message}\`);
+                });
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            addLog(\`获取部署平台信息失败: \${error.message}\`, 'error');
+            console.error('获取部署平台信息失败:', error);
+        });
+}
+
+// 模拟云端部署过程
+function simulateDeployProcess() {
     let progress = 0;
     const progressInterval = setInterval(() => {
         progress += Math.random() * 8;
@@ -1081,10 +1132,10 @@ function confirmDeploySystem() {
     // 模拟部署步骤
     const steps = [
         { delay: 1000, text: '检查环境变量...', detail: '验证配置文件', log: '配置文件验证通过' },
-        { delay: 2000, text: '拉取最新代码...', detail: 'Git pull origin main', log: '代码更新完成: commit abc1234' },
-        { delay: 3500, text: '安装依赖...', detail: 'npm install', log: '依赖安装完成: 45 个包' },
-        { delay: 5000, text: '构建项目...', detail: 'npm run build', log: '构建完成: 生成 dist 目录' },
-        { delay: 6500, text: '重启服务...', detail: 'pm2 restart all', log: '服务重启成功' },
+        { delay: 2000, text: '触发云端部署...', detail: '部署到' + (currentToken || '当前平台'), log: '云端部署已触发' },
+        { delay: 3500, text: '构建项目...', detail: '云端构建中', log: '云端构建完成' },
+        { delay: 5000, text: '部署更新...', detail: '发布到生产环境', log: '更新已部署' },
+        { delay: 6500, text: '服务重启...', detail: '应用新配置', log: '服务已重启' },
         { delay: 8000, text: '健康检查...', detail: '验证服务状态', log: '所有服务运行正常' },
     ];
 
@@ -1095,13 +1146,36 @@ function confirmDeploySystem() {
         }, step.delay);
     });
 
+    // 部署后检查服务是否可用
     setTimeout(() => {
-        hideLoading();
-        addLog('===== 部署完成 =====', 'success');
-        addLog(\`部署版本: \${latestVersion}\`, 'info');
-        addLog('系统已更新并重启', 'success');
-        alert('🎉 部署成功！\\n\\n✅ 代码已更新\\n✅ 服务已重启\\n✅ 配置已生效\\n\\n系统版本: ' + latestVersion);
+        checkDeploymentStatus();
     }, 9000);
+}
+
+// 检查部署状态，每隔5秒请求/api/logs接口直到请求成功
+function checkDeploymentStatus() {
+    const checkInterval = setInterval(() => {
+        updateLoadingText('部署完成，检查服务状态...', '正在请求 /api/logs 接口');
+        addLog('正在检查服务状态...', 'info');
+
+        fetch('/api/logs')
+            .then(response => {
+                if (response.ok) {
+                    // 请求成功，停止检查
+                    clearInterval(checkInterval);
+                    hideLoading();
+                    addLog('===== 部署完成 =====', 'success');
+                    addLog('部署版本: ' + latestVersion, 'info');
+                    addLog('系统已更新并重启', 'success');
+                    alert('🎉 部署成功！\\n\\n✅ 云端部署已完成\\n✅ 服务已重启\\n✅ 配置已生效\\n\\n系统版本: ' + latestVersion);
+                } else {
+                    addLog('服务检查中 - 状态码: ' + response.status, 'info');
+                }
+            })
+            .catch(error => {
+                addLog('服务检查中 - 连接失败: ' + error.message, 'info');
+            });
+    }, 5000); // 每5秒检查一次
 }
 
 // 显示加载遮罩

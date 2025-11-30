@@ -151,7 +151,7 @@ export const HTML_TEMPLATE = /* html */ `
                                     <li>所有配置将重新加载</li>
                                     <li>服务将自动重启</li>
                                 </ul>
-                                <p style="margin-top: 10px;">预计耗时：2-3分钟</p>
+                                <p style="margin-top: 10px;">预计耗时：30-90秒</p>
                             </div>
                         </div>
                         <div class="modal-footer">
