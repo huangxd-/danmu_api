@@ -527,4 +527,49 @@ export const componentsCssContent = /* css */ `
     font-size: 14px;
     color: #666;
 }
+
+/* 通用内联样式类 */
+.text-center {
+    text-align: center;
+}
+
+.text-gray {
+    color: #999;
+}
+
+.text-red {
+    color: #e74c3c;
+}
+
+.text-dark-gray {
+    color: #666;
+}
+
+.text-purple {
+    color: #667eea;
+}
+
+.padding-20 {
+    padding: 20px;
+}
+
+.margin-bottom-10 {
+    margin-bottom: 10px;
+}
+
+.margin-top-3 {
+    margin-top: 3px;
+}
+
+.font-size-12 {
+    font-size: 12px;
+}
+
+.margin-bottom-15 {
+    margin-bottom: 15px;
+}
+
+.text-monospace {
+    font-family: monospace;
+}
 `;

@@ -189,7 +189,7 @@ function renderEnvList() {
     const items = envVariables[currentCategory] || [];
 
     if (items.length === 0) {
-        list.innerHTML = '<p style="color: #999; padding: 20px; text-align: center;">暂无配置项</p>';
+        list.innerHTML = '<p class="text-gray padding-20 text-center">暂无配置项</p>';
         return;
     }
 
@@ -204,8 +204,8 @@ function renderEnvList() {
             <div class="env-item">
                 <div class="env-info">
                     <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
-                    <div style="color: #666;">\${item.value}</div>
-                    <div style="color: #999; font-size: 12px; margin-top: 5px;">\${item.description || '无描述'}</div>
+                    <div class="text-dark-gray">\${item.value}</div>
+                    <div class="text-gray font-size-12 margin-top-3">\${item.description || '无描述'}</div>
                 </div>
                 <div class="env-actions">
                     <button class="btn btn-primary" onclick="editEnv(\${index})">编辑</button>
@@ -247,23 +247,23 @@ function renderPreview() {
             Object.keys(categorizedVars).forEach(category => {
                 const items = categorizedVars[category];
                 if (items && items.length > 0) {
-                    html += \`<h3 style="color: #667eea; margin-bottom: 10px;">\${getCategoryName(category)}</h3>\`;
+                    html += \`<h3 class="text-purple margin-bottom-10">\${getCategoryName(category)}</h3>\`;
                     items.forEach(item => {
                         html += \`
                             <div class="preview-item">
                                 <strong>\${item.key}</strong> = \${item.value}
-                                \${item.description ? \`<div style="color: #999; font-size: 12px; margin-top: 3px;">\${item.description}</div>\` : ''}
+                                \${item.description ? \`<div class="text-gray font-size-12 margin-top-3">\${item.description}</div>\` : ''}
                             </div>
                         \`;
                     });
                 }
             });
             
-            preview.innerHTML = html || '<p style="color: #999;">暂无配置</p>';
+            preview.innerHTML = html || '<p class="text-gray">暂无配置</p>';
         })
         .catch(error => {
             console.error('Failed to load config for preview:', error);
-            preview.innerHTML = '<p style="color: #e74c3c;">加载配置失败: ' + error.message + '</p>';
+            preview.innerHTML = '<p class="text-red">加载配置失败: ' + error.message + '</p>';
         });
 }
 
@@ -539,7 +539,7 @@ function loadApiParams() {
     paramsDiv.style.display = 'block';
 
     if (config.params.length === 0) {
-        formDiv.innerHTML = '<p style="color: #999;">此接口无需参数</p>';
+        formDiv.innerHTML = '<p class="text-gray">此接口无需参数</p>';
         return;
     }
 
@@ -558,7 +558,7 @@ function loadApiParams() {
                     </select>
                     \${param.placeholder ? \`<div class="form-help">\${param.placeholder}</div>\` : ''}
                 </div>
-            \`;
+            \`; 
         }
         // 使用placeholder属性显示示例参数
         const placeholder = param.placeholder ? param.placeholder : "请输入" + param.label;
@@ -567,7 +567,7 @@ function loadApiParams() {
                 <label>\${param.label}\${param.required ? ' *' : ''}</label>
                 <input type="\${param.type}" id="param-\${param.name}" placeholder="\${placeholder}" \${param.required ? 'required' : ''}>
             </div>
-        \`;
+        \`; 
     }).join('');
 }
 
@@ -744,12 +744,12 @@ function renderValueInput(item) {
         // 标签选择
         const options = item && item.options ? item.options : ['option1', 'option2', 'option3'];
         const optionsInput = item ? '' : \`
-            <div class="form-group" style="margin-bottom: 15px;">
+            <div class="form-group margin-bottom-15">
                 <label>可选项 (逗号分隔)</label>
                 <input type="text" id="select-options" placeholder="例如: debug,info,warn,error"
                        value="\${options.join(',')}" onchange="updateTagOptions()">
             </div>
-        \`;
+        \`; 
 
         container.innerHTML = \`
             \${optionsInput}
@@ -772,12 +772,12 @@ function renderValueInput(item) {
         const selectedValues = stringValue ? stringValue.split(',').map(v => v.trim()).filter(v => v) : [];
 
         const optionsInput = item ? '' : \`
-            <div class="form-group" style="margin-bottom: 15px;">
+            <div class="form-group margin-bottom-15">
                 <label>可选项 (逗号分隔)</label>
                 <input type="text" id="multi-options" placeholder="例如: auth,payment,analytics"
                        value="\${options.join(',')}" onchange="updateMultiOptions()">
             </div>
-        \`;
+        \`; 
 
         container.innerHTML = \`
             \${optionsInput}
@@ -817,7 +817,7 @@ function renderValueInput(item) {
             const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10); // 最少3行，最多10行
             container.innerHTML = \`
                 <label>变量值 *</label>
-                <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" style="width: 100%; padding: 8px; font-family: monospace;">\${value}</textarea>
+                <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
             \`; 
         } else {
             container.innerHTML = \`
