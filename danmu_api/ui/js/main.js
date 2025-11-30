@@ -11,6 +11,7 @@ let logs = []; // 保留本地日志数组，用于UI显示
 // 版本信息
 let currentVersion = '';
 let latestVersion = '';
+let currentToken = '87654321'; // 默认token
 
 // API 配置
 const apiConfigs = {
@@ -57,6 +58,11 @@ const apiConfigs = {
     }
 };
 
+// 构建带token的API请求路径
+function buildApiUrl(path) {
+    return '/' + currentToken + path;
+}
+
 // 从API加载真实环境变量数据
 function loadEnvVariables() {
     // 从API获取真实配置数据
@@ -101,14 +107,14 @@ function loadEnvVariables() {
 
 // 更新API端点信息
 function updateApiEndpoint() {
-  // 从服务器获取配置信息以获取token
-  fetch('/api/config')
+  return fetch('/api/config')
     .then(response => response.json())
     .then(config => {
       // 获取当前页面的协议、主机和端口
       const protocol = window.location.protocol;
       const host = window.location.host;
-      const token = config.envs?.token || '87654321'; // 默认token值
+      const token = config.originalEnvVars?.TOKEN || '87654321'; // 默认token值
+      currentToken = token; // 更新全局token变量
       
       // 构造API端点URL
       const apiEndpoint = protocol + '//' + host + '/' + token;
@@ -116,6 +122,7 @@ function updateApiEndpoint() {
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
       }
+      return config; // 返回配置信息，以便链式调用
     })
     .catch(error => {
       console.error('获取配置信息失败:', error);
@@ -127,6 +134,7 @@ function updateApiEndpoint() {
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
       }
+      throw error; // 抛出错误，以便调用者可以处理
     });
 }
 
@@ -287,7 +295,7 @@ function deleteEnv(index) {
         const key = item.key;
 
         // 调用API删除环境变量
-        fetch('/api/env/del', {
+        fetch(buildApiUrl('/api/env/del'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -363,7 +371,7 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
 
     // 调用API更新环境变量
     try {
-        const apiUrl = editingKey !== null ? '/api/env/set' : '/api/env/add';
+        const apiUrl = editingKey !== null ? buildApiUrl('/api/env/set') : buildApiUrl('/api/env/add');
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -427,7 +435,7 @@ function renderLogs() {
 // 从API获取真实日志数据
 async function fetchRealLogs() {
     try {
-        const response = await fetch('/api/logs');
+        const response = await fetch(buildApiUrl('/api/logs'));
         if (!response.ok) {
             throw new Error(\`HTTP error! status: \${response.status}\`);
         }
@@ -467,7 +475,7 @@ function refreshLogs() {
 async function clearLogs() {
     if (confirm('确定要清空所有日志吗?')) {
         try {
-            const response = await fetch('/api/logs/clear', {
+            const response = await fetch(buildApiUrl('/api/logs/clear'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -495,15 +503,22 @@ async function clearLogs() {
 }
 
 // 页面加载完成后初始化时获取一次日志
-function init() {
-    updateApiEndpoint();
-    getDockerVersion();
-    loadEnvVariables(); // 从API加载真实环境变量数据
-    renderEnvList();
-    renderPreview();
-    addLog('系统初始化完成', 'success');
-    // 获取真实日志数据
-    fetchRealLogs();
+async function init() {
+    try {
+        await updateApiEndpoint(); // 等待API端点更新完成
+        getDockerVersion();
+        loadEnvVariables(); // 从API加载真实环境变量数据
+        renderEnvList();
+        renderPreview();
+        addLog('系统初始化完成', 'success');
+        // 获取真实日志数据
+        fetchRealLogs();
+    } catch (error) {
+        console.error('初始化失败:', error);
+        addLog('系统初始化失败: ' + error.message, 'error');
+        // 即使初始化失败，也要尝试获取日志
+        fetchRealLogs();
+    }
 }
 
 // 接口调试相关
@@ -628,7 +643,7 @@ function testApi() {
     }
 
     // 发送真实API请求
-    fetch(url, requestOptions)
+    fetch(buildApiUrl(url), requestOptions)
         .then(response => {
             if (!response.ok) {
                 throw new Error(\`HTTP error! status: \${response.status}\`);
