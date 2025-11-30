@@ -6,6 +6,7 @@ import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeL
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs } from "./apis/system-api.js";
+import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 
 let globals;
 
@@ -95,7 +96,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
-  if (path !== "/" && path !== "/api/logs") {
+  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
       
@@ -115,7 +116,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       
       // 2. 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime），则补全
       const pathBeforePrefixCheck = path;
-      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs')) {
+      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') && !path.startsWith('/api/env')) {
           log("info", `[Path Check] Path is missing /api/v2 prefix. Adding...`);
           path = '/api/v2' + path;
       }
@@ -276,6 +277,21 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/logs/clear
   if (path === "/api/logs/clear" && method === "POST") {
     return handleClearLogs();
+  }
+
+  // POST /api/env/set - 设置环境变量
+  if (path === "/api/env/set" && method === "POST") {
+    return handleSetEnv(req);
+  }
+
+  // POST /api/env/add - 添加环境变量
+  if (path === "/api/env/add" && method === "POST") {
+    return handleAddEnv(req);
+  }
+
+  // POST /api/env/del - 删除环境变量
+  if (path === "/api/env/del" && method === "POST") {
+    return handleDelEnv(req);
   }
 
   return jsonResponse({ message: "Not found" }, 404);

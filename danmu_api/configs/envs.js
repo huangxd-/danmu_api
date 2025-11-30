@@ -239,6 +239,7 @@ export class Envs {
       'PROXY_URL': { category: 'system', type: 'text', description: '代理/反代地址' },
       'TMDB_API_KEY': { category: 'system', type: 'text', description: 'TMDB API密钥' },
       'LOG_LEVEL': { category: 'system', type: 'select', options: ['debug', 'info', 'warn', 'error'], description: '日志级别配置' },
+      'DEPLOY_PLATFROM': { category: 'system', type: 'select', options: ['cloudflare', 'vercel', 'netlify', 'edgeone', 'node'], description: '部署平台' },
       'DEPLOY_PLATFROM_ACCOUNT': { category: 'system', type: 'text', description: '部署平台账号ID' },
       'DEPLOY_PLATFROM_PROJECT': { category: 'system', type: 'text', description: '部署平台项目名称' },
       'DEPLOY_PLATFROM_TOKEN': { category: 'system', type: 'text', description: '部署平台访问令牌' }
@@ -277,6 +278,7 @@ export class Envs {
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）
+      deployPlatform: this.get('DEPLOY_PLATFROM', 'node', 'string'), // 部署平台配置（默认node）
       deployPlatformAccount: this.get('DEPLOY_PLATFROM_ACCOUNT', '', 'string', true), // 部署平台账号ID配置（默认空）
       deployPlatformProject: this.get('DEPLOY_PLATFROM_PROJECT', '', 'string', true), // 部署平台项目名称配置（默认空）
       deployPlatformToken: this.get('DEPLOY_PLATFROM_TOKEN', '', 'string', true), // 部署平台项目名称配置（默认空）

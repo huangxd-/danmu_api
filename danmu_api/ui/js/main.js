@@ -284,10 +284,33 @@ function editEnv(index) {
 function deleteEnv(index) {
     if (confirm('确定要删除这个配置项吗?')) {
         const item = envVariables[currentCategory][index];
-        envVariables[currentCategory].splice(index, 1);
-        renderEnvList();
-        renderPreview();
-        addLog(\`删除配置项: \${item.key}\`, 'warn');
+        const key = item.key;
+
+        // 调用API删除环境变量
+        fetch('/api/env/del', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ key })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                // 从本地数据中删除
+                envVariables[currentCategory].splice(index, 1);
+                renderEnvList();
+                renderPreview();
+                addLog(\`删除配置项: \${key}\`, 'warn');
+            } else {
+                addLog(\`删除配置项失败: \${result.message}\`, 'error');
+                alert(\`删除配置项失败: \${result.message}\`);
+            }
+        })
+        .catch(error => {
+            addLog(\`删除配置项失败: \${error.message}\`, 'error');
+            alert(\`删除配置项失败: \${error.message}\`);
+        });
     }
 }
 
@@ -303,7 +326,7 @@ function closeModal() {
 }
 
 // 表单提交
-document.getElementById('env-form').addEventListener('submit', function(e) {
+document.getElementById('env-form').addEventListener('submit', async function(e) {
     e.preventDefault();
 
     const category = document.getElementById('env-category').value;
@@ -338,28 +361,51 @@ document.getElementById('env-form').addEventListener('submit', function(e) {
         itemData = { key, value, description, type };
     }
 
-    if (!envVariables[category]) {
-        envVariables[category] = [];
-    }
-
-    if (editingKey !== null) {
-        envVariables[currentCategory][editingKey] = itemData;
-        addLog(\`更新配置项: \${key} = \${value}\`, 'success');
-    } else {
-        envVariables[category].push(itemData);
-        addLog(\`添加配置项: \${key} = \${value}\`, 'success');
-    }
-
-    if (category !== currentCategory) {
-        currentCategory = category;
-        document.querySelectorAll('.category-btn').forEach((btn, i) => {
-            btn.classList.toggle('active', ['api', 'source', 'match', 'danmu', 'cache', 'system'][i] === category);
+    // 调用API更新环境变量
+    try {
+        const apiUrl = editingKey !== null ? '/api/env/set' : '/api/env/add';
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ key, value })
         });
-    }
 
-    renderEnvList();
-    renderPreview();
-    closeModal();
+        const result = await response.json();
+
+        if (result.success) {
+            // 更新本地数据
+            if (!envVariables[category]) {
+                envVariables[category] = [];
+            }
+
+            if (editingKey !== null) {
+                envVariables[currentCategory][editingKey] = itemData;
+                addLog(\`更新配置项: \${key} = \${value}\`, 'success');
+            } else {
+                envVariables[category].push(itemData);
+                addLog(\`添加配置项: \${key} = \${value}\`, 'success');
+            }
+
+            if (category !== currentCategory) {
+                currentCategory = category;
+                document.querySelectorAll('.category-btn').forEach((btn, i) => {
+                    btn.classList.toggle('active', ['api', 'source', 'match', 'danmu', 'cache', 'system'][i] === category);
+                });
+            }
+
+            renderEnvList();
+            renderPreview();
+            closeModal();
+        } else {
+            addLog(\`操作失败: \${result.message}\`, 'error');
+            alert(\`操作失败: \${result.message}\`);
+        }
+    } catch (error) {
+        addLog(\`更新环境变量失败: \${error.message}\`, 'error');
+        alert(\`更新环境变量失败: \${error.message}\`);
+    }
 });
 
 // 日志相关
