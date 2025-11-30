@@ -163,10 +163,12 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
 
                 <div class="env-categories">
-                    <button class="category-btn active" onclick="switchCategory('database')">数据库配置</button>
-                    <button class="category-btn" onclick="switchCategory('redis')">Redis配置</button>
-                    <button class="category-btn" onclick="switchCategory('api')">API配置</button>
-                    <button class="category-btn" onclick="switchCategory('system')">系统配置</button>
+                    <button class="category-btn active" onclick="switchCategory('api')">🔗 API配置</button>
+                    <button class="category-btn" onclick="switchCategory('source')">📜 源配置</button>
+                    <button class="category-btn" onclick="switchCategory('match')">🔍 匹配配置</button>
+                    <button class="category-btn" onclick="switchCategory('danmu')">🔣 弹幕配置</button>
+                    <button class="category-btn" onclick="switchCategory('cache')">💾 缓存配置</button>
+                    <button class="category-btn" onclick="switchCategory('system')">⚙️ 系统配置</button>
                 </div>
 
                 <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
@@ -196,10 +198,12 @@ export const HTML_TEMPLATE = /* html */ `
                 <div class="form-group">
                     <label>变量类别</label>
                     <select id="env-category">
-                        <option value="database">数据库配置</option>
-                        <option value="redis">Redis配置</option>
-                        <option value="api">API配置</option>
-                        <option value="system">系统配置</option>
+                        <option value="api">🔗 API配置</option>
+                        <option value="source">📜 源配置</option>
+                        <option value="match">🔍 匹配配置</option>
+                        <option value="danmu">🔣 弹幕配置</option>
+                        <option value="cache">💾 缓存配置</option>
+                        <option value="system">⚙️ 系统配置</option>
                     </select>
                 </div>
                 <div class="form-group">

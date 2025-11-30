@@ -35,13 +35,15 @@ export function handleConfig() {
   
   // 将环境变量按分类组织
   Object.keys(allEnvVars).forEach(key => {
-    const varConfig = envVarConfig[key] || { category: 'system', description: '未分类配置项' };
+    const varConfig = envVarConfig[key] || { category: 'system', type: 'text', description: '未分类配置项' };
     const category = varConfig.category || 'system';
     
     categorizedVars[category].push({
       key: key,
-      value: allEnvVars[key],
-      description: varConfig.description || '无描述'
+      value: allEnvVars[key].value || allEnvVars[key], // 如果是新格式则取value字段，否则直接使用原值
+      type: allEnvVars[key].type || varConfig.type || 'text', // 如果是新格式则取type字段，否则使用配置中的type或默认text
+      description: varConfig.description || '无描述',
+      options: allEnvVars[key].options || varConfig.options // 如果是新格式则取options字段
     });
   });
   

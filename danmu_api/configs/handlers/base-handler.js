@@ -44,7 +44,31 @@ export default class BaseHandler {
 
   // 获取所有环境变量
   getAllEnv() {
-    return globals.originalEnvVars;
+    // 获取原始环境变量
+    const originalEnvVars = globals.originalEnvVars;
+    
+    // 获取环境变量配置信息
+    const envVarConfig = globals.envVarConfig;
+    
+    // 构建带类型信息的环境变量对象
+    const envWithTypes = {};
+    
+    // 遍历所有环境变量
+    for (const [key, value] of Object.entries(originalEnvVars)) {
+      // 获取该环境变量的配置信息
+      const config = envVarConfig[key] || { category: 'system', type: 'text', description: '未分类配置项' };
+      
+      // 构建带类型信息的对象
+      envWithTypes[key] = {
+        value: value,
+        category: config.category,
+        type: config.type,
+        description: config.description,
+        options: config.options // 仅对 select 和 multi-select 类型有效
+      };
+    }
+    
+    return envWithTypes;
   }
 
   // 获取某个环境变量

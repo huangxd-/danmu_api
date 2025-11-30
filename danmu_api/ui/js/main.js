@@ -4,7 +4,7 @@ import { globals } from "../../configs/globals.js";
 export const jsContent = /* javascript */ `
 // 数据存储
 let envVariables = {};
-let currentCategory = 'database';
+let currentCategory = 'api'; // 默认分类改为api
 let editingKey = null;
 let logs = []; // 保留本地日志数组，用于UI显示
 
@@ -57,42 +57,35 @@ const apiConfigs = {
     }
 };
 
-// 加载示例数据
-function loadSampleData() {
-    envVariables = {
-        database: [
-            { key: 'DB_HOST', value: '${globals.version}', description: '数据库主机地址', type: 'text' },
-            { key: 'DB_PORT', value: '3306', description: '数据库端口', type: 'text' },
-            { key: 'DB_NAME', value: 'myapp', description: '数据库名称', type: 'text' },
-            { key: 'DB_POOL_SIZE', value: '10', description: '连接池大小 (1-100)', type: 'number', min: 1, max: 100 },
-            { key: 'DB_SSL_ENABLED', value: 'true', description: '启用SSL连接', type: 'boolean' },
-            { key: 'DB_REPLICAS', value: 'master,slave1,slave2', description: '数据库副本顺序', type: 'multi-select',
-              options: ['master', 'slave1', 'slave2', 'slave3', 'backup'] }
-        ],
-        redis: [
-            { key: 'REDIS_HOST', value: '127.0.0.1', description: 'Redis主机', type: 'text' },
-            { key: 'REDIS_PORT', value: '6379', description: 'Redis端口', type: 'text' },
-            { key: 'REDIS_CLUSTER', value: 'false', description: '启用集群模式', type: 'boolean' },
-            { key: 'REDIS_MAX_RETRIES', value: '3', description: '最大重试次数 (0-10)', type: 'number', min: 0, max: 10 }
-        ],
-        api: [
-            { key: 'API_URL', value: 'https://api.example.com', description: 'API基础地址', type: 'text' },
-            { key: 'API_KEY', value: 'sk-xxxxxxxxxxxxx', description: 'API密钥', type: 'text' },
-            { key: 'API_TIMEOUT', value: '30', description: '请求超时时间(秒) (5-60)', type: 'number', min: 5, max: 60 },
-            { key: 'API_VERSION', value: 'v2', description: 'API版本', type: 'select', options: ['v1', 'v2', 'v3', 'beta'] },
-            { key: 'ALLOWED_ORIGINS', value: 'example.com,app.example.com,admin.example.com',
-              description: '允许的跨域来源 (按优先级)', type: 'multi-select',
-              options: ['example.com', 'app.example.com', 'admin.example.com', 'api.example.com', 'test.example.com'] }
-        ],
-        system: [
-            { key: 'APP_ENV', value: 'production', description: '运行环境', type: 'select', options: ['development', 'staging', 'production'] },
-            { key: 'LOG_LEVEL', value: 'info', description: '日志级别', type: 'select', options: ['debug', 'info', 'warn', 'error'] },
-            { key: 'DEBUG_MODE', value: 'false', description: '调试模式', type: 'boolean' },
-            { key: 'MAX_WORKERS', value: '4', description: '工作进程数 (1-32)', type: 'number', min: 1, max: 32 },
-            { key: 'ENABLED_FEATURES', value: 'auth,payment,analytics', description: '启用的功能模块', type: 'multi-select',
-              options: ['auth', 'payment', 'analytics', 'notification', 'export', 'import'] }
-        ]
-    };
+// 从API加载真实环境变量数据
+function loadEnvVariables() {
+    // 从API获取真实配置数据
+    fetch('/api/config')
+        .then(response => response.json())
+        .then(config => {
+            // 使用从API获取的分类环境变量
+            const categorizedVars = config.categorizedEnvVars || {};
+            
+            // 重新组织数据结构以适配现有UI
+            envVariables = {};
+            
+            // 将API返回的分类数据转换为UI所需格式
+            Object.keys(categorizedVars).forEach(category => {
+                envVariables[category] = categorizedVars[category].map(item => ({
+                    key: item.key,
+                    value: item.value,
+                    description: item.description || '',
+                    type: item.type || 'text',
+                    options: item.options || [] // 仅对 select 和 multi-select 类型有效
+                }));
+            });
+            
+            // 渲染环境变量列表
+            renderEnvList();
+        })
+        .catch(error => {
+            console.error('Failed to load env variables:', error);
+        });
 }
 
 // 更新API端点信息
@@ -346,7 +339,7 @@ document.getElementById('env-form').addEventListener('submit', function(e) {
     if (category !== currentCategory) {
         currentCategory = category;
         document.querySelectorAll('.category-btn').forEach((btn, i) => {
-            btn.classList.toggle('active', ['database', 'redis', 'api', 'system'][i] === category);
+            btn.classList.toggle('active', ['api', 'source', 'match', 'danmu', 'cache', 'system'][i] === category);
         });
     }
 
@@ -445,7 +438,7 @@ async function clearLogs() {
 function init() {
     updateApiEndpoint();
     getDockerVersion();
-    loadSampleData();
+    loadEnvVariables(); // 从API加载真实环境变量数据
     renderEnvList();
     renderPreview();
     addLog('系统初始化完成', 'success');
@@ -697,7 +690,9 @@ function renderValueInput(item) {
     } else if (type === 'multi-select') {
         // 多选标签（可拖动排序）
         const options = item && item.options ? item.options : ['option1', 'option2', 'option3', 'option4'];
-        const selectedValues = value ? value.split(',').map(v => v.trim()).filter(v => v) : [];
+        // 确保value是字符串类型后再进行split操作
+        const stringValue = typeof value === 'string' ? value : String(value || '');
+        const selectedValues = stringValue ? stringValue.split(',').map(v => v.trim()).filter(v => v) : [];
 
         const optionsInput = item ? '' : \`
             <div class="form-group" style="margin-bottom: 15px;">
