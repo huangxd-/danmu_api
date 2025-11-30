@@ -18,6 +18,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
+  globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);
   }

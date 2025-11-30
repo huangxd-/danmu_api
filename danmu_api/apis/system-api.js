@@ -30,7 +30,8 @@ export function handleConfig() {
   const previewEnvVars = {
     ...globals.accessedEnvVars,
     localCacheValid: globals.localCacheValid,
-    redisValid: globals.redisValid
+    redisValid: globals.redisValid,
+    deployPlatform: globals.deployPlatform
   };
   
   // 将环境变量按分类组织 - 使用原始环境变量进行分类，但保持预览格式
