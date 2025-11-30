@@ -171,8 +171,6 @@ export const HTML_TEMPLATE = /* html */ `
                     <button class="category-btn" onclick="switchCategory('system')">⚙️ 系统配置</button>
                 </div>
 
-                <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
-
                 <div class="env-list" id="env-list"></div>
             </div>
         </div>
@@ -187,17 +185,17 @@ export const HTML_TEMPLATE = /* html */ `
         </div>
     </div>
 
-    <!-- 添加/编辑模态框 -->
+    <!-- 编辑模态框 -->
     <div class="modal" id="env-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modal-title">添加环境变量</h3>
+                <h3 id="modal-title">编辑配置项</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
             <form id="env-form">
                 <div class="form-group">
                     <label>变量类别</label>
-                    <select id="env-category">
+                    <select id="env-category" disabled>
                         <option value="api">🔗 API配置</option>
                         <option value="source">📜 源配置</option>
                         <option value="match">🔍 匹配配置</option>
@@ -208,11 +206,11 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div class="form-group">
                     <label>变量名</label>
-                    <input type="text" id="env-key" placeholder="例如: DB_HOST" required>
+                    <input type="text" id="env-key" placeholder="例如: DB_HOST" required readonly>
                 </div>
                 <div class="form-group">
                     <label>值类型</label>
-                    <select id="value-type" onchange="renderValueInput()">
+                    <select id="value-type" onchange="renderValueInput()" disabled>
                         <option value="text">文本</option>
                         <option value="boolean">布尔值</option>
                         <option value="number">数字 (1-100)</option>
@@ -225,7 +223,7 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div class="form-group">
                     <label>描述</label>
-                    <textarea id="env-description" placeholder="配置项说明"></textarea>
+                    <textarea id="env-description" placeholder="配置项说明" readonly></textarea>
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="submit" class="btn btn-success" style="flex: 1;">保存</button>

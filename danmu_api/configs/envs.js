@@ -204,12 +204,12 @@ export class Envs {
       'RATE_LIMIT_MAX_REQUESTS': { category: 'api', type: 'number', description: '限流配置：1分钟内最大请求次数' },
 
       // 源配置
+      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置' },
       'VOD_SERVERS': { category: 'source', type: 'text', description: 'VOD站点配置' },
       'VOD_RETURN_MODE': { category: 'source', type: 'select', options: ['all', 'fastest'], description: 'VOD返回模式' },
       'VOD_REQUEST_TIMEOUT': { category: 'source', type: 'number', description: 'VOD请求超时时间' },
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置' },
-      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置' },
       
       // 匹配配置
       'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置' },
@@ -249,12 +249,12 @@ export class Envs {
       allowedPlatforms: this.ALLOWED_PLATFORMS,
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
+      sourceOrderArr: this.resolveSourceOrder(), // 源排序
       vodServers: this.resolveVodServers(), // vod站点配置，格式：名称@URL,名称@URL
       vodReturnMode: this.get('VOD_RETURN_MODE', 'fastest', 'string').toLowerCase(), // vod返回模式：all（所有站点）或 fastest（最快的站点）
       vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
-      sourceOrderArr: this.resolveSourceOrder(), // 源排序
       platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
       episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表

@@ -25,6 +25,8 @@ export const formsCssContent = /* css */ `
 .form-group textarea {
     resize: vertical;
     min-height: 80px;
+    font-family: 'Courier New', Consolas, monospace;
+    line-height: 1.5;
 }
 
 /* 开关按钮 */

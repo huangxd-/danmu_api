@@ -246,25 +246,22 @@ function renderPreview() {
         });
 }
 
-// 打开添加模态框
-function openAddModal() {
-    editingKey = null;
-    document.getElementById('modal-title').textContent = '添加环境变量';
-    document.getElementById('env-category').value = currentCategory;
-    document.getElementById('env-form').reset();
-    renderValueInput({ type: 'text' }); // 默认文本类型
-    document.getElementById('env-modal').classList.add('active');
-}
 
 // 编辑环境变量
 function editEnv(index) {
     const item = envVariables[currentCategory][index];
     editingKey = index;
-    document.getElementById('modal-title').textContent = '编辑环境变量';
+    document.getElementById('modal-title').textContent = '编辑配置项';
     document.getElementById('env-category').value = currentCategory;
     document.getElementById('env-key').value = item.key;
     document.getElementById('env-description').value = item.description || '';
     document.getElementById('value-type').value = item.type || 'text';
+
+    // 设置字段为只读（编辑模式下）
+    document.getElementById('env-category').disabled = true;
+    document.getElementById('env-key').readOnly = true;
+    document.getElementById('value-type').disabled = true;
+    document.getElementById('env-description').readOnly = true;
 
     // 渲染对应的值输入控件
     renderValueInput(item);
@@ -286,6 +283,12 @@ function deleteEnv(index) {
 // 关闭模态框
 function closeModal() {
     document.getElementById('env-modal').classList.remove('active');
+    
+    // 重置表单字段状态
+    document.getElementById('env-category').disabled = false;
+    document.getElementById('env-key').readOnly = false;
+    document.getElementById('value-type').disabled = false;
+    document.getElementById('env-description').readOnly = false;
 }
 
 // 表单提交
@@ -734,10 +737,20 @@ function renderValueInput(item) {
 
     } else {
         // 文本输入
-        container.innerHTML = \`
-            <label>变量值</label>
-            <input type="text" id="text-value" placeholder="例如: localhost" value="\${value}" required>
-        \`;
+        // 如果值太长，使用textarea而不是input
+        if (value && value.length > 50) {
+            // 计算行数，每行约50个字符
+            const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10); // 最少3行，最多10行
+            container.innerHTML = \`
+                <label>变量值 *</label>
+                <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" style="width: 100%; padding: 8px; font-family: monospace;">\${value}</textarea>
+            \`; 
+        } else {
+            container.innerHTML = \`
+                <label>变量值 *</label>
+                <input type="text" id="text-value" placeholder="例如: localhost" value="\${value}" required>
+            \`; 
+        }
     }
 }
 
