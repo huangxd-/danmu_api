@@ -97,7 +97,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
-  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env')) {
+  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') && !path.startsWith('/api/deploy')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
       
@@ -117,7 +117,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       
       // 2. 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime），则补全
       const pathBeforePrefixCheck = path;
-      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') && !path.startsWith('/api/env')) {
+      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') && !path.startsWith('/api/env') && !path.startsWith('/api/env')) {
           log("info", `[Path Check] Path is missing /api/v2 prefix. Adding...`);
           path = '/api/v2' + path;
       }

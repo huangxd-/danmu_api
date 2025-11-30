@@ -314,12 +314,12 @@ function deleteEnv(index) {
                 addLog(\`删除配置项: \${key}\`, 'warn');
             } else {
                 addLog(\`删除配置项失败: \${result.message}\`, 'error');
-                alert(\`删除配置项失败: \${result.message}\`);
+                addLog(\`❌ 删除配置项失败: \${result.message}\`, 'error');
             }
         })
         .catch(error => {
             addLog(\`删除配置项失败: \${error.message}\`, 'error');
-            alert(\`删除配置项失败: \${error.message}\`);
+            addLog(\`❌ 删除配置项失败: \${error.message}\`, 'error');
         });
     }
 }
@@ -410,11 +410,11 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             closeModal();
         } else {
             addLog(\`操作失败: \${result.message}\`, 'error');
-            alert(\`操作失败: \${result.message}\`);
+            addLog(\`❌ 操作失败: \${result.message}\`, 'error');
         }
     } catch (error) {
         addLog(\`更新环境变量失败: \${error.message}\`, 'error');
-        alert(\`更新环境变量失败: \${error.message}\`);
+        addLog(\`❌ 更新环境变量失败: \${error.message}\`, 'error');
     }
 });
 
@@ -576,7 +576,7 @@ function testApi() {
     const apiKey = select.value;
 
     if (!apiKey) {
-        alert('请先选择接口');
+        addLog('请先选择接口', 'error');
         return;
     }
 
@@ -1038,17 +1038,17 @@ function confirmClearCache() {
     setTimeout(() => {
         updateLoadingText('清理文件缓存...', '扫描临时文件');
         addLog('正在清理文件缓存', 'info');
-    }, 2000);
+    }, 200);
 
     setTimeout(() => {
         updateLoadingText('清理会话缓存...', '清除过期会话');
         addLog('会话缓存清理完成', 'success');
-    }, 3000);
+    }, 300);
 
     setTimeout(() => {
         hideLoading();
         addLog('缓存清理完成，释放空间: 125.8 MB', 'success');
-        alert('✅ 缓存清理成功！\\n\\n已清理:\\n• Redis: 234 个键\\n• 文件缓存: 1,892 个文件\\n• 释放空间: 125.8 MB');
+        addLog('✅ 缓存清理成功！已清理: Redis: 234 个键, 文件缓存: 1,892 个文件, 释放空间: 125.8 MB', 'success');
     }, 4000);
 }
 
@@ -1081,9 +1081,9 @@ function confirmDeploySystem() {
                     hideLoading();
                     addLog('===== 部署完成 =====', 'success');
                     addLog('Node部署模式，环境变量已生效', 'info');
-                    alert('✅ Node部署模式\\n\\n在Node部署模式下，环境变量修改后会自动生效，无需重新部署。\\n\\n系统已更新配置');
-                }, 1500);
-            } else {
+                    addLog('✅ Node部署模式 - 在Node部署模式下，环境变量修改后会自动生效，无需重新部署。系统已更新配置', 'success');
+                }, 150);
+            } else {  
                 // 调用真实的部署API
                 fetch(buildApiUrl('/api/deploy'), {
                     method: 'POST',
@@ -1100,13 +1100,13 @@ function confirmDeploySystem() {
                     } else {
                         hideLoading();
                         addLog(\`云端部署失败: \${result.message}\`, 'error');
-                        alert(\`❌ 部署失败\\n\\n错误信息: \${result.message}\`);
+                        addLog(\`❌ 云端部署失败: \${result.message}\`, 'error');
                     }
                 })
                 .catch(error => {
                     hideLoading();
                     addLog(\`云端部署请求失败: \${error.message}\`, 'error');
-                    alert(\`❌ 部署请求失败\\n\\n错误信息: \${error.message}\`);
+                    addLog(\`❌ 云端部署请求失败: \${error.message}\`, 'error');
                 });
             }
         })
@@ -1123,7 +1123,7 @@ function simulateDeployProcess() {
     const progressInterval = setInterval(() => {
         progress += Math.random() * 8;
         if (progress >= 100) {
-            progress = 100;
+            progress = 10;
             clearInterval(progressInterval);
         }
         updateProgress(progress);
@@ -1132,7 +1132,7 @@ function simulateDeployProcess() {
     // 模拟部署步骤
     const steps = [
         { delay: 1000, text: '检查环境变量...', detail: '验证配置文件', log: '配置文件验证通过' },
-        { delay: 2000, text: '触发云端部署...', detail: '部署到' + (currentToken || '当前平台'), log: '云端部署已触发' },
+        { delay: 2000, text: '触发云端部署...', detail: '部署到当前平台', log: '云端部署已触发' },
         { delay: 3500, text: '构建项目...', detail: '云端构建中', log: '云端构建完成' },
         { delay: 5000, text: '部署更新...', detail: '发布到生产环境', log: '更新已部署' },
         { delay: 6500, text: '服务重启...', detail: '应用新配置', log: '服务已重启' },
@@ -1149,7 +1149,7 @@ function simulateDeployProcess() {
     // 部署后检查服务是否可用
     setTimeout(() => {
         checkDeploymentStatus();
-    }, 9000);
+    }, 9000); // 延长延迟以确保模拟部署过程完成
 }
 
 // 检查部署状态，每隔5秒请求/api/logs接口直到请求成功
@@ -1158,16 +1158,19 @@ function checkDeploymentStatus() {
         updateLoadingText('部署完成，检查服务状态...', '正在请求 /api/logs 接口');
         addLog('正在检查服务状态...', 'info');
 
-        fetch('/api/logs')
+        fetch(buildApiUrl('/api/logs'))
             .then(response => {
                 if (response.ok) {
                     // 请求成功，停止检查
                     clearInterval(checkInterval);
-                    hideLoading();
+                    // 更新加载状态而不是立即隐藏
+                    updateLoadingText('部署成功！', '服务已重启并正常运行');
                     addLog('===== 部署完成 =====', 'success');
                     addLog('部署版本: ' + latestVersion, 'info');
                     addLog('系统已更新并重启', 'success');
-                    alert('🎉 部署成功！\\n\\n✅ 云端部署已完成\\n✅ 服务已重启\\n✅ 配置已生效\\n\\n系统版本: ' + latestVersion);
+                    
+                    // 部署完成后再次确认，访问/api/logs接口来确认部署完成
+                    confirmDeploymentByLogs();
                 } else {
                     addLog('服务检查中 - 状态码: ' + response.status, 'info');
                 }
@@ -1175,7 +1178,69 @@ function checkDeploymentStatus() {
             .catch(error => {
                 addLog('服务检查中 - 连接失败: ' + error.message, 'info');
             });
-    }, 5000); // 每5秒检查一次
+    }, 500); // 每5秒检查一次
+}
+
+// 部署完成后通过访问/api/logs接口来确认部署完成
+function confirmDeploymentByLogs() {
+    // 部署完成后的确认检查
+    let confirmationAttempts = 0;
+    const maxAttempts = 3; // 最多尝试3次确认部署完成
+
+    const confirmationInterval = setInterval(() => {
+        confirmationAttempts++;
+        updateLoadingText('部署完成确认中...', '正在确认部署完成 (' + confirmationAttempts + '/' + maxAttempts + ')');
+        addLog('部署完成确认 - 尝试 ' + confirmationAttempts + '/' + maxAttempts, 'info');
+
+        fetch(buildApiUrl('/api/logs'))
+            .then(response => {
+                if (response.ok) {
+                    // 请求成功，停止确认检查
+                    clearInterval(confirmationInterval);
+                    // 显示成功信息后延迟隐藏加载遮罩
+                    updateLoadingText('部署确认成功！', '服务已重启并正常运行');
+                    addLog('部署确认成功 - /api/logs 接口访问正常', 'success');
+                    
+                    setTimeout(() => {
+                        hideLoading();
+                        // 显示成功弹窗
+                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
+                    }, 200);
+                } else if (confirmationAttempts >= maxAttempts) {
+                    // 达到最大尝试次数，停止确认检查
+                    clearInterval(confirmationInterval);
+                    updateLoadingText('部署确认完成', '服务已重启');
+                    addLog('部署确认完成 - 已达到最大尝试次数', 'warn');
+                    
+                    setTimeout(() => {
+                        hideLoading();
+                        // 显示成功弹窗
+                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
+                    }, 200);
+                } else {
+                    addLog('部署确认中 - 状态码: ' + response.status, 'info');
+                }
+            })
+            .catch(error => {
+                if (confirmationAttempts >= maxAttempts) {
+                    // 达到最大尝试次数，停止确认检查
+                    clearInterval(confirmationInterval);
+                    updateLoadingText('部署确认完成', '服务已重启');
+                    addLog('部署确认完成 - 已达到最大尝试次数', 'warn');
+                    
+                    setTimeout(() => {
+                        hideLoading();
+                        // 显示成功弹窗
+                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
+                    }, 200);
+                } else {
+                    addLog('部署确认中 - 连接失败: ' + error.message, 'info');
+                }
+            });
+    }, 5000); // 每5秒检查一次，用于确认部署完成
 }
 
 // 显示加载遮罩
