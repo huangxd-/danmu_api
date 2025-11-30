@@ -87,12 +87,14 @@ function loadEnvVariables() {
                     envVariables[category] = [];
                 }
                 
-                // 添加到对应分类
+                // 添加到对应分类，包含完整的配置信息
                 envVariables[category].push({
                     key: key,
                     value: originalEnvVars[key],
                     description: varConfig.description || '',
                     type: varConfig.type || 'text',
+                    min: varConfig.min,
+                    max: varConfig.max,
                     options: varConfig.options || [] // 仅对 select 和 multi-select 类型有效
                 });
             });
