@@ -63,21 +63,32 @@ function loadEnvVariables() {
     fetch('/api/config')
         .then(response => response.json())
         .then(config => {
-            // 使用从API获取的分类环境变量
-            const categorizedVars = config.categorizedEnvVars || {};
+            // 使用从API获取的原始环境变量，用于系统设置
+            const originalEnvVars = config.originalEnvVars || {};
             
             // 重新组织数据结构以适配现有UI
             envVariables = {};
             
-            // 将API返回的分类数据转换为UI所需格式
-            Object.keys(categorizedVars).forEach(category => {
-                envVariables[category] = categorizedVars[category].map(item => ({
-                    key: item.key,
-                    value: item.value,
-                    description: item.description || '',
-                    type: item.type || 'text',
-                    options: item.options || [] // 仅对 select 和 multi-select 类型有效
-                }));
+            // 将原始环境变量转换为UI所需格式
+            // 这里需要将原始环境变量按类别组织
+            Object.keys(originalEnvVars).forEach(key => {
+                // 从envVarConfig获取配置信息
+                const varConfig = config.envVarConfig?.[key] || { category: 'system', type: 'text', description: '未分类配置项' };
+                const category = varConfig.category || 'system';
+                
+                // 如果该分类不存在，创建它
+                if (!envVariables[category]) {
+                    envVariables[category] = [];
+                }
+                
+                // 添加到对应分类
+                envVariables[category].push({
+                    key: key,
+                    value: originalEnvVars[key],
+                    description: varConfig.description || '',
+                    type: varConfig.type || 'text',
+                    options: varConfig.options || [] // 仅对 select 和 multi-select 类型有效
+                });
             });
             
             // 渲染环境变量列表
