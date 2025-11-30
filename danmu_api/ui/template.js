@@ -122,9 +122,13 @@ export const HTML_TEMPLATE = /* html */ `
                         <div class="modal-body">
                             <p style="margin-bottom: 20px;">确定要清理所有缓存吗？这将清除：</p>
                             <ul class="confirmation-list">
-                                <li>Redis缓存</li>
-                                <li>文件缓存</li>
-                                <li>会话缓存</li>
+                                <li>动漫搜索缓存 (animes)</li>
+                                <li>剧集ID缓存 (episodeIds)</li>
+                                <li>剧集编号缓存 (episodeNum)</li>
+                                <li>最后选择映射缓存 (lastSelectMap)</li>
+                                <li>搜索结果缓存</li>
+                                <li>弹幕内容缓存</li>
+                                <li>请求历史记录</li>
                             </ul>
                             <p style="color: #666; margin-top: 20px;">清理后可能需要重新登录</p>
                         </div>

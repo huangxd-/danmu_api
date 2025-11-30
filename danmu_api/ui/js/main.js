@@ -1014,42 +1014,38 @@ function hideClearCacheModal() {
 }
 
 // 确认清理缓存
-function confirmClearCache() {
+async function confirmClearCache() {
     hideClearCacheModal();
     showLoading('正在清理缓存...', '清除中，请稍候');
     addLog('开始清理缓存', 'info');
 
-    // 模拟清理过程
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 100) {
-            progress = 100;
-            clearInterval(progressInterval);
+    try {
+        // 调用真实的清理缓存API
+        const response = await fetch(buildApiUrl('/api/cache/clear'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            updateLoadingText('清理完成', '缓存已成功清除');
+            addLog('缓存清理完成', 'success');
+            addLog('✅ 缓存清理成功！已清理: ' + JSON.stringify(result.clearedItems), 'success');
+        } else {
+            updateLoadingText('清理失败', '请查看日志了解详情');
+            addLog('缓存清理失败: ' + result.message, 'error');
         }
-        updateProgress(progress);
-    }, 200);
-
-    setTimeout(() => {
-        updateLoadingText('清理Redis缓存...', '已清理 234 个键');
-        addLog('Redis缓存清理完成: 234 个键', 'success');
-    }, 1000);
-
-    setTimeout(() => {
-        updateLoadingText('清理文件缓存...', '扫描临时文件');
-        addLog('正在清理文件缓存', 'info');
-    }, 200);
-
-    setTimeout(() => {
-        updateLoadingText('清理会话缓存...', '清除过期会话');
-        addLog('会话缓存清理完成', 'success');
-    }, 300);
-
-    setTimeout(() => {
-        hideLoading();
-        addLog('缓存清理完成，释放空间: 125.8 MB', 'success');
-        addLog('✅ 缓存清理成功！已清理: Redis: 234 个键, 文件缓存: 1,892 个文件, 释放空间: 125.8 MB', 'success');
-    }, 4000);
+    } catch (error) {
+        updateLoadingText('清理失败', '网络错误或服务不可用');
+        addLog('缓存清理请求失败: ' + error.message, 'error');
+    } finally {
+        setTimeout(() => {
+            hideLoading();
+        }, 1000);
+    }
 }
 
 // 显示重新部署确认模态框

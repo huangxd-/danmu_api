@@ -121,3 +121,61 @@ export function handleClearLogs() {
   globals.logBuffer = [];
   return jsonResponse({ success: true, message: "Logs cleared" }, 200);
 }
+
+/**
+ * 处理清理缓存的请求
+ * @returns {Response} 表示操作成功的响应
+ */
+export async function handleClearCache() {
+ try {
+    // 清理 globals 中的缓存数据
+    globals.animes = [];
+    globals.episodeIds = [];
+    globals.episodeNum = 10001; // 重置为初始值
+    globals.lastSelectMap = new Map(); // 重新创建 Map 对象
+    
+    // 清理搜索和弹幕缓存
+    globals.searchCache = new Map();
+    globals.commentCache = new Map();
+    globals.requestHistory = new Map();
+    
+    log("info", `[server] Memory cache cleared successfully`);
+    
+    // 同步清理本地缓存和Redis缓存
+    try {
+      // 如果本地缓存有效，更新本地缓存
+      if (globals.localCacheValid) {
+        const { updateLocalCaches } = await import("../utils/cache-util.js");
+        await updateLocalCaches();
+        log("info", `[server] Local cache cleared successfully`);
+      }
+    } catch (localError) {
+      log("warn", `[server] Local cache may not be available: ${localError.message}`);
+    }
+    
+    try {
+      // 如果Redis有效，更新Redis缓存
+      if (globals.redisValid) {
+        const { updateRedisCaches } = await import("../utils/redis-util.js");
+        await updateRedisCaches();
+        log("info", `[server] Redis cache cleared successfully`);
+      }
+    } catch (redisError) {
+      log("warn", `[server] Redis may not be available: ${redisError.message}`);
+    }
+    
+    log("info", `[server] All caches cleared successfully`);
+    return jsonResponse({ success: true, message: "Cache cleared successfully", clearedItems: {
+      animes: 0,
+      episodeIds: 0,
+      episodeNum: 10001,
+      lastSelectMap: 0,
+      searchCache: 0,
+      commentCache: 0,
+      requestHistory: 0
+    }}, 200);
+  } catch (error) {
+    log("error", `[server] Cache clear failed: ${error.message}`);
+    return jsonResponse({ success: false, message: `Cache clear failed: ${error.message}` }, 500);
+  }
+}

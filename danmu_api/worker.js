@@ -5,7 +5,7 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 
 let globals;
@@ -97,7 +97,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
-  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') && !path.startsWith('/api/deploy')) {
+  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') 
+    && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
       
@@ -117,7 +118,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       
       // 2. 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime），则补全
       const pathBeforePrefixCheck = path;
-      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') && !path.startsWith('/api/env') && !path.startsWith('/api/env')) {
+      if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') 
+        && !path.startsWith('/api/env') && !path.startsWith('/api/env') && !path.startsWith('/api/cache')) {
           log("info", `[Path Check] Path is missing /api/v2 prefix. Adding...`);
           path = '/api/v2' + path;
       }
@@ -298,6 +300,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/deploy - 重新部署
   if (path === "/api/deploy" && method === "POST") {
     return handleDeploy();
+  }
+
+  // POST /api/cache/clear - 清理缓存
+  if (path === "/api/cache/clear" && method === "POST") {
+    return handleClearCache();
   }
 
   return jsonResponse({ message: "Not found" }, 404);
