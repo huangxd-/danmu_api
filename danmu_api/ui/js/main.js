@@ -12,6 +12,7 @@ let logs = []; // 保留本地日志数组，用于UI显示
 let currentVersion = '';
 let latestVersion = '';
 let currentToken = '87654321'; // 默认token
+let currentAdminToken = ''; // admin token，用于系统管理
 
 // API 配置
 const apiConfigs = {
@@ -59,7 +60,12 @@ const apiConfigs = {
 };
 
 // 构建带token的API请求路径
-function buildApiUrl(path) {
+function buildApiUrl(path, isSystemPath = false) {
+    // 如果是系统管理路径且有admin token，则使用admin token
+    if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '') {
+        return '/' + currentAdminToken + path;
+    }
+    // 否则使用普通token
     return '/' + currentToken + path;
 }
 
@@ -69,6 +75,9 @@ function loadEnvVariables() {
     fetch('/api/config')
         .then(response => response.json())
         .then(config => {
+            // 从配置中获取admin token
+            currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+            
             // 使用从API获取的原始环境变量，用于系统设置
             const originalEnvVars = config.originalEnvVars || {};
             
@@ -171,6 +180,13 @@ function switchSection(section) {
 
     document.getElementById(\`\${section}-section\`).classList.add('active');
     event.target.classList.add('active');
+
+    // 检查是否尝试访问受admin token保护的section（除了日志查看，日志查看可以用普通token访问）
+    if (section === 'env' && currentAdminToken.trim() === '') {
+        setTimeout(() => {
+            alert('请先配置ADMIN_TOKEN环境变量以启用系统配置功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        }, 100); // 延迟显示提示，确保页面已切换
+    }
 
     addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
 }
@@ -437,7 +453,8 @@ function renderLogs() {
 // 从API获取真实日志数据
 async function fetchRealLogs() {
     try {
-        const response = await fetch(buildApiUrl('/api/logs'));
+        // 日志查看使用普通token访问，不需要admin token
+        const response = await fetch(buildApiUrl('/api/logs')); // 不使用admin token
         if (!response.ok) {
             throw new Error(\`HTTP error! status: \${response.status}\`);
         }
@@ -475,9 +492,15 @@ function refreshLogs() {
 }
 
 async function clearLogs() {
+    // 检查是否配置了admin token
+    if (currentAdminToken.trim() === '') {
+        alert('请先配置ADMIN_TOKEN环境变量以启用日志清空功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        return;
+    }
+
     if (confirm('确定要清空所有日志吗?')) {
         try {
-            const response = await fetch(buildApiUrl('/api/logs/clear'), {
+            const response = await fetch(buildApiUrl('/api/logs/clear', true), { // 使用admin token
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -509,6 +532,26 @@ async function init() {
     try {
         await updateApiEndpoint(); // 等待API端点更新完成
         getDockerVersion();
+        // 从API获取配置信息，包括检查是否有admin token
+        const config = await fetch('/api/config').then(response => response.json());
+        const hasAdminToken = config.hasAdminToken;
+        currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+        
+        // 如果没有配置admin token，禁用系统管理相关功能并显示提示
+        if (!hasAdminToken) {
+            // 禁用系统配置按钮并添加提示
+            const envNavBtn = document.getElementById('env-nav-btn');
+            if (envNavBtn) {
+
+                envNavBtn.title = '请先配置ADMIN_TOKEN以启用系统管理功能';
+                // 添加点击事件显示提示
+                envNavBtn.onclick = function() {
+                    alert('请先配置ADMIN_TOKEN环境变量以启用系统管理功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+                    return false;
+                };
+            }
+        }
+        
         loadEnvVariables(); // 从API加载真实环境变量数据
         renderEnvList();
         renderPreview();
@@ -1015,13 +1058,20 @@ function hideClearCacheModal() {
 
 // 确认清理缓存
 async function confirmClearCache() {
+    // 检查是否配置了admin token
+    if (currentAdminToken.trim() === '') {
+        hideClearCacheModal();
+        alert('请先配置ADMIN_TOKEN环境变量以启用缓存清理功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        return;
+    }
+
     hideClearCacheModal();
     showLoading('正在清理缓存...', '清除中，请稍候');
     addLog('开始清理缓存', 'info');
 
     try {
         // 调用真实的清理缓存API
-        const response = await fetch(buildApiUrl('/api/cache/clear'), {
+        const response = await fetch(buildApiUrl('/api/cache/clear', true), { // 使用admin token
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1044,7 +1094,7 @@ async function confirmClearCache() {
     } finally {
         setTimeout(() => {
             hideLoading();
-        }, 1000);
+        }, 100);
     }
 }
 
@@ -1060,6 +1110,13 @@ function hideDeploySystemModal() {
 
 // 确认重新部署系统
 function confirmDeploySystem() {
+    // 检查是否配置了admin token
+    if (currentAdminToken.trim() === '') {
+        hideDeploySystemModal();
+        alert('请先配置ADMIN_TOKEN环境变量以启用系统部署功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        return;
+    }
+
     hideDeploySystemModal();
     showLoading('准备部署...', '正在检查系统状态');
     addLog('===== 开始系统部署 =====', 'info');
@@ -1081,7 +1138,7 @@ function confirmDeploySystem() {
                 }, 150);
             } else {  
                 // 调用真实的部署API
-                fetch(buildApiUrl('/api/deploy'), {
+                fetch(buildApiUrl('/api/deploy', true), { // 使用admin token
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

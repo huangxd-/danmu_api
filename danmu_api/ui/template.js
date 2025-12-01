@@ -45,7 +45,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn active" onclick="switchSection('preview')">配置预览</button>
                 <button class="nav-btn" onclick="switchSection('logs')">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api')">接口调试</button>
-                <button class="nav-btn" onclick="switchSection('env')">系统配置</button>
+                <button class="nav-btn" onclick="switchSection('env')" id="env-nav-btn">系统配置</button>
             </div>
         </div>
 
