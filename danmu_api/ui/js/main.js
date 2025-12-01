@@ -182,9 +182,9 @@ function switchSection(section) {
     event.target.classList.add('active');
 
     // 检查是否尝试访问受admin token保护的section（除了日志查看，日志查看可以用普通token访问）
-    if (section === 'env' && currentAdminToken.trim() === '') {
+    if (section === 'env' && !checkAdminToken()) {
         setTimeout(() => {
-            alert('请先配置ADMIN_TOKEN环境变量以启用系统配置功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+            alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         }, 100); // 延迟显示提示，确保页面已切换
     }
 
@@ -492,9 +492,9 @@ function refreshLogs() {
 }
 
 async function clearLogs() {
-    // 检查是否配置了admin token
-    if (currentAdminToken.trim() === '') {
-        alert('请先配置ADMIN_TOKEN环境变量以启用日志清空功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+    // 检查是否配置了admin token且URL中的token匹配
+    if (!checkAdminToken()) {
+        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 
@@ -527,6 +527,17 @@ async function clearLogs() {
     }
 }
 
+// 检查URL中的token是否与currentAdminToken匹配
+function checkAdminToken() {
+    // 获取URL路径并提取token
+    const urlPath = window.location.pathname;
+    const pathParts = urlPath.split('/').filter(part => part !== '');
+    const urlToken = pathParts.length > 0 ? pathParts[0] : currentToken; // 如果没有路径段，使用默认token
+    
+    // 检查是否配置了ADMIN_TOKEN且URL中的token等于currentAdminToken
+    return currentAdminToken && currentAdminToken.trim() !== '' && urlToken === currentAdminToken;
+}
+
 // 页面加载完成后初始化时获取一次日志
 async function init() {
     try {
@@ -536,17 +547,17 @@ async function init() {
         const config = await fetch('/api/config').then(response => response.json());
         const hasAdminToken = config.hasAdminToken;
         currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
-        
-        // 如果没有配置admin token，禁用系统管理相关功能并显示提示
-        if (!hasAdminToken) {
+
+        // 如果没有配置admin token或者URL中的token不等于currentAdminToken，则禁用系统管理相关功能并显示提示
+        if (!checkAdminToken()) {
             // 禁用系统配置按钮并添加提示
             const envNavBtn = document.getElementById('env-nav-btn');
             if (envNavBtn) {
 
-                envNavBtn.title = '请先配置ADMIN_TOKEN以启用系统管理功能';
+                envNavBtn.title = '请先配置ADMIN_TOKEN并使用正确的admin token访问以启用系统管理功能';
                 // 添加点击事件显示提示
                 envNavBtn.onclick = function() {
-                    alert('请先配置ADMIN_TOKEN环境变量以启用系统管理功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+                    alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
                     return false;
                 };
             }
@@ -1058,10 +1069,10 @@ function hideClearCacheModal() {
 
 // 确认清理缓存
 async function confirmClearCache() {
-    // 检查是否配置了admin token
-    if (currentAdminToken.trim() === '') {
+    // 检查是否配置了admin token且URL中的token匹配
+    if (!checkAdminToken()) {
         hideClearCacheModal();
-        alert('请先配置ADMIN_TOKEN环境变量以启用缓存清理功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 
@@ -1094,7 +1105,7 @@ async function confirmClearCache() {
     } finally {
         setTimeout(() => {
             hideLoading();
-        }, 100);
+        }, 10);
     }
 }
 
@@ -1110,10 +1121,10 @@ function hideDeploySystemModal() {
 
 // 确认重新部署系统
 function confirmDeploySystem() {
-    // 检查是否配置了admin token
-    if (currentAdminToken.trim() === '') {
+    // 检查是否配置了admin token且URL中的token匹配
+    if (!checkAdminToken()) {
         hideDeploySystemModal();
-        alert('请先配置ADMIN_TOKEN环境变量以启用系统部署功能！\\n\\n您可以通过以下方式配置：\\n1. 在部署平台设置环境变量ADMIN_TOKEN\\n2. 在.env文件中添加ADMIN_TOKEN=your_token\\n3. 在config.yaml文件中配置ADMIN_TOKEN');
+        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 

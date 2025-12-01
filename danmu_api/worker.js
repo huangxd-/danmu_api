@@ -83,7 +83,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     }
   } else {
     // token 不是默认值，必须严格校验
-    if (parts.length < 1 || parts[0] !== globals.token) {
+    console.log(parts[0], globals.token, globals.adminToken, parts[0] !== globals.adminToken);
+    if (parts.length < 1 || (parts[0] !== globals.token && parts[0] !== globals.adminToken)) {
       log("error", `Invalid or missing token in path: ${path}`);
       return jsonResponse(
         { errorCode: 401, success: false, errorMessage: "Unauthorized" },
