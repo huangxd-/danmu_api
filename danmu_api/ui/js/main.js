@@ -1647,7 +1647,7 @@ function displayAnimeListForPush(animes, pushUrl) {
         const imageUrl = anime.imageUrl || 'https://placehold.co/150x200?text=No+Image';
         html += \`
             <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
-                <img src="\${imageUrl}" alt="\${anime.animeTitle}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 4px;">
+                <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" style="width: 100%; height: 300px; object-fit: cover; border-radius: 4px;">
                 <h4 style="margin: 10px 0 5px; font-size: 14px;">\${anime.animeTitle}</h4>
             </div>
         \`; 
@@ -1715,28 +1715,13 @@ function displayEpisodeListForPush(episodes, pushUrl) {
 
 // 推送弹幕
 async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
-    try {
-        // 获取弹幕数据
-        const commentResponse = await fetch(commentUrl);
-        if (!commentResponse.ok) {
-            throw new Error(\`获取弹幕数据失败，状态码: \${commentResponse.status}\`);
-        }
-        const commentData = await commentResponse.json();
-        
-        // 检查是否有弹幕数据
-        if (!commentData.comments || commentData.comments.length === 0) {
-            customAlert('该集暂无弹幕数据');
-            addLog(\`推送失败 - \${episodeTitle} 暂无弹幕数据\`, 'warn');
-            return;
-        }
-        
+    try {       
         // 向推送地址发送弹幕数据
-        const pushResponse = await fetch(pushUrl, {
-            method: 'POST',
+        const pushResponse = await fetch(\`\${pushUrl}\${commentUrl}\`, {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(commentData)
+            }
         });
         
         if (pushResponse.ok) {
