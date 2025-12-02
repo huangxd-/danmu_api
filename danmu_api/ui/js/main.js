@@ -278,20 +278,36 @@ function getDockerVersion() {
 
 // 切换导航
 function switchSection(section) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-
-    document.getElementById(\`\${section}-section\`).classList.add('active');
-    event.target.classList.add('active');
-
     // 检查是否尝试访问受admin token保护的section（除了日志查看，日志查看可以用普通token访问）
-    if (section === 'env' && !checkAdminToken()) {
-        setTimeout(() => {
-            customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
-        }, 100); // 延迟显示提示，确保页面已切换
-    }
+    if (section === 'env') {
+        // 检查部署平台配置
+        checkDeployPlatformConfig().then(result => {
+            if (!result.success) {
+                // 如果配置检查不通过，只显示提示，不切换页面
+                setTimeout(() => {
+                    customAlert(result.message);
+                }, 100);
+            } else {
+                // 如果配置检查通过，才切换到env页面
+                document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
-    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+                document.getElementById(\`\${section}-section\`).classList.add('active');
+                event.target.classList.add('active');
+
+                addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+            }
+        });
+    } else {
+        // 对于非env页面，正常切换
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+        document.getElementById(\`\${section}-section\`).classList.add('active');
+        event.target.classList.add('active');
+
+        addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+    }
 }
 
 // 切换类别
@@ -595,9 +611,10 @@ function refreshLogs() {
 }
 
 async function clearLogs() {
-    // 检查是否配置了admin token且URL中的token匹配
-    if (!checkAdminToken()) {
-        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+    // 检查部署平台配置
+    const configCheck = await checkDeployPlatformConfig();
+    if (!configCheck.success) {
+        customAlert(configCheck.message);
         return;
     }
 
@@ -641,6 +658,60 @@ function checkAdminToken() {
     return currentAdminToken && currentAdminToken.trim() !== '' && urlToken === currentAdminToken;
 }
 
+// 检查部署平台相关配置
+async function checkDeployPlatformConfig() {
+    // 首先检查是否配置了ADMIN_TOKEN
+    if (!checkAdminToken()) {
+        return { success: false, message: '请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}' };
+    }
+    
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) {
+            throw new Error('HTTP error! status: ' + response.status);
+        }
+        
+        const config = await response.json();
+        const deployPlatform = config.envs.deployPlatform || 'node';
+        
+        // 如果是node部署平台，只需要检查ADMIN_TOKEN
+        if (deployPlatform.toLowerCase() === 'node') {
+            return { success: true, message: 'Node部署平台，仅需配置ADMIN_TOKEN' };
+        }
+        
+        // 对于其他部署平台，收集所有缺失的环境变量
+        const missingVars = [];
+        const deployPlatformProject = config.envs.deployPlatformProject;
+        const deployPlatformToken = config.envs.deployPlatformToken;
+        const deployPlatformAccount = config.envs.deployPlatformAccount;
+        
+        if (!deployPlatformProject || deployPlatformProject.trim() === '') {
+            missingVars.push('DEPLOY_PLATFROM_PROJECT');
+        }
+        
+        if (!deployPlatformToken || deployPlatformToken.trim() === '') {
+            missingVars.push('DEPLOY_PLATFROM_TOKEN');
+        }
+        
+        // 对于netlify和edgeone部署平台，还需要检查DEPLOY_PLATFROM_ACCOUNT
+        if (deployPlatform.toLowerCase() === 'netlify' || deployPlatform.toLowerCase() === 'edgeone') {
+            if (!deployPlatformAccount || deployPlatformAccount.trim() === '') {
+                missingVars.push('DEPLOY_PLATFROM_ACCOUNT');
+            }
+        }
+        
+        if (missingVars.length > 0) {
+            const missingVarsStr = missingVars.join('、');
+            return { success: false, message: '部署平台为' + deployPlatform + '，请配置以下缺失的环境变量：' + missingVarsStr };
+        }
+        
+        return { success: true, message: deployPlatform + '部署平台配置完整' };
+    } catch (error) {
+        console.error('检查部署平台配置失败:', error);
+        return { success: false, message: '检查部署平台配置失败: ' + error.message };
+    }
+}
+
 // 页面加载完成后初始化时获取一次日志
 async function init() {
     try {
@@ -656,13 +727,7 @@ async function init() {
             // 禁用系统配置按钮并添加提示
             const envNavBtn = document.getElementById('env-nav-btn');
             if (envNavBtn) {
-
                 envNavBtn.title = '请先配置ADMIN_TOKEN并使用正确的admin token访问以启用系统管理功能';
-                // 添加点击事件显示提示
-                envNavBtn.onclick = function() {
-                    customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
-                    return false;
-                };
             }
         }
         
@@ -1172,10 +1237,11 @@ function hideClearCacheModal() {
 
 // 确认清理缓存
 async function confirmClearCache() {
-    // 检查是否配置了admin token且URL中的token匹配
-    if (!checkAdminToken()) {
+    // 检查部署平台配置
+    const configCheck = await checkDeployPlatformConfig();
+    if (!configCheck.success) {
         hideClearCacheModal();
-        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+        customAlert(configCheck.message);
         return;
     }
 
@@ -1224,64 +1290,66 @@ function hideDeploySystemModal() {
 
 // 确认重新部署系统
 function confirmDeploySystem() {
-    // 检查是否配置了admin token且URL中的token匹配
-    if (!checkAdminToken()) {
+    // 检查部署平台配置
+    checkDeployPlatformConfig().then(configCheck => {
+        if (!configCheck.success) {
+            hideDeploySystemModal();
+            customAlert(configCheck.message);
+            return;
+        }
+
         hideDeploySystemModal();
-        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
-        return;
-    }
+        showLoading('准备部署...', '正在检查系统状态');
+        addLog('===== 开始系统部署 =====', 'info');
 
-    hideDeploySystemModal();
-    showLoading('准备部署...', '正在检查系统状态');
-    addLog('===== 开始系统部署 =====', 'info');
+        // 获取当前部署平台
+        fetch('/api/config')
+            .then(response => response.json())
+            .then(config => {
+                const deployPlatform = config.envs.deployPlatform || 'node';
+                addLog(\`检测到部署平台: \${deployPlatform}\`, 'info');
 
-    // 获取当前部署平台
-    fetch('/api/config')
-        .then(response => response.json())
-        .then(config => {
-            const deployPlatform = config.envs.deployPlatform || 'node';
-            addLog(\`检测到部署平台: \${deployPlatform}\`, 'info');
-
-            if (deployPlatform.toLowerCase() === 'node') {
-                // Node部署不需要重新部署
-                setTimeout(() => {
-                    hideLoading();
-                    addLog('===== 部署完成 =====', 'success');
-                    addLog('Node部署模式，环境变量已生效', 'info');
-                    addLog('✅ Node部署模式 - 在Node部署模式下，环境变量修改后会自动生效，无需重新部署。系统已更新配置', 'success');
-                }, 150);
-            } else {  
-                // 调用真实的部署API
-                fetch(buildApiUrl('/api/deploy', true), { // 使用admin token
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.success) {
-                        addLog('云端部署触发成功', 'success');
-                        // 模拟云端部署过程
-                        simulateDeployProcess();
-                    } else {
+                if (deployPlatform.toLowerCase() === 'node') {
+                    // Node部署不需要重新部署
+                    setTimeout(() => {
                         hideLoading();
-                        addLog(\`云端部署失败: \${result.message}\`, 'error');
-                        addLog(\`❌ 云端部署失败: \${result.message}\`, 'error');
-                    }
-                })
-                .catch(error => {
-                    hideLoading();
-                    addLog(\`云端部署请求失败: \${error.message}\`, 'error');
-                    addLog(\`❌ 云端部署请求失败: \${error.message}\`, 'error');
-                });
-            }
-        })
-        .catch(error => {
-            hideLoading();
-            addLog(\`获取部署平台信息失败: \${error.message}\`, 'error');
-            console.error('获取部署平台信息失败:', error);
-        });
+                        addLog('===== 部署完成 =====', 'success');
+                        addLog('Node部署模式，环境变量已生效', 'info');
+                        addLog('✅ Node部署模式 - 在Node部署模式下，环境变量修改后会自动生效，无需重新部署。系统已更新配置', 'success');
+                    }, 150);
+                } else {  
+                    // 调用真实的部署API
+                    fetch(buildApiUrl('/api/deploy', true), { // 使用admin token
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            addLog('云端部署触发成功', 'success');
+                            // 模拟云端部署过程
+                            simulateDeployProcess();
+                        } else {
+                            hideLoading();
+                            addLog(\`云端部署失败: \${result.message}\`, 'error');
+                            addLog(\`❌ 云端部署失败: \${result.message}\`, 'error');
+                        }
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        addLog(\`云端部署请求失败: \${error.message}\`, 'error');
+                        addLog(\`❌ 云端部署请求失败: \${error.message}\`, 'error');
+                    });
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                addLog(\`获取部署平台信息失败: \${error.message}\`, 'error');
+                console.error('获取部署平台信息失败:', error);
+            });
+    });
 }
 
 // 模拟云端部署过程
