@@ -278,28 +278,57 @@ function getDockerVersion() {
 
 // 切换导航
 function switchSection(section) {
-    // 检查是否尝试访问受admin token保护的section（除了日志查看，日志查看可以用普通token访问）
-    if (section === 'env') {
-        // 检查部署平台配置
-        checkDeployPlatformConfig().then(result => {
-            if (!result.success) {
-                // 如果配置检查不通过，只显示提示，不切换页面
-                setTimeout(() => {
-                    customAlert(result.message);
-                }, 100);
-            } else {
-                // 如果配置检查通过，才切换到env页面
-                document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
+    if (section === 'logs' || section === 'api' || section === 'env') {
+        // 获取URL路径并提取token
+        const urlPath = window.location.pathname;
+        const pathParts = urlPath.split('/').filter(part => part !== '');
+        const urlToken = pathParts.length > 0 ? pathParts[0] : '';
+        
+        // 检查URL中是否有token
+        if (!urlToken) {
+            // 提示用户需要在URL中配置TOKEN
+            setTimeout(() => {
+                // 获取当前页面的协议、主机和端口
+                const protocol = window.location.protocol;
+                const host = window.location.host;
+                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + protocol + '//' + host + '/{TOKEN}/ui');
+            }, 100);
+            return;
+        }
+        
+        // 如果是系统配置页面，还需要检查是否配置了ADMIN_TOKEN且URL中的token等于currentAdminToken
+        if (section === 'env') {
+            // 检查部署平台配置
+            checkDeployPlatformConfig().then(result => {
+                if (!result.success) {
+                    // 如果配置检查不通过，只显示提示，不切换页面
+                    setTimeout(() => {
+                        customAlert(result.message);
+                    }, 100);
+                } else {
+                    // 如果配置检查通过，才切换到env页面
+                    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+                    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
-                document.getElementById(\`\${section}-section\`).classList.add('active');
-                event.target.classList.add('active');
+                    document.getElementById(\`\${section}-section\`).classList.add('active');
+                    event.target.classList.add('active');
 
-                addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
-            }
-        });
+                    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+                }
+            });
+        } else {
+            // 对于日志查看和接口调试页面，只要URL中有token就可以访问
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+            document.getElementById(\`\${section}-section\`).classList.add('active');
+            event.target.classList.add('active');
+
+            addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+        }
     } else {
-        // 对于非env页面，正常切换
+        // 对于非受保护页面（如配置预览），正常切换
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
@@ -662,7 +691,10 @@ function checkAdminToken() {
 async function checkDeployPlatformConfig() {
     // 首先检查是否配置了ADMIN_TOKEN
     if (!checkAdminToken()) {
-        return { success: false, message: '请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}' };
+        // 获取当前页面的协议、主机和端口
+        const protocol = window.location.protocol;
+        const host = window.location.host;
+        return { success: false, message: '请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：' + protocol + '//' + host + '/{ADMIN_TOKEN}' };
     }
     
     try {
