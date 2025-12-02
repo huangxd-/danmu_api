@@ -279,7 +279,7 @@ function getDockerVersion() {
 // 切换导航
 function switchSection(section) {
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
-    if (section === 'logs' || section === 'api' || section === 'env') {
+    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push') {
         // 获取URL路径并提取token
         const urlPath = window.location.pathname;
         const pathParts = urlPath.split('/').filter(part => part !== '');
@@ -292,7 +292,7 @@ function switchSection(section) {
                 // 获取当前页面的协议、主机和端口
                 const protocol = window.location.protocol;
                 const host = window.location.host;
-                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + protocol + '//' + host + '/{TOKEN}/ui');
+                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + protocol + '//' + host + '/{TOKEN}');
             }, 100);
             return;
         }
@@ -314,18 +314,18 @@ function switchSection(section) {
                     document.getElementById(\`\${section}-section\`).classList.add('active');
                     event.target.classList.add('active');
 
-                    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+                    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
                 }
             });
         } else {
-            // 对于日志查看和接口调试页面，只要URL中有token就可以访问
+            // 对于日志查看、接口调试和推送弹幕页面，只要URL中有token就可以访问
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
             document.getElementById(\`\${section}-section\`).classList.add('active');
             event.target.classList.add('active');
 
-            addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+            addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
         }
     } else {
         // 对于非受保护页面（如配置预览），正常切换
@@ -335,7 +335,7 @@ function switchSection(section) {
         document.getElementById(\`\${section}-section\`).classList.add('active');
         event.target.classList.add('active');
 
-        addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : '接口调试'}模块\`, 'info');
+        addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
     }
 }
 
@@ -1588,6 +1588,167 @@ function copyApiEndpoint() {
                 customAlert('复制失败: ' + err);
                 addLog('复制API端点失败: ' + err, 'error');
             });
+    }
+}
+
+// 推送弹幕功能相关
+
+// 搜索动漫用于推送
+function searchAnimeForPush() {
+    const keyword = document.getElementById('push-search-keyword').value.trim();
+    const pushUrl = document.getElementById('push-url').value.trim();
+    
+    if (!keyword) {
+        customAlert('请输入搜索关键字');
+        return;
+    }
+    
+    if (!pushUrl) {
+        customAlert('请输入推送地址');
+        return;
+    }
+    
+    // 构建搜索API请求URL
+    const searchUrl = buildApiUrl('/api/v2/search/anime?keyword=' + encodeURIComponent(keyword));
+    
+    addLog(\`开始搜索动漫: \${keyword}\`, 'info');
+    
+    // 发送搜索请求
+    fetch(searchUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(\`HTTP error! status: \${response.status}\`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success && data.animes && data.animes.length > 0) {
+                displayAnimeListForPush(data.animes, pushUrl);
+            } else {
+                document.getElementById('push-anime-list').style.display = 'none';
+                document.getElementById('push-episode-list').style.display = 'none';
+                customAlert('未找到相关动漫');
+                addLog('未找到相关动漫', 'warn');
+            }
+        })
+        .catch(error => {
+            console.error('搜索动漫失败:', error);
+            customAlert('搜索动漫失败: ' + error.message);
+            addLog('搜索动漫失败: ' + error.message, 'error');
+        });
+}
+
+// 展示动漫列表用于推送
+function displayAnimeListForPush(animes, pushUrl) {
+    const container = document.getElementById('push-anime-list');
+    let html = '<h3>搜索结果</h3><div class="anime-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">';
+    
+    animes.forEach(anime => {
+        const imageUrl = anime.imageUrl || 'https://placehold.co/150x200?text=No+Image';
+        html += \`
+            <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
+                <img src="\${imageUrl}" alt="\${anime.animeTitle}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 4px;">
+                <h4 style="margin: 10px 0 5px; font-size: 14px;">\${anime.animeTitle}</h4>
+            </div>
+        \`; 
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+    container.style.display = 'block';
+    
+    addLog(\`显示 \${animes.length} 个动漫结果\`, 'info');
+}
+
+// 获取番剧详情用于推送
+function getBangumiForPush(animeId, pushUrl) {
+    const bangumiUrl = buildApiUrl('/api/v2/bangumi/' + animeId);
+    
+    addLog(\`获取番剧详情: \${animeId}\`, 'info');
+    
+    fetch(bangumiUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(\`HTTP error! status: \${response.status}\`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success && data.bangumi && data.bangumi.episodes) {
+                displayEpisodeListForPush(data.bangumi.episodes, pushUrl);
+            } else {
+                customAlert('该动漫暂无剧集信息');
+                addLog('该动漫暂无剧集信息', 'warn');
+            }
+        })
+        .catch(error => {
+            console.error('获取番剧详情失败:', error);
+            customAlert('获取番剧详情失败: ' + error.message);
+            addLog('获取番剧详情失败: ' + error.message, 'error');
+        });
+}
+
+// 展示剧集列表用于推送
+function displayEpisodeListForPush(episodes, pushUrl) {
+    const container = document.getElementById('push-episode-list');
+    let html = '<h3>剧集列表</h3><div class="episode-list-container" style="max-height: 400px; overflow-y: auto;">';
+    
+    episodes.forEach(episode => {
+        // 生成弹幕URL
+        const commentUrl = window.location.origin + buildApiUrl('/api/v2/comment/' + episode.episodeId);
+        html += \`
+            <div class="episode-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+                <div>
+                    <strong>第\${episode.episodeNumber}集</strong> - \${episode.episodeTitle || '无标题'}
+                </div>
+                <button class="btn btn-success" onclick="pushDanmu('\${pushUrl}', '\${commentUrl}', '\${episode.episodeTitle || '第' + episode.episodeNumber + '集'}')">推送弹幕</button>
+            </div>
+        \`; 
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+    container.style.display = 'block';
+    
+    addLog(\`显示 \${episodes.length} 个剧集\`, 'info');
+}
+
+// 推送弹幕
+async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
+    try {
+        // 获取弹幕数据
+        const commentResponse = await fetch(commentUrl);
+        if (!commentResponse.ok) {
+            throw new Error(\`获取弹幕数据失败，状态码: \${commentResponse.status}\`);
+        }
+        const commentData = await commentResponse.json();
+        
+        // 检查是否有弹幕数据
+        if (!commentData.comments || commentData.comments.length === 0) {
+            customAlert('该集暂无弹幕数据');
+            addLog(\`推送失败 - \${episodeTitle} 暂无弹幕数据\`, 'warn');
+            return;
+        }
+        
+        // 向推送地址发送弹幕数据
+        const pushResponse = await fetch(pushUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(commentData)
+        });
+        
+        if (pushResponse.ok) {
+            customAlert(\`弹幕推送成功！\${episodeTitle}\`);
+            addLog(\`弹幕推送成功 - \${episodeTitle}\`, 'success');
+        } else {
+            throw new Error(\`推送失败，状态码: \${pushResponse.status}\`);
+        }
+    } catch (error) {
+        console.error('推送弹幕失败:', error);
+        customAlert('推送弹幕失败: ' + error.message);
+        addLog('推送弹幕失败: ' + error.message, 'error');
     }
 }
 

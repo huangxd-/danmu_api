@@ -45,6 +45,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn active" onclick="switchSection('preview')">配置预览</button>
                 <button class="nav-btn" onclick="switchSection('logs')">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api')">接口调试</button>
+                <button class="nav-btn" onclick="switchSection('push')">推送弹幕</button>
                 <button class="nav-btn" onclick="switchSection('env')" id="env-nav-btn">系统配置</button>
             </div>
         </div>
@@ -97,6 +98,26 @@ export const HTML_TEMPLATE = /* html */ `
                     <h3 style="margin: 20px 0 10px;">响应结果</h3>
                     <div class="api-response" id="api-response"></div>
                 </div>
+            </div>
+
+            <!-- 推送弹幕 -->
+            <div class="section" id="push-section">
+                <h2>推送弹幕</h2>
+                <div class="push-controls" style="margin-bottom: 20px;">
+                    <div class="form-group" style="margin-bottom: 15px;">
+                        <label>推送地址</label>
+                        <input type="text" id="push-url" placeholder="请输入推送地址，例如: http://192.168.1.1:8080/api/danmu" style="width: 100%; padding: 8px; margin-top: 5px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 15px;">
+                        <label>搜索关键字</label>
+                        <div style="display: flex; gap: 10px; margin-top: 5px;">
+                            <input type="text" id="push-search-keyword" placeholder="请输入搜索关键字" style="flex: 1; padding: 8px;">
+                            <button class="btn btn-primary" onclick="searchAnimeForPush()">搜索</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="push-anime-list" class="anime-list" style="display: none;"></div>
+                <div id="push-episode-list" class="episode-list" style="display: none; margin-top: 20px;"></div>
             </div>
 
             <!-- 系统配置 -->
