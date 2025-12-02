@@ -2,6 +2,109 @@ import { globals } from "../../configs/globals.js";
 
 // language=JavaScript
 export const jsContent = /* javascript */ `
+// 自定义弹窗组件
+function createCustomAlert() {
+    // 检查是否已存在自定义弹窗元素
+    if (document.getElementById('custom-alert-overlay')) {
+        return;
+    }
+
+    // 创建弹窗HTML元素
+    const alertHTML = '<div class="modal" id="custom-alert-overlay"><div class="modal-content" id="custom-alert-content"><div class="modal-header"><h3 id="custom-alert-title">提示</h3><button class="close-btn" id="custom-alert-close">&times;</button></div><div class="modal-body"><p id="custom-alert-message"></p></div><div class="modal-footer"><button class="btn btn-primary" id="custom-alert-confirm">确定</button></div></div></div>';
+
+    // 添加到body
+    document.body.insertAdjacentHTML('beforeend', alertHTML);
+
+    // 获取元素
+    const overlay = document.getElementById('custom-alert-overlay');
+    const closeBtn = document.getElementById('custom-alert-close');
+    const confirmBtn = document.getElementById('custom-alert-confirm');
+
+    // 关闭弹窗函数
+    function closeAlert() {
+        overlay.classList.remove('active');
+        // 重置标题和消息
+        document.getElementById('custom-alert-title').textContent = '提示';
+    }
+
+    // 事件监听器
+    closeBtn.addEventListener('click', closeAlert);
+    confirmBtn.addEventListener('click', closeAlert);
+
+    // 点击遮罩层关闭弹窗
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+            closeAlert();
+        }
+    });
+}
+
+// 自定义alert函数
+function customAlert(message, title = '提示') {
+    // 确保弹窗元素已创建
+    createCustomAlert();
+
+    // 获取元素
+    const overlay = document.getElementById('custom-alert-overlay');
+    const titleElement = document.getElementById('custom-alert-title');
+    const messageElement = document.getElementById('custom-alert-message');
+
+    // 设置标题和消息
+    titleElement.textContent = title;
+    messageElement.textContent = message;
+
+    // 显示弹窗
+    overlay.classList.add('active');
+}
+
+// 自定义confirm函数（如果需要）
+function customConfirm(message, title = '确认') {
+    return new Promise((resolve) => {
+        // 确保弹窗元素已创建
+        createCustomAlert();
+
+        // 获取元素
+        const overlay = document.getElementById('custom-alert-overlay');
+        const titleElement = document.getElementById('custom-alert-title');
+        const messageElement = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-confirm');
+
+        // 移除之前的事件监听器（如果有）
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+        // 设置标题和消息
+        titleElement.textContent = title;
+        messageElement.textContent = message;
+
+        // 确定按钮事件
+        newConfirmBtn.addEventListener('click', () => {
+            overlay.classList.remove('active');
+            resolve(true);
+        });
+
+        // 关闭按钮事件
+        document.getElementById('custom-alert-close').addEventListener('click', () => {
+            overlay.classList.remove('active');
+            resolve(false);
+        });
+
+        // 点击遮罩层关闭
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                overlay.classList.remove('active');
+                resolve(false);
+            }
+        });
+
+        // 显示弹窗
+        overlay.classList.add('active');
+    });
+}
+
+// 初始化自定义弹窗
+document.addEventListener('DOMContentLoaded', createCustomAlert);
+
 // 数据存储
 let envVariables = {};
 let currentCategory = 'api'; // 默认分类改为api
@@ -184,7 +287,7 @@ function switchSection(section) {
     // 检查是否尝试访问受admin token保护的section（除了日志查看，日志查看可以用普通token访问）
     if (section === 'env' && !checkAdminToken()) {
         setTimeout(() => {
-            alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+            customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         }, 100); // 延迟显示提示，确保页面已切换
     }
 
@@ -494,7 +597,7 @@ function refreshLogs() {
 async function clearLogs() {
     // 检查是否配置了admin token且URL中的token匹配
     if (!checkAdminToken()) {
-        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 
@@ -557,7 +660,7 @@ async function init() {
                 envNavBtn.title = '请先配置ADMIN_TOKEN并使用正确的admin token访问以启用系统管理功能';
                 // 添加点击事件显示提示
                 envNavBtn.onclick = function() {
-                    alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+                    customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
                     return false;
                 };
             }
@@ -1072,7 +1175,7 @@ async function confirmClearCache() {
     // 检查是否配置了admin token且URL中的token匹配
     if (!checkAdminToken()) {
         hideClearCacheModal();
-        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 
@@ -1124,7 +1227,7 @@ function confirmDeploySystem() {
     // 检查是否配置了admin token且URL中的token匹配
     if (!checkAdminToken()) {
         hideDeploySystemModal();
-        alert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
+        customAlert('请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：http://your-domain.com/{ADMIN_TOKEN}');
         return;
     }
 
@@ -1268,7 +1371,7 @@ function confirmDeploymentByLogs() {
                     setTimeout(() => {
                         hideLoading();
                         // 显示成功弹窗
-                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        customAlert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
                         addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
                     }, 200);
                 } else if (confirmationAttempts >= maxAttempts) {
@@ -1280,7 +1383,7 @@ function confirmDeploymentByLogs() {
                     setTimeout(() => {
                         hideLoading();
                         // 显示成功弹窗
-                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        customAlert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
                         addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
                     }, 200);
                 } else {
@@ -1297,7 +1400,7 @@ function confirmDeploymentByLogs() {
                     setTimeout(() => {
                         hideLoading();
                         // 显示成功弹窗
-                        alert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
+                        customAlert('🎉 部署成功！云端部署已完成，服务已重启，配置已生效');
                         addLog('🎉 部署成功！云端部署已完成，服务已重启，配置已生效', 'success');
                     }, 200);
                 } else {
@@ -1382,7 +1485,7 @@ function copyApiEndpoint() {
             })
             .catch(err => {
                 console.error('复制失败:', err);
-                alert('复制失败: ' + err);
+                customAlert('复制失败: ' + err);
                 addLog('复制API端点失败: ' + err, 'error');
             });
     }
