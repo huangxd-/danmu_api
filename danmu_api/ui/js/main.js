@@ -1711,6 +1711,11 @@ function displayEpisodeListForPush(episodes, pushUrl) {
     container.style.display = 'block';
     
     addLog(\`显示 \${episodes.length} 个剧集\`, 'info');
+    
+    // 自动滚动到剧集列表处
+    setTimeout(() => {
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 10);
 }
 
 // 推送弹幕
