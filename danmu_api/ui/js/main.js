@@ -228,10 +228,22 @@ function updateApiEndpoint() {
       const protocol = window.location.protocol;
       const host = window.location.host;
       const token = config.originalEnvVars?.TOKEN || '87654321'; // 默认token值
-      currentToken = token; // 更新全局token变量
+      const adminToken = config.originalEnvVars?.ADMIN_TOKEN;
+
+      // 获取URL路径并提取token
+      const urlPath = window.location.pathname;
+      const pathParts = urlPath.split('/').filter(part => part !== '');
+      const urlToken = pathParts.length > 0 ? pathParts[0] : '';
+      if (urlToken === token) {
+        currentToken = token; // 更新全局token变量
+      } else if (urlToken === adminToken) {
+        currentToken = adminToken; // 更新全局token变量
+      } else {
+        currentToken = '********'
+      }
       
       // 构造API端点URL
-      const apiEndpoint = protocol + '//' + host + '/' + token;
+      const apiEndpoint = protocol + '//' + host + '/' + currentToken;
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
@@ -243,7 +255,7 @@ function updateApiEndpoint() {
       // 出错时显示默认值
       const protocol = window.location.protocol;
       const host = window.location.host;
-      const apiEndpoint = protocol + '//' + host + '/87654321';
+      const apiEndpoint = protocol + '//' + host + '/********';
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
