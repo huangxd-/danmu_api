@@ -1597,6 +1597,7 @@ function copyApiEndpoint() {
 function searchAnimeForPush() {
     const keyword = document.getElementById('push-search-keyword').value.trim();
     const pushUrl = document.getElementById('push-url').value.trim();
+    const searchBtn = document.querySelector('#push-section .btn-primary');
     
     if (!keyword) {
         customAlert('请输入搜索关键字');
@@ -1607,6 +1608,11 @@ function searchAnimeForPush() {
         customAlert('请输入推送地址');
         return;
     }
+    
+    // 添加加载状态
+    const originalText = searchBtn.textContent;
+    searchBtn.innerHTML = '<span class="loading-spinner-small"></span>';
+    searchBtn.disabled = true;
     
     // 构建搜索API请求URL
     const searchUrl = buildApiUrl('/api/v2/search/anime?keyword=' + encodeURIComponent(keyword));
@@ -1635,6 +1641,11 @@ function searchAnimeForPush() {
             console.error('搜索动漫失败:', error);
             customAlert('搜索动漫失败: ' + error.message);
             addLog('搜索动漫失败: ' + error.message, 'error');
+        })
+        .finally(() => {
+            // 恢复按钮状态
+            searchBtn.innerHTML = originalText;
+            searchBtn.disabled = false;
         });
 }
 
@@ -1720,6 +1731,15 @@ function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
 
 // 推送弹幕
 async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
+    // 获取推送按钮元素
+    const pushButton = event.target; // 通过事件对象获取当前点击的按钮
+    
+    if (pushButton) {
+        const originalText = pushButton.innerHTML;
+        pushButton.innerHTML = '<span class="loading-spinner-small"></span>';
+        pushButton.disabled = true;
+    }
+    
     try {       
         // 向推送地址发送弹幕数据
         const pushResponse = await fetch(\`\${pushUrl}\${commentUrl}\`, {
@@ -1739,6 +1759,15 @@ async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
         console.error('推送弹幕失败:', error);
         customAlert('推送弹幕失败: ' + error.message);
         addLog('推送弹幕失败: ' + error.message, 'error');
+    } finally {
+        // 恢复按钮状态
+        if (pushButton) {
+            // 恢复原始按钮文本（从按钮的文本内容推断原始文本）
+            const episodeNumber = Array.from(pushButton.parentElement.children).findIndex(el => el === pushButton.parentElement) + 1;
+            const originalText = '推送';
+            pushButton.innerHTML = originalText;
+            pushButton.disabled = false;
+        }
     }
 }
 
