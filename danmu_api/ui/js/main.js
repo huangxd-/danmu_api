@@ -1641,14 +1641,14 @@ function searchAnimeForPush() {
 // 展示动漫列表用于推送
 function displayAnimeListForPush(animes, pushUrl) {
     const container = document.getElementById('push-anime-list');
-    let html = '<h3>搜索结果</h3><div class="anime-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">';
-    
+    let html = '<h3>搜索结果</h3><div class="anime-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">';
+
     animes.forEach(anime => {
         const imageUrl = anime.imageUrl || 'https://placehold.co/150x200?text=No+Image';
         html += \`
-            <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
-                <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" style="width: 100%; height: 300px; object-fit: cover; border-radius: 4px;">
-                <h4 style="margin: 10px 0 5px; font-size: 14px;">\${anime.animeTitle}</h4>
+            <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
+                <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" style="width: 100%; height: 150px; object-fit: cover; border-radius: 4px;">
+                <h4 style="margin: 8px 0 5px; font-size: 12px;">\${anime.animeTitle}</h4>
             </div>
         \`; 
     });
@@ -1675,7 +1675,7 @@ function getBangumiForPush(animeId, pushUrl) {
         })
         .then(data => {
             if (data.success && data.bangumi && data.bangumi.episodes) {
-                displayEpisodeListForPush(data.bangumi.episodes, pushUrl);
+                displayEpisodeListForPush(data.bangumi.animeTitle, data.bangumi.episodes, pushUrl);
             } else {
                 customAlert('该动漫暂无剧集信息');
                 addLog('该动漫暂无剧集信息', 'warn');
@@ -1689,21 +1689,21 @@ function getBangumiForPush(animeId, pushUrl) {
 }
 
 // 展示剧集列表用于推送
-function displayEpisodeListForPush(episodes, pushUrl) {
+function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
     const container = document.getElementById('push-episode-list');
-    let html = '<h3>剧集列表</h3><div class="episode-list-container" style="max-height: 400px; overflow-y: auto;">';
+    let html = \`<h3>剧集列表</h3><h4 style="color: #ffd700">\${animeTitle}</h4><div class="episode-list-container" style="max-height: 400px; overflow-y: auto;">\`;
     
     episodes.forEach(episode => {
         // 生成弹幕URL
         const commentUrl = window.location.origin + buildApiUrl('/api/v2/comment/' + episode.episodeId);
         html += \`
-            <div class="episode-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
-                <div>
+            <div class="episode-item" style="padding: 10px; border-bottom: 1px solid #eee;">
+                <div style="display: inline-block; width: calc(100% - 100px); vertical-align: middle;">
                     <strong>第\${episode.episodeNumber}集</strong> - \${episode.episodeTitle || '无标题'}
                 </div>
-                <button class="btn btn-success" onclick="pushDanmu('\${pushUrl}', '\${commentUrl}', '\${episode.episodeTitle || '第' + episode.episodeNumber + '集'}')">推送弹幕</button>
+                <button class="btn btn-success btn-sm" onclick="pushDanmu('\${pushUrl}', '\${commentUrl}', '\${episode.episodeTitle || '第' + episode.episodeNumber + '集'}')" style="width: 80px; display: inline-block; margin-left: 10px;">推送</button>
             </div>
-        \`; 
+        \`;
     });
     
     html += '</div>';

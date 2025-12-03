@@ -110,9 +110,9 @@ export const HTML_TEMPLATE = /* html */ `
                     </div>
                     <div class="form-group" style="margin-bottom: 15px;">
                         <label>搜索关键字</label>
-                        <div style="display: flex; gap: 10px; margin-top: 5px;">
-                            <input type="text" id="push-search-keyword" placeholder="请输入搜索关键字" style="flex: 1; padding: 8px;">
-                            <button class="btn btn-primary" onclick="searchAnimeForPush()">搜索</button>
+                        <div style="margin-top: 5px;">
+                            <input type="text" id="push-search-keyword" placeholder="请输入搜索关键字" style="width: calc(100% - 100px); padding: 8px; display: inline-block;">
+                            <button class="btn btn-primary" onclick="searchAnimeForPush()" style="width: 80px; display: inline-block; margin-left: 10px;">搜索</button>
                         </div>
                     </div>
                 </div>
