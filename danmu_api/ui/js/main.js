@@ -435,6 +435,13 @@ function renderPreview() {
 // 编辑环境变量
 function editEnv(index) {
     const item = envVariables[currentCategory][index];
+    const editButton = event.target; // 获取当前点击的编辑按钮
+    
+    // 设置按钮为加载状态
+    const originalText = editButton.innerHTML;
+    editButton.innerHTML = '<span class="loading-spinner-small"></span>';
+    editButton.disabled = true;
+    
     editingKey = index;
     document.getElementById('modal-title').textContent = '编辑配置项';
     document.getElementById('env-category').value = currentCategory;
@@ -452,40 +459,58 @@ function editEnv(index) {
     renderValueInput(item);
 
     document.getElementById('env-modal').classList.add('active');
+    
+    // 恢复按钮状态（在实际场景中，这会在编辑完成后发生，比如在保存后或取消后）
+    // 为了演示，这里立即恢复按钮状态，实际使用中应该在适当的地方恢复按钮状态
+    editButton.innerHTML = originalText;
+    editButton.disabled = false;
 }
 
 // 删除环境变量
 function deleteEnv(index) {
-    if (confirm('确定要删除这个配置项吗?')) {
-        const item = envVariables[currentCategory][index];
-        const key = item.key;
+    customConfirm('确定要删除这个配置项吗?', '删除确认').then(confirmed => {
+        if (confirmed) {
+            const item = envVariables[currentCategory][index];
+            const key = item.key;
+            const deleteButton = event.target; // 获取当前点击的删除按钮
 
-        // 调用API删除环境变量
-        fetch(buildApiUrl('/api/env/del'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ key })
-        })
-        .then(response => response.json())
-        .then(result => {
-            if (result.success) {
-                // 从本地数据中删除
-                envVariables[currentCategory].splice(index, 1);
-                renderEnvList();
-                renderPreview();
-                addLog(\`删除配置项: \${key}\`, 'warn');
-            } else {
-                addLog(\`删除配置项失败: \${result.message}\`, 'error');
-                addLog(\`❌ 删除配置项失败: \${result.message}\`, 'error');
-            }
-        })
-        .catch(error => {
-            addLog(\`删除配置项失败: \${error.message}\`, 'error');
-            addLog(\`❌ 删除配置项失败: \${error.message}\`, 'error');
-        });
-    }
+            // 设置按钮为加载状态
+            const originalText = deleteButton.innerHTML;
+            deleteButton.innerHTML = '<span class="loading-spinner-small"></span>';
+            deleteButton.disabled = true;
+
+            // 调用API删除环境变量
+            fetch(buildApiUrl('/api/env/del'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ key })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // 从本地数据中删除
+                    envVariables[currentCategory].splice(index, 1);
+                    renderEnvList();
+                    renderPreview();
+                    addLog(\`删除配置项: \${key}\`, 'warn');
+                } else {
+                    addLog(\`删除配置项失败: \${result.message}\`, 'error');
+                    addLog(\`❌ 删除配置项失败: \${result.message}\`, 'error');
+                }
+            })
+            .catch(error => {
+                addLog(\`删除配置项失败: \${error.message}\`, 'error');
+                addLog(\`❌ 删除配置项失败: \${error.message}\`, 'error');
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                deleteButton.innerHTML = originalText;
+                deleteButton.disabled = false;
+            });
+        }
+    });
 }
 
 // 关闭模态框
@@ -647,33 +672,35 @@ async function clearLogs() {
         return;
     }
 
-    if (confirm('确定要清空所有日志吗?')) {
-        try {
-            const response = await fetch(buildApiUrl('/api/logs/clear', true), { // 使用admin token
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+    customConfirm('确定要清空所有日志吗?', '清空确认').then(async confirmed => {
+        if (confirmed) {
+            try {
+                const response = await fetch(buildApiUrl('/api/logs/clear', true), { // 使用admin token
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(\`HTTP error! status: \${response.status}\`);
                 }
-            });
-            
-            if (!response.ok) {
-                throw new Error(\`HTTP error! status: \${response.status}\`);
+                
+                const result = await response.json();
+                if (result.success) {
+                    // 清空前端显示的日志
+                    logs = [];
+                    renderLogs();
+                    addLog('日志已清空', 'warn');
+                } else {
+                    addLog(\`清空日志失败: \${result.message}\`, 'error');
+                }
+            } catch (error) {
+                console.error('Failed to clear logs:', error);
+                addLog(\`清空日志失败: \${error.message}\`, 'error');
             }
-            
-            const result = await response.json();
-            if (result.success) {
-                // 清空前端显示的日志
-                logs = [];
-                renderLogs();
-                addLog('日志已清空', 'warn');
-            } else {
-                addLog(\`清空日志失败: \${result.message}\`, 'error');
-            }
-        } catch (error) {
-            console.error('Failed to clear logs:', error);
-            addLog(\`清空日志失败: \${error.message}\`, 'error');
         }
-    }
+    });
 }
 
 // 检查URL中的token是否与currentAdminToken匹配
@@ -828,11 +855,17 @@ function loadApiParams() {
 function testApi() {
     const select = document.getElementById('api-select');
     const apiKey = select.value;
+    const sendButton = document.querySelector('#api-params .btn-success'); // 获取发送请求按钮
 
     if (!apiKey) {
         addLog('请先选择接口', 'error');
         return;
     }
+
+    // 设置按钮为加载状态
+    const originalText = sendButton.innerHTML;
+    sendButton.innerHTML = '<span class="loading-spinner-small"></span>';
+    sendButton.disabled = true;
 
     const config = apiConfigs[apiKey];
     const params = {};
@@ -946,6 +979,11 @@ function testApi() {
             // 添加错误信息的CSS类
             document.getElementById('api-response').className = 'error-response';
             addLog(errorMessage, 'error');
+        })
+        .finally(() => {
+            // 恢复按钮状态
+            sendButton.innerHTML = originalText;
+            sendButton.disabled = false;
         });
 }
 
