@@ -1604,10 +1604,7 @@ function searchAnimeForPush() {
         return;
     }
     
-    if (!pushUrl) {
-        customAlert('请输入推送地址');
-        return;
-    }
+    // 搜索时不再校验pushUrl是否为空，只在推送时校验
     
     // 添加加载状态
     const originalText = searchBtn.textContent;
@@ -1628,7 +1625,7 @@ function searchAnimeForPush() {
             return response.json();
         })
         .then(data => {
-            if (data.success && data.animes && data.animes.length > 0) {
+            if (data.success && data.animes.length > 0) {
                 displayAnimeListForPush(data.animes, pushUrl);
             } else {
                 document.getElementById('push-anime-list').style.display = 'none';
@@ -1659,7 +1656,7 @@ function displayAnimeListForPush(animes, pushUrl) {
         html += \`
             <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
                 <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" style="width: 100%; height: 150px; object-fit: cover; border-radius: 4px;">
-                <h4 style="margin: 8px 0 5px; font-size: 12px;">\${anime.animeTitle}</h4>
+                <h4 style="margin: 8px 0 5px; font-size: 12px;">\${anime.animeTitle} - 共\${anime.episodeCount}集</h4>
             </div>
         \`; 
     });
@@ -1733,27 +1730,37 @@ function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
 async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
     // 获取推送按钮元素
     const pushButton = event.target; // 通过事件对象获取当前点击的按钮
-    
+
+    // 校验推送地址是否为空
+    if (!pushUrl || pushUrl.trim() === '') {
+        customAlert('请输入推送地址');
+        if (pushButton) {
+            pushButton.innerHTML = '推送';
+            pushButton.disabled = false;
+        }
+        return;
+    }
+
     if (pushButton) {
         const originalText = pushButton.innerHTML;
         pushButton.innerHTML = '<span class="loading-spinner-small"></span>';
         pushButton.disabled = true;
     }
-    
+
     try {       
         // 向推送地址发送弹幕数据
-        const pushResponse = await fetch(\`\${pushUrl}\${commentUrl}\`, {
+        const pushResponse = await fetch(pushUrl + commentUrl, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         if (pushResponse.ok) {
-            customAlert(\`弹幕推送成功！\${episodeTitle}\`);
-            addLog(\`弹幕推送成功 - \${episodeTitle}\`, 'success');
+            customAlert('弹幕推送成功！' + episodeTitle);
+            addLog('弹幕推送成功 - ' + episodeTitle, 'success');
         } else {
-            throw new Error(\`推送失败，状态码: \${pushResponse.status}\`);
+            throw new Error('推送失败，状态码: ' + pushResponse.status);
         }
     } catch (error) {
         console.error('推送弹幕失败:', error);
@@ -1762,10 +1769,7 @@ async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
     } finally {
         // 恢复按钮状态
         if (pushButton) {
-            // 恢复原始按钮文本（从按钮的文本内容推断原始文本）
-            const episodeNumber = Array.from(pushButton.parentElement.children).findIndex(el => el === pushButton.parentElement) + 1;
-            const originalText = '推送';
-            pushButton.innerHTML = originalText;
+            pushButton.innerHTML = '推送';
             pushButton.disabled = false;
         }
     }
