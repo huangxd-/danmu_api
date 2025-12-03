@@ -67,7 +67,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
     if (parts.length > 0) {
       // 如果第一段是正确的默认 token
-      if (parts[0] === "87654321") {
+      if (parts[0] === "87654321" || parts[0] === globals.adminToken) {
         // 移除 token，继续处理
         path = "/" + parts.slice(1).join("/");
       } else if (!knownApiPaths.includes(parts[0])) {

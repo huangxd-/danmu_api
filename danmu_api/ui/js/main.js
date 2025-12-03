@@ -234,10 +234,8 @@ function updateApiEndpoint() {
       const urlPath = window.location.pathname;
       const pathParts = urlPath.split('/').filter(part => part !== '');
       const urlToken = pathParts.length > 0 ? pathParts[0] : '';
-      if (urlToken === token) {
+      if (urlToken === token || urlToken === adminToken) {
         currentToken = token; // 更新全局token变量
-      } else if (urlToken === adminToken) {
-        currentToken = adminToken; // 更新全局token变量
       } else {
         currentToken = '********'
       }
