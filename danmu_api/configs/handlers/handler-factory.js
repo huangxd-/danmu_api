@@ -21,8 +21,8 @@ export class HandlerFactory {
         return new NodeHandler();
       default:
         // 默认返回NodeHandler，适用于本地开发或无法识别的平台
-        const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js');
-        return new DefaultNodeHandler();
+        // const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js');
+        // return new DefaultNodeHandler();
     }
   }
 
