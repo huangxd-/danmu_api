@@ -73,11 +73,11 @@ export function handleConfig() {
  */
 export async function handleDeploy() {
   try {
-    const deployPlatform = globals.deployPlatform || 'node';
+    const deployPlatform = globals.deployPlatform;
     log("info", `[server] Deployment request received for platform: ${deployPlatform}`);
     
     // 如果是 Node 部署，直接返回成功，因为 Node 环境不需要重新部署
-    if (deployPlatform.toLowerCase() === 'node' || deployPlatform.toLowerCase() === 'docker') {
+    if (deployPlatform.toLowerCase() === 'node') {
       log("info", `[server] Node/Docker deployment - no redeployment needed, config changes take effect automatically`);
       return jsonResponse({ success: true, message: "Node/Docker deployment - configuration changes take effect automatically" }, 200);
     }

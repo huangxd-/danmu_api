@@ -14,7 +14,7 @@ export async function handleSetEnv(request) {
     }
 
     // 获取当前部署平台
-    const deployPlatform = globals.deployPlatform || 'node';
+    const deployPlatform = globals.deployPlatform;
     
     // 根据部署平台获取相应的handler
     const handler = await HandlerFactory.getHandler(deployPlatform);
@@ -45,7 +45,7 @@ export async function handleAddEnv(request) {
     }
 
     // 获取当前部署平台
-    const deployPlatform = globals.deployPlatform || 'node';
+    const deployPlatform = globals.deployPlatform ;
     
     // 根据部署平台获取相应的handler
     const handler = await HandlerFactory.getHandler(deployPlatform);
@@ -76,7 +76,7 @@ export async function handleDelEnv(request) {
     }
 
     // 获取当前部署平台
-    const deployPlatform = globals.deployPlatform || 'node';
+    const deployPlatform = globals.deployPlatform;
     
     // 根据部署平台获取相应的handler
     const handler = await HandlerFactory.getHandler(deployPlatform);
