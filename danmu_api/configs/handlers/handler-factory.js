@@ -17,20 +17,12 @@ export class HandlerFactory {
         const { EdgeoneHandler } = await import('./edgeone-handler.js');
         return new EdgeoneHandler();
       case 'node':
-        try {
-          const { NodeHandler } = await import('./node-handler.js');
-          return new NodeHandler();
-        } catch (e) {
-          console.warn('Node handler not available in this environment');
-        }
+        const { NodeHandler } = await import('./node-handler.js' + '');
+        return new NodeHandler();
       default:
         // 默认返回NodeHandler，适用于本地开发或无法识别的平台
-        try {
-          const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js');
-          return new DefaultNodeHandler();
-        } catch (e) {
-          console.warn('Node handler not available in this environment');
-        }
+        const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js' + '');
+        return new DefaultNodeHandler();
     }
   }
 
