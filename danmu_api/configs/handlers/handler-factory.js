@@ -17,12 +17,16 @@ export class HandlerFactory {
         const { EdgeoneHandler } = await import('./edgeone-handler.js');
         return new EdgeoneHandler();
       case 'node':
-        const { NodeHandler } = await import('./node-handler.js');
-        return new NodeHandler();
+        if (typeof process !== 'undefined' && process.versions?.node) {
+          const { NodeHandler } = await import('./node-handler.js');
+          return new NodeHandler();
+        }
       default:
         // 默认返回NodeHandler，适用于本地开发或无法识别的平台
-        // const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js');
-        // return new DefaultNodeHandler();
+        if (typeof process !== 'undefined' && process.versions?.node) {
+          const {NodeHandler: DefaultNodeHandler} = await import('./node-handler.js');
+          return new DefaultNodeHandler();
+        }
     }
   }
 
