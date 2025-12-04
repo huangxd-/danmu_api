@@ -1,29 +1,29 @@
-import { CloudflareHandler } from './cloudflare-handler.js';
-import { VercelHandler } from './vercel-handler.js';
-import { NetlifyHandler } from './netlify-handler.js';
-import { EdgeoneHandler } from './edgeone-handler.js';
-import { NodeHandler } from './node-handler.js';
-
 /**
  * Handler工厂类 - 根据部署平台返回相应的Handler实例
  */
 export class HandlerFactory {
-  static getHandler(deployPlatform) {
+  static async getHandler(deployPlatform) {
     switch (deployPlatform?.toLowerCase()) {
       case 'cloudflare':
+        const { CloudflareHandler } = await import('./cloudflare-handler.js');
         return new CloudflareHandler();
       case 'vercel':
+        const { VercelHandler } = await import('./vercel-handler.js');
         return new VercelHandler();
       case 'netlify':
+        const { NetlifyHandler } = await import('./netlify-handler.js');
         return new NetlifyHandler();
       case 'edgeone':
+        const { EdgeoneHandler } = await import('./edgeone-handler.js');
         return new EdgeoneHandler();
       case 'node':
       case 'docker':
+        const { NodeHandler } = await import('./node-handler.js');
         return new NodeHandler();
       default:
         // 默认返回NodeHandler，适用于本地开发或无法识别的平台
-        return new NodeHandler();
+        const { NodeHandler: DefaultNodeHandler } = await import('./node-handler.js');
+        return new DefaultNodeHandler();
     }
   }
 

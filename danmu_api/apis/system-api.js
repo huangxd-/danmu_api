@@ -83,7 +83,7 @@ export async function handleDeploy() {
     }
     
     // 对于其他平台（如 Cloudflare、Vercel、Netlify 等），使用相应的 Handler 触发部署
-    const handler = HandlerFactory.getHandler(deployPlatform);
+    const handler = await HandlerFactory.getHandler(deployPlatform);
     if (!handler) {
       log("error", `[server] No handler found for platform: ${deployPlatform}`);
       return jsonResponse({ success: false, message: `No handler found for platform: ${deployPlatform}` }, 400);
