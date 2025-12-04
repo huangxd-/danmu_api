@@ -1697,14 +1697,14 @@ function searchAnimeForPush() {
 // 展示动漫列表用于推送
 function displayAnimeListForPush(animes, pushUrl) {
     const container = document.getElementById('push-anime-list');
-    let html = '<h3>搜索结果</h3><div class="anime-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">';
+    let html = '<h3>搜索结果</h3><div class="anime-grid">';
 
     animes.forEach(anime => {
         const imageUrl = anime.imageUrl || 'https://placehold.co/150x200?text=No+Image';
         html += \`
-            <div class="anime-item" style="border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer;" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
-                <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" style="width: 100%; height: 150px; object-fit: cover; border-radius: 4px;">
-                <h4 style="margin: 8px 0 5px; font-size: 12px;">\${anime.animeTitle} - 共\${anime.episodeCount}集</h4>
+            <div class="anime-item" onclick="getBangumiForPush(\${anime.animeId}, '\${pushUrl}')">
+                <img src="\${imageUrl}" alt="\${anime.animeTitle}" referrerpolicy="no-referrer" class="anime-item-img">
+                <h4 class="anime-title">\${anime.animeTitle} - 共\${anime.episodeCount}集</h4>
             </div>
         \`; 
     });
@@ -1747,19 +1747,19 @@ function getBangumiForPush(animeId, pushUrl) {
 // 展示剧集列表用于推送
 function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
     const container = document.getElementById('push-episode-list');
-    let html = \`<h3>剧集列表</h3><h4 style="color: #ffd700">\${animeTitle}</h4><div class="episode-list-container" style="max-height: 400px; overflow-y: auto;">\`;
+    let html = \`<h3>剧集列表</h3><h4 class="text-yellow-gold">\${animeTitle}</h4><div class="episode-list-container">\`;
     
     episodes.forEach(episode => {
         // 生成弹幕URL
         const commentUrl = window.location.origin + buildApiUrl('/api/v2/comment/' + episode.episodeId);
         html += \`
-            <div class="episode-item" style="padding: 10px; border-bottom: 1px solid #eee;">
-                <div style="display: inline-block; width: calc(100% - 100px); vertical-align: middle;">
+            <div class="episode-item">
+                <div class="episode-item-content">
                     <strong>第\${episode.episodeNumber}集</strong> - \${episode.episodeTitle || '无标题'}
                 </div>
-                <button class="btn btn-success btn-sm" onclick="pushDanmu('\${pushUrl}', '\${commentUrl}', '\${episode.episodeTitle || '第' + episode.episodeNumber + '集'}')" style="width: 80px; display: inline-block; margin-left: 10px;">推送</button>
+                <button class="btn btn-success btn-sm episode-push-btn" onclick="pushDanmu('\${pushUrl}', '\${commentUrl}', '\${episode.episodeTitle || '第' + episode.episodeNumber + '集'}')">推送</button>
             </div>
-        \`;
+        \`; 
     });
     
     html += '</div>';

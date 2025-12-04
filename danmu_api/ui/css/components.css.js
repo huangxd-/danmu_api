@@ -546,7 +546,7 @@ export const componentsCssContent = /* css */ `
 }
 
 .text-gray {
-    color: #999;
+    color: #99;
 }
 
 .text-red {
@@ -558,7 +558,11 @@ export const componentsCssContent = /* css */ `
 }
 
 .text-purple {
-    color: #667eea;
+    color: #67eea;
+}
+
+.text-yellow-gold {
+    color: #ffd700;
 }
 
 .padding-20 {
@@ -573,6 +577,10 @@ export const componentsCssContent = /* css */ `
     margin-top: 3px;
 }
 
+.margin-top-15 {
+    margin-top: 15px;
+}
+
 .font-size-12 {
     font-size: 12px;
 }
@@ -583,5 +591,55 @@ export const componentsCssContent = /* css */ `
 
 .text-monospace {
     font-family: monospace;
+}
+
+/* 推送弹幕相关样式 */
+.anime-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.anime-item {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.anime-item-img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.anime-title {
+    margin: 8px 0 5px;
+    font-size: 12px;
+}
+
+.episode-list-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.episode-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.episode-item-content {
+    display: inline-block;
+    width: calc(100% - 100px);
+    vertical-align: middle;
+}
+
+.episode-push-btn {
+    width: 80px;
+    display: inline-block;
+    margin-left: 10px;
 }
 `;
