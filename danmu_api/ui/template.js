@@ -8,6 +8,7 @@ import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
 import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
+import { systemSettingsJsContent } from "./js/systemsettings.js";
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -287,6 +288,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${logviewJsContent}
         ${apitestJsContent}
         ${pushDanmuJsContent}
+        ${systemSettingsJsContent}
     </script>
 </body>
 </html>
