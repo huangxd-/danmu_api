@@ -7,6 +7,7 @@ import { mainJsContent } from "./js/main.js";
 import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
 import { apitestJsContent } from "./js/apitest.js";
+import { pushDanmuJsContent } from "./js/pushdanmu.js";
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -285,6 +286,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${previewJsContent}
         ${logviewJsContent}
         ${apitestJsContent}
+        ${pushDanmuJsContent}
     </script>
 </body>
 </html>
