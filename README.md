@@ -57,6 +57,12 @@ LogVar 弹幕 API 服务器
   - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`）
   - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
+- **UI界面-后台配置管理系统**：支持通过UI执行一些操作，包括：
+  - 配置预览
+  - 日志查看
+  - 接口调试
+  - 推送弹幕（`支持OK影视等播放器，两端需要在同一局域网或使用公网ip`）
+  - 系统管理
 
 ## 前置条件
 - Node.js（v18.0.0 或更高版本；理论兼容更低版本，请自行测试）
@@ -268,7 +274,7 @@ LogVar 弹幕 API 服务器
 > cf部署可能不稳定，推荐用vercel/netlify部署。
 
 ## API食用指南
-支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox 等支持弹幕API的播放器。
 
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 

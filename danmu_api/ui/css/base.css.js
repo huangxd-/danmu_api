@@ -36,9 +36,16 @@ body {
 
 .header-left {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 15px;
     flex-wrap: wrap;
+}
+
+.logo-title-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
 }
 
 .logo {
@@ -60,12 +67,6 @@ body {
     object-fit: cover;               /* 图片会被裁剪成正方形，充满容器 */
     /* object-fit: contain;          /* 如果想完整显示图片（会留白）就用这个 */
     border-radius: 12px;             /* 让图片也跟随圆角 */
-}
-
-.header-info {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
 }
 
 .header h1 {

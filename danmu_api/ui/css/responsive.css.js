@@ -10,15 +10,27 @@ export const responsiveCssContent = /* css */ `
 
     .header-left {
         width: 100%;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .logo-title-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
     }
 
     .header h1 {
         font-size: 18px;
+        margin: 0;
     }
 
     .version-info {
         font-size: 11px;
         flex-wrap: wrap;
+        margin-top: 5px;
+        width: 100%;
     }
 
     .nav-buttons {
