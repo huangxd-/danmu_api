@@ -297,7 +297,7 @@ LogVar 弹幕 API 服务器
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 
 以`senplayer`为例：
-1. 获取到部署之后的API地址，如 `http://192.168.1.7:9321/87654321` ，其中`87654321`是默认token（默认为87654321的情况下也可以不带token），如果有自定义环境变量TOKEN，请替换成相应的token
+1. 获取到部署之后的API地址，如 `http://192.168.1.7:9321/87654321` ，其中`87654321`是默认token（默认为87654321的情况下也可以不带token），如果有自定义环境变量TOKEN，请替换成相应的token；API地址也可直接在UI界面上点击API端点直接复制
 2. 将API地址填入自定义弹幕API，在`设置 - 弹幕设置 - 自定义弹幕API`
 3. 播放界面点击`弹幕按钮 - 搜索弹幕`，选择你的弹幕API，会根据标题进行搜索，等待一段时间，选择剧集就行。
 <img src="https://i.mji.rip/2025/09/14/1dae193008f23e507d3cc3733a92f0a1.jpeg" style="width:400px" />
@@ -381,9 +381,9 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ，docker部署和本地node部署并不需要配置      |
-| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ，docker部署和本地node部署并不需要配置       |
-| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
+| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | NODE_TLS_REJECT_UNAUTHORIZED      | 【可选】在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1       |
 
 ```regex
