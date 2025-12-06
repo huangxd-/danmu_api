@@ -316,6 +316,9 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
+    const isVercel = typeof process !== 'undefined' && process.env.VERCEL;
+    log("info", `handleRequest isVercel: ${isVercel}`);
+
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
