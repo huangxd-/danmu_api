@@ -81,6 +81,16 @@ export const componentsCssContent = /* css */ `
     word-break: break-all;
 }
 
+.env-item .env-info > div.text-dark-gray {
+    word-break: break-all;
+    white-space: normal;
+    background-color: #f1f3f5;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    margin-bottom: 5px;
+}
+
 .env-item .env-info span {
     word-break: break-all;
     white-space: normal;
