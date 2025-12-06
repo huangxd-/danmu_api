@@ -12,7 +12,7 @@ export const HTML_TEMPLATE = /* html */ `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LogVar弹幕API后台配置管理系统</title>
+    <title>LogVar弹幕API</title>
     <style>${baseCssContent}</style>
     <style>${componentsCssContent}</style>
     <style>${formsCssContent}</style>
@@ -29,7 +29,7 @@ export const HTML_TEMPLATE = /* html */ `
             <div class="header-left">
                 <div class="logo"><img src="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg" width="500"/></div>
                 <div class="header-info">
-                    <h1>LogVar弹幕API后台配置管理系统</h1>
+                    <h1>LogVar弹幕API</h1>
                     <div class="version-info">
                         <span class="version-badge">当前版本: <span id="current-version">v${globals.version}</span></span>
                         <span class="update-badge" id="update-badge">
@@ -103,10 +103,11 @@ export const HTML_TEMPLATE = /* html */ `
             <!-- 推送弹幕 -->
             <div class="section" id="push-section">
                 <h2>推送弹幕</h2>
+                <p style="color: #666; margin-bottom: 15px;">支持OK影视等播放器，推送地址格式如 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path=</p>
                 <div class="push-controls" style="margin-bottom: 20px;">
                     <div class="form-group" style="margin-bottom: 15px;">
                         <label>推送地址</label>
-                        <input type="text" id="push-url" placeholder="请输入推送地址，例如: http://192.168.1.1:8080/api/danmu" style="width: 100%; padding: 8px; margin-top: 5px;">
+                        <input type="text" id="push-url" placeholder="请输入推送地址，例如: http://127.0.0.1:9978/action?do=refresh&type=danmaku&path=" style="width: 100%; padding: 8px; margin-top: 5px;">
                     </div>
                     <div class="form-group" style="margin-bottom: 15px;">
                         <label>搜索关键字</label>
