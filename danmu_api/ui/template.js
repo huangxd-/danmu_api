@@ -5,6 +5,7 @@ import { formsCssContent } from "./css/forms.css.js";
 import { responsiveCssContent } from "./css/responsive.css.js";
 import { mainJsContent } from "./js/main.js";
 import { previewJsContent } from "./js/preview.js";
+import { logviewJsContent } from "./js/logview.js";
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -281,6 +282,7 @@ export const HTML_TEMPLATE = /* html */ `
     <script>
         ${mainJsContent}
         ${previewJsContent}
+        ${logviewJsContent}
     </script>
 </body>
 </html>
