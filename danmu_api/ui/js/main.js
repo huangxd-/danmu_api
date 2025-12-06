@@ -781,24 +781,35 @@ async function checkDeployPlatformConfig() {
     }
 }
 
+// 获取并设置配置信息
+async function fetchAndSetConfig() {
+    const config = await fetch('/api/config').then(response => response.json());
+    const hasAdminToken = config.hasAdminToken;
+    currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+    return config;
+}
+
+// 检查并处理管理员令牌
+function checkAndHandleAdminToken() {
+    if (!checkAdminToken()) {
+        // 禁用系统配置按钮并添加提示
+        const envNavBtn = document.getElementById('env-nav-btn');
+        if (envNavBtn) {
+            envNavBtn.title = '请先配置ADMIN_TOKEN并使用正确的admin token访问以启用系统管理功能';
+        }
+    }
+}
+
 // 页面加载完成后初始化时获取一次日志
 async function init() {
     try {
         await updateApiEndpoint(); // 等待API端点更新完成
         getDockerVersion();
         // 从API获取配置信息，包括检查是否有admin token
-        const config = await fetch('/api/config').then(response => response.json());
-        const hasAdminToken = config.hasAdminToken;
-        currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+        await fetchAndSetConfig();
 
-        // 如果没有配置admin token或者URL中的token不等于currentAdminToken，则禁用系统管理相关功能并显示提示
-        if (!checkAdminToken()) {
-            // 禁用系统配置按钮并添加提示
-            const envNavBtn = document.getElementById('env-nav-btn');
-            if (envNavBtn) {
-                envNavBtn.title = '请先配置ADMIN_TOKEN并使用正确的admin token访问以启用系统管理功能';
-            }
-        }
+        // 检查并处理管理员令牌
+        checkAndHandleAdminToken();
         
         loadEnvVariables(); // 从API加载真实环境变量数据
         renderEnvList();
