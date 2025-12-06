@@ -18,7 +18,6 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
-  log("info", `handleRequest deployPlatform: ${deployPlatform}`);
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);
@@ -317,12 +316,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 export default {
   async fetch(request, env, ctx) {
     const isVercel = typeof process !== 'undefined' && process.env.VERCEL;
-    log("info", `handleRequest isVercel: ${isVercel}`);
 
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    return handleRequest(request, env, "cloudflare", clientIp);
+    return handleRequest(request, env, isVercel ? "vercel" : "cloudflare", clientIp);
   },
 };
 
