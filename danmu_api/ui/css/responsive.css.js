@@ -35,13 +35,21 @@ export const responsiveCssContent = /* css */ `
 
     .nav-buttons {
         width: 100%;
+        flex-wrap: wrap;
+        gap: 5px;
+        justify-content: center;
     }
 
     .nav-btn {
-        flex: 1;
+        flex: 1 1 calc(33.333% - 5px);
         text-align: center;
-        font-size: 12px;
-        padding: 8px 10px;
+        font-size: 11px;
+        padding: 8px 5px;
+        white-space: nowrap;
+        min-width: 70px;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .env-item {
