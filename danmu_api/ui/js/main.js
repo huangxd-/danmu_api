@@ -1751,7 +1751,7 @@ function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
     
     episodes.forEach(episode => {
         // 生成弹幕URL
-        const commentUrl = window.location.origin + buildApiUrl('/api/v2/comment/' + episode.episodeId);
+        const commentUrl = window.location.origin + buildApiUrl('/api/v2/comment/' + episode.episodeId + '?format=xml');
         html += \`
             <div class="episode-item">
                 <div class="episode-item-content">
@@ -1797,19 +1797,13 @@ async function pushDanmu(pushUrl, commentUrl, episodeTitle) {
 
     try {       
         // 向推送地址发送弹幕数据
-        const pushResponse = await fetch(pushUrl + commentUrl, {
+        const pushResponse = await fetch(pushUrl + encodeURIComponent(commentUrl), {
             method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            mode: 'no-cors', // 由于跨域限制，使用no-cors模式
         });
 
-        if (pushResponse.ok) {
-            customAlert('弹幕推送成功！' + episodeTitle);
-            addLog('弹幕推送成功 - ' + episodeTitle, 'success');
-        } else {
-            throw new Error('推送失败，状态码: ' + pushResponse.status);
-        }
+        customAlert('弹幕推送成功！' + episodeTitle);
+        addLog('弹幕推送成功 - ' + episodeTitle, 'success');
     } catch (error) {
         console.error('推送弹幕失败:', error);
         customAlert('推送弹幕失败: ' + error.message);
