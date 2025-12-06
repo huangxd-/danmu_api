@@ -187,10 +187,18 @@ function updateApiEndpoint() {
       const urlPath = window.location.pathname;
       const pathParts = urlPath.split('/').filter(part => part !== '');
       const urlToken = pathParts.length > 0 ? pathParts[0] : '';
-      if (urlToken === token || urlToken === adminToken) {
-        currentToken = token; // 更新全局token变量
+      
+      // 判断是否使用默认token
+      if (token === '87654321') {
+        // 如果是默认token，则显示真实token
+        currentToken = token;
       } else {
-        currentToken = '********'
+        // 如果不是默认token，则检查URL中的token是否匹配，匹配则显示真实token，否则显示星号
+        if (urlToken === token || urlToken === adminToken) {
+          currentToken = token; // 更新全局token变量
+        } else {
+          currentToken = '********'
+        }
       }
       
       // 构造API端点URL
