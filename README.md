@@ -439,73 +439,86 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 danmu_api/
 ├── .github/
 │   └── workflows/
-│       ├── docker-image.yml
-│       └── sync_fork.yml # vercel自动同步配置文件
-├── danmu_api/
-│   └── apis/
-│       └── dandan-api.js # 弹弹play兼容接口函数
-│   └── configs/
-│       └── handlers/     # 部署平台API调用及环境变量处理类
-│           ├── base-handler.js
-│           ├── node-handler.js
-│           ├── vercel-handler.js
-│           ├── netlify-handler.js
-│           ├── cloudflare-handler.js
-│           └── edgeone-handler.js
-│       ├── envs.js       # 环境变量处理脚本
-│       └── globals.js    # 全局变量处理脚本
-│   └── models/
-│       └── dandan-model.js  # 弹弹play数据模型
-│   └── sources/
-│       ├── bahamut.js    # 巴哈姆特源
-│       ├── base.js       # 弹幕源获取基类
-│       ├── bilibili.js   # b站源
-│       ├── dandan.js     # 弹弹play源
-│       ├── douban.js     # 豆瓣源
-│       ├── hanjutv.js    # 韩剧TV源
-│       ├── iqiyi.js      # 爱奇艺源
-│       ├── kan360.js     # 360看源
-│       ├── mango.js      # 芒果TV源
-│       ├── other.js      # 第三方弹幕服务器
-│       ├── renren.js     # 人人视频源
-│       ├── tencent.js    # 腾讯视频源
-│       ├── tmdb.js       # TMDB源
-│       ├── vod.js        # vod源
-│       └── youku.js      # 优酷源
-│   └── utils/
-│       ├── cache-util.js    # 缓存数据处理工具
-│       ├── codec-util.js    # 编解码工具
-│       ├── common-util.js   # 通用工具
-│       ├── danmu-util.js    # 弹幕处理工具
-│       ├── douban-util.js   # 豆瓣API请求工具
-│       ├── http-util.js     # 请求工具
-│       ├── imdb-util.js     # IMDB API请求工具
-│       ├── log-util.js      # 日志工具
-│       ├── redis-util.js    # redis工具
-│       ├── time-util.js     # 时间日期工具
-│       ├── tmdb-util.js     # TMDB API请求处理工具
-│       └── zh-util.js       # 中文繁简转换工具
-│   ├── esm-shim.js     # Node.js低版本兼容层
-│   ├── server.js       # 本地node启动脚本
-│   ├── worker.js       # 主 API 服务器代码
-│   └── worker.test.js  # 测试文件
-├── netlify/
-│   └── functions/
-│       └── api.js      # netlify 中间处理逻辑
-├── node-functions/
-│   ├── [[...path]]..js # edgeone pages 所有路由跳转指向index
-│   └── index.js        # edgeone pages 中间处理逻辑
-├── .env.example        # .env 配置文件示例
-├── config.yaml.example # YAML 配置文件示例（无法编辑 .env 时使用）
+│       ├── docker-image.yml    # Docker镜像构建和推送工作流
+│       └── sync_fork.yml       # Fork同步上游仓库工作流（vercel自动同步配置文件）
+├── .env.example                # .env 配置文件示例
 ├── .gitignore
+├── config.yaml.example         # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── Dockerfile
-├── edgeone.json        # edgeone pages 配置文件
+├── edgeone.json                # edgeone pages 配置文件
 ├── LICENSE
-├── netlify.toml        # netlify 配置文件
+├── netlify.toml                # netlify 配置文件
 ├── package.json
 ├── README.md
-├── vercel.json         # vercel 配置文件
-└── wrangler.toml       # cloudflare worker 配置文件
+├── vercel.json                 # vercel 配置文件
+├── wrangler.toml               # cloudflare worker 配置文件
+├── danmu_api/
+│   ├── esm-shim.js             # Node.js低版本兼容层
+│   ├── server.js               # 本地node启动脚本
+│   ├── worker.js               # 主 API 服务器代码
+│   ├── worker.test.js          # 测试文件
+│   ├── apis/
+│   │   ├── dandan-api.js       # 弹弹play兼容接口函数
+│   │   ├── env-api.js          # 环境变量接口函数
+│   │   └── system-api.js       # 系统管理接口函数
+│   ├── configs/
+│   │   ├── envs.js             # 环境变量处理脚本
+│   │   └── globals.js          # 全局变量处理脚本
+│   │   └── handlers/           # 部署平台API调用及环境变量处理类
+│   │       ├── base-handler.js
+│   │       ├── cloudflare-handler.js
+│   │       ├── edgeone-handler.js
+│   │       ├── handler-factory.js
+│   │       ├── netlify-handler.js
+│   │       ├── node-handler.js
+│   │       └── vercel-handler.js
+│   ├── models/
+│   │   └── dandan-model.js     # 弹弹play数据模型
+│   ├── sources/
+│   │   ├── bahamut.js          # 巴哈姆特源
+│   │   ├── base.js             # 弹幕源获取基类
+│   │   ├── bilibili.js         # b站源
+│   │   ├── dandan.js           # 弹弹play源
+│   │   ├── douban.js           # 豆瓣源
+│   │   ├── hanjutv.js          # 韩剧TV源
+│   │   ├── iqiyi.js            # 爱奇艺源
+│   │   ├── kan360.js           # 360看源
+│   │   ├── mango.js            # 芒果TV源
+│   │   ├── other.js            # 第三方弹幕服务器
+│   │   ├── renren.js           # 人人视频源
+│   │   ├── tencent.js          # 腾讯视频源
+│   │   ├── tmdb.js             # TMDB源
+│   │   ├── vod.js              # vod源
+│   │   └── youku.js            # 优酷源
+│   ├── ui/
+│   │   ├── README.md           # UI系统使用说明
+│   │   ├── template.js         # UI模板文件
+│   │   ├── css/
+│   │   │   ├── base.css.js     # 基础样式
+│   │   │   ├── components.css.js # 组件样式
+│   │   ├── forms.css.js        # 表单样式
+│   │   │   └── responsive.css.js # 响应式样式
+│   │   └── js/
+│   │       └── main.js         # UI主脚本
+│   └── utils/
+│       ├── cache-util.js       # 缓存数据处理工具
+│       ├── codec-util.js       # 编解码工具
+│       ├── common-util.js      # 通用工具
+│       ├── danmu-util.js       # 弹幕处理工具
+│       ├── douban-util.js      # 豆瓣API请求工具
+│       ├── http-util.js        # 请求工具
+│       ├── imdb-util.js        # IMDB API请求工具
+│       ├── log-util.js         # 日志工具
+│       ├── redis-util.js       # redis工具
+│       ├── time-util.js        # 时间日期工具
+│       ├── tmdb-util.js        # TMDB API请求处理工具
+│       └── zh-util.js          # 中文繁简转换工具
+├── netlify/
+│   └── functions/
+│       └── api.js              # netlify 中间处理逻辑
+└── node-functions/
+    ├── [[...path]]..js         # edgeone pages 所有路由跳转指向index
+    └── index.js                # edgeone pages 中间处理逻辑
 ```
 
 ## 注意事项
