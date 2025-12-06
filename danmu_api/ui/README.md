@@ -112,6 +112,8 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 | Netlify | ✅ | ✅ | ✅ |
 | EdgeOne | ❌ | ✅ | ✅ |
 | Cloudflare | ✅ | ✅ | ✅ |
+| Node.js | ❌ | ❌ | ❌ |
+| Docker | ❌ | ❌ | ❌ |
 
 ---
 
