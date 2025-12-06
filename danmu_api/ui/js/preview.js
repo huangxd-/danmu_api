@@ -21,7 +21,10 @@ function renderPreview() {
                     items.forEach(item => {
                         html += \`
                             <div class="preview-item">
-                                <strong>\${item.key}</strong> = \${item.value}
+                                <div class="preview-item-content">
+                                    <div class="preview-key"><strong>\${item.key}</strong></div>
+                                    <div class="preview-value">\${item.value}</div>
+                                </div>
                                 \${item.description ? \`<div class="text-gray font-size-12 margin-top-3">\${item.description}</div>\` : ''}
                             </div>
                         \`;

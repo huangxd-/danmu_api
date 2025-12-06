@@ -66,6 +66,32 @@ export const componentsCssContent = /* css */ `
     gap: 10px;
 }
 
+.env-item .env-info {
+    flex: 1;
+    min-width: 200px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+.env-item .env-info strong {
+    color: #667eea;
+    display: block;
+    margin-bottom: 5px;
+    word-break: break-all;
+}
+
+.env-item .env-info span {
+    word-break: break-all;
+    white-space: normal;
+}
+
+.env-item .env-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
 .env-info {
     flex: 1;
     min-width: 200px;
@@ -153,6 +179,32 @@ export const componentsCssContent = /* css */ `
     margin-bottom: 8px;
     border-radius: 6px;
     border-left: 4px solid #667eea;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+.preview-item .preview-item-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+}
+
+.preview-item .preview-key {
+    font-weight: bold;
+    color: #67eea;
+    align-self: flex-start;
+}
+
+.preview-item .preview-value {
+    word-break: break-all;
+    white-space: normal;
+    width: 100%;
+    background-color: #f8f9fa;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: monospace;
 }
 
 /* 日志样式 */
