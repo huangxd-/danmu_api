@@ -3,7 +3,8 @@ import { baseCssContent } from "./css/base.css.js";
 import { componentsCssContent } from "./css/components.css.js";
 import { formsCssContent } from "./css/forms.css.js";
 import { responsiveCssContent } from "./css/responsive.css.js";
-import { jsContent } from "./js/main.js";
+import { mainJsContent } from "./js/main.js";
+import { previewJsContent } from "./js/preview.js";
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -277,7 +278,10 @@ export const HTML_TEMPLATE = /* html */ `
         <p>有问题提issue或私信机器人都ok</p>
     </footer>
 
-    <script>${jsContent}</script>
+    <script>
+        ${mainJsContent}
+        ${previewJsContent}
+    </script>
 </body>
 </html>
 `;
