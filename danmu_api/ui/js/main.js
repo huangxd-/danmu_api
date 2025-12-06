@@ -194,7 +194,7 @@ function updateApiEndpoint() {
         currentToken = token;
       } else {
         // 如果不是默认token，则检查URL中的token是否匹配，匹配则显示真实token，否则显示星号
-        if (urlToken === token || urlToken === adminToken) {
+        if (urlToken === token || (adminToken !== "" && urlToken === adminToken)) {
           currentToken = token; // 更新全局token变量
         } else {
           currentToken = '********'
