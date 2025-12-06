@@ -496,10 +496,15 @@ danmu_api/
 │   │   ├── css/
 │   │   │   ├── base.css.js     # 基础样式
 │   │   │   ├── components.css.js # 组件样式
-│   │   ├── forms.css.js        # 表单样式
+│   │   │   ├── forms.css.js    # 表单样式
 │   │   │   └── responsive.css.js # 响应式样式
 │   │   └── js/
-│   │       └── main.js         # UI主脚本
+│   │       ├── apitest.js      # API测试脚本
+│   │       ├── logview.js      # 日志查看脚本
+│   │       ├── main.js         # UI主脚本
+│   │       ├── preview.js      # 预览功能脚本
+│   │       ├── pushdanmu.js    # 推送弹幕脚本
+│   │       └── systemsettings.js # 系统设置脚本
 │   └── utils/
 │       ├── cache-util.js       # 缓存数据处理工具
 │       ├── codec-util.js       # 编解码工具
