@@ -302,8 +302,8 @@ async function checkDeployPlatformConfig() {
             missingVars.push('DEPLOY_PLATFROM_TOKEN');
         }
         
-        // 对于netlify和edgeone部署平台，还需要检查DEPLOY_PLATFROM_ACCOUNT
-        if (deployPlatform.toLowerCase() === 'netlify' || deployPlatform.toLowerCase() === 'edgeone') {
+        // 对于netlify和cloudflare部署平台，还需要检查DEPLOY_PLATFROM_ACCOUNT
+        if (deployPlatform.toLowerCase() === 'netlify' || deployPlatform.toLowerCase() === 'cloudflare') {
             if (!deployPlatformAccount || deployPlatformAccount.trim() === '') {
                 missingVars.push('DEPLOY_PLATFROM_ACCOUNT');
             }
