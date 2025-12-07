@@ -142,11 +142,11 @@ function simulateDeployProcess() {
     // 模拟部署步骤
     const steps = [
         { delay: 100, text: '检查环境变量...', detail: '验证配置文件', log: '配置文件验证通过' },
-        { delay: 2000, text: '触发云端部署...', detail: '部署到当前平台', log: '云端部署已触发' },
-        { delay: 3500, text: '构建项目...', detail: '云端构建中', log: '云端构建完成' },
+        { delay: 5000, text: '触发云端部署...', detail: '部署到当前平台', log: '云端部署已触发' },
+        { delay: 9500, text: '构建项目...', detail: '云端构建中', log: '云端构建完成' },
         { delay: 5000, text: '部署更新...', detail: '发布到生产环境', log: '更新已部署' },
-        { delay: 6500, text: '服务重启...', detail: '应用新配置', log: '服务已重启' },
-        { delay: 8000, text: '健康检查...', detail: '验证服务状态', log: '所有服务运行正常' },
+        { delay: 5500, text: '服务重启...', detail: '应用新配置', log: '服务已重启' },
+        { delay: 5000, text: '健康检查...', detail: '验证服务状态', log: '所有服务运行正常' },
     ];
 
     steps.forEach(step => {
