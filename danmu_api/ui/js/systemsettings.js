@@ -339,4 +339,455 @@ function checkAndHandleAdminToken() {
         }
     }
 }
+
+// 渲染值输入控件
+function renderValueInput(item) {
+    const container = document.getElementById('value-input-container');
+    const type = item ? item.type : document.getElementById('value-type').value;
+    const value = item ? item.value : '';
+
+    if (type === 'boolean') {
+        // 布尔开关
+        const checked = value === 'true' || value === true;
+        container.innerHTML = \`
+            <label>值</label>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="bool-value" \${checked ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+                <span class="switch-label" id="bool-label">\${checked ? '启用' : '禁用'}</span>
+            </div>
+        \`;
+
+        document.getElementById('bool-value').addEventListener('change', function(e) {
+            document.getElementById('bool-label').textContent = e.target.checked ? '启用' : '禁用';
+        });
+
+    } else if (type === 'number') {
+        // 数字滚轮
+        const min = item && item.min !== undefined ? item.min : 1;
+        const max = item && item.max !== undefined ? item.max : 100;
+        const currentValue = value || min;
+
+        container.innerHTML = \`
+            <label>值 (\${min}-\${max})</label>
+            <div class="number-picker">
+                <div class="number-controls">
+                    <button type="button" class="number-btn" onclick="adjustNumber(1)">▲</button>
+                    <button type="button" class="number-btn" onclick="adjustNumber(-1)">▼</button>
+                </div>
+                <div class="number-display" id="num-value">\${currentValue}</div>
+            </div>
+            <div class="number-range">
+                <input type="range" id="num-slider" min="\${min}" max="\${max}" value="\${currentValue}"
+                       oninput="updateNumberDisplay(this.value)">
+            </div>
+        \`;
+
+    } else if (type === 'select') {
+        // 标签选择
+        const options = item && item.options ? item.options : ['option1', 'option2', 'option3'];
+        const optionsInput = item ? '' : \`
+            <div class="form-group margin-bottom-15">
+                <label>可选项 (逗号分隔)</label>
+                <input type="text" id="select-options" placeholder="例如: debug,info,warn,error"
+                       value="\${options.join(',')}" onchange="updateTagOptions()">
+            </div>
+        \`; 
+
+        container.innerHTML = \`
+            \${optionsInput}
+            <label>选择值</label>
+            <div class="tag-selector" id="tag-selector">
+                \${options.map(opt => \`
+                    <div class="tag-option \${opt === value ? 'selected' : ''}"
+                         data-value="\${opt}" onclick="selectTag(this)">
+                        \${opt}
+                    </div>
+                \`).join('')}
+            </div>
+        \`;
+
+    } else if (type === 'multi-select') {
+        // 多选标签（可拖动排序）
+        const options = item && item.options ? item.options : ['option1', 'option2', 'option3', 'option4'];
+        // 确保value是字符串类型后再进行split操作
+        const stringValue = typeof value === 'string' ? value : String(value || '');
+        const selectedValues = stringValue ? stringValue.split(',').map(v => v.trim()).filter(v => v) : [];
+
+        const optionsInput = item ? '' : \`
+            <div class="form-group margin-bottom-15">
+                <label>可选项 (逗号分隔)</label>
+                <input type="text" id="multi-options" placeholder="例如: auth,payment,analytics"
+                       value="\${options.join(',')}" onchange="updateMultiOptions()">
+            </div>
+        \`; 
+
+        container.innerHTML = \`
+            \${optionsInput}
+            <label>已选择 (拖动调整顺序)</label>
+            <div class="multi-select-container">
+                <div class="selected-tags \${selectedValues.length === 0 ? 'empty' : ''}" id="selected-tags">
+                    \${selectedValues.map(val => \`
+                        <div class="selected-tag" draggable="true" data-value="\${val}">
+                            <span class="tag-text">\${val}</span>
+                            <button type="button" class="remove-btn" onclick="removeSelectedTag(this)">×</button>
+                        </div>
+                    \`).join('')}
+                </div>
+                <label>可选项 (点击添加)</label>
+                <div class="available-tags" id="available-tags">
+                    \${options.map(opt => {
+                        const isSelected = selectedValues.includes(opt);
+                        return \`
+                            <div class="available-tag \${isSelected ? 'disabled' : ''}"
+                                 data-value="\${opt}" onclick="addSelectedTag(this)">
+                                \${opt}
+                            </div>
+                        \`;
+                    }).join('')}
+                </div>
+            </div>
+        \`;
+
+        // 设置拖动事件
+        setupDragAndDrop();
+
+    } else {
+        // 文本输入
+        // 如果值太长，使用textarea而不是input
+        if (value && value.length > 50) {
+            // 计算行数，每行约50个字符
+            const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10); // 最少3行，最多10行
+            container.innerHTML = \`
+                <label>变量值 *</label>
+                <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
+            \`; 
+        } else {
+            container.innerHTML = \`
+                <label>变量值 *</label>
+                <input type="text" id="text-value" placeholder="例如: localhost" value="\${value}" required>
+            \`; 
+        }
+    }
+}
+
+// 调整数字
+function adjustNumber(delta) {
+    const display = document.getElementById('num-value');
+    const slider = document.getElementById('num-slider');
+    let value = parseInt(display.textContent) + delta;
+
+    value = Math.max(parseInt(slider.min), Math.min(parseInt(slider.max), value));
+
+    display.textContent = value;
+    slider.value = value;
+}
+
+// 更新数字显示
+function updateNumberDisplay(value) {
+    document.getElementById('num-value').textContent = value;
+}
+
+// 选择标签
+function selectTag(element) {
+    document.querySelectorAll('.tag-option').forEach(el => el.classList.remove('selected'));
+    element.classList.add('selected');
+}
+
+// 更新标签选项
+function updateTagOptions() {
+    const input = document.getElementById('select-options');
+    const options = input.value.split(',').map(s => s.trim()).filter(s => s);
+    const container = document.getElementById('tag-selector');
+
+    container.innerHTML = options.map(opt => \`
+        <div class="tag-option" data-value="\${opt}" onclick="selectTag(this)">
+            \${opt}
+        </div>
+    \`).join('');
+}
+
+// 添加已选标签
+function addSelectedTag(element) {
+    if (element.classList.contains('disabled')) return;
+
+    const value = element.dataset.value;
+    const container = document.getElementById('selected-tags');
+
+    // 移除empty类
+    container.classList.remove('empty');
+
+    // 创建新标签
+    const tag = document.createElement('div');
+    tag.className = 'selected-tag';
+    tag.draggable = true;
+    tag.dataset.value = value;
+    tag.innerHTML = \`
+        <span class="tag-text">\${value}</span>
+        <button type="button" class="remove-btn" onclick="removeSelectedTag(this)">×</button>
+    \`;
+
+    container.appendChild(tag);
+
+    // 禁用可选项
+    element.classList.add('disabled');
+
+    // 重新设置拖动事件
+    setupDragAndDrop();
+}
+
+// 移除已选标签
+function removeSelectedTag(button) {
+    const tag = button.parentElement;
+    const value = tag.dataset.value;
+    const container = document.getElementById('selected-tags');
+
+    // 移除标签
+    tag.remove();
+
+    // 如果没有标签了，添加empty类
+    if (container.children.length === 0) {
+        container.classList.add('empty');
+    }
+
+    // 启用对应的可选项
+    const availableTag = document.querySelector(\`.available-tag[data-value="\${value}"]\`);
+    if (availableTag) {
+        availableTag.classList.remove('disabled');
+    }
+}
+
+// 更新多选选项
+function updateMultiOptions() {
+    const input = document.getElementById('multi-options');
+    const options = input.value.split(',').map(s => s.trim()).filter(s => s);
+    const selectedValues = Array.from(document.querySelectorAll('.selected-tag'))
+        .map(el => el.dataset.value);
+
+    const container = document.getElementById('available-tags');
+    container.innerHTML = options.map(opt => {
+        const isSelected = selectedValues.includes(opt);
+        return \`
+            <div class="available-tag \${isSelected ? 'disabled' : ''}"
+                 data-value="\${opt}" onclick="addSelectedTag(this)">
+                \${opt}
+            </div>
+        \`;
+    }).join('');
+}
+
+// 设置拖放功能
+let draggedElement = null;
+
+function setupDragAndDrop() {
+    const container = document.getElementById('selected-tags');
+    const tags = container.querySelectorAll('.selected-tag');
+
+    tags.forEach(tag => {
+        tag.addEventListener('dragstart', handleDragStart);
+        tag.addEventListener('dragend', handleDragEnd);
+        tag.addEventListener('dragover', handleDragOver);
+        tag.addEventListener('drop', handleDrop);
+        tag.addEventListener('dragenter', handleDragEnter);
+        tag.addEventListener('dragleave', handleDragLeave);
+    });
+}
+
+function handleDragStart(e) {
+    draggedElement = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    document.querySelectorAll('.selected-tag').forEach(tag => {
+        tag.classList.remove('drag-over');
+    });
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    if (this !== draggedElement) {
+        this.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+
+    if (draggedElement !== this) {
+        const container = document.getElementById('selected-tags');
+        const allTags = Array.from(container.querySelectorAll('.selected-tag'));
+        const draggedIndex = allTags.indexOf(draggedElement);
+        const targetIndex = allTags.indexOf(this);
+
+        if (draggedIndex < targetIndex) {
+            this.parentNode.insertBefore(draggedElement, this.nextSibling);
+        } else {
+            this.parentNode.insertBefore(draggedElement, this);
+        }
+    }
+
+    this.classList.remove('drag-over');
+    return false;
+}
+
+// 显示加载遮罩
+function showLoading(text, detail) {
+    document.getElementById('loading-text').textContent = text;
+    document.getElementById('loading-detail').textContent = detail;
+    document.getElementById('loading-overlay').classList.add('active');
+    document.getElementById('progress-container').classList.add('active');
+    updateProgress(0);
+}
+
+// 隐藏加载遮罩
+function hideLoading() {
+    document.getElementById('loading-overlay').classList.remove('active');
+    setTimeout(() => {
+        document.getElementById('progress-container').classList.remove('active');
+        updateProgress(0);
+    }, 300);
+}
+
+// 更新加载文本
+function updateLoadingText(text, detail) {
+    document.getElementById('loading-text').textContent = text;
+    document.getElementById('loading-detail').textContent = detail;
+}
+
+// 更新进度条
+function updateProgress(percent) {
+    document.getElementById('progress-bar').style.width = percent + '%';
+}
+
+// 渲染环境变量列表
+function renderEnvList() {
+    const list = document.getElementById('env-list');
+    const items = envVariables[currentCategory] || [];
+
+    if (items.length === 0) {
+        list.innerHTML = '<p class="text-gray padding-20 text-center">暂无配置项</p>';
+        return;
+    }
+
+    list.innerHTML = items.map((item, index) => {
+        const typeLabel = item.type === 'boolean' ? '布尔' :
+                         item.type === 'number' ? '数字' :
+                         item.type === 'select' ? '单选' :
+                         item.type === 'multi-select' ? '多选' : '文本';
+        const badgeClass = item.type === 'multi-select' ? 'multi' : '';
+
+        return \`
+            <div class="env-item">
+                <div class="env-info">
+                    <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
+                    <div class="text-dark-gray">\${item.value}</div>
+                    <div class="text-gray font-size-12 margin-top-3">\${item.description || '无描述'}</div>
+                </div>
+                <div class="env-actions">
+                    <button class="btn btn-primary" onclick="editEnv(\${index})">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteEnv(\${index})">删除</button>
+                </div>
+            </div>
+        \`;
+    }).join('');
+}
+
+// 编辑环境变量
+function editEnv(index) {
+    const item = envVariables[currentCategory][index];
+    const editButton = event.target; // 获取当前点击的编辑按钮
+    
+    // 设置按钮为加载状态
+    const originalText = editButton.innerHTML;
+    editButton.innerHTML = '<span class="loading-spinner-small"></span>';
+    editButton.disabled = true;
+    
+    editingKey = index;
+    document.getElementById('modal-title').textContent = '编辑配置项';
+    document.getElementById('env-category').value = currentCategory;
+    document.getElementById('env-key').value = item.key;
+    document.getElementById('env-description').value = item.description || '';
+    document.getElementById('value-type').value = item.type || 'text';
+
+    // 设置字段为只读（编辑模式下）
+    document.getElementById('env-category').disabled = true;
+    document.getElementById('env-key').readOnly = true;
+    document.getElementById('value-type').disabled = true;
+    document.getElementById('env-description').readOnly = true;
+
+    // 渲染对应的值输入控件
+    renderValueInput(item);
+
+    document.getElementById('env-modal').classList.add('active');
+    
+    // 恢复按钮状态（在实际场景中，这会在编辑完成后发生，比如在保存后或取消后）
+    // 为了演示，这里立即恢复按钮状态，实际使用中应该在适当的地方恢复按钮状态
+    editButton.innerHTML = originalText;
+    editButton.disabled = false;
+}
+
+// 删除环境变量
+function deleteEnv(index) {
+    customConfirm('确定要删除这个配置项吗?', '删除确认').then(confirmed => {
+        if (confirmed) {
+            const item = envVariables[currentCategory][index];
+            const key = item.key;
+            const deleteButton = event.target; // 获取当前点击的删除按钮
+
+            // 设置按钮为加载状态
+            const originalText = deleteButton.innerHTML;
+            deleteButton.innerHTML = '<span class="loading-spinner-small"></span>';
+            deleteButton.disabled = true;
+
+            // 调用API删除环境变量
+            fetch(buildApiUrl('/api/env/del'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ key })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // 从本地数据中删除
+                    envVariables[currentCategory].splice(index, 1);
+                    renderEnvList();
+                    renderPreview();
+                    addLog(\`删除配置项: \${key}\`, 'warn');
+                } else {
+                    addLog(\`删除配置项失败: \${result.message}\`, 'error');
+                    addLog(\`❌ 删除配置项失败: \${result.message}\`, 'error');
+                }
+            })
+            .catch(error => {
+                addLog(\`删除配置项失败: \${error.message}\`, 'error');
+                addLog(\`❌ 删除配置项失败: \${error.message}\`, 'error');
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                deleteButton.innerHTML = originalText;
+                deleteButton.disabled = false;
+            });
+        }
+    });
+}
 `;
