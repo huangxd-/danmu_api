@@ -290,9 +290,9 @@ async function checkDeployPlatformConfig() {
         
         // 对于其他部署平台，收集所有缺失的环境变量
         const missingVars = [];
-        const deployPlatformProject = config.envs.deployPlatformProject;
-        const deployPlatformToken = config.envs.deployPlatformToken;
-        const deployPlatformAccount = config.envs.deployPlatformAccount;
+        const deployPlatformProject = config.originalEnvVars.deployPlatformProject;
+        const deployPlatformToken = config.originalEnvVars.deployPlatformToken;
+        const deployPlatformAccount = config.originalEnvVars.deployPlatformAccount;
         
         if (!deployPlatformProject || deployPlatformProject.trim() === '') {
             missingVars.push('DEPLOY_PLATFROM_PROJECT');
