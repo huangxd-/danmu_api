@@ -129,7 +129,10 @@ export const HTML_TEMPLATE = /* html */ `
             <!-- 系统配置 -->
             <div class="section" id="env-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                    <h2 style="margin: 0;">环境变量配置</h2>
+                    <div>
+                        <h2 style="margin: 0;">环境变量配置</h2>
+                        <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">vercel/netlify/edgeone平台修改变量后需要重新部署</p>
+                    </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
                         🗑️ 清理缓存
