@@ -114,6 +114,7 @@ let currentVersion = '';
 let latestVersion = '';
 let currentToken = 'globals.currentToken';
 let currentAdminToken = ''; // admin token，用于系统管理
+let originalToken = '';
 
 // 构建带token的API请求路径
 function buildApiUrl(path, isSystemPath = false) {
@@ -133,6 +134,8 @@ function loadEnvVariables() {
         .then(config => {
             // 从配置中获取admin token
             currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+
+            originalToken = config.originalEnvVars?.TOKEN || '';
             
             // 使用从API获取的原始环境变量，用于系统设置
             const originalEnvVars = config.originalEnvVars || {};
@@ -256,7 +259,7 @@ function switchSection(section) {
         const urlToken = pathParts.length > 0 ? pathParts[0] : '';
         
         // 检查URL中是否有token
-        if (!urlToken) {
+        if (!urlToken && originalToken !== "87654321") {
             // 提示用户需要在URL中配置TOKEN
             setTimeout(() => {
                 // 获取当前页面的协议、主机和端口
