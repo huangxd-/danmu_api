@@ -55,9 +55,13 @@ export function handleConfig(hasPermission = false) {
   
   // 准备原始环境变量，无权限时也需要脱敏
   let originalEnvVars = { ...globals.originalEnvVars };
-  if (!hasPermission) {
+  if (!hasPermission || globals.currentToken !== globals.adminToken) {
     Object.keys(originalEnvVars).forEach(key => {
-      if (key in previewEnvVars && /^\*+$/.test(previewEnvVars[key])) originalEnvVars[key] = previewEnvVars[key];
+      if (globals.currentToken !== globals.token || key !== "TOKEN") {
+        if (key in previewEnvVars && /^\*+$/.test(previewEnvVars[key])) {
+          originalEnvVars[key] = previewEnvVars[key];
+        }
+      }
     });
   }
   

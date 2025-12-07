@@ -118,7 +118,7 @@ let currentAdminToken = ''; // admin token，用于系统管理
 // 构建带token的API请求路径
 function buildApiUrl(path, isSystemPath = false) {
     // 如果是系统管理路径且有admin token，则使用admin token
-    if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '') {
+    if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '' && currentAdminToken.trim() !== '*'.repeat(currentAdminToken.length)) {
         return '/' + currentAdminToken + path;
     }
     // 否则使用普通token
@@ -128,7 +128,7 @@ function buildApiUrl(path, isSystemPath = false) {
 // 从API加载真实环境变量数据
 function loadEnvVariables() {
     // 从API获取真实配置数据
-    fetch(buildApiUrl('/api/config'))
+    fetch(buildApiUrl('/api/config', true))
         .then(response => response.json())
         .then(config => {
             // 从配置中获取admin token
@@ -174,7 +174,7 @@ function loadEnvVariables() {
 
 // 更新API端点信息
 function updateApiEndpoint() {
-  return fetch(buildApiUrl('/api/config'))
+  return fetch(buildApiUrl('/api/config', true))
     .then(response => response.json())
     .then(config => {
       // 获取当前页面的协议、主机和端口
@@ -187,22 +187,21 @@ function updateApiEndpoint() {
       const urlPath = window.location.pathname;
       const pathParts = urlPath.split('/').filter(part => part !== '');
       const urlToken = pathParts.length > 0 ? pathParts[0] : '';
+      let apiToken = '********';
       
       // 判断是否使用默认token
       if (token === '87654321') {
         // 如果是默认token，则显示真实token
-        currentToken = token;
+        apiToken = token;
       } else {
         // 如果不是默认token，则检查URL中的token是否匹配，匹配则显示真实token，否则显示星号
         if (urlToken === token || (adminToken !== "" && urlToken === adminToken)) {
-          currentToken = token; // 更新全局token变量
-        } else {
-          currentToken = '********'
+          apiToken = token; // 更新全局token变量
         }
       }
       
       // 构造API端点URL
-      const apiEndpoint = protocol + '//' + host + '/' + currentToken;
+      const apiEndpoint = protocol + '//' + host + '/' + apiToken;
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
@@ -552,7 +551,7 @@ async function checkDeployPlatformConfig() {
     }
     
     try {
-        const response = await fetch(buildApiUrl('/api/config'));
+        const response = await fetch(buildApiUrl('/api/config', true));
         if (!response.ok) {
             throw new Error('HTTP error! status: ' + response.status);
         }
@@ -600,7 +599,7 @@ async function checkDeployPlatformConfig() {
 
 // 获取并设置配置信息
 async function fetchAndSetConfig() {
-    const config = await fetch(buildApiUrl('/api/config')).then(response => response.json());
+    const config = await fetch(buildApiUrl('/api/config', true)).then(response => response.json());
     const hasAdminToken = config.hasAdminToken;
     currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
     return config;
