@@ -31,30 +31,17 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
 
-  // 如果 token 是默认值 87654321
-  if (globals.token === "87654321") {
-    // 检查第一段是否是已知的 API 路径（不是 token）
-    const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
+  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
 
-    if (parts.length > 0) {
-      // 如果第一段是正确的默认 token
-      if (parts[0] === "87654321" || parts[0] === globals.adminToken) {
-        // 移除 token，继续处理
-        globals.currentToken = parts[0];
-      } else if (knownApiPaths.includes(parts[0])) {
-        globals.currentToken = "87654321";
-      }
-    } else {
-      globals.currentToken = "";
-    }
-  } else {
-    // token 不是默认值，必须严格校验
-    if (parts.length > 0 && (parts[0] === globals.token || parts[0] === globals.adminToken)) {
-      globals.currentToken = parts[0];
-    } else {
-      globals.currentToken = "";
-    }
-  }
+  const firstPart = parts[0] || "";
+  const isDefaultToken = globals.token === "87654321";
+  const isValidToken = firstPart === globals.token || firstPart === globals.adminToken;
+
+  globals.currentToken = 
+    isValidToken ? firstPart :
+    isDefaultToken && (firstPart === "87654321" || knownApiPaths.includes(firstPart)) ? 
+      (firstPart === "87654321" ? firstPart : "87654321") :
+    "";
 
   if (deployPlatform === "node" && globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getLocalCaches();
@@ -81,9 +68,6 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // 如果 token 是默认值 87654321
   if (globals.token === "87654321") {
-    // 检查第一段是否是已知的 API 路径（不是 token）
-    const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
-
     if (parts.length > 0) {
       // 如果第一段是正确的默认 token
       if (parts[0] === "87654321" || parts[0] === globals.adminToken) {
