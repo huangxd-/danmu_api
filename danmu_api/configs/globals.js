@@ -37,6 +37,7 @@ export const Globals = {
   searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
   deployPlatform: '', // 部署平台配置
+  currentToken: '', // 标识当前可用token
 
   /**
    * 初始化全局变量，加载环境变量依赖

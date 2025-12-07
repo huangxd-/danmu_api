@@ -78,7 +78,7 @@ function confirmDeploySystem() {
         addLog('===== 开始系统部署 =====', 'info');
 
         // 获取当前部署平台
-        fetch('/api/config')
+        fetch(buildApiUrl('/api/config'))
             .then(response => response.json())
             .then(config => {
                 const deployPlatform = config.envs.deployPlatform || 'node';
@@ -275,7 +275,7 @@ async function checkDeployPlatformConfig() {
     }
     
     try {
-        const response = await fetch('/api/config');
+        const response = await fetch(buildApiUrl('/api/config'));
         if (!response.ok) {
             throw new Error('HTTP error! status: ' + response.status);
         }
@@ -323,7 +323,7 @@ async function checkDeployPlatformConfig() {
 
 // 获取并设置配置信息
 async function fetchAndSetConfig() {
-    const config = await fetch('/api/config').then(response => response.json());
+    const config = await fetch(buildApiUrl('/api/config')).then(response => response.json());
     const hasAdminToken = config.hasAdminToken;
     currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
     return config;

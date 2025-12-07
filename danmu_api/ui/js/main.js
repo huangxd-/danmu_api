@@ -112,7 +112,7 @@ let logs = []; // 保留本地日志数组，用于UI显示
 // 版本信息
 let currentVersion = '';
 let latestVersion = '';
-let currentToken = '87654321'; // 默认token
+let currentToken = 'globals.currentToken';
 let currentAdminToken = ''; // admin token，用于系统管理
 
 // 构建带token的API请求路径
@@ -122,13 +122,13 @@ function buildApiUrl(path, isSystemPath = false) {
         return '/' + currentAdminToken + path;
     }
     // 否则使用普通token
-    return '/' + currentToken + path;
+    return (currentToken ? '/' + currentToken : "") + path;
 }
 
 // 从API加载真实环境变量数据
 function loadEnvVariables() {
     // 从API获取真实配置数据
-    fetch('/api/config')
+    fetch(buildApiUrl('/api/config'))
         .then(response => response.json())
         .then(config => {
             // 从配置中获取admin token
@@ -174,7 +174,7 @@ function loadEnvVariables() {
 
 // 更新API端点信息
 function updateApiEndpoint() {
-  return fetch('/api/config')
+  return fetch(buildApiUrl('/api/config'))
     .then(response => response.json())
     .then(config => {
       // 获取当前页面的协议、主机和端口
@@ -552,7 +552,7 @@ async function checkDeployPlatformConfig() {
     }
     
     try {
-        const response = await fetch('/api/config');
+        const response = await fetch(buildApiUrl('/api/config'));
         if (!response.ok) {
             throw new Error('HTTP error! status: ' + response.status);
         }
@@ -600,7 +600,7 @@ async function checkDeployPlatformConfig() {
 
 // 获取并设置配置信息
 async function fetchAndSetConfig() {
-    const config = await fetch('/api/config').then(response => response.json());
+    const config = await fetch(buildApiUrl('/api/config')).then(response => response.json());
     const hasAdminToken = config.hasAdminToken;
     currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
     return config;

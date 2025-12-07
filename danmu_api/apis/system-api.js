@@ -5,7 +5,7 @@ import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
 
 export function handleUI() {
-  return new Response(HTML_TEMPLATE, {
+  return new Response(HTML_TEMPLATE.replace("globals.currentToken", globals.currentToken), {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Access-Control-Allow-Origin': '*'
@@ -13,7 +13,7 @@ export function handleUI() {
   });
 }
 
-export function handleConfig() {
+export function handleConfig(hasPermission = false) {
   // 获取环境变量配置
   const envVarConfig = globals.envVarConfig;
   
@@ -53,13 +53,21 @@ export function handleConfig() {
   const adminToken = globals.adminToken || '';
   const hasAdminToken = adminToken.trim() !== '';
   
+  // 准备原始环境变量，无权限时也需要脱敏
+  let originalEnvVars = { ...globals.originalEnvVars };
+  if (!hasPermission) {
+    Object.keys(originalEnvVars).forEach(key => {
+      if (key in previewEnvVars && /^\*+$/.test(previewEnvVars[key])) originalEnvVars[key] = previewEnvVars[key];
+    });
+  }
+  
   return jsonResponse({
     message: "Welcome to the LogVar Danmu API server",
     version: globals.VERSION,
     envs: previewEnvVars, // 配置预览使用
     categorizedEnvVars: categorizedVars,
     envVarConfig: envVarConfig,
-    originalEnvVars: globals.originalEnvVars, // 系统设置使用原始环境变量
+    originalEnvVars: originalEnvVars, // 系统设置使用原始环境变量（已脱敏）
     hasAdminToken: hasAdminToken, // 添加admin token配置状态
     repository: "https://github.com/huangxd-/danmu_api.git",
     description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
