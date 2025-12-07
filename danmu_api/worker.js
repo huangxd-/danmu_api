@@ -326,17 +326,24 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   return jsonResponse({ message: "Not found" }, 404);
 }
 
-
+function isRunningOnVercel() {
+  if (typeof process === 'undefined' || !process.env) {
+    return false;
+  }
+  return !!(
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV ||
+    process.env.VERCEL_URL
+  );
+}
 
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
-    const isVercel = typeof process !== 'undefined' && process.env.VERCEL;
-
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    return handleRequest(request, env, isVercel ? "vercel" : "cloudflare", clientIp);
+    return handleRequest(request, env, isRunningOnVercel() ? "vercel" : "cloudflare", clientIp);
   },
 };
 
