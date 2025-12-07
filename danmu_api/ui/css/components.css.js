@@ -215,6 +215,8 @@ export const componentsCssContent = /* css */ `
     padding: 8px;
     border-radius: 4px;
     font-family: monospace;
+    color: #333; /* 更黑的字体颜色 */
+    font-weight: bold; /* 加粗显示 */
 }
 
 /* 日志样式 */
@@ -608,7 +610,7 @@ export const componentsCssContent = /* css */ `
 }
 
 .text-gray {
-    color: #99;
+    color: #bbb; /* 更淡的字体颜色 */
 }
 
 .text-red {
@@ -616,7 +618,8 @@ export const componentsCssContent = /* css */ `
 }
 
 .text-dark-gray {
-    color: #666;
+    color: #333; /* 更黑的字体颜色 */
+    font-weight: bold; /* 加粗显示 */
 }
 
 .text-purple {
