@@ -367,10 +367,10 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         itemData = { key, value, description, type };
     }
 
-    // 调用API更新环境变量
+    // 调用API更新环境变量 - 先尝试set接口，失败则调用add接口
     try {
-        const apiUrl = editingKey !== null ? buildApiUrl('/api/env/set') : buildApiUrl('/api/env/add');
-        const response = await fetch(apiUrl, {
+        // 首先尝试使用set接口更新
+        let response = await fetch(buildApiUrl('/api/env/set'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -378,7 +378,20 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             body: JSON.stringify({ key, value })
         });
 
-        const result = await response.json();
+        let result = await response.json();
+
+        if (!result.success) {
+            // 如果set接口失败，尝试使用add接口
+            response = await fetch(buildApiUrl('/api/env/add'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ key, value })
+            });
+
+            result = await response.json();
+        }
 
         if (result.success) {
             // 更新本地数据
