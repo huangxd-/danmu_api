@@ -130,6 +130,14 @@ CONVERT_COLOR: default
 # 可选值：true, false
 DANMU_SIMPLIFIED: true
 
+# ==================== 弹幕推送配置 ====================
+
+# 弹幕推送地址
+# 默认值：空
+# 说明：如果设置了此值，在弹幕推送页面的推送地址输入框里会默认填上该地址
+# 示例：http://127.0.0.1:9978/action?do=refresh&type=danmaku&path=
+DANMU_PUSH_URL: "http://127.0.0.1:9978/action?do=refresh&type=danmaku&path="
+
 # ==================== 弹幕输出格式配置 ====================
 
 # 弹幕输出格式（全局默认格式）

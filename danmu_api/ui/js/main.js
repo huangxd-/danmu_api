@@ -337,7 +337,10 @@ async function init() {
         await updateApiEndpoint(); // 等待API端点更新完成
         getDockerVersion();
         // 从API获取配置信息，包括检查是否有admin token
-        await fetchAndSetConfig();
+        const config = await fetchAndSetConfig();
+
+        // 设置默认推送地址
+        setDefaultPushUrl(config);
 
         // 检查并处理管理员令牌
         checkAndHandleAdminToken();
