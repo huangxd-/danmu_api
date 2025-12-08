@@ -215,6 +215,9 @@ LogVar 弹幕 API 服务器
    使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
    > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
 
+### 一键安装脚本
+`bash <(curl -fsSL https://raw.githubusercontent.com/dukiii1928/danmu-install/refs/heads/main/install.sh)`
+
 ## 部署到 Vercel 【推荐】
 
 ### 一键部署
