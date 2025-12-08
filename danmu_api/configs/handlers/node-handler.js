@@ -65,40 +65,58 @@ export class NodeHandler extends BaseHandler {
       // 更新 config.yaml 文件
       if (yamlExists) {
         const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-        let yamlConfig = yaml.load(yamlContent) || {};
+        const lines = yamlContent.split('\n');
+        let keyFound = false;
 
-        // 将扁平的环境变量键转换为嵌套对象路径
-        const keys = key.toLowerCase().split('_');
-        let current = yamlConfig;
-
-        // 遍历到倒数第二层
-        for (let i = 0; i < keys.length - 1; i++) {
-          const k = keys[i];
-          if (!current[k] || typeof current[k] !== 'object') {
-            current[k] = {};
+        // 查找并更新现有键
+        for (let i = 0; i < lines.length; i++) {
+          const trimmed = lines[i].trim();
+          // 跳过空行和注释行
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          
+          // 匹配键值对
+          const match = trimmed.match(/^([^:]+):/);
+          if (match && match[1].trim() === key) {
+            // 根据值的类型格式化
+            let formattedValue = value;
+            if (!isNaN(value) && value !== '') {
+              formattedValue = Number(value);
+            } else if (value === 'true') {
+              formattedValue = true;
+            } else if (value === 'false') {
+              formattedValue = false;
+            } else {
+              // 字符串值需要引号
+              formattedValue = `"${value}"`;
+            }
+            
+            lines[i] = `${key}: ${formattedValue}`;
+            keyFound = true;
+            break;
           }
-          current = current[k];
         }
 
-        // 设置最后一层的值,尝试智能转换类型
-        const lastKey = keys[keys.length - 1];
-        let parsedValue = value;
-
-        // 尝试转换为数字
-        if (!isNaN(value) && value !== '') {
-          parsedValue = Number(value);
+        // 如果键不存在,添加到文件末尾
+        if (!keyFound) {
+          if (lines[lines.length - 1] !== '') {
+            lines.push('');
+          }
+          // 根据值的类型格式化
+          let formattedValue = value;
+          if (!isNaN(value) && value !== '') {
+            formattedValue = Number(value);
+          } else if (value === 'true') {
+            formattedValue = true;
+          } else if (value === 'false') {
+            formattedValue = false;
+          } else {
+            // 字符串值需要引号
+            formattedValue = `"${value}"`;
+          }
+          lines.push(`${key}: ${formattedValue}`);
         }
-        // 尝试转换为布尔值
-        else if (value === 'true') {
-          parsedValue = true;
-        } else if (value === 'false') {
-          parsedValue = false;
-        }
 
-        current[lastKey] = parsedValue;
-
-        // 写回文件
-        fs.writeFileSync(yamlPath, yaml.dump(yamlConfig), 'utf8');
+        fs.writeFileSync(yamlPath, lines.join('\n'), 'utf8');
         log("info", `[server] Updated ${key} in config.yaml`);
         updated = true;
       }
@@ -170,26 +188,19 @@ export class NodeHandler extends BaseHandler {
       // 从 config.yaml 文件删除
       if (fs.existsSync(yamlPath)) {
         const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-        let yamlConfig = yaml.load(yamlContent) || {};
+        const lines = yamlContent.split('\n');
+        const filteredLines = lines.filter(line => {
+          const trimmed = line.trim();
+          // 保留空行和注释行
+          if (!trimmed || trimmed.startsWith('#')) return true;
+          // 检查是否匹配要删除的键
+          const match = trimmed.match(/^([^:]+):/);
+          return !(match && match[1].trim() === key);
+        });
 
-        const keys = key.toLowerCase().split('_');
-        let current = yamlConfig;
-
-        // 遍历到倒数第二层
-        for (let i = 0; i < keys.length - 1; i++) {
-          const k = keys[i];
-          if (!current[k]) return;
-          current = current[k];
-        }
-
-        // 删除最后一层的键
-        const lastKey = keys[keys.length - 1];
-        if (current && lastKey in current) {
-          delete current[lastKey];
-          fs.writeFileSync(yamlPath, yaml.dump(yamlConfig), 'utf8');
-          log("info", `[server] Deleted ${key} from config.yaml`);
-          deleted = true;
-        }
+        fs.writeFileSync(yamlPath, filteredLines.join('\n'), 'utf8');
+        log("info", `[server] Deleted ${key} from config.yaml`);
+        deleted = true;
       }
 
       if (deleted) {
