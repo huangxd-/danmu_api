@@ -7,8 +7,8 @@ const dotenv = require('dotenv');
 const yaml = require('js-yaml');
 
 // 配置文件路径在项目根目录（server.js 的上一级目录）
-const envPath = path.join(__dirname, '..', '.env');
-const yamlPath = path.join(__dirname, '..', 'config.yaml');
+const envPath = path.join(__dirname, '..', 'config', '.env');
+const yamlPath = path.join(__dirname, '..', 'config', 'config.yaml');
 
 /**
  * 从 YAML 文件加载配置

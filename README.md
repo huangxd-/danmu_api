@@ -102,8 +102,8 @@ LogVar 弹幕 API 服务器
 3. **配置应用**（可选）：
 
    本项目支持三种配置方式，优先级从高到低：
-   1. **.env 文件**（最高优先级）- 复制 `.env.example` 为 `.env` 并修改
-   2. **config.yaml 文件**（中等优先级）- 复制 `config.yaml.example` 为 `config.yaml` 并修改
+   1. **.env 文件**（最高优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
+   2. **config.yaml 文件**（中等优先级）- 复制 `config/config.yaml.example` 为 `config/config.yaml` 并修改
    3. **系统环境变量**（最低优先级）
 
    如果某个系统无法编辑 `.env` 文件，可以使用 `config.yaml` 文件替代。
@@ -114,7 +114,7 @@ LogVar 弹幕 API 服务器
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
 
-   **热更新支持**：修改 `.env` 或 `config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+   **热更新支持**：修改 `config/.env` 或 `config/config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
 
    或者使用下面的命令
    ```bash
@@ -173,9 +173,9 @@ LogVar 弹幕 API 服务器
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
-   **热更新支持**：如需支持环境变量热更新（修改 `.env` 或 `config.yaml` 文件后无需重启容器），请使用 Volume 挂载：
+   **热更新支持**：如需支持环境变量热更新（修改 `config/.env` 或 `config/config.yaml` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env -v $(pwd)/config.yaml:/app/config.yaml --env-file .env logvar/danmu-api:latest
+   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/config:/app/config --env-file .env logvar/danmu-api:latest
    ```
 
    或使用 docker compose 部署（**推荐，支持环境变量热更新**）：
@@ -185,10 +185,9 @@ LogVar 弹幕 API 服务器
        image: logvar/danmu-api:latest
        ports:
          - "9321:9321"
-       # 热更新支持：挂载 .env 和 config.yaml 文件，修改后容器会自动重新加载配置（无需重启容器）
+       # 热更新支持：挂载 config/.env 和 config/config.yaml 文件，修改后容器会自动重新加载配置（无需重启容器）
        volumes:
-         - ./.env:/app/.env
-         - ./config.yaml:/app/config.yaml
+         - ./config:/app/config    # config目录下需要创建.env或config.yaml
          - ./.chche:/app/.cache    # 配置.chche目录，会将缓存实时保存在本地文件
        restart: unless-stopped
    ```
@@ -444,9 +443,10 @@ danmu_api/
 │   └── workflows/
 │       ├── docker-image.yml    # Docker镜像构建和推送工作流
 │       └── sync_fork.yml       # Fork同步上游仓库工作流（vercel自动同步配置文件）
-├── .env.example                # .env 配置文件示例
+├── config/
+│   ├── .env.example            # .env 配置文件示例
+│   └── config.yaml.example     # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── .gitignore
-├── config.yaml.example         # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── Dockerfile
 ├── edgeone.json                # edgeone pages 配置文件
 ├── LICENSE
@@ -532,8 +532,8 @@ danmu_api/
 ## 注意事项
 
 ### 热更新相关
-- **本地运行**：修改 `.env` 或 `config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
-- **Docker 部署**：需要使用 Volume 挂载 `.env` 和/或 `config.yaml` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改配置文件容器会自动重新加载配置。
+- **本地运行**：修改 `config/.env` 或 `config/config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+- **Docker 部署**：需要使用 Volume 挂载 `config/.env` 和/或 `config/config.yaml` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改配置文件容器会自动重新加载配置。
 - **Vercel/Netlify/Cloudflare**：需要在平台的环境变量设置中修改，然后重新部署才能生效。
 - **配置优先级**：系统环境变量 > .env 文件 > config.yaml 文件
 
