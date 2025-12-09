@@ -413,7 +413,7 @@ export default class BilibiliSource extends BaseSource {
           const links = eps.map((ep, index) => ({
             name: `${index + 1}`,
             url: ep.link,
-            title: `【bilibili】 ${ep.title}`
+            title: `【bilibili1】 ${ep.title}`
           }));
 
           const numericAnimeId = convertToAsciiSum(anime.mediaId);

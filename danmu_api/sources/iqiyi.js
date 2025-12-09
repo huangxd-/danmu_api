@@ -650,7 +650,7 @@ export default class IqiyiSource extends BaseSource {
             links.push({
               "name": ep.order.toString(),
               "url": fullUrl,
-              "title": `【iqiyi】 ${ep.title}`
+              "title": `【qiyi】 ${ep.title}`
             });
           }
 
