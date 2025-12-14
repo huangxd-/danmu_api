@@ -106,7 +106,18 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET iqiyi danmu', async () => {
-  //   const res = await iqiyiSource.getComments("https://www.iqiyi.com/v_1ftv9n1m3bg.html");
+  //   const res = await iqiyiSource.getComments("https://www.iqiyi.com/v_1ftv9n1m3bg.html", "qiyi");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET iqiyi danmu segments', async () => {
+  //   const res = await iqiyiSource.getComments("https://www.iqiyi.com/v_1ftv9n1m3bg.html", "qiyi", true);
+  //   assert(res.type === "qiyi", `Expected res.type === "qiyi", but got ${res.type === "qiyi"}`);
+  //   assert(res.segmentList.length > 2, `Expected res.segmentList.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET iqiyi segment danmu', async () => {
+  //   const res = await iqiyiSource.getSegmentComments("https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000", "qiyi");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
