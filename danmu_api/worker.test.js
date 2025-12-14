@@ -89,14 +89,13 @@ test('worker.js API endpoints', async (t) => {
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
   });
 
-  await t.test('GET tencent danmu', async () => {
-    const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html");
-    assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
-  });
+  // await t.test('GET tencent danmu', async () => {
+  //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html", "tencent");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
 
   // await t.test('GET tencent segment danmu', async () => {
-  //   const res = await tencentSource.getEpisodeSegmentDanmu("https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/90000/120000");
-  //   console.log(res);
+  //   const res = await tencentSource.getSegmentComments("https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000", "tencent");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 

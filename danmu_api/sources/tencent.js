@@ -460,7 +460,13 @@ export default class TencentSource extends BaseSource {
     const promises = [];
     for (const segment of segmentList) {
       promises.push(
-        this.getEpisodeSegmentDanmu(segment.url, null)
+        httpGet(segment.url, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          retries: 1,
+        })
       );
     }
 
@@ -549,16 +555,25 @@ export default class TencentSource extends BaseSource {
 
   async getEpisodeSegmentDanmu(url) {
     try {
-      return await httpGet(url, {
+      const response = await httpGet(url, {
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         },
         retries: 1,
       });
+
+      // 处理响应数据并返回 contents 格式的弹幕
+      let contents = [];
+      if (response && response.data) {
+        const parsedData = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+        contents.push(...parsedData.barrage_list);
+      }
+
+      return contents;
     } catch (error) {
       log("error", "请求分片弹幕失败:", error);
-      throw error;
+      return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }
 
