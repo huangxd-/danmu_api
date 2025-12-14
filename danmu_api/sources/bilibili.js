@@ -6,6 +6,7 @@ import { parseDanmakuBase64, md5, convertToAsciiSum } from "../utils/codec-util.
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取b站弹幕
@@ -448,15 +449,14 @@ export default class BilibiliSource extends BaseSource {
     return tmpAnimes;
   }
 
-  async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求B站弹幕...", id);
+  // 提取视频信息的公共方法
+  async _extractVideoInfo(id) {
+    log("info", "提取B站视频信息...", id);
 
-    // 弹幕和视频信息 API 基础地址
     const api_video_info = "https://api.bilibili.com/x/web-interface/view";
     const api_epid_cid = "https://api.bilibili.com/pgc/view/web/season";
 
     // 解析 URL 获取必要参数
-    // 手动解析 URL（没有 URL 对象的情况下）
     const regex = /^(https?:\/\/[^\/]+)(\/[^?#]*)/;
     const match = id.match(regex);
 
@@ -467,10 +467,10 @@ export default class BilibiliSource extends BaseSource {
       log("info", path);
     } else {
       log("error", 'Invalid URL');
-      return [];
+      return null;
     }
 
-    let title, danmakuUrl, cid, aid, duration;
+    let cid, aid, duration, title;
 
     // 普通投稿视频
     if (id.includes("video/")) {
@@ -509,15 +509,14 @@ export default class BilibiliSource extends BaseSource {
         const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
         if (data.code !== 0) {
           log("error", "获取普通投稿视频信息失败:", data.message);
-          return [];
+          return null;
         }
 
         duration = data.data.duration;
         cid = data.data.pages[p - 1].cid;
-        danmakuUrl = `https://comment.bilibili.com/${cid}.xml`;
       } catch (error) {
         log("error", "请求普通投稿视频信息失败:", error);
-        return [];
+        return null;
       }
 
     // 番剧 - ep格式
@@ -536,7 +535,7 @@ export default class BilibiliSource extends BaseSource {
         const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
         if (data.code !== 0) {
           log("error", "获取番剧视频信息失败:", data.message);
-          return [];
+          return null;
         }
 
         for (const episode of data.result.episodes) {
@@ -544,23 +543,22 @@ export default class BilibiliSource extends BaseSource {
             title = episode.share_copy;
             cid = episode.cid;
             duration = episode.duration / 1000;
-            danmakuUrl = `https://comment.bilibili.com/${cid}.xml`;
             break;
           }
         }
 
-        if (!danmakuUrl) {
+        if (!cid || !duration) {
           log("error", "未找到匹配的番剧集信息");
-          return [];
+          return null;
         }
 
       } catch (error) {
         log("error", "请求番剧视频信息失败:", error);
-        return [];
+        return null;
       }
 
     // 番剧 - ss格式
-    } else if (id.includes("bangumi/") && inputUrl.includes("ss")) {
+    } else if (id.includes("bangumi/") && id.includes("ss")) {
       try {
         const ssid = path.slice(-1)[0].slice(2).split('?')[0]; // 移除可能的查询参数
         const ssInfoUrl = `${api_epid_cid}?season_id=${ssid}`;
@@ -577,34 +575,92 @@ export default class BilibiliSource extends BaseSource {
         const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
         if (data.code !== 0) {
           log("error", "获取番剧视频信息失败:", data.message);
-          return [];
+          return null;
         }
 
         // 检查是否有episodes数据
         if (!data.result.episodes || data.result.episodes.length === 0) {
           log("error", "番剧没有可用的集数");
-          return [];
+          return null;
         }
 
         // 默认获取第一集的弹幕
         const firstEpisode = data.result.episodes[0];
-        title = firstEpisode.share_copy;
         cid = firstEpisode.cid;
         duration = firstEpisode.duration / 1000;
-        danmakuUrl = `https://comment.bilibili.com/${cid}.xml`;
+        title = firstEpisode.share_copy;
 
         log("info", `使用第一集: ${title}, cid=${cid}`);
 
       } catch (error) {
         log("error", "请求番剧视频信息失败:", error);
-        return [];
+        return null;
       }
 
     } else {
       log("error", "不支持的B站视频网址，仅支持普通视频(av,bv)、剧集视频(ep,ss)");
+      return null;
+    }
+
+    log("info", `提取视频信息完成: cid=${cid}, aid=${aid}, duration=${duration}`);
+
+    return { cid, aid, duration, title };
+  }
+
+  async getEpisodeDanmu(id) {
+    log("info", "开始从本地请求B站弹幕...", id);
+
+    // 获取弹幕分段数据
+    const segmentResult = await this.getEpisodeDanmuSegments(id);
+    if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
       return [];
     }
-    log("info", danmakuUrl, cid, aid, duration);
+
+    const segmentList = segmentResult.segmentList;
+    log("info", `弹幕分段数量: ${segmentList.length}`);
+
+    // 创建请求Promise数组
+    const promises = [];
+    for (const segment of segmentList) {
+      promises.push(
+        this.getEpisodeSegmentDanmu(segment.url)
+      );
+    }
+
+    // 解析弹幕数据
+    let contents = [];
+    try {
+      const results = await Promise.allSettled(promises);
+      const datas = results
+        .filter(result => result.status === "fulfilled")
+        .map(result => result.value)
+        .filter(data => data !== null); // 过滤掉null值
+
+      datas.forEach(data => {
+        contents.push(...data);
+      });
+    } catch (error) {
+      log("error", "解析弹幕数据失败:", error);
+      return [];
+    }
+
+    return contents;
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取B站弹幕分段列表...", id);
+
+    // 提取视频信息
+    const videoInfo = await this._extractVideoInfo(id);
+    if (!videoInfo) {
+      return new SegmentListResponse({
+        "type": "bilibili1",
+        "segmentList": []
+      });
+    }
+
+    const { cid, aid, duration } = videoInfo;
+    log("info", `视频信息: cid=${cid}, aid=${aid}, duration=${duration}`);
 
     // 计算视频的分片数量
     const maxLen = Math.floor(duration / 360) + 1;
@@ -620,42 +676,39 @@ export default class BilibiliSource extends BaseSource {
       }
 
       segmentList.push({
-        segment_start: i * 360 * 1000,
-        segment_end: (i + 1) * 360 * 1000,
-        url: danmakuUrl,
+        "segment_start": i * 360 * 1000,
+        "segment_end": (i + 1) * 360 * 1000,
+        "url": danmakuUrl
       });
     }
 
-    // 使用 Promise.all 并行请求所有分片
+    return new SegmentListResponse({
+      "type": "bilibili1",
+      "segmentList": segmentList
+    });
+  }
+
+  async getEpisodeSegmentDanmu(url) {
     try {
-      const allComments = await Promise.all(
-        segmentList.map(async (segment) => {
-          log("info", "正在请求弹幕数据...", segment.url);
-          try {
-            // 请求单个分片的弹幕数据
-            let res = await httpGet(segment.url, {
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                "Cookie": globals.bilibliCookie
-              },
-              base64Data: true,
-              retries: 1,
-            });
+      const response = await httpGet(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          "Cookie": globals.bilibliCookie
+        },
+        base64Data: true,
+        retries: 1,
+      });
 
-            return parseDanmakuBase64(res.data);
-          } catch (error) {
-            log("error", "请求弹幕数据失败: ", error);
-            return [];
-          }
-        })
-      );
+      // 处理响应数据并返回 contents 格式的弹幕
+      let contents = [];
+      if (response && response.data) {
+        contents = parseDanmakuBase64(response.data);
+      }
 
-      // 合并所有分片的弹幕数据
-      const mergedComments = allComments.flat();
-      return mergedComments;
+      return contents;
     } catch (error) {
-      log("error", "获取所有弹幕数据时出错: ", error);
-      return [];
+      log("error", "请求分片弹幕失败:", error);
+      return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }
 

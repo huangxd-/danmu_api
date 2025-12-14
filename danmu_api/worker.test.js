@@ -138,8 +138,19 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET bilibili danmu', async () => {
-  //   const res = await bilibiliSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
+  //   const res = await bilibiliSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564", "bilibili1");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bilibili danmu segments', async () => {
+  //   const res = await bilibiliSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564", "bilibili1", true);
+  //   assert(res.type === "bilibili1", `Expected res.type === "bilibili1", but got ${res.type}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET bilibili segment danmu', async () => {
+  //   const res = await bilibiliSource.getSegmentComments("https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=32131450212&segment_index=2", "bilibili1");
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
   // await t.test('GET youku danmu', async () => {
