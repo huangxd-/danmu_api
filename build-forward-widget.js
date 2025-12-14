@@ -1,0 +1,67 @@
+const esbuild = require('esbuild');
+
+// 定义要排除的UI相关模块
+const uiModules = [
+  './ui/template.js',
+  '../ui/template.js',
+  '../../ui/template.js',
+  './ui/css/base.css.js',
+  './ui/css/components.css.js',
+  './ui/css/forms.css.js',
+  './ui/css/responsive.css.js',
+  './ui/js/main.js',
+  './ui/js/preview.js',
+  './ui/js/logview.js',
+  './ui/js/apitest.js',
+  './ui/js/pushdanmu.js',
+  './ui/js/systemsettings.js',
+  'danmu_api/ui/template.js',
+  'danmu_api/ui/css/base.css.js',
+  'danmu_api/ui/css/components.css.js',
+  'danmu_api/ui/css/forms.css.js',
+  'danmu_api/ui/css/responsive.css.js',
+  'danmu_api/ui/js/main.js',
+  'danmu_api/ui/js/preview.js',
+  'danmu_api/ui/js/logview.js',
+  'danmu_api/ui/js/apitest.js',
+  'danmu_api/ui/js/pushdanmu.js',
+  'danmu_api/ui/js/systemsettings.js'
+];
+
+(async () => {
+  try {
+    await esbuild.build({
+      entryPoints: ['danmu_api/forward-widget.js'], // 新的入口文件
+      bundle: true,
+      minify: false, // 暂时关闭压缩以便调试
+      sourcemap: false,
+      platform: 'node', // 设为node以便可以访问所有内部模块
+      target: 'es2020',
+      outfile: 'dist/logvar-danmu.js',
+      format: 'esm', // 保持ES模块格式
+      plugins: [
+        // 插件：排除UI相关模块
+        {
+          name: 'exclude-ui-modules',
+          setup(build) {
+            // 拦截对UI相关模块的导入
+            build.onResolve({ filter: /.*ui.*\.(css|js)$|.*template\.js$/ }, (args) => {
+              if (uiModules.some(uiModule => args.path.includes(uiModule.replace('./', '').replace('../', '')))) {
+                return { path: args.path, external: true };
+              }
+            });
+          }
+        }
+      ],
+      banner: {
+        js: '// Bundled standalone danmu widget with all internal functions (excluding UI)\n'
+      },
+      logLevel: 'info'
+    });
+    
+    console.log('Standalone widget bundle created successfully!');
+  } catch (error) {
+    console.error('Build failed:', error);
+    process.exit(1);
+  }
+})();

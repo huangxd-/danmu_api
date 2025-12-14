@@ -31,6 +31,16 @@ export default class BaseSource {
     throw new Error("Method 'getEpisodeDanmu' must be implemented");
   }
 
+  // 获取某集的弹幕分片列表
+  async getEpisodeDanmuSegments(id) {
+    throw new Error("Method 'getEpisodeDanmuSegments' must be implemented");
+  }
+
+  // 获取某集的分片弹幕
+  async getEpisodeSegmentDanmu(url) {
+    throw new Error("Method 'getEpisodeSegmentDanmu' must be implemented");
+  }
+
   // 格式化弹幕
   formatComments(comments) {
     throw new Error("Method 'formatComments' must be implemented");

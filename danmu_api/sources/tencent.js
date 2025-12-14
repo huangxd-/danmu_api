@@ -400,25 +400,30 @@ export default class TencentSource extends BaseSource {
     return processTencentAnimes;
   }
 
+  // 提取vid的公共函数
+  extractVid(id) {
+    let vid = id;
+    // 如果传入的是完整URL，则从中提取vid
+    if (typeof id === 'string' && (id.startsWith('http') || id.includes('vid='))) {
+      // 1. 尝试从查询参数中提取 vid
+      const queryMatch = id.match(/[?&]vid=([^&]+)/);
+      if (queryMatch) {
+        vid = queryMatch[1]; // 获取 vid 参数值
+      } else {
+        // 2. 从路径末尾提取 vid
+        const pathParts = id.split('/');
+        const lastPart = pathParts[pathParts.length - 1];
+        vid = lastPart.split('.')[0]; // 去除文件扩展名
+      }
+    }
+    return vid;
+  }
+
   async getEpisodeDanmu(id) {
     log("info", "开始从本地请求腾讯视频弹幕...", id);
 
-    // 弹幕 API 基础地址
-    const api_danmaku_base = "https://dm.video.qq.com/barrage/base/";
-    const api_danmaku_segment = "https://dm.video.qq.com/barrage/segment/";
-
     // 解析 URL 获取 vid
-    let vid;
-    // 1. 尝试从查询参数中提取 vid
-    const queryMatch = id.match(/[?&]vid=([^&]+)/);
-    if (queryMatch) {
-      vid = queryMatch[1]; // 获取 vid 参数值
-    } else {
-      // 2. 从路径末尾提取 vid
-      const pathParts = id.split('/');
-      const lastPart = pathParts[pathParts.length - 1];
-      vid = lastPart.split('.')[0]; // 去除文件扩展名
-    }
+    let vid = this.extractVid(id);
 
     log("info", `vid: ${vid}`);
 
@@ -441,41 +446,22 @@ export default class TencentSource extends BaseSource {
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
     log("info", `标题: ${title}`);
 
-    // 获取弹幕基础数据
-    try {
-      res = await httpGet(api_danmaku_base + vid, {
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        },
-      });
-    } catch (error) {
-      if (error.response?.status === 404) {
-        return [];
-      }
-      log("error", "请求弹幕基础数据失败:", error);
+    // 获取弹幕分段数据
+    const segmentResult = await this.getEpisodeDanmuSegments(id);
+    if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
       return [];
     }
 
-    // 先把 res.data 转成 JSON
-    const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+    const segmentList = segmentResult.segmentList;
+    log("info", `弹幕分段数量: ${segmentList.length}`);
 
-    // 获取弹幕分段数据
+    // 创建请求Promise数组
     const promises = [];
-    const segmentList = Object.values(data.segment_index);
-    for (const item of segmentList) {
+    for (const segment of segmentList) {
       promises.push(
-        httpGet(`${api_danmaku_segment}${vid}/${item.segment_name}`, {
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-          retries: 1,
-        })
+        this.getEpisodeSegmentDanmu(segment.url, null)
       );
     }
-
-    log("info", `弹幕分段数量: ${promises.length}`);
 
     // 解析弹幕数据
     let contents = [];
@@ -483,7 +469,14 @@ export default class TencentSource extends BaseSource {
       const results = await Promise.allSettled(promises);
       const datas = results
         .filter(result => result.status === "fulfilled")
-        .map(result => result.value.data);
+        .map(result => {
+          // 检查result是否包含响应数据
+          if (result.value && result.value.data) {
+            return result.value.data;
+          }
+          return null;
+        })
+        .filter(data => data !== null); // 过滤掉null值
 
       datas.forEach(data => {
         data = typeof data === "string" ? JSON.parse(data) : data;
@@ -497,6 +490,75 @@ export default class TencentSource extends BaseSource {
     printFirst200Chars(contents);
 
     return contents;
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取腾讯视频弹幕分段列表...", id);
+
+    // 弹幕 API 基础地址
+    const api_danmaku_base = "https://dm.video.qq.com/barrage/base/";
+    const api_danmaku_segment = "https://dm.video.qq.com/barrage/segment/";
+
+    let vid = this.extractVid(id);
+
+    log("info", `获取弹幕分段列表 - vid: ${vid}`);
+
+    // 获取弹幕基础数据
+    let res;
+    try {
+      res = await httpGet(api_danmaku_base + vid, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return {
+          "type": "qq",
+          "segmentList": []
+        };
+      }
+      log("error", "请求弹幕基础数据失败:", error);
+      return {
+        "type": "qq",
+        "segmentList": []
+      };
+    }
+
+    // 先把 res.data 转成 JSON
+    const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+
+    // 构建分段列表
+    const segmentList = [];
+    const segmentItems = Object.values(data.segment_index);
+    for (const item of segmentItems) {
+      segmentList.push({
+        "segment_start": item.segment_start || 0,
+        "segment_end": item.segment_name.split('/').pop() || 0,
+        "url": `${api_danmaku_segment}${vid}/${item.segment_name}`
+      });
+    }
+
+    return {
+      "type": "qq",
+      "segmentList": segmentList
+    };
+  }
+
+  async getEpisodeSegmentDanmu(url) {
+    try {
+      return await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+        retries: 1,
+      });
+    } catch (error) {
+      log("error", "请求分片弹幕失败:", error);
+      throw error;
+    }
   }
 
   formatComments(comments) {

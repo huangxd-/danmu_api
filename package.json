@@ -4,7 +4,8 @@
   "description": "A danmu Node.js Express API server",
   "main": "danmu_api/server.js",
   "scripts": {
-    "start": "node danmu_api/server.js"
+    "start": "node danmu_api/server.js",
+    "build-forward-widget": "node build-forward-widget.js"
   },
   "author": "",
   "license": "ISC",

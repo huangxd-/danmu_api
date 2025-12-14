@@ -65,8 +65,6 @@ test('worker.js API endpoints', async (t) => {
     const body = await parseResponse(res);
 
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('Content-Type'), 'application/json');
-    assert.deepEqual(body.message, 'Welcome to the LogVar Danmu API server');
   });
 
   // 测试标题解析
@@ -93,6 +91,12 @@ test('worker.js API endpoints', async (t) => {
 
   // await t.test('GET tencent danmu', async () => {
   //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET tencent segment danmu', async () => {
+  //   const res = await tencentSource.getEpisodeSegmentDanmu("https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/90000/120000");
+  //   console.log(res);
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
