@@ -30,15 +30,8 @@ export function log(level, ...args) {
 
   // 获取上海时区时间(UTC+8)
   const now = new Date();
-  // 使用 toLocaleString 获取上海时间的格式化字符串，然后解析出各个时间组件
-  const shanghaiTimeString = now.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }); // 使用瑞典格式，输出 YYYY-MM-DD HH:mm:ss 格式
-  const [datePart, timePart] = shanghaiTimeString.split(' ');
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hours, minutes, seconds] = timePart.split(':').map(Number);
-  const milliseconds = now.getMilliseconds(); // 直接获取当前时间的毫秒数
-
-  const localTimestamp = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
-  const timestamp = localTimestamp + '+08:00';
+  const shanghaiTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  const timestamp = shanghaiTime.toISOString().replace('Z', '+08:00');
 
   globals.logBuffer.push({ timestamp, level, message });
   if (globals.logBuffer.length > globals.MAX_LOGS) globals.logBuffer.shift();
