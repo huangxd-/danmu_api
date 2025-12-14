@@ -4,7 +4,7 @@ import { log, formatLogMessage } from './utils/log-util.js'
 import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
-import { getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
+import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 
@@ -177,6 +177,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (path.startsWith("/api/v2/comment") && method === "GET") {
     const queryFormat = url.searchParams.get('format');
     const videoUrl = url.searchParams.get('url');
+    const segmentFlag = url.searchParams.get('segmentflag');
 
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
@@ -225,7 +226,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       }
 
       // 通过URL获取弹幕
-      return getCommentByUrl(videoUrl, queryFormat);
+      return getCommentByUrl(videoUrl, queryFormat, segmentFlag);
     }
 
     // 否则通过commentId获取弹幕
@@ -285,7 +286,25 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
-    return getComment(path, queryFormat);
+    return getComment(path, queryFormat, segmentFlag);
+  }
+
+  // GET /api/v2/segmentcomment?url=xxx
+ if (path.startsWith("/api/v2/segmentcomment") && method === "GET") {
+    const videoUrl = url.searchParams.get('url');
+    const queryFormat = url.searchParams.get('format');
+
+    // 验证参数
+    if (!videoUrl) {
+      log("error", "Missing url parameter for segmentcomment");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Missing url parameter" },
+        400
+      );
+    }
+
+    // 通过URL和平台获取分段弹幕
+    return getSegmentComment(videoUrl, queryFormat);
   }
 
   // GET /api/logs

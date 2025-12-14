@@ -7,7 +7,7 @@ const apiConfigs = {
         method: 'GET',
         path: '/api/v2/search/anime',
         params: [
-            { name: 'keyword', label: '关键词', type: 'text', required: true, placeholder: '示例: 生万物' }
+            { name: 'keyword', label: '关键词 或 播放链接URL', type: 'text', required: true, placeholder: '示例: 生万物 或 http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html' }
         ]
     },
     searchEpisodes: {
@@ -40,7 +40,16 @@ const apiConfigs = {
         path: '/api/v2/comment/:commentId',
         params: [
             { name: 'commentId', label: '弹幕ID', type: 'text', required: true, placeholder: '示例: 10009' },
-            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] }
+            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] },
+            { name: 'segmentflag', label: '分片标志', type: 'select', required: false, placeholder: '可选: true或false', options: ['true', 'false'] }
+        ]
+    },
+    getSegmentComment: {
+        name: '获取分片弹幕',
+        method: 'GET',
+        path: '/api/v2/segmentcomment',
+        params: [
+            { name: 'url', label: '分片URL', type: 'text', required: true, placeholder: '示例: https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000' }
         ]
     }
 };

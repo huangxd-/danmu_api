@@ -47,7 +47,12 @@ export default class BaseSource {
   }
 
   // 获取弹幕流水线方法(获取某集弹幕 -> 格式化弹幕 -> 弹幕处理，如去重/屏蔽字等)
-  async getComments(id, sourceName, progressCallback=null) {
+  async getComments(id, sourceName, segmentFlag=false, progressCallback=null) {
+    if (segmentFlag) {
+      if(progressCallback) await progressCallback(5, `开始获取弹幕${sourceName}弹幕分片列表`);
+      log("info", `开始获取弹幕${sourceName}弹幕分片列表`);
+      return await this.getEpisodeDanmuSegments(id);
+    }
     if(progressCallback) await progressCallback(5, `开始获取弹幕${sourceName}弹幕`);
     log("info", `开始获取弹幕${sourceName}弹幕`);
     const raw = await this.getEpisodeDanmu(id);

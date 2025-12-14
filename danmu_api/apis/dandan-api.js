@@ -781,7 +781,7 @@ export async function getBangumi(path) {
 }
 
 // Extracted function for GET /api/v2/comment/:commentId
-export async function getComment(path, queryFormat) {
+export async function getComment(path, queryFormat, segmentFlag) {
   const commentId = parseInt(path.split("/").pop());
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
@@ -805,38 +805,38 @@ export async function getComment(path, queryFormat) {
   log("info", "开始从本地请求弹幕...", url);
   let danmus = [];
   if (url.includes('.qq.com')) {
-    danmus = await tencentSource.getComments(url, plat);
+    danmus = await tencentSource.getComments(url, plat, segmentFlag);
   } else if (url.includes('.iqiyi.com')) {
-    danmus = await iqiyiSource.getComments(url, plat);
+    danmus = await iqiyiSource.getComments(url, plat, segmentFlag);
   } else if (url.includes('.mgtv.com')) {
-    danmus = await mangoSource.getComments(url, plat);
+    danmus = await mangoSource.getComments(url, plat, segmentFlag);
   } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
     // 如果是 b23.tv 短链接，先解析为完整 URL
     if (url.includes('b23.tv')) {
       url = await bilibiliSource.resolveB23Link(url);
     }
-    danmus = await bilibiliSource.getComments(url, plat);
+    danmus = await bilibiliSource.getComments(url, plat, segmentFlag);
   } else if (url.includes('.youku.com')) {
-    danmus = await youkuSource.getComments(url, plat);
+    danmus = await youkuSource.getComments(url, plat, segmentFlag);
   }
 
   // 请求其他平台弹幕
   const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
   if (!urlPattern.test(url)) {
     if (plat === "renren") {
-      danmus = await renrenSource.getComments(url, plat);
+      danmus = await renrenSource.getComments(url, plat, segmentFlag);
     } else if (plat === "hanjutv") {
-      danmus = await hanjutvSource.getComments(url, plat);
+      danmus = await hanjutvSource.getComments(url, plat, segmentFlag);
     } else if (plat === "bahamut") {
-      danmus = await bahamutSource.getComments(url, plat);
+      danmus = await bahamutSource.getComments(url, plat, segmentFlag);
     } else if (plat === "dandan") {
-      danmus = await dandanSource.getComments(url, plat);
+      danmus = await dandanSource.getComments(url, plat, segmentFlag);
     }
   }
 
   // 如果弹幕为空，则请求第三方弹幕服务器作为兜底
   if (danmus.length === 0 && urlPattern.test(url)) {
-    danmus = await otherSource.getComments(url, "other_server");
+    danmus = await otherSource.getComments(url, "other_server", segmentFlag);
   }
 
   const [animeId, source] = findAnimeIdByCommentId(commentId);
@@ -858,7 +858,7 @@ export async function getComment(path, queryFormat) {
 }
 
 // Extracted function for GET /api/v2/comment?url=xxx
-export async function getCommentByUrl(videoUrl, queryFormat) {
+export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
   try {
     // 验证URL参数
     if (!videoUrl || typeof videoUrl !== 'string') {
@@ -901,24 +901,24 @@ export async function getCommentByUrl(videoUrl, queryFormat) {
 
     // 根据URL域名判断平台并获取弹幕
     if (url.includes('.qq.com')) {
-      danmus = await tencentSource.getComments(url, "qq");
+      danmus = await tencentSource.getComments(url, "qq", segmentFlag);
     } else if (url.includes('.iqiyi.com')) {
-      danmus = await iqiyiSource.getComments(url, "qiyi");
+      danmus = await iqiyiSource.getComments(url, "qiyi", segmentFlag);
     } else if (url.includes('.mgtv.com')) {
-      danmus = await mangoSource.getComments(url, "imgo");
+      danmus = await mangoSource.getComments(url, "imgo", segmentFlag);
     } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
       // 如果是 b23.tv 短链接，先解析为完整 URL
       if (url.includes('b23.tv')) {
         url = await bilibiliSource.resolveB23Link(url);
       }
-      danmus = await bilibiliSource.getComments(url, "bilibili1");
+      danmus = await bilibiliSource.getComments(url, "bilibili1", segmentFlag);
     } else if (url.includes('.youku.com')) {
       danmus = await youkuSource(url, "youku");
     } else {
       // 如果不是已知平台，尝试第三方弹幕服务器
       const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
       if (urlPattern.test(url)) {
-        danmus = await otherSource.getComments(url, "other_server");
+        danmus = await otherSource.getComments(url, "other_server", segmentFlag);
       }
     }
 
@@ -940,6 +940,95 @@ export async function getCommentByUrl(videoUrl, queryFormat) {
   } catch (error) {
     // 处理异常
     log("error", `Failed to process comment by URL request: ${error.message}`);
+    return jsonResponse(
+      { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
+      500
+    );
+  }
+}
+
+// Extracted function for GET /api/v2/segmentcomment?url=xxx
+export async function getSegmentComment(url, queryFormat) {
+  try {
+    // 验证URL参数
+    if (!url || typeof url !== 'string') {
+      log("error", "Missing or invalid url parameter");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Missing or invalid url parameter", count: 0, comments: [] },
+        400
+      );
+    }
+
+    url = url.trim();
+
+    // 验证URL格式
+    if (!url.startsWith('http')) {
+      log("error", "Invalid url format, must start with http or https");
+      return jsonResponse(
+        { errorCode: 400, success: false, errorMessage: "Invalid url format, must start with http or https", count: 0, comments: [] },
+        400
+      );
+    }
+
+    log("info", `Processing segment comment request for URL: ${url}`);
+
+    // 检查弹幕缓存
+    const cachedComments = getCommentCache(url);
+    if (cachedComments !== null) {
+      const responseData = {
+        errorCode: 0,
+        success: true,
+        errorMessage: "",
+        count: cachedComments.length,
+        comments: cachedComments
+      };
+      return formatDanmuResponse(responseData, queryFormat);
+    }
+
+    log("info", `开始从本地请求分段弹幕... URL: ${url}`);
+    let danmus = [];
+
+    // 根据平台调用相应的分段弹幕获取方法
+    if (url.includes('.qq.com')) {
+      danmus = await tencentSource.getSegmentComments(url, "qq");
+    } else if (url.includes('.iqiyi.com')) {
+      danmus = await iqiyiSource.getSegmentComments(url, "qiyi");
+    } else if (url.includes('.mgtv.com')) {
+      danmus = await mangoSource.getSegmentComments(url, "imgo");
+    } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
+      // 如果是 b23.tv 短链接，先解析为完整 URL
+      if (url.includes('b23.tv')) {
+        url = await bilibiliSource.resolveB23Link(url);
+      }
+      danmus = await bilibiliSource.getSegmentComments(url, "bilibili1");
+    } else if (url.includes('.youku.com')) {
+      danmus = await youkuSource.getSegmentComments(url, "youku");
+    } else {
+      // 如果不是已知平台，尝试第三方弹幕服务器
+      const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
+      if (urlPattern.test(url)) {
+        danmus = await otherSource.getSegmentComments(url, "other_server");
+      }
+    }
+
+    log("info", `Successfully fetched ${danmus.length} segment comments from URL`);
+
+    // 缓存弹幕结果
+    if (danmus.length > 0) {
+      setCommentCache(url, danmus);
+    }
+
+    const responseData = {
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      count: danmus.length,
+      comments: danmus
+    };
+    return formatDanmuResponse(responseData, queryFormat);
+  } catch (error) {
+    // 处理异常
+    log("error", `Failed to process segment comment request: ${error.message}`);
     return jsonResponse(
       { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
       500
