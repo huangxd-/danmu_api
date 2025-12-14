@@ -7,6 +7,7 @@ import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取芒果TV弹幕
@@ -507,30 +508,87 @@ export default class MangoSource extends BaseSource {
   async getEpisodeDanmu(id) {
     log("info", "开始从本地请求芒果TV弹幕...", id);
 
+    // 获取弹幕分段列表
+    const segmentResult = await this.getEpisodeDanmuSegments(id);
+    if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
+      return [];
+    }
+
+    const segmentList = segmentResult.segmentList;
+    log("info", `弹幕分段数量: ${segmentList.length}`);
+
+    // 创建请求Promise数组
+    const promises = [];
+    for (const segment of segmentList) {
+      promises.push(
+        httpGet(segment.url, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          retries: 1,
+        })
+      );
+    }
+
+    // 解析弹幕数据
+    let contents = [];
+    try {
+      const results = await Promise.allSettled(promises);
+      const datas = results
+        .filter(result => result.status === "fulfilled")
+        .map(result => {
+          // 检查result是否包含响应数据
+          if (result.value && result.value.data) {
+            return result.value.data;
+          }
+          return null;
+        })
+        .filter(data => data !== null); // 过滤掉null值
+
+      datas.forEach(data => {
+        data = typeof data === "string" ? JSON.parse(data) : data;
+        if (data.data?.items) {
+          contents.push(...data.data.items);
+        }
+      });
+    } catch (error) {
+      log("error", "解析弹幕数据失败:", error);
+      return [];
+    }
+
+    printFirst200Chars(contents);
+
+    return contents;
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取芒果TV弹幕分段列表...", id);
+
     // 弹幕和视频信息 API 基础地址
     const api_video_info = "https://pcweb.api.mgtv.com/video/info";
     const api_ctl_barrage = "https://galaxy.bz.mgtv.com/getctlbarrage";
-    const api_rd_barrage = "https://galaxy.bz.mgtv.com/rdbarrage";
 
     // 解析 URL 获取 cid 和 vid
-    // 手动解析 URL（没有 URL 对象的情况下）
     const regex = /^(https?:\/\/[^\/]+)(\/[^?#]*)/;
     const match = id.match(regex);
 
     let path;
     if (match) {
       path = match[2].split('/').filter(Boolean);  // 分割路径并去掉空字符串
-      log("info", path);
     } else {
       log("error", 'Invalid URL');
-      return [];
+      return new SegmentListResponse({
+        "type": "imgo",
+        "segmentList": []
+      });
     }
     const cid = path[path.length - 2];
     const vid = path[path.length - 1].split(".")[0];
 
-    log("info", `cid: ${cid}, vid: ${vid}`);
+    log("info", `获取弹幕分段列表 - cid: ${cid}, vid: ${vid}`);
 
-    // 获取页面标题和视频时长
+    // 获取视频信息
     let res;
     try {
       const videoInfoUrl = `${api_video_info}?cid=${cid}&vid=${vid}`;
@@ -541,20 +599,23 @@ export default class MangoSource extends BaseSource {
         },
       });
     } catch (error) {
+      if (error.response?.status === 404) {
+        return new SegmentListResponse({
+          "type": "imgo",
+          "segmentList": []
+        });
+      }
       log("error", "请求视频信息失败:", error);
-      return [];
+      return new SegmentListResponse({
+        "type": "imgo",
+        "segmentList": []
+      });
     }
 
     const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-    const title = data.data.info.videoName;
     const time = data.data.info.time;
-    log("info", `标题: ${title}`);
 
-    // 计算弹幕分段请求
-    let promises = [];
-    let useNewApi = true;
-
-    // 尝试使用新API（支持彩色弹幕）
+    // 尝试使用新API（支持彩色弹幕）获取分段列表
     try {
       const ctlBarrageUrl = `${api_ctl_barrage}?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid=${vid}&pid=&cid=${cid}&ticket=`;
       const res = await httpGet(ctlBarrageUrl, {
@@ -567,75 +628,64 @@ export default class MangoSource extends BaseSource {
 
       // 检查数据结构
       if (!ctlBarrage.data || !ctlBarrage.data.cdn_list || !ctlBarrage.data.cdn_version) {
-        log("warn", `新API缺少必要字段，切换到旧API`);
-        useNewApi = false;
-      } else {
-        // 每1分钟一个分段
-        for (let i = 0; i < Math.ceil(time_to_second(time) / 60); i += 1) {
-          const danmakuUrl = `https://${ctlBarrage.data.cdn_list.split(',')[0]}/${ctlBarrage.data.cdn_version}/${i}.json`;
-          promises.push(
-            httpGet(danmakuUrl, {
-              headers: {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              },
-              retries: 1,
-            })
-          );
-        }
-        log("info", `使用新API，弹幕分段数量: ${promises.length}`);
+        log("warn", `新API缺少必要字段，返回空分段列表`);
+        return new SegmentListResponse({
+          "type": "imgo",
+          "segmentList": []
+        });
       }
-    } catch (error) {
-      log("warn", "新API请求失败，切换到旧API:", error.message);
-      useNewApi = false;
-    }
 
-    // 如果新API失败，使用旧API作为兜底
-    if (!useNewApi) {
-      try {
-        const step = 60 * 1000; // 每60秒一个分段
-        const end_time = time_to_second(time) * 1000;
-        for (let i = 0; i < end_time; i += step) {
-          const danmakuUrl = `${api_rd_barrage}?vid=${vid}&cid=${cid}&time=${i}`;
-          promises.push(
-            httpGet(danmakuUrl, {
-              headers: {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-              },
-              retries: 1,
-            })
-          );
-        }
-        log("info", `使用旧API，弹幕分段数量: ${promises.length}`);
-      } catch (error) {
-        log("error", "旧API请求失败:", error);
-        return [];
+      // 构建分段列表
+      const segmentList = [];
+      const totalSegments = Math.ceil(time_to_second(time) / 60); // 每1分钟一个分段
+      const cdnList = ctlBarrage.data.cdn_list.split(',')[0];
+      const cdnVersion = ctlBarrage.data.cdn_version;
+
+      for (let i = 0; i < totalSegments; i++) {
+        segmentList.push({
+          "segment_start": i * 60,  // 每段开始时间（秒）
+          "segment_end": Math.min((i + 1) * 60, time_to_second(time)), // 每段结束时间（秒）
+          "url": `https://${cdnList}/${cdnVersion}/${i}.json`  // 每段弹幕URL
+        });
       }
-    }
 
-    // 解析弹幕数据
-    let contents = [];
-    try {
-      const results = await Promise.allSettled(promises);
-      const datas = results
-        .filter(result => result.status === "fulfilled")
-        .map(result => result.value.data);
-
-      datas.forEach(data => {
-        const dataJson = typeof data === "string" ? JSON.parse(data) : data;
-        if (dataJson.data?.items) {
-          contents.push(...dataJson.data.items);
-        }
+      return new SegmentListResponse({
+        "type": "imgo",
+        "segmentList": segmentList
       });
     } catch (error) {
-      log("error", "解析弹幕数据失败:", error);
-      return [];
+      log("error", "请求弹幕分段数据失败:", error);
+      return new SegmentListResponse({
+        "type": "imgo",
+        "segmentList": []
+      });
     }
+  }
 
-    printFirst200Chars(contents);
+  async getEpisodeSegmentDanmu(url) {
+    try {
+      const response = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+        retries: 1,
+      });
 
-    return contents;
+      // 处理响应数据并返回 contents 格式的弹幕
+      let contents = [];
+      if (response && response.data) {
+        const parsedData = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+        if (parsedData.data?.items) {
+          contents.push(...parsedData.data.items);
+        }
+      }
+
+      return contents;
+    } catch (error) {
+      log("error", "请求分片弹幕失败:", error);
+      return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
+    }
   }
 
   formatComments(comments) {

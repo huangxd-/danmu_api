@@ -122,7 +122,18 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET mango danmu', async () => {
-  //   const res = await mangoSource.getComments("https://www.mgtv.com/b/771610/23300622.html");
+  //   const res = await mangoSource.getComments("https://www.mgtv.com/b/771610/23300622.html", "imgo");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET mango danmu segments', async () => {
+  //   const res = await mangoSource.getComments("https://www.mgtv.com/b/771610/23300622.html", "imgo", true);
+  //   assert(res.type === "imgo", `Expected res.type === "imgo", but got ${res.type}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET mango segment danmu', async () => {
+  //   const res = await mangoSource.getSegmentComments("https://bullet-ali.hitv.com/bullet/tx/2025/12/14/011640/23300622/23.json", "imgo");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
