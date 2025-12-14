@@ -122,6 +122,10 @@ LogVar 弹幕 API 服务器
    node ./danmu_api/server.js
    # 测试
    node --test ./danmu_api/worker.test.js
+   # 构建forward插件
+   node build-forward-widget.js
+   # 测试forward插件
+   node danmu_api/forward-widget.test.js
    ```
 
 5. **测试 API**：
