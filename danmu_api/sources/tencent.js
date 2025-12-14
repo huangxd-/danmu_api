@@ -6,6 +6,7 @@ import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取腾讯视频弹幕
@@ -514,16 +515,16 @@ export default class TencentSource extends BaseSource {
       });
     } catch (error) {
       if (error.response?.status === 404) {
-        return {
+        return new SegmentListResponse({
           "type": "qq",
           "segmentList": []
-        };
+        });
       }
       log("error", "请求弹幕基础数据失败:", error);
-      return {
+      return new SegmentListResponse({
         "type": "qq",
         "segmentList": []
-      };
+      });
     }
 
     // 先把 res.data 转成 JSON
@@ -534,16 +535,16 @@ export default class TencentSource extends BaseSource {
     const segmentItems = Object.values(data.segment_index);
     for (const item of segmentItems) {
       segmentList.push({
-        "segment_start": item.segment_start || 0,
-        "segment_end": item.segment_name.split('/').pop() || 0,
+        "segment_start": Number(item.segment_start) || 0,
+        "segment_end": Number(item.segment_name.split('/').pop()) || 0,
         "url": `${api_danmaku_segment}${vid}/${item.segment_name}`
       });
     }
 
-    return {
+    return new SegmentListResponse({
       "type": "qq",
       "segmentList": segmentList
-    };
+    });
   }
 
   async getEpisodeSegmentDanmu(url) {

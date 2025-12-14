@@ -269,3 +269,70 @@ export class Bangumi {
     };
   }
 }
+
+// =====================
+// 数据模型：SegmentListResponse
+// =====================
+export class SegmentListResponse {
+  constructor({ type = "", segmentList = [] } = {}) {
+    validateType(type, "string");
+    validateType(segmentList, "array");
+
+    // 将 segmentList 转换为 Segment 实例数组
+    this.segmentList = segmentList.map(segmentData => Segment.fromJson(segmentData));
+
+    // 直接解构并赋值给 this
+    Object.assign(this, { type });
+  }
+
+  // ---- 静态方法：从 JSON 创建 SegmentListResponse 对象 ----
+  static fromJson(json) {
+    if (typeof json !== "object" || json === null) {
+      throw new TypeError("fromJson 参数必须是对象");
+    }
+
+    const segmentList = (json.segmentList || []).map(segment => Segment.fromJson(segment));
+    return new SegmentListResponse({ ...json, segmentList });
+  }
+
+  // ---- 转换为纯 JSON ----
+  toJson() {
+    return {
+      ...this,
+      segmentList: this.segmentList.map(segment => segment.toJson())
+    };
+  }
+}
+
+// =====================
+// 数据模型：Segment
+// =====================
+export class Segment {
+  constructor({ segment_start, segment_end, url, data, _m_h5_tk, _m_h5_tk_enc } = {}) {
+    // 必需字段验证
+    validateType(segment_start, "number", "segment_start");
+    validateType(segment_end, "number", "segment_end");
+    validateType(url, "string", "url");
+
+    // 可选字段验证
+    if (data !== undefined) validateType(data, "string", "data");
+    if (_m_h5_tk !== undefined) validateType(_m_h5_tk, "string", "_m_h5_tk");
+    if (_m_h5_tk_enc !== undefined) validateType(_m_h5_tk_enc, "string", "_m_h5_tk_enc");
+
+    // 直接解构并赋值给 this
+    Object.assign(this, { segment_start, segment_end, url, data, _m_h5_tk, _m_h5_tk_enc });
+  }
+
+  // ---- 静态方法：从 JSON 创建 Segment 对象 ----
+  static fromJson(json) {
+    if (typeof json !== "object" || json === null) {
+      throw new TypeError("fromJson 参数必须是对象");
+    }
+    return new Segment(json);
+  }
+
+  // ---- 转换为纯 JSON ----
+  toJson() {
+    return { ...this };
+  }
+}
