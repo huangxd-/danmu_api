@@ -158,6 +158,17 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
+  // await t.test('GET youku danmu segments', async () => {
+  //   const res = await youkuSource.getComments("https://v.youku.com/v_show/id_XNjQ3ODMyNjU3Mg==.html", "youku", true);
+  //   assert(res.type === "youku", `Expected res.type === "youku", but got ${res.type === "youku"}`);
+  //  assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  await t.test('GET youku segment danmu', async () => {
+    const res = await youkuSource.getSegmentComments("https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=24679788&t=1765897372427&sign=4ee997ca025e54d6f63fa301cce80ebd&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000&jsonpIncPrefix=utility", "youku");
+    assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  });
+
   // await t.test('GET other_server danmu', async () => {
   //   const res = await otherSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);

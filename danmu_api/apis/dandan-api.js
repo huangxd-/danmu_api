@@ -996,10 +996,6 @@ export async function getSegmentComment(url, queryFormat) {
     } else if (url.includes('.mgtv.com')) {
       danmus = await mangoSource.getSegmentComments(url, "imgo");
     } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
-      // 如果是 b23.tv 短链接，先解析为完整 URL
-      if (url.includes('b23.tv')) {
-        url = await bilibiliSource.resolveB23Link(url);
-      }
       danmus = await bilibiliSource.getSegmentComments(url, "bilibili1");
     } else if (url.includes('.youku.com')) {
       danmus = await youkuSource.getSegmentComments(url, "youku");

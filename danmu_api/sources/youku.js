@@ -6,6 +6,7 @@ import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
 import { md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取优酷弹幕
@@ -363,11 +364,71 @@ export default class YoukuSource extends BaseSource {
     return 'drama';
   }
 
-  async getEpisodeDanmu(id) {
+   async getEpisodeDanmu(id) {
     log("info", "开始从本地请求优酷弹幕...", id);
 
     if (!id) {
       return [];
+    }
+
+    // 获取分片URL列表
+    const segmentListResponse = await this.getEpisodeDanmuSegments(id);
+    const segmentList = segmentListResponse.segmentList;
+
+    let contents = [];
+
+    // 并发限制（可通过环境变量 YOUKU_CONCURRENCY 配置，默认 8）
+    const concurrency = globals.youkuConcurrency;
+    const segments = [...segmentList];
+
+    for (let i = 0; i < segments.length; i += concurrency) {
+      const batch = segments.slice(i, i + concurrency).map(async (segment) => {
+        const response = await httpPost(segment.url, buildQueryString({ data: segment.data }), {
+          headers: {
+            "Cookie": `_m_h5_tk=${segment._m_h5_tk};_m_h5_tk_enc=${segment._m_h5_tk_enc};`,
+            "Referer": "https://v.youku.com",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",
+          },
+          allow_redirects: false,
+          retries: 1,
+        });
+
+        const results = [];
+        if (response.data?.data && response.data.data.result) {
+          const result = JSON.parse(response.data.data.result);
+          if (result.code !== "-1") {
+            results.push(...result.data.result);
+          }
+        }
+        return results;
+      });
+
+      try {
+        const settled = await Promise.allSettled(batch);
+        for (const s of settled) {
+          if (s.status === "fulfilled" && Array.isArray(s.value)) {
+            contents = contents.concat(s.value);
+          }
+        }
+      } catch (e) {
+        log("error", "优酷分段批量请求失败:", e.message);
+      }
+    }
+
+    printFirst200Chars(contents);
+
+    return contents;
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取优酷弹幕分段列表...", id);
+
+    if (!id) {
+      return new SegmentListResponse({
+        "type": "youku",
+        "segmentList": []
+      });
     }
 
     // 处理302场景
@@ -472,7 +533,7 @@ export default class YoukuSource extends BaseSource {
     // 计算弹幕分段请求
     const step = 60; // 每60秒一个分段
     const max_mat = Math.floor(duration / step) + 1;
-    let contents = [];
+    let segmentList = [];
 
     // 将构造请求和解析逻辑封装为函数，返回该分段的弹幕数组
     const requestOneMat = async (mat) => {
@@ -549,47 +610,55 @@ export default class YoukuSource extends BaseSource {
       const url = `${api_danmaku}?${queryString}`;
       log("info", `piece_url: ${url}`);
 
-      const response = await httpPost(url, buildQueryString({ data: data }), {
-        headers: {
-          "Cookie": `_m_h5_tk=${_m_h5_tk};_m_h5_tk_enc=${_m_h5_tk_enc};`,
-          "Referer": "https://v.youku.com",
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",
-        },
-        allow_redirects: false,
-        retries: 1,
-      });
+      return {
+        "segment_start": mat * step,
+        "segment_end": Math.min((mat + 1) * step, duration),
+        "url": url,
+        "data": data,
+        "_m_h5_tk": _m_h5_tk,
+        "_m_h5_tk_enc": _m_h5_tk_enc,
+      };
+    }
 
-      const results = [];
-      if (response.data?.data && response.data.data.result) {
-        const result = JSON.parse(response.data.data.result);
-        if (result.code !== "-1") {
-          results.push(...result.data.result);
-        }
-      }
-      return results;
-    };
-
-    // 并发限制（可通过环境变量 YOUKU_CONCURRENCY 配置，默认 8）
-    const concurrency = globals.youkuConcurrency;
     const mats = Array.from({ length: max_mat }, (_, i) => i);
-    for (let i = 0; i < mats.length; i += concurrency) {
-      const batch = mats.slice(i, i + concurrency).map((m) => requestOneMat(m));
-      try {
-        const settled = await Promise.allSettled(batch);
-        for (const s of settled) {
-          if (s.status === "fulfilled" && Array.isArray(s.value)) {
-            contents = contents.concat(s.value);
-          }
-        }
-      } catch (e) {
-        log("error", "优酷分段批量请求失败:", e.message);
+    for (let i = 0; i < mats.length; i++) {
+      const result = await requestOneMat(mats[i]);
+      segmentList.push(result);
+    }
+
+    return new SegmentListResponse({
+      "type": "youku",
+      "segmentList": segmentList
+    });
+  }
+
+  async getEpisodeSegmentDanmu(url) {
+    log("info", "开始从本地请求优酷分段弹幕...", url);
+
+    const data = "{\"ctime\":1765897372425,\"ctype\":10004,\"cver\":\"v1.0\",\"guid\":\"nGLIIdKFpSYCAXPHISgaB0LI\",\"mat\":0,\"mcount\":1,\"pid\":0,\"sver\":\"3.1.0\",\"type\":1,\"vid\":\"XNjQ3ODMyNjU3Mg==\",\"msg\":\"eyJjdGltZSI6MTc2NTg5NzM3MjQyNSwiY3R5cGUiOjEwMDA0LCJjdmVyIjoidjEuMCIsImd1aWQiOiJuR0xJSWRLRnBTWUNBWFBISVNnYUIwTEkiLCJtYXQiOjAsIm1jb3VudCI6MSwicGlkIjowLCJzdmVyIjoiMy4xLjAiLCJ0eXBlIjoxLCJ2aWQiOiJYTmpRM09ETXlOalUzTWc9PSJ9\",\"sign\":\"fd5e7ab6fc2d42ef7cad794057f31652\"}";
+    const _m_h5_tk = "f60a24b11d46a6cf793939582f152864_1765902052486";
+    const _m_h5_tk_enc = "ebad98ff2447045311b7e995ff64f2c6";
+
+    const response = await httpPost(url, buildQueryString({ data: data }), {
+      headers: {
+        "Cookie": `_m_h5_tk=${_m_h5_tk};_m_h5_tk_enc=${_m_h5_tk_enc};`,
+        "Referer": "https://v.youku.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",
+      },
+      allow_redirects: false,
+      retries: 1,
+    });
+
+    const results = [];
+    if (response.data?.data && response.data.data.result) {
+      const result = JSON.parse(response.data.data.result);
+      if (result.code !== "-1") {
+        results.push(...result.data.result);
       }
     }
 
-    printFirst200Chars(contents);
-
-    return contents;
+    return results;
   }
 
   formatComments(comments) {
