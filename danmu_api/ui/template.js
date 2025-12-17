@@ -85,7 +85,7 @@ export const HTML_TEMPLATE = /* html */ `
                     <div class="form-group">
                         <label>选择接口</label>
                         <select id="api-select" onchange="loadApiParams()">
-                            <option value="">请选择接口</option>
+                            <option value="">-- 请选择接口 --</option>
                             <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
                             <option value="searchEpisodes">搜索剧集 - /api/v2/search/episodes</option>
                             <option value="matchAnime">匹配动漫 - /api/v2/match</option>

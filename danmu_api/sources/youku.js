@@ -632,16 +632,12 @@ export default class YoukuSource extends BaseSource {
     });
   }
 
-  async getEpisodeSegmentDanmu(url) {
-    log("info", "开始从本地请求优酷分段弹幕...", url);
+  async getEpisodeSegmentDanmu(segment) {
+    log("info", "开始从本地请求优酷分段弹幕...", segment.url);
 
-    const data = "{\"ctime\":1765897372425,\"ctype\":10004,\"cver\":\"v1.0\",\"guid\":\"nGLIIdKFpSYCAXPHISgaB0LI\",\"mat\":0,\"mcount\":1,\"pid\":0,\"sver\":\"3.1.0\",\"type\":1,\"vid\":\"XNjQ3ODMyNjU3Mg==\",\"msg\":\"eyJjdGltZSI6MTc2NTg5NzM3MjQyNSwiY3R5cGUiOjEwMDA0LCJjdmVyIjoidjEuMCIsImd1aWQiOiJuR0xJSWRLRnBTWUNBWFBISVNnYUIwTEkiLCJtYXQiOjAsIm1jb3VudCI6MSwicGlkIjowLCJzdmVyIjoiMy4xLjAiLCJ0eXBlIjoxLCJ2aWQiOiJYTmpRM09ETXlOalUzTWc9PSJ9\",\"sign\":\"fd5e7ab6fc2d42ef7cad794057f31652\"}";
-    const _m_h5_tk = "f60a24b11d46a6cf793939582f152864_1765902052486";
-    const _m_h5_tk_enc = "ebad98ff2447045311b7e995ff64f2c6";
-
-    const response = await httpPost(url, buildQueryString({ data: data }), {
+    const response = await httpPost(segment.url, buildQueryString({ data: segment.data }), {
       headers: {
-        "Cookie": `_m_h5_tk=${_m_h5_tk};_m_h5_tk_enc=${_m_h5_tk_enc};`,
+        "Cookie": `_m_h5_tk=${segment._m_h5_tk};_m_h5_tk_enc=${segment._m_h5_tk_enc};`,
         "Referer": "https://v.youku.com",
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36",

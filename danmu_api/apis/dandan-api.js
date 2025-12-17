@@ -913,7 +913,7 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
       }
       danmus = await bilibiliSource.getComments(url, "bilibili1", segmentFlag);
     } else if (url.includes('.youku.com')) {
-      danmus = await youkuSource(url, "youku");
+      danmus = await youkuSource.getComments(url, "youku", segmentFlag);
     } else {
       // 如果不是已知平台，尝试第三方弹幕服务器
       const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
@@ -947,9 +947,11 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
   }
 }
 
-// Extracted function for GET /api/v2/segmentcomment?url=xxx
-export async function getSegmentComment(url, queryFormat) {
+// Extracted function for GET /api/v2/segmentcomment
+export async function getSegmentComment(segment, queryFormat) {
   try {
+    let url = segment.url;
+
     // 验证URL参数
     if (!url || typeof url !== 'string') {
       log("error", "Missing or invalid url parameter");
@@ -990,21 +992,15 @@ export async function getSegmentComment(url, queryFormat) {
 
     // 根据平台调用相应的分段弹幕获取方法
     if (url.includes('.qq.com')) {
-      danmus = await tencentSource.getSegmentComments(url, "qq");
+      danmus = await tencentSource.getSegmentComments(segment, "qq");
     } else if (url.includes('.iqiyi.com')) {
-      danmus = await iqiyiSource.getSegmentComments(url, "qiyi");
+      danmus = await iqiyiSource.getSegmentComments(segment, "qiyi");
     } else if (url.includes('.mgtv.com')) {
-      danmus = await mangoSource.getSegmentComments(url, "imgo");
-    } else if (url.includes('.bilibili.com') || url.includes('b23.tv')) {
-      danmus = await bilibiliSource.getSegmentComments(url, "bilibili1");
+      danmus = await mangoSource.getSegmentComments(segment, "imgo");
+    } else if (url.includes('.bilibili.com')) {
+      danmus = await bilibiliSource.getSegmentComments(segment, "bilibili1");
     } else if (url.includes('.youku.com')) {
-      danmus = await youkuSource.getSegmentComments(url, "youku");
-    } else {
-      // 如果不是已知平台，尝试第三方弹幕服务器
-      const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
-      if (urlPattern.test(url)) {
-        danmus = await otherSource.getSegmentComments(url, "other_server");
-      }
+      danmus = await youkuSource.getSegmentComments(segment, "youku");
     }
 
     log("info", `Successfully fetched ${danmus.length} segment comments from URL`);

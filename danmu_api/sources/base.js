@@ -37,7 +37,7 @@ export default class BaseSource {
   }
 
   // 获取某集的分片弹幕
-  async getEpisodeSegmentDanmu(url) {
+  async getEpisodeSegmentDanmu(segment) {
     throw new Error("Method 'getEpisodeSegmentDanmu' must be implemented");
   }
 
@@ -65,10 +65,10 @@ export default class BaseSource {
   }
 
   // 获取分片弹幕流水线方法(获取某集分片弹幕 -> 格式化弹幕 -> 弹幕处理，如去重/屏蔽字等)
-  async getSegmentComments(url, sourceName, progressCallback=null) {
+  async getSegmentComments(segment, sourceName, progressCallback=null) {
     if(progressCallback) await progressCallback(5, `开始获取分片弹幕${sourceName}弹幕`);
     log("info", `开始获取分片弹幕${sourceName}弹幕`);
-    const raw = await this.getEpisodeSegmentDanmu(url);
+    const raw = await this.getEpisodeSegmentDanmu(segment);
     if(progressCallback) await progressCallback(85,`原始分片弹幕 ${raw.length} 条，正在规范化`);
     log("info", `原始分片弹幕 ${raw.length} 条，正在规范化`);
     const formatted = this.formatComments(raw);

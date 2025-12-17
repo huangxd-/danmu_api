@@ -46,11 +46,13 @@ const apiConfigs = {
     },
     getSegmentComment: {
         name: '获取分片弹幕',
-        method: 'GET',
+        method: 'POST',
         path: '/api/v2/segmentcomment',
         params: [
-            { name: 'url', label: '分片URL', type: 'text', required: true, placeholder: '示例: https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000' }
-        ]
+            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] }
+        ],
+        hasBody: true,
+        bodyType: 'json'
     }
 };
 
@@ -69,37 +71,58 @@ function loadApiParams() {
     const config = apiConfigs[apiKey];
     paramsDiv.style.display = 'block';
 
-    if (config.params.length === 0) {
-        formDiv.innerHTML = '<p class="text-gray">此接口无需参数</p>';
-        return;
-    }
+    let html = '';
 
-    formDiv.innerHTML = config.params.map(param => {
-        if (param.type === 'select') {
-            // 为select类型参数添加默认选项
-            let optionsHtml = '<option value="">-- 请选择 --</option>';
-            if (param.options) {
-                optionsHtml += param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('');
+    // 添加查询参数部分
+    if (config.params && config.params.length > 0) {
+        html += '<div class="params-section">';
+        html += '<h4>查询参数</h4>';
+        html += config.params.map(param => {
+            if (param.type === 'select') {
+                // 为select类型参数添加默认选项
+                let optionsHtml = '<option value="">-- 请选择 --</option>';
+                if (param.options) {
+                    optionsHtml += param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('');
+                }
+                return \`
+                    <div class="form-group">
+                        <label>\${param.label}\${param.required ? ' *' : ''}</label>
+                        <select id="param-\${param.name}">
+                            \${optionsHtml}
+                        </select>
+                        \${param.placeholder ? \`<div class="form-help">\${param.placeholder}</div>\` : ''}
+                    </div>
+                \`; 
             }
+            // 使用placeholder属性显示示例参数
+            const placeholder = param.placeholder ? param.placeholder : "请输入" + param.label;
             return \`
                 <div class="form-group">
                     <label>\${param.label}\${param.required ? ' *' : ''}</label>
-                    <select id="param-\${param.name}">
-                        \${optionsHtml}
-                    </select>
-                    \${param.placeholder ? \`<div class="form-help">\${param.placeholder}</div>\` : ''}
+                    <input type="\${param.type}" id="param-\${param.name}" placeholder="\${placeholder}" \${param.required ? 'required' : ''}>
                 </div>
             \`; 
-        }
-        // 使用placeholder属性显示示例参数
-        const placeholder = param.placeholder ? param.placeholder : "请输入" + param.label;
-        return \`
-            <div class="form-group">
-                <label>\${param.label}\${param.required ? ' *' : ''}</label>
-                <input type="\${param.type}" id="param-\${param.name}" placeholder="\${placeholder}" \${param.required ? 'required' : ''}>
-            </div>
-        \`; 
-    }).join('');
+        }).join('');
+        html += '</div>';
+    }
+
+    // 添加请求体部分（如果接口有请求体）
+    if (config.hasBody) {
+        html += '<div class="body-section">';
+        html += '<h4>请求体</h4>';
+        html += \`<div class="form-group">
+            <label>请求体内容 * (JSON格式)</label>
+            <textarea id="body-content" rows="6" placeholder='输入JSON格式的请求体，例如：{"segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}'></textarea>
+            <div class="form-help">输入JSON格式的请求体内容</div>
+        </div>\`;
+        html += '</div>';
+    }
+
+    if (!html) {
+        html = '<p class="text-gray">此接口无需参数</p>';
+    }
+
+    formDiv.innerHTML = html;
 }
 
 function testApi() {
@@ -120,10 +143,13 @@ function testApi() {
     const config = apiConfigs[apiKey];
     const params = {};
 
-    config.params.forEach(param => {
-        const value = document.getElementById(\`param-\${param.name}\`).value;
-        if (value) params[param.name] = value;
-    });
+    // 获取查询参数
+    if (config.params) {
+        config.params.forEach(param => {
+            const value = document.getElementById(\`param-\${param.name}\`).value;
+            if (value) params[param.name] = value;
+        });
+    }
 
     addLog(\`调用接口: \${config.name} (\${config.method} \${config.path})\`, 'info');
     addLog(\`请求参数: \${JSON.stringify(params)}\`, 'info');
@@ -177,7 +203,36 @@ function testApi() {
         }
     };
 
-    if (config.method === 'POST') {
+    // 处理请求体
+    if (config.hasBody) {
+        // 从请求体输入框获取内容
+        const bodyContent = document.getElementById('body-content').value;
+        if (bodyContent) {
+            try {
+                // 尝试解析用户输入的JSON
+                const bodyData = JSON.parse(bodyContent);
+                requestOptions.body = JSON.stringify(bodyData);
+            } catch (e) {
+                addLog('请求体JSON格式错误: ' + e.message, 'error');
+                sendButton.innerHTML = originalText;
+                sendButton.disabled = false;
+                return;
+            }
+        } else {
+            // 如果没有在请求体输入框中输入内容，则使用参数构建请求体（向后兼容）
+            if (apiKey === 'getSegmentComment') {
+                // 对于 getSegmentComment 接口，创建 segment 对象
+                const segmentData = { url: params.url };
+                if (params.format) {
+                    segmentData.format = params.format;
+                }
+                requestOptions.body = JSON.stringify(segmentData);
+            } else {
+                requestOptions.body = JSON.stringify(params);
+            }
+        }
+    } else if (config.method === 'POST') {
+        // 对于没有特殊请求体配置的POST接口，使用参数构建请求体
         requestOptions.body = JSON.stringify(params);
     }
 

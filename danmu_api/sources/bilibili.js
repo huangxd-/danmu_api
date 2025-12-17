@@ -623,7 +623,7 @@ export default class BilibiliSource extends BaseSource {
     const promises = [];
     for (const segment of segmentList) {
       promises.push(
-        this.getEpisodeSegmentDanmu(segment.url)
+        this.getEpisodeSegmentDanmu(segment)
       );
     }
 
@@ -688,9 +688,9 @@ export default class BilibiliSource extends BaseSource {
     });
   }
 
-  async getEpisodeSegmentDanmu(url) {
+  async getEpisodeSegmentDanmu(segment) {
     try {
-      const response = await httpGet(url, {
+      const response = await httpGet(segment.url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           "Cookie": globals.bilibliCookie

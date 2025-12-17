@@ -53,7 +53,7 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
   - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
-  - `GET /api/v2/segmentcomment?url=${segmentUrl}&format=json`：通过弹幕分片URL直接获取单独一个分片的弹幕数据。
+  - `POST /api/v2/segmentcomment?format=json`：通过请求体中的Segment类JSON数据获取单独一个分片的弹幕数据。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
 - **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
   - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml`（默认：json）
@@ -78,7 +78,7 @@ LogVar 弹幕 API 服务器
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
 - **弹幕分片请求**：
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
-  - `/api/v2/segmentcomment?url=xxx` url里定义弹幕分片url，返回单独一个分片的弹幕
+  - `/api/v2/segmentcomment` 通过请求体中的Segment类JSON数据获取单独一个分片的弹幕数据
 - **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
   - 配置预览
   - 日志查看
@@ -141,7 +141,7 @@ LogVar 弹幕 API 服务器
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
    - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json`
    - `GET http://{ip}:9321/87654321/api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
-   - `GET http://{ip}:9321/87654321/api/v2/segmentcomment?url=${segmentUrl}&format=json`
+   - `POST http://{ip}:9321/87654321/api/v2/segmentcomment?format=json` (请求体包含segment类JSON数据，示例 `{"segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}` )
    - `GET http://{ip}:9321/87654321/api/logs`
    > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
 

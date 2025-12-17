@@ -722,7 +722,7 @@ export default class IqiyiSource extends BaseSource {
     // 创建请求Promise数组
     const promises = [];
     for (const segment of segmentList) {
-      promises.push(this.getEpisodeSegmentDanmu(segment.url));
+      promises.push(this.getEpisodeSegmentDanmu(segment));
     }
 
     // 解析弹幕数据
@@ -843,9 +843,9 @@ export default class IqiyiSource extends BaseSource {
     });
   }
 
-  async getEpisodeSegmentDanmu(url) {
+  async getEpisodeSegmentDanmu(segment) {
     try {
-      const response = await httpGet(url, {
+      const response = await httpGet(segment.url, {
         headers: {
           "Accpet-Encoding": "gzip",
           "Content-Type": "application/xml",

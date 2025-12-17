@@ -7,6 +7,7 @@ import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
+import { Segment } from "./models/dandan-model.js"
 
 let globals;
 
@@ -289,22 +290,34 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return getComment(path, queryFormat, segmentFlag);
   }
 
-  // GET /api/v2/segmentcomment?url=xxx
- if (path.startsWith("/api/v2/segmentcomment") && method === "GET") {
-    const videoUrl = url.searchParams.get('url');
-    const queryFormat = url.searchParams.get('format');
+  // POST /api/v2/segmentcomment - 接收segment类的JSON请求体
+ if (path.startsWith("/api/v2/segmentcomment") && method === "POST") {
+    try {
+      const queryFormat = url.searchParams.get('format');
+      // 从请求体获取segment数据
+      const requestBody = await req.json();
+      let segment;
+      
+      // 尝试解析JSON
+      try {
+        segment = Segment.fromJson(requestBody);
+      } catch (e) {
+        log("error", "Invalid JSON in request body for segment");
+        return jsonResponse(
+          { errorCode: 400, success: false, errorMessage: "Invalid JSON in request body" },
+          400
+        );
+      }
 
-    // 验证参数
-    if (!videoUrl) {
-      log("error", "Missing url parameter for segmentcomment");
+      // 通过URL和平台获取分段弹幕
+      return getSegmentComment(segment, queryFormat);
+    } catch (error) {
+      log("error", `Error processing segmentcomment request: ${error.message}`);
       return jsonResponse(
-        { errorCode: 400, success: false, errorMessage: "Missing url parameter" },
-        400
+        { errorCode: 500, success: false, errorMessage: "Internal server error" },
+        500
       );
     }
-
-    // 通过URL和平台获取分段弹幕
-    return getSegmentComment(videoUrl, queryFormat);
   }
 
   // GET /api/logs

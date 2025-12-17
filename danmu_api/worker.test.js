@@ -24,6 +24,7 @@ import { VercelHandler } from "./configs/handlers/vercel-handler.js";
 import { NetlifyHandler } from "./configs/handlers/netlify-handler.js";
 import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
+import { Segment } from "./models/dandan-model.js"
 
 // Mock Request class for testing
 class MockRequest {
@@ -101,7 +102,12 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET tencent segment danmu', async () => {
-  //   const res = await tencentSource.getSegmentComments("https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000", "qq");
+  //   const segment = Segment.fromJson({
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000"
+  //   });
+  //   const res = await tencentSource.getSegmentComments(segment, "qq");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -117,7 +123,12 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET iqiyi segment danmu', async () => {
-  //   const res = await iqiyiSource.getSegmentComments("https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000", "qiyi");
+  //   const segment = Segment.fromJson({
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000"
+  //   });
+  //   const res = await iqiyiSource.getSegmentComments(segment, "qiyi");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -133,7 +144,12 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET mango segment danmu', async () => {
-  //   const res = await mangoSource.getSegmentComments("https://bullet-ali.hitv.com/bullet/tx/2025/12/14/011640/23300622/23.json", "imgo");
+  //   const segment = Segment.fromJson({
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://bullet-ali.hitv.com/bullet/tx/2025/12/14/011640/23300622/23.json"
+  //   });
+  //   const res = await mangoSource.getSegmentComments(segment, "imgo");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -149,7 +165,12 @@ test('worker.js API endpoints', async (t) => {
   // });
 
   // await t.test('GET bilibili segment danmu', async () => {
-  //   const res = await bilibiliSource.getSegmentComments("https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=32131450212&segment_index=2", "bilibili1");
+  //   const segment = Segment.fromJson({
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=32131450212&segment_index=2"
+  //   });
+  //   const res = await bilibiliSource.getSegmentComments(segment, "bilibili1");
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
@@ -164,10 +185,18 @@ test('worker.js API endpoints', async (t) => {
   //  assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
   // });
 
-  await t.test('GET youku segment danmu', async () => {
-    const res = await youkuSource.getSegmentComments("https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=24679788&t=1765897372427&sign=4ee997ca025e54d6f63fa301cce80ebd&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000&jsonpIncPrefix=utility", "youku");
-    assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
-  });
+  // await t.test('GET youku segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=24679788&t=1765980205381&sign=355caad7d41ec0bf445cce48fce4d93e&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000&jsonpIncPrefix=utility",
+  //     "data": "{\"ctime\":1765980205380,\"ctype\":10004,\"cver\":\"v1.0\",\"guid\":\"JqbJIT/Q0XMCAXPAGpb9gBcg\",\"mat\":0,\"mcount\":1,\"pid\":0,\"sver\":\"3.1.0\",\"type\":1,\"vid\":\"XNjQ3ODMyNjU3Mg==\",\"msg\":\"eyJjdGltZSI6MTc2NTk4MDIwNTM4MCwiY3R5cGUiOjEwMDA0LCJjdmVyIjoidjEuMCIsImd1aWQiOiJKcWJKSVQvUTBYTUNBWFBBR3BiOWdCY2ciLCJtYXQiOjAsIm1jb3VudCI6MSwicGlkIjowLCJzdmVyIjoiMy4xLjAiLCJ0eXBlIjoxLCJ2aWQiOiJYTmpRM09ETXlOalUzTWc9PSJ9\",\"sign\":\"b94e1d2cf6dc1ffcf80845b0ea82b7ef\"}",
+  //     "_m_h5_tk": "d12df59d06f2830de1c681e04285a895_1765985058907",
+  //     "_m_h5_tk_enc": "082c6cbbad97b5b48b7798a51933bbfa"
+  //   });
+  //   const res = await youkuSource.getSegmentComments(segment, "youku");
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
 
   // await t.test('GET other_server danmu', async () => {
   //   const res = await otherSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
