@@ -541,6 +541,7 @@ export default class TencentSource extends BaseSource {
     const segmentItems = Object.values(data.segment_index);
     for (const item of segmentItems) {
       segmentList.push({
+        "type": "qq",
         "segment_start": Number(item.segment_start) || 0,
         "segment_end": Number(item.segment_name.split('/').pop()) || 0,
         "url": `${api_danmaku_segment}${vid}/${item.segment_name}`

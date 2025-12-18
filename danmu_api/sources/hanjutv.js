@@ -6,6 +6,7 @@ import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取韩剧TV弹幕
@@ -228,6 +229,24 @@ export default class HanjutvSource extends BaseSource {
       });
       return allDanmus; // 返回已收集的 episodes
     }
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取韩剧TV弹幕分段列表...", id);
+
+    return new SegmentListResponse({
+      "type": "hanjutv",
+      "segmentList": [{
+        "type": "hanjutv",
+        "segment_start": 0,
+        "segment_end": 30000,
+        "url": id
+      }]
+    });
+  }
+
+  async getEpisodeSegmentDanmu(segment) {
+    return this.getEpisodeDanmu(segment.url);
   }
 
   formatComments(comments) {

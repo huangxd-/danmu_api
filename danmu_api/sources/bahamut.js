@@ -7,6 +7,7 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
 import { strictTitleMatch, normalizeSpaces } from "../utils/common-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取巴哈姆特弹幕
@@ -379,6 +380,24 @@ export default class BahamutSource extends BaseSource {
       });
       return danmus; // 返回已收集的 episodes
     }
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取巴哈姆特弹幕分段列表...", id);
+
+    return new SegmentListResponse({
+      "type": "bahamut",
+      "segmentList": [{
+        "type": "bahamut",
+        "segment_start": 0,
+        "segment_end": 30000,
+        "url": id
+      }]
+    });
+  }
+
+  async getEpisodeSegmentDanmu(segment) {
+    return this.getEpisodeDanmu(segment.url);
   }
 
   formatComments(comments) {

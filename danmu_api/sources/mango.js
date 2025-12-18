@@ -643,6 +643,7 @@ export default class MangoSource extends BaseSource {
 
       for (let i = 0; i < totalSegments; i++) {
         segmentList.push({
+          "type": "imgo",
           "segment_start": i * 60,  // 每段开始时间（秒）
           "segment_end": Math.min((i + 1) * 60, time_to_second(time)), // 每段结束时间（秒）
           "url": `https://${cdnList}/${cdnVersion}/${i}.json`  // 每段弹幕URL

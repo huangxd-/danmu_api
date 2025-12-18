@@ -112,7 +112,7 @@ function loadApiParams() {
         html += '<h4>请求体</h4>';
         html += \`<div class="form-group">
             <label>请求体内容 * (JSON格式)</label>
-            <textarea id="body-content" rows="6" placeholder='输入JSON格式的请求体，例如：{"segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}'></textarea>
+            <textarea id="body-content" rows="6" placeholder='输入JSON格式的请求体，例如：{"type": "qq","segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}'></textarea>
             <div class="form-help">输入JSON格式的请求体内容</div>
         </div>\`;
         html += '</div>';

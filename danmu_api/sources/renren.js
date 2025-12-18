@@ -6,6 +6,7 @@ import { autoDecode, createHmacSha256, generateRandomSid, generateSign, generate
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
+import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取人人视频弹幕
@@ -425,6 +426,24 @@ export default class RenrenSource extends BaseSource {
     } else {
       return resp;
     }
+  }
+
+  async getEpisodeDanmuSegments(id) {
+    log("info", "获取人人视频弹幕分段列表...", id);
+
+    return new SegmentListResponse({
+      "type": "renren",
+      "segmentList": [{
+        "type": "renren",
+        "segment_start": 0,
+        "segment_end": 30000,
+        "url": id
+      }]
+    });
+  }
+
+  async getEpisodeSegmentDanmu(segment) {
+    return this.getEpisodeDanmu(segment.url);
   }
 
   formatComments(comments) {

@@ -676,6 +676,7 @@ export default class BilibiliSource extends BaseSource {
       }
 
       segmentList.push({
+        "type": "bilibili1",
         "segment_start": i * 360 * 1000,
         "segment_end": (i + 1) * 360 * 1000,
         "url": danmakuUrl

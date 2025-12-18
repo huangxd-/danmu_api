@@ -611,6 +611,7 @@ export default class YoukuSource extends BaseSource {
       log("info", `piece_url: ${url}`);
 
       return {
+        "type": "youku",
         "segment_start": mat * step,
         "segment_end": Math.min((mat + 1) * step, duration),
         "url": url,

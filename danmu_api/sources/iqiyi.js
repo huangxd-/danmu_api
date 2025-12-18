@@ -831,6 +831,7 @@ export default class IqiyiSource extends BaseSource {
       let queryParams = buildQueryString(params);
       const api_url = `https://cmts.iqiyi.com/bullet/${tvid.slice(-4, -2)}/${tvid.slice(-2)}/${tvid}_300_${i + 1}.z?${queryParams.toString()}`;
       segmentList.push({
+        "type": "qiyi",
         "segment_start": i * 5 * 60,  // 每段5分钟
         "segment_end": Math.min((i + 1) * 5 * 60, duration),
         "url": api_url

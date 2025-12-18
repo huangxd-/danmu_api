@@ -951,6 +951,7 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
 export async function getSegmentComment(segment, queryFormat) {
   try {
     let url = segment.url;
+    let platform = segment.type;
 
     // 验证URL参数
     if (!url || typeof url !== 'string') {
@@ -962,15 +963,6 @@ export async function getSegmentComment(segment, queryFormat) {
     }
 
     url = url.trim();
-
-    // 验证URL格式
-    if (!url.startsWith('http')) {
-      log("error", "Invalid url format, must start with http or https");
-      return jsonResponse(
-        { errorCode: 400, success: false, errorMessage: "Invalid url format, must start with http or https", count: 0, comments: [] },
-        400
-      );
-    }
 
     log("info", `Processing segment comment request for URL: ${url}`);
 
@@ -991,16 +983,24 @@ export async function getSegmentComment(segment, queryFormat) {
     let danmus = [];
 
     // 根据平台调用相应的分段弹幕获取方法
-    if (url.includes('.qq.com')) {
-      danmus = await tencentSource.getSegmentComments(segment, "qq");
-    } else if (url.includes('.iqiyi.com')) {
-      danmus = await iqiyiSource.getSegmentComments(segment, "qiyi");
-    } else if (url.includes('.mgtv.com')) {
-      danmus = await mangoSource.getSegmentComments(segment, "imgo");
-    } else if (url.includes('.bilibili.com')) {
-      danmus = await bilibiliSource.getSegmentComments(segment, "bilibili1");
-    } else if (url.includes('.youku.com')) {
-      danmus = await youkuSource.getSegmentComments(segment, "youku");
+    if (platform === "qq") {
+      danmus = await tencentSource.getSegmentComments(segment);
+    } else if (platform === "qiyi") {
+      danmus = await iqiyiSource.getSegmentComments(segment);
+    } else if (platform === "imgo") {
+      danmus = await mangoSource.getSegmentComments(segment);
+    } else if (platform === "bilibili1") {
+      danmus = await bilibiliSource.getSegmentComments(segment);
+    } else if (platform === "youku") {
+      danmus = await youkuSource.getSegmentComments(segment);
+    } else if (platform === "hanjutv") {
+      danmus = await hanjutvSource.getSegmentComments(segment);
+    } else if (platform === "bahamut") {
+      danmus = await bahamutSource.getSegmentComments(segment);
+    } else if (platform === "renren") {
+      danmus = await renrenSource.getSegmentComments(segment);
+    } else if (platform === "dandan") {
+      danmus = await dandanSource.getSegmentComments(segment);
     }
 
     log("info", `Successfully fetched ${danmus.length} segment comments from URL`);

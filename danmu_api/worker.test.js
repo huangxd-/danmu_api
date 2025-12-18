@@ -103,11 +103,12 @@ test('worker.js API endpoints', async (t) => {
 
   // await t.test('GET tencent segment danmu', async () => {
   //   const segment = Segment.fromJson({
+  //     "type": "qq",
   //     "segment_start": 0,
   //     "segment_end": 60,
   //     "url": "https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/30000/60000"
   //   });
-  //   const res = await tencentSource.getSegmentComments(segment, "qq");
+  //   const res = await tencentSource.getSegmentComments(segment);
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -124,11 +125,12 @@ test('worker.js API endpoints', async (t) => {
 
   // await t.test('GET iqiyi segment danmu', async () => {
   //   const segment = Segment.fromJson({
+  //     "type": "qiyi",
   //     "segment_start": 0,
   //     "segment_end": 60,
   //     "url": "https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000"
   //   });
-  //   const res = await iqiyiSource.getSegmentComments(segment, "qiyi");
+  //   const res = await iqiyiSource.getSegmentComments(segment);
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -145,11 +147,12 @@ test('worker.js API endpoints', async (t) => {
 
   // await t.test('GET mango segment danmu', async () => {
   //   const segment = Segment.fromJson({
+  //     "type": "imgo",
   //     "segment_start": 0,
   //     "segment_end": 60,
   //     "url": "https://bullet-ali.hitv.com/bullet/tx/2025/12/14/011640/23300622/23.json"
   //   });
-  //   const res = await mangoSource.getSegmentComments(segment, "imgo");
+  //   const res = await mangoSource.getSegmentComments(segment);
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
@@ -166,11 +169,12 @@ test('worker.js API endpoints', async (t) => {
 
   // await t.test('GET bilibili segment danmu', async () => {
   //   const segment = Segment.fromJson({
+  //     "type": "bilibili1",
   //     "segment_start": 0,
   //     "segment_end": 60,
   //     "url": "https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=32131450212&segment_index=2"
   //   });
-  //   const res = await bilibiliSource.getSegmentComments(segment, "bilibili1");
+  //   const res = await bilibiliSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
@@ -182,11 +186,12 @@ test('worker.js API endpoints', async (t) => {
   // await t.test('GET youku danmu segments', async () => {
   //   const res = await youkuSource.getComments("https://v.youku.com/v_show/id_XNjQ3ODMyNjU3Mg==.html", "youku", true);
   //   assert(res.type === "youku", `Expected res.type === "youku", but got ${res.type === "youku"}`);
-  //  assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
   // });
 
   // await t.test('GET youku segment danmu', async () => {
   //   const segment = Segment.fromJson({
+  //     "type": "youku",
   //     "segment_start": 0,
   //     "segment_end": 60,
   //     "url": "https://acs.youku.com/h5/mopen.youku.danmu.list/1.0/?jsv=2.5.6&appKey=24679788&t=1765980205381&sign=355caad7d41ec0bf445cce48fce4d93e&api=mopen.youku.danmu.list&v=1.0&type=originaljson&dataType=jsonp&timeout=20000&jsonpIncPrefix=utility",
@@ -194,7 +199,7 @@ test('worker.js API endpoints', async (t) => {
   //     "_m_h5_tk": "d12df59d06f2830de1c681e04285a895_1765985058907",
   //     "_m_h5_tk_enc": "082c6cbbad97b5b48b7798a51933bbfa"
   //   });
-  //   const res = await youkuSource.getSegmentComments(segment, "youku");
+  //   const res = await youkuSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
@@ -223,6 +228,24 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
   // });
 
+  // await t.test('GET hanjutv danmu segments', async () => {
+  //   const res = await hanjutvSource.getComments("12tY0Ktjzu5TCBrfTolNO", "hanjutv", true);
+  //   console.log(res);
+  //   assert(res.type === "hanjutv", `Expected res.type === "hanjutv", but got ${res.type === "hanjutv"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET hanjutv segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     "type": "hanjutv",
+  //     "segment_start": 0,
+  //     "segment_end": 30000,
+  //     "url": "12tY0Ktjzu5TCBrfTolNO"
+  //   });
+  //   const res = await hanjutvSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
   // await t.test('GET bahamut search', async () => {
   //   const res = await bahamutSource.search("胆大党");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
@@ -236,6 +259,24 @@ test('worker.js API endpoints', async (t) => {
   // await t.test('GET bahamut danmu', async () => {
   //   const res = await bahamutSource.getComments("44453");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET bahamut danmu segments', async () => {
+  //   const res = await bahamutSource.getComments("44453", "bahamut", true);
+  //   console.log(res);
+  //   assert(res.type === "bahamut", `Expected res.type === "bahamut", but got ${res.type === "bahamut"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET bahamut segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     "type": "bahamut",
+  //     "segment_start": 0,
+  //     "segment_end": 30000,
+  //     "url": "44453"
+  //   });
+  //   const res = await bahamutSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
   // await t.test('GET realistic danmu', async () => {
