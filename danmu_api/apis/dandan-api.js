@@ -8,7 +8,7 @@ import {
     updateLocalCaches
 } from "../utils/cache-util.js";
 import { formatDanmuResponse } from "../utils/danmu-util.js";
-import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces } from "../utils/common-util.js";
+import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
@@ -44,6 +44,20 @@ const bilibiliSource = new BilibiliSource();
 const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
 const tmdbSource = new TmdbSource(doubanSource);
+
+// 匹配年份函数，优先于季匹配
+function matchYear(anime, queryYear) {
+  if (!queryYear) {
+    return true; // 如果没有查询年份，则视为匹配
+  }
+  
+  const animeYear = extractYear(anime.animeTitle);
+  if (!animeYear) {
+    return true; // 如果动漫没有年份信息，则视为匹配（允许匹配）
+  }
+  
+  return animeYear === queryYear;
+}
 
 function matchSeason(anime, queryTitle, season) {
   const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
@@ -319,7 +333,75 @@ function filterSameEpisodeTitle(filteredTmpEpisodes) {
     return filteredEpisodes;
 }
 
-async function matchAniAndEp(season, episode, searchData, title, req, platform, preferAnimeId) {
+// 从集标题中提取集数（支持多种格式：第1集、第01集、EP01、E01等）
+function extractEpisodeNumberFromTitle(episodeTitle) {
+  if (!episodeTitle) return null;
+  
+  // 匹配格式：第1集、第01集、第10集等
+  const chineseMatch = episodeTitle.match(/第(\d+)集/);
+  if (chineseMatch) {
+    return parseInt(chineseMatch[1], 10);
+  }
+  
+  // 匹配格式：EP01、EP1、E01、E1等
+  const epMatch = episodeTitle.match(/[Ee][Pp]?(\d+)/);
+  if (epMatch) {
+    return parseInt(epMatch[1], 10);
+  }
+  
+  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
+  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
+  if (numberMatch) {
+    return parseInt(numberMatch[1], 10);
+  }
+  
+  return null;
+}
+
+// 根据集数匹配episode（优先使用集标题中的集数，其次使用episodeNumber，最后使用数组索引）
+function findEpisodeByNumber(filteredEpisodes, targetEpisode, platform = null) {
+  if (!filteredEpisodes || filteredEpisodes.length === 0) {
+    return null;
+  }
+  
+  // 如果指定了平台，先过滤出该平台的集数
+  let platformEpisodes = filteredEpisodes;
+  if (platform) {
+    platformEpisodes = filteredEpisodes.filter(ep => extractEpisodeTitle(ep.episodeTitle) === platform);
+  }
+  
+  if (platformEpisodes.length === 0) {
+    return null;
+  }
+  
+  // 策略1：从集标题中提取集数进行匹配
+  for (const ep of platformEpisodes) {
+    const extractedNumber = extractEpisodeNumberFromTitle(ep.episodeTitle);
+    if (extractedNumber === targetEpisode) {
+      log("info", `Found episode by title number: ${ep.episodeTitle} (extracted: ${extractedNumber})`);
+      return ep;
+    }
+  }
+  
+  // 策略2：使用episodeNumber字段匹配
+  for (const ep of platformEpisodes) {
+    if (ep.episodeNumber && parseInt(ep.episodeNumber, 10) === targetEpisode) {
+      log("info", `Found episode by episodeNumber: ${ep.episodeTitle} (episodeNumber: ${ep.episodeNumber})`);
+      return ep;
+    }
+  }
+  
+  // 策略3：回退到数组索引（仅当没有找到匹配时）
+  if (platformEpisodes.length >= targetEpisode) {
+    const fallbackEp = platformEpisodes[targetEpisode - 1];
+    log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
+    return fallbackEp;
+  }
+  
+  return null;
+}
+
+async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId) {
   let resAnime;
   let resEpisode;
   if (season && episode) {
@@ -329,6 +411,12 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
       if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString() &&
           anime.animeId.toString() !== preferAnimeId.toString()) continue;
       if (normalizeSpaces(anime.animeTitle).includes(normalizedTitle)) {
+        // 年份匹配优先于季匹配
+        if (!matchYear(anime, year)) {
+          log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
+          continue;
+        }
+        
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
         const bangumiData = await bangumiRes.json();
@@ -343,25 +431,14 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
         const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
         log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
-        if (platform) {
-          const firstIndex = filteredEpisodes.findIndex(episode => extractEpisodeTitle(episode.episodeTitle) === platform);
-          const indexCount = filteredEpisodes.filter(episode => extractEpisodeTitle(episode.episodeTitle) === platform).length;
-          if (indexCount > 0 && indexCount >= episode) {
-            // 先判断season
-            if (matchSeason(anime, title, season)) {
-              resEpisode = filteredEpisodes[firstIndex + episode - 1];
-              resAnime = anime;
-              break;
-            }
-          }
-        } else {
-          if (filteredEpisodes.length >= episode) {
-            // 先判断season
-            if (matchSeason(anime, title, season)) {
-              resEpisode = filteredEpisodes[episode - 1];
-              resAnime = anime;
-              break;
-            }
+        // 年份匹配通过后，再判断season
+        if (matchSeason(anime, title, season)) {
+          // 使用新的集数匹配策略
+          const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, platform);
+          if (matchedEpisode) {
+            resEpisode = matchedEpisode;
+            resAnime = anime;
+            break;
           }
         }
       }
@@ -372,6 +449,12 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
       if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString()) continue;
       const animeTitle = anime.animeTitle.split("(")[0].trim();
       if (animeTitle === title) {
+        // 年份匹配优先
+        if (!matchYear(anime, year)) {
+          log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
+          continue;
+        }
+        
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
         const bangumiData = await bangumiRes.json();
@@ -398,8 +481,14 @@ async function matchAniAndEp(season, episode, searchData, title, req, platform, 
   return {resEpisode, resAnime};
 }
 
-async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisode, resAnime) {
+async function fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime) {
   for (const anime of searchData.animes) {
+    // 年份匹配优先（如果提供了年份）
+    if (year && !matchYear(anime, year)) {
+      log("info", `Fallback: Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
+      continue;
+    }
+    
     let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
     const bangumiRes = await getBangumi(originBangumiUrl.pathname);
     const bangumiData = await bangumiRes.json();
@@ -413,8 +502,10 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, resEpisod
       // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
       const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
 
-      if (filteredEpisodes.length >= episode) {
-        resEpisode = filteredEpisodes[episode - 1];
+      // 使用新的集数匹配策略
+      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, null);
+      if (matchedEpisode) {
+        resEpisode = matchedEpisode;
         resAnime = anime;
         break;
       }
@@ -433,13 +524,20 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
   const match = cleanFileName.match(regex);
 
-  let title, season, episode;
+  let title, season, episode, year;
 
   if (match) {
     // 匹配到 S##E## 格式
     title = match[1].trim();
     season = parseInt(match[2], 10);
     episode = parseInt(match[3], 10);
+
+    // ============ 提取年份 =============
+    // 从文件名中提取年份（支持多种格式：.2009、.2024、(2009)、(2024) 等）
+    const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+    if (yearMatch) {
+      year = parseInt(yearMatch[1], 10);
+    }
 
     // ============ 新标题提取逻辑（重点）============
     // 目标：
@@ -448,7 +546,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     // 3. 自动去掉后面的年份、技术参数等垃圾
 
     // 情况1：开头是中文（最常见的中文字幕组文件名）
-    const chineseStart = title.match(/^[\u4e00-\u9fa5·]+[^\.\r\n]*/); // 允许中文后面紧跟非.符号，如 亲爱的X、宇宙Marry Me?
+    const chineseStart = title.match(/^[\u4e00-\u9fa5·]+[^.\r\n]*/); // 允许中文后面紧跟非.符号，如 亲爱的X、宇宙Marry Me?
     if (chineseStart) {
       title = chineseStart[0];
     }
@@ -480,6 +578,12 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
     season = null;
     episode = null;
+    
+    // 从文件名中提取年份
+    const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+    if (yearMatch) {
+      year = parseInt(yearMatch[1], 10);
+    }
   }
 
   // 如果外语标题转换中文开关已开启，则尝试获取中文标题
@@ -488,8 +592,8 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
   }
 
-  log("info", "Parsed title, season, episode", {title, season, episode});
-  return {title, season, episode};
+  log("info", "Parsed title, season, episode, year", {title, season, episode, year});
+  return {title, season, episode, year};
 }
 
 // Extracted function for POST /api/v2/match
@@ -523,7 +627,7 @@ export async function matchAnime(url, req) {
     log("info", `Processing anime match for query: ${fileName}`);
     log("info", `Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
-    let {title, season, episode} = await extractTitleSeasonEpisode(cleanFileName);
+    let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
 
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
@@ -544,7 +648,7 @@ export async function matchAnime(url, req) {
     log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
 
     for (const platform of dynamicPlatformOrder) {
-      const __ret = await matchAniAndEp(season, episode, searchData, title, req, platform, preferAnimeId);
+      const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
       resEpisode = __ret.resEpisode;
       resAnime = __ret.resAnime;
 
@@ -556,7 +660,7 @@ export async function matchAnime(url, req) {
 
     // 如果都没有找到则返回第一个满足剧集数的剧集
     if (!resAnime) {
-      const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, resEpisode, resAnime);
+      const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
       resEpisode = __ret.resEpisode;
       resAnime = __ret.resAnime;
     }
