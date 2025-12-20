@@ -542,8 +542,14 @@ export default class TencentSource extends BaseSource {
     for (const item of segmentItems) {
       segmentList.push({
         "type": "qq",
-        "segment_start": Number(item.segment_start) || 0,
-        "segment_end": Number(item.segment_name.split('/').pop()) || 0,
+        "segment_start": (() => {
+          const start = Number(item.segment_start) || 0;
+          return start / 1000;
+        })(),
+        "segment_end": (() => {
+          const end = Number(item.segment_name.split('/').pop()) || 0;
+          return end / 1000;
+        })(),
         "url": `${api_danmaku_segment}${vid}/${item.segment_name}`
       });
     }

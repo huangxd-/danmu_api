@@ -1,116 +1,16 @@
 // 独立的弹幕获取插件，直接调用内部函数而不是通过HTTP API
 // 该插件集成了后端核心功能，无需启动后端服务
 
-import { searchAnime, getBangumi, getComment, getCommentByUrl, matchAnime } from './apis/dandan-api.js';
+import { searchAnime, getBangumi, getComment, getSegmentComment } from './apis/dandan-api.js';
 import { Globals } from './configs/globals.js';
-
-// 初始化全局配置
-let globals;
-function initGlobals() {
-  if (!globals) {
-    globals = Globals.init(process.env);
-  }
-  return globals;
-}
-
-// 搜索弹幕
-async function searchDanmu(params) {
-  // 初始化全局变量
-  initGlobals();
-  
-  // 创建模拟URL对象
-  const url = new URL('http://localhost');
-  url.search = `?keyword=${encodeURIComponent(params.keyword || '')}`;
-  
-  try {
-    const response = await searchAnime(url);
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Search error:', error);
-    return { errorCode: 500, success: false, errorMessage: error.message, animes: [] };
-  }
-}
-
-// 获取详情
-async function getDetailById(params) {
-  // 初始化全局变量
-  initGlobals();
-  
-  try {
-    const response = await getBangumi(`/api/v2/bangumi/${params.id}`);
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Get detail error:', error);
-    return { errorCode: 500, success: false, errorMessage: error.message, bangumi: null };
-  }
-}
-
-// 获取弹幕
-async function getCommentsById(params) {
-  // 初始化全局变量
-  initGlobals();
-  
-  // 使用URL获取弹幕
-  if (params.url) {
-    try {
-      const response = await getCommentByUrl(params.url, 'json');
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Get comments by URL error:', error);
-      return { errorCode: 500, success: false, errorMessage: error.message, count: 0, comments: [] };
-    }
-  } 
-  // 或使用commentId获取弹幕
-  else if (params.id) {
-    try {
-      const response = await getComment(`/api/v2/comment/${params.id}`, 'json');
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Get comments by ID error:', error);
-      return { errorCode: 500, success: false, errorMessage: error.message, count: 0, comments: [] };
-    }
-  }
-  return { errorCode: 400, success: false, errorMessage: "Missing url or id parameter" };
-}
-
-// 获取指定时刻弹幕
-async function getDanmuWithSegmentTime(params) {
-  // 初始化全局变量
-  initGlobals();
-  
-  // 根据时间段获取弹幕
-  if (params.url && params.startTime !== undefined && params.endTime !== undefined) {
-    try {
-      const response = await getCommentByUrl(params.url, 'json');
-      const data = await response.json();
-      
-      // 过滤时间段内的弹幕
-      if (data.comments && Array.isArray(data.comments)) {
-        const filteredComments = data.comments.filter(comment => {
-          return comment.time >= params.startTime && comment.time <= params.endTime;
-        });
-        return { ...data, comments: filteredComments, count: filteredComments.length };
-      }
-      return data;
-    } catch (error) {
-      console.error('Get segment time danmu error:', error);
-      return { errorCode: 500, success: false, errorMessage: error.message, count: 0, comments: [] };
-    }
-  }
-  return { errorCode: 400, success: false, errorMessage: "Missing required parameters" };
-}
 
 // 定义WidgetMetadata
 const WidgetMetadata = {
-  id: "standalone.auto.danmu2",
-  title: "自包含弹幕v2 (无需后端服务)",
+  id: "forward.auto.danmu2",
+  title: "自动链接弹幕v2",
   version: "2.0.10",
   requiredVersion: "0.0.2",
-  description: "直接调用内部函数获取弹幕，无需启动后端服务【五折码：CHEAP.5;七折码：CHEAP】",
+  description: "自动获取播放链接并从服务器获取弹幕【五折码：CHEAP.5;七折码：CHEAP】",
   author: "huangxd",
   site: "https://github.com/huangxd-/ForwardWidgets",
   globalParams: [
@@ -283,6 +183,106 @@ const WidgetMetadata = {
 // 在浏览器环境中设置全局变量（ForwardWidget系统使用）
 if (typeof window !== 'undefined') {
   window.WidgetMetadata = WidgetMetadata;
+}
+
+// 初始化全局配置
+let globals;
+function initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute) {
+  // 将传入的参数设置到环境变量中，以便Globals可以访问它们
+  const env = { ...process.env };
+  
+  if (other_server !== undefined) env.OTHER_SERVER = other_server;
+  if (vod_servers !== undefined) env.VOD_SERVERS = vod_servers;
+  if (bilibili_cookie !== undefined) env.BILIBILI_COOKIE = bilibili_cookie;
+  if (source_order !== undefined) env.SOURCE_ORDER = source_order;
+  if (blocked_words !== undefined) env.BLOCKED_WORDS = blocked_words;
+  if (group_minute !== undefined) env.GROUP_MINUTE = group_minute;
+  
+  if (!globals) {
+    globals = Globals.init(env);
+  }
+  return globals;
+}
+
+const PREFIX_URL = "http://localhost:9321"
+
+async function searchDanmu(params) {
+  const { tmdbId, type, title, season, link, videoUrl, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+
+  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+
+  const response = await searchAnime(new URL(`${PREFIX_URL}/api/v2/search/anime?keyword=${title}`));
+  const resJson = await response.json();
+  const animes = resJson.animes;
+
+  console.log("info", "animes: ", animes);
+
+  return {
+    animes: animes,
+  };
+}
+
+async function getDetailById(params) {
+  const { animeId, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+
+  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+
+  const response = await getBangumi(`${PREFIX_URL}/api/v2/bangumi/${animeId}`);
+  const resJson = await response.json();
+
+  console.log("info", "bangumi", resJson);
+
+  return resJson.bangumi.episodes;
+}
+
+async function getCommentsById(params) {
+  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+
+  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+
+  if (commentId) {
+    const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
+    const segmentList = Widget.storage.get(storeKey);
+    
+    console.log("info", "tmdbId:", tmdbId);
+    console.log("info", "segmentList:", segmentList);
+    if (segmentList) {
+        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute })
+    }
+
+    const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
+    const resJson = await response.json();
+
+    Widget.storage.set(storeKey, resJson.comments.segmentList);
+
+    console.log("segmentList", resJson.comments.segmentList);
+
+    return resJson.comments.segmentList;
+  }
+  return null;
+}
+
+async function getDanmuWithSegmentTime(params) {
+  const { segmentTime, tmdbId, season, episode, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+
+  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+
+  const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
+  const segmentList = Widget.storage.get(storeKey);
+  if (segmentList) {
+    const segment = segmentList.find((item) => {
+        const start = Number(item.segment_start);
+        const end = Number(item.segment_end);
+        const time = Number(segmentTime);
+        return time >= start && time < end;
+    });
+    console.log("info", "segment:", segment);
+    const response = await getSegmentComment(segment);
+    const resJson = await response.json();
+
+    return resJson;
+  }
+  return null;
 }
 
 // 导出函数以供ForwardWidgets调用
