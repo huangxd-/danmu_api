@@ -1001,6 +1001,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await renrenSource.getSegmentComments(segment);
     } else if (platform === "dandan") {
       danmus = await dandanSource.getSegmentComments(segment);
+    } else if (platform === "other_server") {
+      danmus = await otherSource.getSegmentComments(segment);
     }
 
     log("info", `Successfully fetched ${danmus.length} segment comments from URL`);
