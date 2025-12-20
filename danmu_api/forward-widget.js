@@ -15,7 +15,7 @@ const WidgetMetadata = {
   site: "https://github.com/huangxd-/ForwardWidgets",
   globalParams: [
     {
-      name: "other_server",
+      name: "otherServer",
       title: "兜底第三方弹幕服务器，不填默认为https://api.danmu.icu",
       type: "input",
       placeholders: [
@@ -46,7 +46,7 @@ const WidgetMetadata = {
       ],
     },
     {
-      name: "vod_servers",
+      name: "vodServers",
       title: "VOD服务器列表，支持多个服务器并发查询，格式：名称@URL,名称@URL,...",
       type: "input",
       placeholders: [
@@ -69,7 +69,7 @@ const WidgetMetadata = {
       ],
     },
     {
-      name: "bilibili_cookie",
+      name: "bilibiliCookie",
       title: "b站cookie（填入后能抓取b站完整弹幕）",
       type: "input",
       placeholders: [
@@ -80,7 +80,7 @@ const WidgetMetadata = {
       ],
     },
     {
-      name: "source_order",
+      name: "sourceOrder",
       title: "源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回）",
       type: "input",
       placeholders: [
@@ -103,7 +103,7 @@ const WidgetMetadata = {
       ],
     },
     {
-      name: "blocked_words",
+      name: "blockedWords",
       title: "弹幕屏蔽词列表",
       type: "input",
       placeholders: [
@@ -114,7 +114,7 @@ const WidgetMetadata = {
       ],
     },
     {
-      name: "group_minute",
+      name: "groupMinute",
       title: "合并去重分钟数，表示按n分钟分组后对弹幕合并去重",
       type: "input",
       placeholders: [
@@ -187,16 +187,16 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
-function initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute) {
+function initGlobals(otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
   const env = { ...process.env };
   
-  if (other_server !== undefined) env.OTHER_SERVER = other_server;
-  if (vod_servers !== undefined) env.VOD_SERVERS = vod_servers;
-  if (bilibili_cookie !== undefined) env.BILIBILI_COOKIE = bilibili_cookie;
-  if (source_order !== undefined) env.SOURCE_ORDER = source_order;
-  if (blocked_words !== undefined) env.BLOCKED_WORDS = blocked_words;
-  if (group_minute !== undefined) env.GROUP_MINUTE = group_minute;
+  if (otherServer !== undefined) env.OTHER_SERVER = otherServer;
+  if (vodServers !== undefined) env.VOD_SERVERS = vodServers;
+  if (bilibiliCookie !== undefined) env.BILIBILI_COOKIE = bilibiliCookie;
+  if (sourceOrder !== undefined) env.SOURCE_ORDER = sourceOrder;
+  if (blockedWords !== undefined) env.BLOCKED_WORDS = blockedWords;
+  if (groupMinute !== undefined) env.GROUP_MINUTE = groupMinute;
   
   if (!globals) {
     globals = Globals.init(env);
@@ -207,9 +207,9 @@ function initGlobals(other_server, vod_servers, bilibili_cookie, source_order, b
 const PREFIX_URL = "http://localhost:9321"
 
 async function searchDanmu(params) {
-  const { tmdbId, type, title, season, link, videoUrl, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+  const { tmdbId, type, title, season, link, videoUrl, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute } = params;
 
-  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+  await initGlobals(otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute);
 
   const response = await searchAnime(new URL(`${PREFIX_URL}/api/v2/search/anime?keyword=${title}`));
   const resJson = await response.json();
@@ -223,9 +223,9 @@ async function searchDanmu(params) {
 }
 
 async function getDetailById(params) {
-  const { animeId, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+  const { animeId, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute } = params;
 
-  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+  await initGlobals(otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute);
 
   const response = await getBangumi(`${PREFIX_URL}/api/v2/bangumi/${animeId}`);
   const resJson = await response.json();
@@ -236,9 +236,9 @@ async function getDetailById(params) {
 }
 
 async function getCommentsById(params) {
-  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute } = params;
 
-  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+  await initGlobals(otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute);
 
   if (commentId) {
     const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
@@ -247,7 +247,7 @@ async function getCommentsById(params) {
     console.log("info", "tmdbId:", tmdbId);
     console.log("info", "segmentList:", segmentList);
     if (segmentList) {
-        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute })
+        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute })
     }
 
     const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
@@ -263,9 +263,9 @@ async function getCommentsById(params) {
 }
 
 async function getDanmuWithSegmentTime(params) {
-  const { segmentTime, tmdbId, season, episode, other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute } = params;
+  const { segmentTime, tmdbId, season, episode, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute } = params;
 
-  await initGlobals(other_server, vod_servers, bilibili_cookie, source_order, blocked_words, group_minute);
+  await initGlobals(otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute);
 
   const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
   const segmentList = Widget.storage.get(storeKey);
