@@ -1,5 +1,8 @@
 const esbuild = require('esbuild');
 
+// 动态获取版本号
+const { Globals } = require('./danmu_api/configs/globals.js');
+
 // 定义要排除的UI相关模块
 const uiModules = [
   './ui/template.js',
@@ -53,6 +56,9 @@ const uiModules = [
           }
         }
       ],
+      define: {
+        'widgetVersion': `"${Globals.VERSION}"`
+      },
       banner: {
         js: '// Bundled standalone danmu widget with all internal functions (excluding UI)\n'
       },
