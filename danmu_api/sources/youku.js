@@ -672,7 +672,9 @@ export default class YoukuSource extends BaseSource {
       content.timepoint = item.playat / 1000;
       const prop = JSON.parse(item.propertis)
       if (prop?.color) {
-        content.color = prop.color;
+        content.color = typeof prop.color === 'string' 
+          ? parseInt(prop.color, 10) 
+          : prop.color;
       }
       if (prop?.pos) {
         const pos = prop.pos;
