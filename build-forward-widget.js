@@ -194,6 +194,39 @@ ${originalContent}
               };
             });
           }
+        },
+        // 插件：移除导出语句（仅对输出文件进行处理）
+        {
+          name: 'remove-exports',
+          setup(build) {
+            build.onEnd(async (result) => {
+              if (result.errors.length === 0) {
+                const fs = require('fs');
+                let outputContent = fs.readFileSync('dist/logvar-danmu.js', 'utf8');
+                
+                // 移除指定的导出语句
+                const exportPattern = /export\s*{[^}]*getCommentsById[^}]*getDanmuWithSegmentTime[^}]*getDetailById[^}]*searchDanmu[^}]*};?/g;
+                outputContent = outputContent.replace(exportPattern, '');
+                
+                // 也尝试匹配不同的顺序排列
+                const exportPattern2 = /export\s*{[^}]*getDanmuWithSegmentTime[^}]*getCommentsById[^}]*getDetailById[^}]*searchDanmu[^}]*};?/g;
+                outputContent = outputContent.replace(exportPattern2, '');
+                
+                const exportPattern3 = /export\s*{[^}]*getDetailById[^}]*getCommentsById[^}]*getDanmuWithSegmentTime[^}]*searchDanmu[^}]*};?/g;
+                outputContent = outputContent.replace(exportPattern3, '');
+                
+                const exportPattern4 = /export\s*{[^}]*searchDanmu[^}]*getDetailById[^}]*getCommentsById[^}]*getDanmuWithSegmentTime[^}]*};?/g;
+                outputContent = outputContent.replace(exportPattern4, '');
+                
+                // 更通用的模式，匹配包含这四个函数名的导出语句
+                const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
+                outputContent = outputContent.replace(genericExportPattern, '');
+                
+                // 保存修改后的内容
+                fs.writeFileSync('dist/logvar-danmu.js', outputContent);
+              }
+            });
+          }
         }
       ],
       define: {
