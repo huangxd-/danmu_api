@@ -60,12 +60,12 @@ const uiModules = [
         'widgetVersion': `"${Globals.VERSION}"`
       },
       banner: {
-        js: '// Bundled standalone danmu widget with all internal functions (excluding UI)\n'
+        js: '// Bundled forward danmu widget with all internal functions (excluding UI)\n'
       },
       logLevel: 'info'
     });
     
-    console.log('Standalone widget bundle created successfully!');
+    console.log('Forward widget bundle created successfully!');
   } catch (error) {
     console.error('Build failed:', error);
     process.exit(1);
