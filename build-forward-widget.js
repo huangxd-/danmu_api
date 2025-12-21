@@ -130,6 +130,97 @@ class CustomURL {
 }
 `;
 
+// 自定义AbortController实现
+const customAbortControllerImplementation = `
+class CustomAbortController {
+  constructor() {
+    this.signal = new CustomAbortSignal();
+  }
+
+  abort() {
+    this.signal.abort();
+  }
+}
+
+class CustomAbortSignal {
+  constructor() {
+    this.aborted = false;
+    this.onabort = null;
+    this.listeners = [];
+  }
+
+  abort() {
+    if (this.aborted) return;
+    
+    this.aborted = true;
+    
+    // 触发所有监听器
+    this.listeners.forEach(listener => {
+      try {
+        if (typeof listener === 'function') {
+          listener({ type: 'abort' });
+        } else if (listener && typeof listener.handleEvent === 'function') {
+          listener.handleEvent({ type: 'abort' });
+        }
+      } catch (e) {
+        // 忽略监听器中的错误
+      }
+    });
+    
+    // 触发onabort回调
+    if (this.onabort) {
+      try {
+        this.onabort({ type: 'abort' });
+      } catch (e) {
+        // 忽略onabort回调中的错误
+      }
+    }
+  }
+
+  addEventListener(type, listener) {
+    if (type === 'abort') {
+      this.listeners.push(listener);
+      // 如果已经中止，立即触发监听器
+      if (this.aborted) {
+        try {
+          if (typeof listener === 'function') {
+            listener({ type: 'abort' });
+          } else if (listener && typeof listener.handleEvent === 'function') {
+            listener.handleEvent({ type: 'abort' });
+          }
+        } catch (e) {
+          // 忽略监听器中的错误
+        }
+      }
+    }
+  }
+
+  removeEventListener(type, listener) {
+    if (type === 'abort') {
+      const index = this.listeners.indexOf(listener);
+      if (index !== -1) {
+        this.listeners.splice(index, 1);
+      }
+    }
+  }
+
+  dispatchEvent(event) {
+    if (event.type === 'abort') {
+      this.abort();
+    }
+  }
+}
+
+// DOMException polyfill for AbortError
+class CustomDOMException extends Error {
+  constructor(message, name) {
+    super(message);
+    this.name = name || 'Error';
+    this.message = message;
+  }
+}
+`;
+
 (async () => {
   try {
     await esbuild.build({
@@ -154,38 +245,45 @@ class CustomURL {
             });
           }
         },
-        // 插件：注入自定义URL实现
+        // 插件：合并注入 URL 和 AbortController
         {
-          name: 'custom-url',
+          name: 'custom-polyfills',
           setup(build) {
-            build.onLoad({ filter: /^custom-url-stub$/ }, () => {
-              return {
-                contents: customURLImplementation,
-                loader: 'js'
-              };
-            });
-
-            // 在入口文件中注入自定义URL实现
             build.onLoad({ filter: /^.*forward-widget\.js$/ }, async (args) => {
-              // 读取原始文件内容
               const fs = require('fs');
               const originalContent = fs.readFileSync(args.path, 'utf8');
               
-              // 添加自定义URL实现，并替换全局URL引用
+              // 同时注入 URL 和 AbortController 实现
               const modifiedContent = `
-// 注入自定义URL实现
-${customURLImplementation}
+        // 注入自定义URL实现
+        ${customURLImplementation}
 
-// 如果全局环境中没有URL，则使用自定义实现
-if (typeof URL === 'undefined') {
- var URL = CustomURL;
-} else {
-  // 如果已有URL，保存原始引用
-  var OriginalURL = URL;
-  var URL = CustomURL;
-}
+        // 如果全局环境中没有URL,则使用自定义实现
+        if (typeof URL === 'undefined') {
+          var URL = CustomURL;
+        } else {
+          var OriginalURL = URL;
+          var URL = CustomURL;
+        }
 
-${originalContent}
+        // 注入自定义AbortController实现
+        ${customAbortControllerImplementation}
+
+        // 如果全局环境中没有AbortController,则使用自定义实现
+        if (typeof AbortController === 'undefined') {
+          var AbortController = CustomAbortController;
+          var AbortSignal = CustomAbortSignal;
+          var DOMException = CustomDOMException;
+        } else {
+          var OriginalAbortController = AbortController;
+          var OriginalAbortSignal = AbortSignal;
+          var OriginalDOMException = DOMException;
+          var AbortController = CustomAbortController;
+          var AbortSignal = CustomAbortSignal;
+          var DOMException = CustomDOMException;
+        }
+
+        ${originalContent}
               `;
               
               return {
