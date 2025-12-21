@@ -24,7 +24,7 @@ import MangoSource from "../sources/mango.js";
 import BilibiliSource from "../sources/bilibili.js";
 import YoukuSource from "../sources/youku.js";
 import OtherSource from "../sources/other.js";
-import {Anime, AnimeMatch, Episodes, Bangumi} from "../models/dandan-model.js";
+import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
 
 // =====================
 // 兼容弹弹play接口

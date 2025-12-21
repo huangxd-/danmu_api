@@ -1,10 +1,10 @@
 import { searchAnime, getBangumi, getComment, getSegmentComment, matchSeason } from './apis/dandan-api.js';
 import { Globals } from './configs/globals.js';
-import { log } from './utils/log-util.js'
+import { log } from './utils/log-util.js';
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
 
-const WidgetMetadata = {
+WidgetMetadata = {
   id: "forward.auto.danmu2",
   title: "自动链接弹幕v2",
   version: wv,
@@ -402,7 +402,7 @@ function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodReq
                      platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                      danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
-  const env = { ...process.env };
+  const env = {};
   
   if (sourceOrder !== undefined) env.SOURCE_ORDER = sourceOrder;
   if (otherServer !== undefined) env.OTHER_SERVER = otherServer;
@@ -582,4 +582,4 @@ async function getDanmuWithSegmentTime(params) {
 }
 
 // 导出函数以供ForwardWidgets调用
-export { searchDanmu, getDetailById, getCommentsById, getDanmuWithSegmentTime, WidgetMetadata };
+export { searchDanmu, getDetailById, getCommentsById, getDanmuWithSegmentTime };

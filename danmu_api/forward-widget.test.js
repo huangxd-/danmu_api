@@ -195,7 +195,6 @@ async function runTest() {
     global.getDetailById = module.getDetailById;
     global.getCommentsById = module.getCommentsById;
     global.getDanmuWithSegmentTime = module.getDanmuWithSegmentTime;
-    global.WidgetMetadata = module.WidgetMetadata;
 
     // 运行测试
     await testNewFlow();
