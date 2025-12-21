@@ -45,7 +45,7 @@ const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
 const tmdbSource = new TmdbSource(doubanSource);
 
-function matchSeason(anime, queryTitle, season) {
+export function matchSeason(anime, queryTitle, season) {
   const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
 
