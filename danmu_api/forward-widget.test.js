@@ -189,22 +189,13 @@ const verbose = false; // 设置为 true 时打印详细结果
 // 加载 forward-widget.js 模块
 async function runTest() {
   try {
-    // 方式1: 通过 ES 模块导入
     const module = await import('./forward-widget.js');
     // 将模块导出的函数添加到全局作用域，以便测试函数可以访问它们
     global.searchDanmu = module.searchDanmu;
     global.getDetailById = module.getDetailById;
     global.getCommentsById = module.getCommentsById;
     global.getDanmuWithSegmentTime = module.getDanmuWithSegmentTime;
-
-    // 方式2: 如果 ES 模块导入不可用，尝试 CommonJS 方式
-    if (!global.searchDanmu) {
-      const cjsModule = require('./forward-widget.js');
-      global.searchDanmu = cjsModule.searchDanmu;
-      global.getDetailById = cjsModule.getDetailById;
-      global.getCommentsById = cjsModule.getCommentsById;
-      global.getDanmuWithSegmentTime = cjsModule.getDanmuWithSegmentTime;
-    }
+    global.WidgetMetadata = module.WidgetMetadata;
 
     // 运行测试
     await testNewFlow();

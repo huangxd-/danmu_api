@@ -38,11 +38,10 @@ const uiModules = [
       bundle: true,
       minify: false, // 暂时关闭压缩以便调试
       sourcemap: false,
-      platform: 'browser', // 改为browser平台，因为这是给ForwardWidgets使用的
+      platform: 'node', // 设为node以便可以访问所有内部模块
       target: 'es2020',
       outfile: 'dist/logvar-danmu.js',
-      format: 'iife', // 使用立即执行函数表达式，避免导出问题
-      globalName: 'ForwardWidgetBundle', // 为IIFE格式指定全局变量名
+      format: 'esm', // 保持ES模块格式
       plugins: [
         // 插件：排除UI相关模块
         {

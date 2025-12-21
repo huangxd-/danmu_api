@@ -4,9 +4,9 @@ import { log } from './utils/log-util.js'
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
 
-WidgetMetadata = {
+const WidgetMetadata = {
   id: "forward.auto.danmu2",
-  title: "自动链接弹幕v3",
+  title: "自动链接弹幕v2",
   version: wv,
   requiredVersion: "0.0.2",
   description: "自动获取播放链接并从服务器获取弹幕【五折码：CHEAP.5;七折码：CHEAP】",
@@ -391,6 +391,11 @@ WidgetMetadata = {
   ],
 };
 
+// 在浏览器环境中设置全局变量（ForwardWidget系统使用）
+if (typeof window !== 'undefined') {
+  window.WidgetMetadata = WidgetMetadata;
+}
+
 // 初始化全局配置
 let globals;
 function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
@@ -576,36 +581,5 @@ async function getDanmuWithSegmentTime(params) {
   return null;
 }
 
-// 根据运行环境决定是否导出函数
-if (typeof module !== 'undefined' && module.exports) {
-  // Node.js 环境下导出
-  module.exports = {
-    searchDanmu,
-    getDetailById,
-    getCommentsById,
-    getDanmuWithSegmentTime
-  };
-} else if (typeof window !== 'undefined') {
-  // 浏览器环境下挂载到window对象
-  window.ForwardWidget = {
-    searchDanmu,
-    getDetailById,
-    getCommentsById,
-    getDanmuWithSegmentTime
-  };
-} else if (typeof global !== 'undefined') {
-  // 其他环境下挂载到global对象
-  global.searchDanmu = searchDanmu;
-  global.getDetailById = getDetailById;
-  global.getCommentsById = getCommentsById;
-  global.getDanmuWithSegmentTime = getDanmuWithSegmentTime;
-}
-
-// 对于ES模块环境仍然提供export
-// 在构建时可以通过配置来处理
-export {
-  searchDanmu,
-  getDetailById,
-  getCommentsById,
-  getDanmuWithSegmentTime
-};
+// 导出函数以供ForwardWidgets调用
+export { searchDanmu, getDetailById, getCommentsById, getDanmuWithSegmentTime, WidgetMetadata };
