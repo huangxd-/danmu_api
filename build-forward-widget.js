@@ -31,6 +31,105 @@ const uiModules = [
   'danmu_api/ui/js/systemsettings.js'
 ];
 
+// 自定义URL类实现
+const customURLImplementation = `
+class CustomURL {
+  constructor(url, base) {
+    if (base) {
+      // 如果提供了基础URL，拼接相对路径
+      if (url.startsWith('/')) {
+        // 处理绝对路径形式
+        const baseWithoutPath = base.replace(/\\/[^\\/]*$/, '');
+        this._url = baseWithoutPath + url;
+      } else if (url.startsWith('./') || !url.startsWith('http')) {
+        // 处理相对路径
+        const baseWithoutFile = base.replace(/\\/[^\\/]*$/, '');
+        this._url = baseWithoutFile + '/' + url.replace('./', '');
+      } else {
+        this._url = url;
+      }
+    } else {
+      this._url = url;
+    }
+
+    // 解析URL组件
+    this.parseURL(this._url);
+  }
+
+  parseURL(url) {
+    // 基础URL解析逻辑
+    const match = url.match(/^([^:]+):\\/\\/([^\\/]+)(.*)$/);
+    if (match) {
+      this.protocol = match[1] + ':';
+      this.hostname = match[2];
+      const pathAndQuery = match[3] || '';
+      const queryIndex = pathAndQuery.indexOf('?');
+      
+      if (queryIndex !== -1) {
+        this.pathname = pathAndQuery.substring(0, queryIndex);
+        this.search = pathAndQuery.substring(queryIndex);
+      } else {
+        this.pathname = pathAndQuery;
+        this.search = '';
+      }
+    } else {
+      this.protocol = '';
+      this.hostname = '';
+      this.pathname = url;
+      this.search = '';
+    }
+  }
+
+  toString() {
+    return this._url;
+  }
+
+  static createObjectURL(obj) {
+    // 简单的模拟实现
+    return 'blob:' + Date.now();
+  }
+
+  static revokeObjectURL(url) {
+    // 简单的模拟实现
+  }
+
+  get href() {
+    return this._url;
+  }
+
+  get origin() {
+    return this.protocol + '//' + this.hostname;
+  }
+
+  get host() {
+    return this.hostname;
+  }
+
+  get searchParams() {
+    // 创建一个简单的SearchParams实现
+    const paramsString = this.search.substring(1); // 移除开头的?
+    const params = new (function() {
+      const entries = {};
+      if (paramsString) {
+        paramsString.split('&').forEach(pair => {
+          const [key, value] = pair.split('=');
+          if (key) {
+            entries[decodeURIComponent(key)] = decodeURIComponent(value || '');
+          }
+        });
+      }
+
+      this.get = (name) => entries[name] || null;
+      this.set = (name, value) => { entries[name] = value.toString(); };
+      this.toString = () => Object.keys(entries).map(key => 
+        encodeURIComponent(key) + '=' + encodeURIComponent(entries[key])
+      ).join('&');
+    })();
+    return params;
+  }
+}
+`;
+
 (async () => {
   try {
     await esbuild.build({
@@ -38,7 +137,7 @@ const uiModules = [
       bundle: true,
       minify: false, // 暂时关闭压缩以便调试
       sourcemap: false,
-      platform: 'node', // 设为node以便可以访问所有内部模块
+      platform: 'neutral', // 改为neutral以避免Node.js特定的全局变量
       target: 'es2020',
       outfile: 'dist/logvar-danmu.js',
       format: 'esm', // 保持ES模块格式
@@ -52,6 +151,47 @@ const uiModules = [
               if (uiModules.some(uiModule => args.path.includes(uiModule.replace('./', '').replace('../', '')))) {
                 return { path: args.path, external: true };
               }
+            });
+          }
+        },
+        // 插件：注入自定义URL实现
+        {
+          name: 'custom-url',
+          setup(build) {
+            build.onLoad({ filter: /^custom-url-stub$/ }, () => {
+              return {
+                contents: customURLImplementation,
+                loader: 'js'
+              };
+            });
+
+            // 在入口文件中注入自定义URL实现
+            build.onLoad({ filter: /^.*forward-widget\.js$/ }, async (args) => {
+              // 读取原始文件内容
+              const fs = require('fs');
+              const originalContent = fs.readFileSync(args.path, 'utf8');
+              
+              // 添加自定义URL实现，并替换全局URL引用
+              const modifiedContent = `
+// 注入自定义URL实现
+${customURLImplementation}
+
+// 如果全局环境中没有URL，则使用自定义实现
+if (typeof URL === 'undefined') {
+ var URL = CustomURL;
+} else {
+  // 如果已有URL，保存原始引用
+  var OriginalURL = URL;
+  var URL = CustomURL;
+}
+
+${originalContent}
+              `;
+              
+              return {
+                contents: modifiedContent,
+                loader: 'js'
+              };
             });
           }
         }
