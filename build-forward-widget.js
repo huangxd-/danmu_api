@@ -224,7 +224,7 @@ class CustomDOMException extends Error {
 (async () => {
   try {
     await esbuild.build({
-      entryPoints: ['danmu_api/forward-widget.js'], // 新的入口文件
+      entryPoints: ['forward/forward-widget.js'], // 新的入口文件
       bundle: true,
       minify: false, // 暂时关闭压缩以便调试
       sourcemap: false,
@@ -321,7 +321,7 @@ class CustomDOMException extends Error {
         'widgetVersion': `"${Globals.VERSION}"`
       },
       banner: {
-        js: '// Bundled forward danmu widget with all internal functions (excluding UI)\n'
+        js: '// Bundled forward danmu widget with all internal functions (excluding UI) from https://github.com/huangxd-/danmu_api.git\n'
       },
       logLevel: 'info'
     });

@@ -1,6 +1,6 @@
-import { searchAnime, getBangumi, getComment, getSegmentComment, matchSeason } from './apis/dandan-api.js';
-import { Globals } from './configs/globals.js';
-import { log } from './utils/log-util.js';
+import { searchAnime, getBangumi, getComment, getSegmentComment, matchSeason } from '../danmu_api/apis/dandan-api.js';
+import { Globals } from '../danmu_api/configs/globals.js';
+import { log } from '../danmu_api/utils/log-util.js';
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
 
