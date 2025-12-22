@@ -174,3 +174,48 @@ class AbortSignal {
     }
   }
 }
+
+const { setTimeout: customSetTimeout, clearTimeout: customClearTimeout } = (function() {
+  let timerId = 0;
+  const timers = new Map();
+
+  const setTimeoutFn = function(callback, delay = 0) {
+    const id = ++timerId;
+    
+    if (typeof Promise !== 'undefined') {
+      Promise.resolve().then(() => {
+        if (timers.has(id)) {
+          try {
+            callback();
+          } catch (e) {
+            console.error('setTimeout error:', e);
+          } finally {
+            timers.delete(id);
+          }
+        }
+      });
+    } else {
+      // 同步执行
+      try {
+        callback();
+      } catch (e) {
+        console.error('setTimeout error:', e);
+      }
+    }
+    
+    timers.set(id, { callback, delay, timestamp: Date.now() });
+    return id;
+  };
+
+  const clearTimeoutFn = function(id) {
+    return timers.delete(id);
+  };
+
+  return {
+    setTimeout: setTimeoutFn,
+    clearTimeout: clearTimeoutFn
+  };
+})();
+
+const setTimeout = customSetTimeout;
+const clearTimeout = customClearTimeout;
