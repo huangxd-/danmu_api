@@ -219,3 +219,143 @@ const { setTimeout: customSetTimeout, clearTimeout: customClearTimeout } = (func
 
 const setTimeout = customSetTimeout;
 const clearTimeout = customClearTimeout;
+
+class Headers {
+  constructor(init = {}) {
+    this._headers = {};
+    if (init instanceof Headers) {
+      // 从另一个Headers实例初始化
+      for (const [key, value] of init.entries()) {
+        this.set(key, value);
+      }
+    } else if (Array.isArray(init)) {
+      // 从键值对数组初始化
+      for (const [key, value] of init) {
+        this.set(key, value);
+      }
+    } else if (init && typeof init === 'object') {
+      // 从对象初始化
+      for (const [key, value] of Object.entries(init)) {
+        this.set(key, value);
+      }
+    }
+  }
+
+  append(name, value) {
+    name = name.toLowerCase();
+    if (this._headers[name]) {
+      this._headers[name] = this._headers[name] + ', ' + value;
+    } else {
+      this._headers[name] = value;
+    }
+  }
+
+  delete(name) {
+    delete this._headers[name.toLowerCase()];
+  }
+
+  get(name) {
+    return this._headers[name.toLowerCase()] || null;
+  }
+
+  has(name) {
+    return name.toLowerCase() in this._headers;
+  }
+
+  set(name, value) {
+    this._headers[name.toLowerCase()] = String(value);
+  }
+
+  forEach(callback, thisArg) {
+    for (const [name, value] of Object.entries(this._headers)) {
+      callback.call(thisArg, value, name, this);
+    }
+  }
+
+  *entries() {
+    for (const [name, value] of Object.entries(this._headers)) {
+      yield [name, value];
+    }
+  }
+
+  *keys() {
+    for (const name of Object.keys(this._headers)) {
+      yield name;
+    }
+  }
+
+  *values() {
+    for (const value of Object.values(this._headers)) {
+      yield value;
+    }
+  }
+
+  [Symbol.iterator]() {
+    return this.entries();
+  }
+
+  toJSON() {
+    return { ...this._headers };
+  }
+}
+
+class Response {
+  constructor(body, init = {}) {
+    this.status = init.status || 200;
+    this.statusText = init.statusText || 'OK';
+    this.headers = new Headers(init.headers || {}); 
+    this.type = 'default';
+    this.url = '';
+    this.redirected = false;
+    
+    this._bodyUsed = false;
+    if (body !== undefined && body !== null) {
+      this._body = body;
+    } else {
+      this._body = '';
+    }
+  }
+
+  get ok() {
+    return this.status >= 200 && this.status < 300;
+  }
+
+  get bodyUsed() {
+    return this._bodyUsed;
+  }
+
+  _checkBodyUsed() {
+    if (this._bodyUsed) {
+      throw new TypeError('body stream already read');
+    }
+    this._bodyUsed = true;
+  }
+
+  async json() {
+    this._checkBodyUsed();
+    if (typeof this._body === 'string') {
+      return JSON.parse(this._body);
+    }
+    return this._body;
+  }
+
+  async text() {
+    this._checkBodyUsed();
+    if (typeof this._body === 'string') {
+      return this._body;
+    }
+    return String(this._body);
+  }
+
+  clone() {
+    if (this._bodyUsed) {
+      throw new TypeError('cannot clone a disturbed response');
+    }
+    const cloned = new Response(this._body, {
+      status: this.status,
+      statusText: this.statusText,
+      headers: this.headers
+    });
+    return cloned;
+  }
+}

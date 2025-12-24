@@ -34,8 +34,7 @@ export default class BilibiliSource extends BaseSource {
 
       // 使用原生 fetch 获取重定向后的 URL
       // fetch 默认会自动跟踪重定向，response.url 会是最终的 URL
-      const response = await fetch(shortUrl, {
-        method: 'GET',
+      const response = await httpGet(shortUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         },

@@ -67,9 +67,13 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
                 const fs = require('fs');
                 let outputContent = fs.readFileSync('dist/logvar-danmu.js', 'utf8');
                 
-                // 更通用的模式，匹配包含这四个函数名的导出语句
-                const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
-                outputContent = outputContent.replace(genericExportPattern, '');
+                // // 更通用的模式，匹配包含这四个函数名的导出语句
+                // const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
+                // outputContent = outputContent.replace(genericExportPattern, '');
+
+                // 替换 httpGet 和 httpPost
+                outputContent = outputContent.replace(/await\s+httpGet/g, 'await Widget.http.get');
+                outputContent = outputContent.replace(/await\s+httpPost/g, 'await Widget.http.post');
                 
                 // 保存修改后的内容
                 fs.writeFileSync('dist/logvar-danmu.js', outputContent);
