@@ -189,8 +189,8 @@ const verbose = false; // 设置为 true 时打印详细结果
 // 加载 forward-widget.js 模块
 async function runTest() {
   try {
-    // const module = await import('./forward-widget.js');
-    const module = await import('../dist/logvar-danmu.js');
+    const module = await import('./forward-widget.js');
+    // const module = await import('../dist/logvar-danmu.js');
     // 将模块导出的函数添加到全局作用域，以便测试函数可以访问它们
     global.searchDanmu = module.searchDanmu;
     global.getDetailById = module.getDetailById;
@@ -216,7 +216,7 @@ async function testNewFlow() {
       episode: 21,
       airDate: '2025-07-18',
       episodeName: '第2期上：首次大约会！温柔医生为爱冲锋',
-      sourceOrder: 'tencent',
+      sourceOrder: 'douban',
       otherServer: 'https://api.danmu.icu',
       vodServers: '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top',
       vodReturnMode: 'fastest',
@@ -252,7 +252,7 @@ async function testNewFlow() {
       // title: "https://www.bilibili.com/bangumi/play/ep1231564",
       // title: "https://www.bilibili.com/video/av170001?p=2",
       // title: "https://www.bilibili.com/video/BV17x411w7KC?p=3",
-      title: '水饺皇后',
+      title: '罗小黑战记2',
       ...commonParams,
     });
     if (verbose) {

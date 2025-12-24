@@ -303,7 +303,7 @@ LogVar 弹幕 API 服务器
 > cf部署可能不稳定，推荐用vercel/netlify部署。
 
 ## API食用指南
-支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV 等支持弹幕API的播放器。
 
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 

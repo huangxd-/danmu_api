@@ -1,4 +1,5 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
 
 // 动态获取版本号
 const { Globals } = require('./danmu_api/configs/globals.js');
@@ -31,7 +32,6 @@ const uiModules = [
   'danmu_api/ui/js/systemsettings.js'
 ];
 
-const fs = require('fs');
 let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8');
 
 (async () => {
@@ -64,12 +64,11 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
           setup(build) {
             build.onEnd(async (result) => {
               if (result.errors.length === 0) {
-                const fs = require('fs');
                 let outputContent = fs.readFileSync('dist/logvar-danmu.js', 'utf8');
                 
                 // // 更通用的模式，匹配包含这四个函数名的导出语句
-                // const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
-                // outputContent = outputContent.replace(genericExportPattern, '');
+                const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
+                outputContent = outputContent.replace(genericExportPattern, '');
 
                 // 替换 httpGet 和 httpPost
                 outputContent = outputContent.replace(/await\s+httpGet/g, 'await Widget.http.get');

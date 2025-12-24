@@ -21,15 +21,15 @@ WidgetMetadata = {
       placeholders: [
         {
           title: "配置1",
-          value: "douban,360,vod,renren,hanjutv",
+          value: "tencent,iqiyi,imgo,bilibili,youku,renren,hanjutv",
         },
         {
           title: "配置2",
-          value: "360,vod,renren,hanjutv",
+          value: "douban,360,vod,renren,hanjutv",
         },
         {
           title: "配置3",
-          value: "tencent,youku,iqiyi,imgo,bilibili,renren,hanjutv",
+          value: "360,vod,renren,hanjutv",
         },
         {
           title: "配置4",
@@ -313,6 +313,10 @@ WidgetMetadata = {
       type: "input",
       placeholders: [
         {
+          title: "不转换",
+          value: "default",
+        },
+        {
           title: "白色",
           value: "white",
         },
@@ -329,6 +333,10 @@ WidgetMetadata = {
       title: "代理/反代地址，目前只对巴哈姆特和TMDB API生效",
       type: "input",
       placeholders: [
+        {
+          title: "如果添加了巴哈源且访问不了，请填写",
+          value: "",
+        },
         {
           title: "正常代理示例",
           value: "http://127.0.0.1:7890",
@@ -352,6 +360,10 @@ WidgetMetadata = {
       title: "TMDB API密钥，目前只对巴哈姆特生效，配置后并行从TMDB获取日语原名搜索巴哈",
       type: "input",
       placeholders: [
+        {
+          title: "如果添加了巴哈源，想自动获取日语原名搜索巴哈，请填写",
+          value: "",
+        },
         {
           title: "示例",
           value: "a1b2xxxxxxxxxxxxxxxxxxx",
@@ -398,7 +410,7 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
-function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+async function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                      platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                      danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
@@ -426,7 +438,61 @@ function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodReq
   if (!globals) {
     globals = Globals.init(env);
   }
+
+  await getCaches();
+
   return globals;
+}
+
+// 获取变量数据
+async function getCaches() {
+    if (globals.animes.length === 0) {
+        log("info", 'getCaches start.');
+        const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
+          Widget.storage.get('animes'),
+          Widget.storage.get('episodeIds'),
+          Widget.storage.get('episodeNum'),
+          Widget.storage.get('logBuffer'),
+          Widget.storage.get('lastSelectMap'),
+        ]);
+
+        globals.animes = kv_animes ? (typeof kv_animes === 'string' ? JSON.parse(kv_animes) : kv_animes) : globals.animes;
+        globals.episodeIds = kv_episodeIds ? (typeof kv_episodeIds === 'string' ? JSON.parse(kv_episodeIds) : kv_episodeIds) : globals.episodeIds;
+        globals.episodeNum = kv_episodeNum ? (typeof kv_episodeNum === 'string' ? JSON.parse(kv_episodeNum) : kv_episodeNum) : globals.episodeNum;
+        globals.logBuffer = kv_logBuffer ? (typeof kv_logBuffer === 'string' ? JSON.parse(kv_logBuffer) : kv_logBuffer) : globals.logBuffer;
+        
+        // 特殊处理 Map
+        if (kv_lastSelectMap) {
+          const parsed = typeof kv_lastSelectMap === 'string' ? JSON.parse(kv_lastSelectMap) : kv_lastSelectMap;
+          globals.lastSelectMap = new Map(
+            Array.isArray(parsed) ? parsed : Object.entries(parsed)
+          );
+        }
+    }
+}
+
+// 存储更新后的变量
+async function updateCaches() {
+    log("info", 'updateCaches start.');
+    await Promise.all([
+      Widget.storage.set('animes', globals.animes),
+      Widget.storage.set('episodeIds', globals.episodeIds),
+      Widget.storage.set('episodeNum', globals.episodeNum),
+      Widget.storage.set('logBuffer', globals.logBuffer),
+      Widget.storage.set('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)))
+    ]);
+}
+
+// 删除存储的变量
+async function removeCaches() {
+    log("info", 'removeCaches start.');
+    await Promise.all([
+      Widget.storage.remove('animes'),
+      Widget.storage.remove('episodeIds'),
+      Widget.storage.remove('episodeNum'),
+      Widget.storage.remove('logBuffer'),
+      Widget.storage.remove('lastSelectMap')
+    ]);
 }
 
 const PREFIX_URL = "http://localhost:9321"
@@ -497,6 +563,8 @@ async function searchDanmu(params) {
 
   log("info", "animes: ", animes);
 
+  await updateCaches();
+
   return {
     animes: animes,
   };
@@ -516,6 +584,8 @@ async function getDetailById(params) {
 
   log("info", "bangumi", resJson);
 
+  await updateCaches();
+
   return resJson.bangumi.episodes;
 }
 
@@ -530,14 +600,23 @@ async function getCommentsById(params) {
 
   if (commentId) {
     const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
+    const commentIdKey = `${storeKey}.${commentId}`;
     const segmentList = Widget.storage.get(storeKey);
+    const lastCommentId = Widget.storage.get(commentIdKey);
     
     log("info", "storeKey:", storeKey);
+    log("info", "commentIdKey:", commentIdKey);
+    log("info", "commentId:", commentId);
+    log("info", "lastCommentId:", lastCommentId);
+    log("info", "segmentList:", segmentList);
 
-    if (segmentList) {
+    if (lastCommentId === commentId && segmentList) {
         return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute, 
                                                vodReturnMode, vodRequestTimeout, platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, 
                                                danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey })
+    } else {
+      Widget.storage.remove(storeKey);
+      Widget.storage.remove(commentIdKey);
     }
 
     const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
@@ -546,8 +625,11 @@ async function getCommentsById(params) {
     log("info", "segmentList:", resJson.comments.segmentList);
 
     Widget.storage.set(storeKey, resJson.comments.segmentList);
+    Widget.storage.set(commentIdKey, commentId);
 
     console.log("segmentList", resJson.comments.segmentList);
+
+    await updateCaches();
 
     return resJson.comments.segmentList;
   }
@@ -575,6 +657,8 @@ async function getDanmuWithSegmentTime(params) {
     log("info", "segment:", segment);
     const response = await getSegmentComment(segment);
     const resJson = await response.json();
+
+    await updateCaches();
 
     return resJson;
   }
