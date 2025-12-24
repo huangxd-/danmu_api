@@ -13,7 +13,7 @@ export const Globals = {
   accessedEnvVars: {},
 
   // 静态常量
-  VERSION: '1.9.3',
+  VERSION: '1.10.0',
   MAX_LOGS: 500, // 日志存储，最多保存 500 行
   MAX_ANIMES: 100,
 
