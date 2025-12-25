@@ -109,7 +109,7 @@ export default class MisakaSource extends BaseSource {
           if (links.length > 0) {
             let transformedAnime = {
               animeId: anime.animeId,
-              bangumiId: String(anime.animeId),
+              bangumiId: String(anime.bangumiId),
               animeTitle: `${anime.animeTitle}(${new Date(anime.startDate).getFullYear()})【${anime.typeDescription}】from misaka`,
               type: anime.type,
               typeDescription: anime.typeDescription,
