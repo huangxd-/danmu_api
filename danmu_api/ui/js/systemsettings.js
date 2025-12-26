@@ -255,8 +255,10 @@ function confirmDeploymentByLogs() {
 
 // 检查URL中的token是否与currentAdminToken匹配
 function checkAdminToken() {
+    let _reverseProxy = "";
+
     // 获取URL路径并提取token
-    const urlPath = window.location.pathname;
+    const urlPath = window.location.pathname.replace(_reverseProxy, "");
     const pathParts = urlPath.split('/').filter(part => part !== '');
     const urlToken = pathParts.length > 0 ? pathParts[0] : currentToken; // 如果没有路径段，使用默认token
     

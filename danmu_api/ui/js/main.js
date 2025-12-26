@@ -118,12 +118,16 @@ let originalToken = '';
 
 // 构建带token的API请求路径
 function buildApiUrl(path, isSystemPath = false) {
-    // 如果是系统管理路径且有admin token，则使用admin token
+    let res;
+    let _reverseProxy = "";
+    // 如果是系统管理路径且有admin token,则使用admin token
     if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '' && currentAdminToken.trim() !== '*'.repeat(currentAdminToken.length)) {
-        return '/' + currentAdminToken + path;
+        res = '/' + currentAdminToken + path;
+    } else {
+        // 否则使用普通token
+        res = (currentToken ? '/' + currentToken : "") + path;
     }
-    // 否则使用普通token
-    return (currentToken ? '/' + currentToken : "") + path;
+    return _reverseProxy + res;
 }
 
 // 从API加载真实环境变量数据
@@ -180,6 +184,8 @@ function updateApiEndpoint() {
   return fetch(buildApiUrl('/api/config', true))
     .then(response => response.json())
     .then(config => {
+      let _reverseProxy = "";
+
       // 获取当前页面的协议、主机和端口
       const protocol = window.location.protocol;
       const host = window.location.host;
@@ -187,7 +193,7 @@ function updateApiEndpoint() {
       const adminToken = config.originalEnvVars?.ADMIN_TOKEN;
 
       // 获取URL路径并提取token
-      const urlPath = window.location.pathname;
+      const urlPath = window.location.pathname.replace(_reverseProxy, "");
       const pathParts = urlPath.split('/').filter(part => part !== '');
       const urlToken = pathParts.length > 0 ? pathParts[0] : '';
       let apiToken = '********';
@@ -253,8 +259,10 @@ function getDockerVersion() {
 function switchSection(section) {
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
     if (section === 'logs' || section === 'api' || section === 'env' || section === 'push') {
+        let _reverseProxy = "";
+
         // 获取URL路径并提取token
-        const urlPath = window.location.pathname;
+        const urlPath = window.location.pathname.replace(_reverseProxy, "");
         const pathParts = urlPath.split('/').filter(part => part !== '');
         const urlToken = pathParts.length > 0 ? pathParts[0] : '';
         

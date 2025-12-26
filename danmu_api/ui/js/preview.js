@@ -5,7 +5,7 @@ function renderPreview() {
     const preview = document.getElementById('preview-area');
     
     // 从API获取真实配置数据
-    fetch('/api/config')
+    fetch(buildApiUrl('/api/config'))
         .then(response => response.json())
         .then(config => {
             // 使用从API获取的分类环境变量
