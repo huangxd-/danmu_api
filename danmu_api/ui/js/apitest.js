@@ -157,9 +157,6 @@ function testApi() {
     // 构建请求URL
     let url = config.path;
     
-    // 保存format参数值，用于后续响应处理
-    let formatParam = params.format || 'json';
-    
     // 检查是否为路径参数接口
     const isPathParameterApi = config.path.includes(':');
     
@@ -195,22 +192,6 @@ function testApi() {
         if (config.method === 'GET') {
             const queryString = new URLSearchParams(params).toString();
             url = url + '?' + queryString;
-        } else if (config.method === 'POST' && apiKey === 'getSegmentComment') {
-            // 对于 getSegmentComment 接口，format 参数应该作为查询参数，而不是放在请求体中
-            const queryParams = {};
-            if (params.format) {
-                queryParams.format = params.format;
-                // 从params中移除format，因为它将作为查询参数传递
-                delete params.format;
-            }
-            if (Object.keys(queryParams).length > 0) {
-                const queryString = new URLSearchParams(queryParams).toString();
-                url = url + '?' + queryString;
-            }
-        } else if (config.method === 'POST') {
-            // 其他POST接口的处理
-            const queryString = new URLSearchParams(params).toString();
-            url = url + '?' + queryString;
         }
     }
 
@@ -240,17 +221,10 @@ function testApi() {
         } else {
             // 如果没有在请求体输入框中输入内容，则使用参数构建请求体（向后兼容）
             if (apiKey === 'getSegmentComment') {
-                // 对于 getSegmentComment 接口，创建 segment 对象，但format参数应该作为查询参数，不在请求体中
+                // 对于 getSegmentComment 接口，创建 segment 对象
                 const segmentData = { url: params.url };
-                // 不添加format到请求体，因为它已经在查询参数中了
-                if (params.type) {
-                    segmentData.type = params.type;
-                }
-                if (params.segment_start !== undefined) {
-                    segmentData.segment_start = params.segment_start;
-                }
-                if (params.segment_end !== undefined) {
-                    segmentData.segment_end = params.segment_end;
+                if (params.format) {
+                    segmentData.format = params.format;
                 }
                 requestOptions.body = JSON.stringify(segmentData);
             } else {
@@ -270,7 +244,8 @@ function testApi() {
             }
             
             // 检查format参数以确定如何处理响应
-            // 使用之前保存的formatParam变量，因为对于getSegmentComment接口，params.format已经被删除
+            const formatParam = params.format || 'json';
+            
             if (formatParam.toLowerCase() === 'xml') {
                 // 对于XML格式，返回文本内容
                 return response.text().then(text => ({
