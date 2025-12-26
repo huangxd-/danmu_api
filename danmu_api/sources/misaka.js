@@ -7,12 +7,12 @@ import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
-// 获取Misaka弹幕
+// 获取Custon Source弹幕
 // =====================
-export default class MisakaSource extends BaseSource {
+export default class CustonSource extends BaseSource {
   async search(keyword) {
     try {
-      const resp = await httpGet(`${globals.misakaApiUrl}/search/anime?keyword=${keyword}`, {
+      const resp = await httpGet(`${globals.custonSourceApiUrl}/search/anime?keyword=${keyword}`, {
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -21,23 +21,23 @@ export default class MisakaSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "misakaSearchresp: 请求失败或无数据返回");
+        log("info", "custonSourceSearchresp: 请求失败或无数据返回");
         return [];
       }
 
       // 判断 seriesData 是否存在
       if (!resp.data.animes) {
-        log("info", "misakaSearchresp: seriesData 或 seriesList 不存在");
+        log("info", "custonSourceSearchresp: seriesData 或 seriesList 不存在");
         return [];
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `misakaSearchresp: ${JSON.stringify(resp.data.animes)}`);
+      log("info", `custonSourceSearchresp: ${JSON.stringify(resp.data.animes)}`);
 
       return resp.data.animes;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMisakaAnimes error:", {
+      log("error", "getCustonSourceAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -48,7 +48,7 @@ export default class MisakaSource extends BaseSource {
 
   async getEpisodes(id) {
     try {
-      const resp = await httpGet(`${globals.misakaApiUrl}/bangumi/${id}`, {
+      const resp = await httpGet(`${globals.custonSourceApiUrl}/bangumi/${id}`, {
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -57,23 +57,23 @@ export default class MisakaSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "getMisakaEposides: 请求失败或无数据返回");
+        log("info", "getCustonSourceEposides: 请求失败或无数据返回");
         return [];
       }
 
       // 判断 seriesData 是否存在
       if (!resp.data.bangumi || !resp.data.bangumi.episodes) {
-        log("info", `getMisakaEposides: episodes 不存在. Response: ${JSON.stringify(resp.data)}`);
+        log("info", `getCustonSourceEposides: episodes 不存在. Response: ${JSON.stringify(resp.data)}`);
         return [];
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `getMisakaEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
+      log("info", `getCustonSourceEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
 
       return resp.data.bangumi.episodes;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMisakaEposides error:", {
+      log("error", "getCustonSourceEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -87,12 +87,12 @@ export default class MisakaSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Misaka] sourceAnimes is not a valid array");
+      log("error", "[Custon Source] sourceAnimes is not a valid array");
       return [];
     }
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
-    const processMisakaAnimes = await Promise.all(sourceAnimes
+    const processCustonSourceAnimes = await Promise.all(sourceAnimes
       .map(async (anime) => {
         try {
           const eps = await this.getEpisodes(anime.bangumiId);
@@ -102,7 +102,7 @@ export default class MisakaSource extends BaseSource {
             links.push({
               "name": epTitle,
               "url": ep.episodeId.toString(),
-              "title": `【misaka】 ${epTitle}`
+              "title": `【Custon Source】 ${epTitle}`
             });
           }
 
@@ -110,7 +110,7 @@ export default class MisakaSource extends BaseSource {
             let transformedAnime = {
               animeId: anime.animeId,
               bangumiId: String(anime.bangumiId),
-              animeTitle: `${anime.animeTitle}(${new Date(anime.startDate).getFullYear()})【${anime.typeDescription}】from misaka`,
+              animeTitle: `${anime.animeTitle}(${new Date(anime.startDate).getFullYear()})【${anime.typeDescription}】from Custon Source`,
               type: anime.type,
               typeDescription: anime.typeDescription,
               imageUrl: anime.imageUrl,
@@ -118,7 +118,7 @@ export default class MisakaSource extends BaseSource {
               episodeCount: links.length,
               rating: anime.rating,
               isFavorited: true,
-              source: "misaka",
+              source: "Custon Source",
             };
 
             tmpAnimes.push(transformedAnime);
@@ -128,21 +128,21 @@ export default class MisakaSource extends BaseSource {
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Misaka] Error processing anime: ${error.message}`);
+          log("error", `[Custon Source] Error processing anime: ${error.message}`);
         }
       })
     );
 
     this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
 
-    return processMisakaAnimes;
+    return processCustonSourceAnimes;
   }
 
   async getEpisodeDanmu(id) {
     let allDanmus = [];
 
     try {
-      const resp = await httpGet(`${globals.misakaApiUrl}/comment/${id}?from=0&withRelated=true&chConvert=0`, {
+      const resp = await httpGet(`${globals.custonSourceApiUrl}/comment/${id}?from=0&withRelated=true&chConvert=0`, {
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -158,7 +158,7 @@ export default class MisakaSource extends BaseSource {
       return allDanmus;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "fetchMisakaEpisodeDanmu error:", {
+      log("error", "fetchCustonSourceEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -168,12 +168,12 @@ export default class MisakaSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取Misaka弹幕分段列表...", id);
+    log("info", "获取Custon Source弹幕分段列表...", id);
 
     return new SegmentListResponse({
-      "type": "misaka",
+      "type": "Custon Source",
       "segmentList": [{
-        "type": "misaka",
+        "type": "Custon Source",
         "segment_start": 0,
         "segment_end": 30000,
         "url": id
