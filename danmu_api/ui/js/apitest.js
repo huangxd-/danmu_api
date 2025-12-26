@@ -192,6 +192,16 @@ function testApi() {
         if (config.method === 'GET') {
             const queryString = new URLSearchParams(params).toString();
             url = url + '?' + queryString;
+        } else if (config.method === 'POST' && apiKey === 'getSegmentComment') {
+            // 对于 getSegmentComment 接口，需要将 format 参数添加到 URL 查询参数中
+            const queryParams = {};
+            if (params.format) {
+                queryParams.format = params.format;
+            }
+            if (Object.keys(queryParams).length > 0) {
+                const queryString = new URLSearchParams(queryParams).toString();
+                url = url + '?' + queryString;
+            }
         }
     }
 
