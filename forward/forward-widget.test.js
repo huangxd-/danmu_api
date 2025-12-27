@@ -218,6 +218,7 @@ async function testNewFlow() {
       episodeName: '第2期上：首次大约会！温柔医生为爱冲锋',
       sourceOrder: 'douban',
       otherServer: 'https://api.danmu.icu',
+      customSourceApiUrl: '',
       vodServers: '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top',
       vodReturnMode: 'fastest',
       vodRequestTimeout: 10000,

@@ -16,7 +16,7 @@ WidgetMetadata = {
     // 源配置
     {
       name: "sourceOrder",
-      title: "源排序配置，默认'360,vod,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'renren', 'hanjutv', 'bahamut', 'dandan']",
+      title: "源排序配置，默认'360,vod,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
@@ -65,6 +65,17 @@ WidgetMetadata = {
         {
           title: "lxlad",
           value: "https://dm.lxlad.com",
+        },
+      ],
+    },
+    {
+      name: "customSourceApiUrl",
+      title: "自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源",
+      type: "input",
+      placeholders: [
+        {
+          title: "自定义",
+          value: "",
         },
       ],
     },
@@ -140,12 +151,12 @@ WidgetMetadata = {
     // 匹配配置
     {
       name: "platformOrder",
-      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut', 'dandan']",
+      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
           title: "配置1",
-          value: "qq,qiyi,imgo,bilibili1,youku,renren,hanjutv,bahamut,dandan",
+          value: "qq,qiyi,imgo,bilibili1,youku,renren,hanjutv,bahamut,dandan,custom",
         },
         {
           title: "配置2",
@@ -410,7 +421,7 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
-async function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                      platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                      danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
@@ -418,6 +429,7 @@ async function initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, 
   
   if (sourceOrder !== undefined) env.SOURCE_ORDER = sourceOrder;
   if (otherServer !== undefined) env.OTHER_SERVER = otherServer;
+  if (customSourceApiUrl !== undefined) env.CUSTOM_SOURCE_API_URL = customSourceApiUrl;
   if (vodServers !== undefined) env.VOD_SERVERS = vodServers;
   if (vodReturnMode !== undefined) env.VOD_RETURN_MODE = vodReturnMode;
   if (vodRequestTimeout !== undefined) env.VOD_REQUEST_TIMEOUT = vodRequestTimeout;
@@ -498,11 +510,11 @@ async function removeCaches() {
 const PREFIX_URL = "http://localhost:9321"
 
 async function searchDanmu(params) {
-  const { tmdbId, type, title, season, link, videoUrl, sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  const { tmdbId, type, title, season, link, videoUrl, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
          danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey } = params;
 
-  await initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey);
 
@@ -571,11 +583,11 @@ async function searchDanmu(params) {
 }
 
 async function getDetailById(params) {
-  const { animeId, sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  const { animeId, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
          danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey } = params;
 
-  await initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey);
 
@@ -590,11 +602,11 @@ async function getDetailById(params) {
 }
 
 async function getCommentsById(params) {
-  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
          danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey } = params;
 
-  await initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey);
 
@@ -611,7 +623,7 @@ async function getCommentsById(params) {
     log("info", "segmentList:", segmentList);
 
     if (lastCommentId === commentId && segmentList) {
-        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, otherServer, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute, 
+        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, otherServer, customSourceApiUrl, vodServers, bilibiliCookie, sourceOrder, blockedWords, groupMinute, 
                                                vodReturnMode, vodRequestTimeout, platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, 
                                                danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey })
     } else {
@@ -637,11 +649,11 @@ async function getCommentsById(params) {
 }
 
 async function getDanmuWithSegmentTime(params) {
-  const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
          danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey } = params;
 
-  await initGlobals(sourceOrder, otherServer, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
+  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplified, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey);
 
