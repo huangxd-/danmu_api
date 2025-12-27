@@ -256,7 +256,7 @@ function getDockerVersion() {
 }
 
 // 切换导航
-function switchSection(section) {
+function switchSection(section, event = null) {
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
     if (section === 'logs' || section === 'api' || section === 'env' || section === 'push') {
         let _reverseProxy = "";
@@ -293,7 +293,10 @@ function switchSection(section) {
                     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
                     document.getElementById(\`\${section}-section\`).classList.add('active');
-                    event.target.classList.add('active');
+                    // 在异步回调中使用传入的event参数来设置按钮的active状态
+                    if (event && event.target) {
+                        event.target.classList.add('active');
+                    }
 
                     addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
                 }
@@ -304,7 +307,9 @@ function switchSection(section) {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
             document.getElementById(\`\${section}-section\`).classList.add('active');
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
 
             addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
             
@@ -321,17 +326,21 @@ function switchSection(section) {
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
         document.getElementById(\`\${section}-section\`).classList.add('active');
-        event.target.classList.add('active');
+        if (event && event.target) {
+            event.target.classList.add('active');
+        }
 
         addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
     }
 }
 
 // 切换类别
-function switchCategory(category) {
+function switchCategory(category, event = null) {
     currentCategory = category;
     document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
     renderEnvList();
 }
 
