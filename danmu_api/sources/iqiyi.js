@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
-import { md5, convertToAsciiSum } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { globals } from '../configs/globals.js';
@@ -898,7 +898,7 @@ export default class IqiyiSource extends BaseSource {
       };
       content.timepoint = parseFloat(item["showTime"]);
       content.color = parseInt(item["color"], 16);
-      content.content = item["content"];
+      content.content = decodeHtmlEntities(item["content"]);
       content.size = 25;
       return content;
     });

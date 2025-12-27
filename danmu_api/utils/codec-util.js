@@ -714,7 +714,7 @@ export function generateSign(path, timestamp, params, secretKey) {
 
     signStr += secretKey;
     return md5(signStr);
-  }
+}
 
 // ========== X-CA-Sign 生成函数 ==========
 export function generateXCaSign(path, timestamp, queryString, secretKey) {
@@ -722,4 +722,34 @@ export function generateXCaSign(path, timestamp, queryString, secretKey) {
     if (queryString) signStr += `?${queryString}`;
 
     return createHmacSha256(secretKey, signStr);
+}
+
+// 兼容版本的 fromCodePoint
+function fromCodePoint(codePoint) {
+  // BMP 范围内的字符可以直接用 fromCharCode
+  if (codePoint <= 0xFFFF) {
+    return String.fromCharCode(codePoint);
   }
+  
+  // 超出 BMP 的字符需要转换为代理对
+  codePoint -= 0x10000;
+  const highSurrogate = (codePoint >> 10) + 0xD800;
+  const lowSurrogate = (codePoint & 0x3FF) + 0xDC00;
+  return String.fromCharCode(highSurrogate, lowSurrogate);
+}
+
+/**
+   * 将HTML实体转换为实际字符
+   * @param {string} str - 包含HTML实体的字符串
+   * @returns {string} 转换后的字符串
+   */
+export function decodeHtmlEntities(str) {
+  // 处理十进制HTML实体 &#12345;
+  return str.replace(/&#(\d+);/g, (match, num) => {
+    return fromCodePoint(parseInt(num, 10));
+  })
+  // 处理十六进制HTML实体 &#x123A;
+  .replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
+    return fromCodePoint(parseInt(hex, 16));
+  });
+}
