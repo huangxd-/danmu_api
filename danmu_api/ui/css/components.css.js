@@ -24,7 +24,8 @@ export const componentsCssContent = /* css */ `
 
 .nav-btn.active {
     background: white;
-    color: #667eea;
+    color: #1a2980;
+    font-weight: bold;
 }
 
 /* 环境变量样式 */

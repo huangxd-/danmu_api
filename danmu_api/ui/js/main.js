@@ -210,7 +210,7 @@ function updateApiEndpoint() {
       }
       
       // 构造API端点URL
-      const apiEndpoint = protocol + '//' + host + '/' + apiToken;
+      const apiEndpoint = protocol + '//' + host + _reverseProxy + '/' + apiToken;
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
@@ -222,7 +222,7 @@ function updateApiEndpoint() {
       // 出错时显示默认值
       const protocol = window.location.protocol;
       const host = window.location.host;
-      const apiEndpoint = protocol + '//' + host + '/********';
+      const apiEndpoint = protocol + '//' + host + _reverseProxy + '/********';
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
