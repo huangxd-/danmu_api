@@ -449,15 +449,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 
 ## 项目结构
 ```
-danmu_api/
-├── .github/
-│   └── workflows/
-│       ├── docker-image.yml    # Docker镜像构建和推送工作流
-│       └── sync_fork.yml       # Fork同步上游仓库工作流（vercel自动同步配置文件）
-├── config/
-│   ├── .env.example            # .env 配置文件示例
-│   └── config.yaml.example     # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── .gitignore
+├── build-forward-widget.js     # 构建forward弹幕插件脚本
 ├── Dockerfile
 ├── edgeone.json                # edgeone pages 配置文件
 ├── LICENSE
@@ -466,6 +459,9 @@ danmu_api/
 ├── README.md
 ├── vercel.json                 # vercel 配置文件
 ├── wrangler.toml               # cloudflare worker 配置文件
+├── config/
+│   ├── .env.example            # .env 配置文件示例
+│   └── config.yaml.example     # YAML 配置文件示例（无法编辑 .env 时使用）
 ├── danmu_api/
 │   ├── esm-shim.js             # Node.js低版本兼容层
 │   ├── server.js               # 本地node启动脚本
@@ -492,6 +488,7 @@ danmu_api/
 │   │   ├── bahamut.js          # 巴哈姆特源
 │   │   ├── base.js             # 弹幕源获取基类
 │   │   ├── bilibili.js         # b站源
+│   │   ├── custom.js           # 自定义弹幕源
 │   │   ├── dandan.js           # 弹弹play源
 │   │   ├── douban.js           # 豆瓣源
 │   │   ├── hanjutv.js          # 韩剧TV源
@@ -532,6 +529,10 @@ danmu_api/
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具
 │       └── zh-util.js          # 中文繁简转换工具
+├── forward/
+│   ├── custom-polyfill.js      # 自定义polyfill
+│   ├── forward-widget.js       # forward弹幕插件
+│   └── forward-widget.test.js  # forward弹幕插件测试文件
 ├── netlify/
 │   └── functions/
 │       └── api.js              # netlify 中间处理逻辑
