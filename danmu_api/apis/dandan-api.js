@@ -65,28 +65,45 @@ export function matchSeason(anime, queryTitle, season) {
   const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
 
-  if (normalizedAnimeTitle.includes(normalizedQueryTitle)) {
-    const title = normalizedAnimeTitle.split("(")[0].trim();
-    if (title.startsWith(normalizedQueryTitle)) {
-      const afterTitle = title.substring(normalizedQueryTitle.length).trim();
-      if (afterTitle === '' && season === 1) {
-        return true;
-      }
-      // match number from afterTitle
-      const seasonIndex = afterTitle.match(/\d+/);
-      if (seasonIndex && seasonIndex[0] === season.toString()) {
-        return true;
-      }
-      // match chinese number
-      const chineseNumber = afterTitle.match(/[一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+/);
-      if (chineseNumber && convertChineseNumber(chineseNumber[0]) === season) {
-        return true;
-      }
-    }
-    return false;
-  } else {
+  if (!normalizedAnimeTitle.includes(normalizedQueryTitle)) {
     return false;
   }
+
+  // 从完整标题中提取季数（支持多种格式）
+  // 格式1: 第X季（如：第1季、第11季）
+  const seasonMatch1 = normalizedAnimeTitle.match(/第(\d+)季/);
+  if (seasonMatch1) {
+    const extractedSeason = parseInt(seasonMatch1[1], 10);
+    log("info", `[matchSeason] Extracted season from "第X季": ${extractedSeason}, query season: ${season}`);
+    return extractedSeason === season;
+  }
+
+  // 格式2: Season X 或 S0X（如：Season 1, S01）
+  const seasonMatch2 = normalizedAnimeTitle.match(/[Ss]eason\s*(\d+)|[Ss]0?(\d+)/);
+  if (seasonMatch2) {
+    const extractedSeason = parseInt(seasonMatch2[1] || seasonMatch2[2], 10);
+    log("info", `[matchSeason] Extracted season from "Season X/S0X": ${extractedSeason}, query season: ${season}`);
+    return extractedSeason === season;
+  }
+
+  // 格式3: 中文数字（如：第一季、第十一季）
+  const chineseMatch = normalizedAnimeTitle.match(/第([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾百千]+)季/);
+  if (chineseMatch) {
+    const extractedSeason = convertChineseNumber(chineseMatch[1]);
+    log("info", `[matchSeason] Extracted season from Chinese number: ${extractedSeason}, query season: ${season}`);
+    return extractedSeason === season;
+  }
+
+  // 如果没有找到明确的季数标记，且查询season=1，则判断是否为第一季
+  if (season === 1) {
+    // 检查标题中是否有其他季的标记（第2季及以上）
+    const hasOtherSeason = /第[二三四五六七八九十2-9]季|第[1-9]\d+季|[Ss]eason\s*[2-9]|[Ss]0[2-9]/i.test(normalizedAnimeTitle);
+    log("info", `[matchSeason] No explicit season found, query season: 1, has other season marker: ${hasOtherSeason}`);
+    return !hasOtherSeason;  // 如果没有其他季的标记，则视为第一季
+  }
+
+  log("info", `[matchSeason] No season match found for title: ${normalizedAnimeTitle}, query season: ${season}`);
+  return false;
 }
 
 // Extracted function for GET /api/v2/search/anime
@@ -413,6 +430,11 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
   if (season && episode) {
     // 判断剧集
     const normalizedTitle = normalizeSpaces(title);
+
+    // 优先处理：先收集season匹配的anime，再收集其他anime
+    const seasonMatchedAnimes = [];
+    const otherAnimes = [];
+
     for (const anime of searchData.animes) {
       if (globals.rememberLastSelect && preferAnimeId && anime.bangumiId.toString() !== preferAnimeId.toString() &&
           anime.animeId.toString() !== preferAnimeId.toString()) continue;
@@ -422,31 +444,43 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
           log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
           continue;
         }
-        
-        let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
-        const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-        const bangumiData = await bangumiRes.json();
-        log("info", "判断剧集", bangumiData);
 
-        // 过滤集标题正则条件的 episode
-        const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-          return !globals.episodeTitleFilter.test(episode.episodeTitle);
-        });
-
-        // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
-        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
-        log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
-
-        // 年份匹配通过后，再判断season
+        // 将anime按season匹配度分组
         if (matchSeason(anime, title, season)) {
-          // 使用新的集数匹配策略
-          const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, platform);
-          if (matchedEpisode) {
-            resEpisode = matchedEpisode;
-            resAnime = anime;
-            break;
-          }
+          seasonMatchedAnimes.push(anime);
+          log("info", `[matchAniAndEp] Season matched anime: ${anime.animeTitle}`);
+        } else {
+          otherAnimes.push(anime);
         }
+      }
+    }
+
+    // 优先在season匹配的anime中查找
+    const animesToSearch = [...seasonMatchedAnimes, ...otherAnimes];
+    log("info", `[matchAniAndEp] Season matched: ${seasonMatchedAnimes.length}, Other: ${otherAnimes.length}`);
+
+    for (const anime of animesToSearch) {
+      let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
+      const bangumiRes = await getBangumi(originBangumiUrl.pathname);
+      const bangumiData = await bangumiRes.json();
+      log("info", "判断剧集", bangumiData);
+
+      // 过滤集标题正则条件的 episode
+      const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+        return !globals.episodeTitleFilter.test(episode.episodeTitle);
+      });
+
+      // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
+      const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
+      log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
+
+      // 使用新的集数匹配策略
+      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, platform);
+      if (matchedEpisode) {
+        resEpisode = matchedEpisode;
+        resAnime = anime;
+        log("info", `[matchAniAndEp] Found match: ${anime.animeTitle}, Episode: ${matchedEpisode.episodeTitle}`);
+        break;
       }
     }
   } else {
@@ -460,7 +494,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
           log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
           continue;
         }
-        
+
         let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
         const bangumiRes = await getBangumi(originBangumiUrl.pathname);
         const bangumiData = await bangumiRes.json();

@@ -1,6 +1,27 @@
+# IDE
 .idea
-package-lock.json
+.vscode
+
+# Dependencies
 node_modules
+package-lock.json
+
+# Environment
 .env
+
+# Build
 .cache
 dist
+coverage
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# Claude Code工作目录
+.claude

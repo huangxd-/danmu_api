@@ -312,17 +312,30 @@ export default class RenrenSource extends BaseSource {
   }
 
   async getDetail(id) {
-    const resp = await this.getAppDramaDetail(String(id));
-    if (!resp) {
+    // 优先使用备用API（因为主API api.zhimeisj.top 经常返回418）
+    try {
       const url = `https://api.rrmj.plus/m-station/drama/page`;
       const params = { hsdrOpen:0,isAgeLimit:0,dramaId:String(id),hevcOpen:1 };
       const resp = await this.renrenRequest("GET", url, params);
-      if (!resp.data) return null;
-      const decoded = autoDecode(resp.data);
-      return decoded?.data || null;
-    } else {
+      if (resp.data) {
+        const decoded = autoDecode(resp.data);
+        if (decoded?.data) {
+          log("info", `[Renren] 使用备用API成功获取详情: ${id}`);
+          return decoded.data;
+        }
+      }
+    } catch (error) {
+      log("warn", `[Renren] 备用API失败，尝试主API: ${error.message}`);
+    }
+
+    // 备用API失败时才尝试主API
+    const resp = await this.getAppDramaDetail(String(id));
+    if (resp) {
+      log("info", `[Renren] 使用主API成功获取详情: ${id}`);
       return resp.data;
     }
+
+    return null;
   }
 
   async getEpisodes(id) {
@@ -403,8 +416,8 @@ export default class RenrenSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    const resp = await this.getAppDanmu(id);
-    if (!resp) {
+    // 优先使用备用API（因为主API可能不稳定）
+    try {
       const ClientProfile = {
         user_agent: "Mozilla/5.0",
         origin: "https://rrsp.com.cn",
@@ -418,14 +431,29 @@ export default class RenrenSource extends BaseSource {
         "Referer": ClientProfile.referer,
       };
       const resp = await this.renrenHttpGet(url, { headers });
-      if (!resp.data) return null;
-      const data = autoDecode(resp.data);
-      if (Array.isArray(data)) return data;
-      if (data?.data && Array.isArray(data.data)) return data.data;
-      return null;
-    } else {
+      if (resp.data) {
+        const data = autoDecode(resp.data);
+        if (Array.isArray(data)) {
+          log("info", `[Renren] 使用备用API成功获取弹幕: ${id}`);
+          return data;
+        }
+        if (data?.data && Array.isArray(data.data)) {
+          log("info", `[Renren] 使用备用API成功获取弹幕: ${id}`);
+          return data.data;
+        }
+      }
+    } catch (error) {
+      log("warn", `[Renren] 备用API失败，尝试主API: ${error.message}`);
+    }
+
+    // 备用API失败时才尝试主API
+    const resp = await this.getAppDanmu(id);
+    if (resp) {
+      log("info", `[Renren] 使用主API成功获取弹幕: ${id}`);
       return resp;
     }
+
+    return null;
   }
 
   async getEpisodeDanmuSegments(id) {
