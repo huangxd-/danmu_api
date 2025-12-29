@@ -61,6 +61,127 @@ function matchYear(anime, queryYear) {
   return animeYear === queryYear;
 }
 
+// ========== Season匹配辅助函数 ==========
+
+// 罗马数字转整数
+function romanToInt(roman) {
+  const map = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let result = 0;
+
+  for (let i = 0; i < roman.length; i++) {
+    const current = map[roman[i]];
+    const next = map[roman[i + 1]];
+
+    if (current === undefined) return 0; // 非法字符
+
+    if (next && current < next) {
+      result -= current;
+    } else {
+      result += current;
+    }
+  }
+
+  return result;
+}
+
+// 从标题中提取直接数字（如"爱情公寓4"、"复仇者联盟2"）
+function extractDirectNumber(animeTitle, queryTitle) {
+  // 移除年份部分（括号内的4位数字）
+  const titleWithoutYear = animeTitle.replace(/[（(]\d{4}[）)]/g, '');
+
+  // 移除明显的集数标记
+  const titleWithoutEpisode = titleWithoutYear.replace(/第\d+集|EP?\d+/gi, '');
+
+  // 构建正则：查询标题 + 1-2位数字（紧跟空格/结束/左括号/【等特殊字符）
+  // 例如："爱情公寓4(2014)" → "爱情公寓4"
+  // 例如："爱情公寓5【电视剧】" → "爱情公寓5"
+  const escapedQueryTitle = queryTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const directNumberRegex = new RegExp(`${escapedQueryTitle}(\\d{1,2})(?:[\\s（(【]|$)`, 'i');
+  const match = titleWithoutEpisode.match(directNumberRegex);
+
+  if (match) {
+    const number = parseInt(match[1], 10);
+    // 合理的season范围：1-50
+    if (number >= 1 && number <= 50) {
+      log("info", `[extractDirectNumber] Found direct number: ${number} in title: ${animeTitle}`);
+      return number;
+    }
+  }
+
+  return null;
+}
+
+// 检查标题中是否有其他季（第2季及以上）的标记
+function hasOtherSeasonMarker(animeTitle) {
+  return /第[二三四五六七八九十2-9]季|第[1-9]\d+季|[Ss]eason\s*[2-9]|[Ss]0[2-9]|第[2-9]部|第[1-9]\d+部|\s[IVX]{2,}(?:\s|$|[（(])|[Ss]eries\s*[2-9]/i.test(animeTitle);
+}
+
+// 从标题中提取Season编号（统一入口，按优先级尝试所有格式）
+function extractSeasonNumber(animeTitle, queryTitle) {
+  // 优先级1: 第X季
+  const match1 = animeTitle.match(/第(\d+)季/);
+  if (match1) {
+    const season = parseInt(match1[1], 10);
+    log("info", `[extractSeasonNumber] 格式1-第X季: ${season}`);
+    return season;
+  }
+
+  // 优先级2: Season X / S0X
+  const match2 = animeTitle.match(/[Ss]eason\s*(\d+)|[Ss]0?(\d+)/);
+  if (match2) {
+    const season = parseInt(match2[1] || match2[2], 10);
+    log("info", `[extractSeasonNumber] 格式2-Season X/S0X: ${season}`);
+    return season;
+  }
+
+  // 优先级3: 中文数字（第一季、第十一季）
+  const match3 = animeTitle.match(/第([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾百千]+)季/);
+  if (match3) {
+    const season = convertChineseNumber(match3[1]);
+    log("info", `[extractSeasonNumber] 格式3-中文数字: ${season}`);
+    return season;
+  }
+
+  // 优先级4: 第X部
+  const match4 = animeTitle.match(/第(\d+)部/);
+  if (match4) {
+    const season = parseInt(match4[1], 10);
+    log("info", `[extractSeasonNumber] 格式4-第X部: ${season}`);
+    return season;
+  }
+
+  // 优先级5: 罗马数字（需要紧跟在标题后，避免误匹配）
+  // 例如："进击的巨人II(2013)" → II=2
+  const match5 = animeTitle.match(/([IVX]+)(?:[（(【\s]|$)/);
+  if (match5) {
+    const roman = romanToInt(match5[1]);
+    // 限制合理范围（1-20），避免误匹配如"XXL"、"LVIII"等
+    if (roman > 0 && roman <= 20) {
+      log("info", `[extractSeasonNumber] 格式5-罗马数字: ${roman}`);
+      return roman;
+    }
+  }
+
+  // 优先级6: Series X
+  const match6 = animeTitle.match(/[Ss]eries\s*(\d+)/);
+  if (match6) {
+    const season = parseInt(match6[1], 10);
+    log("info", `[extractSeasonNumber] 格式6-Series X: ${season}`);
+    return season;
+  }
+
+  // 优先级7: 直接数字（最低优先级，最严格条件）
+  // 例如："爱情公寓4(2014)" → season=4
+  const directNumber = extractDirectNumber(animeTitle, queryTitle);
+  if (directNumber !== null) {
+    log("info", `[extractSeasonNumber] 格式7-直接数字: ${directNumber}`);
+    return directNumber;
+  }
+
+  return null;
+}
+
+// 主匹配函数
 export function matchSeason(anime, queryTitle, season) {
   const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
@@ -69,35 +190,17 @@ export function matchSeason(anime, queryTitle, season) {
     return false;
   }
 
-  // 从完整标题中提取季数（支持多种格式）
-  // 格式1: 第X季（如：第1季、第11季）
-  const seasonMatch1 = normalizedAnimeTitle.match(/第(\d+)季/);
-  if (seasonMatch1) {
-    const extractedSeason = parseInt(seasonMatch1[1], 10);
-    log("info", `[matchSeason] Extracted season from "第X季": ${extractedSeason}, query season: ${season}`);
-    return extractedSeason === season;
-  }
+  // 尝试从标题中提取season编号
+  const extractedSeason = extractSeasonNumber(normalizedAnimeTitle, normalizedQueryTitle);
 
-  // 格式2: Season X 或 S0X（如：Season 1, S01）
-  const seasonMatch2 = normalizedAnimeTitle.match(/[Ss]eason\s*(\d+)|[Ss]0?(\d+)/);
-  if (seasonMatch2) {
-    const extractedSeason = parseInt(seasonMatch2[1] || seasonMatch2[2], 10);
-    log("info", `[matchSeason] Extracted season from "Season X/S0X": ${extractedSeason}, query season: ${season}`);
-    return extractedSeason === season;
-  }
-
-  // 格式3: 中文数字（如：第一季、第十一季）
-  const chineseMatch = normalizedAnimeTitle.match(/第([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾百千]+)季/);
-  if (chineseMatch) {
-    const extractedSeason = convertChineseNumber(chineseMatch[1]);
-    log("info", `[matchSeason] Extracted season from Chinese number: ${extractedSeason}, query season: ${season}`);
+  if (extractedSeason !== null) {
+    log("info", `[matchSeason] Extracted season: ${extractedSeason}, query season: ${season}`);
     return extractedSeason === season;
   }
 
   // 如果没有找到明确的季数标记，且查询season=1，则判断是否为第一季
   if (season === 1) {
-    // 检查标题中是否有其他季的标记（第2季及以上）
-    const hasOtherSeason = /第[二三四五六七八九十2-9]季|第[1-9]\d+季|[Ss]eason\s*[2-9]|[Ss]0[2-9]/i.test(normalizedAnimeTitle);
+    const hasOtherSeason = hasOtherSeasonMarker(normalizedAnimeTitle);
     log("info", `[matchSeason] No explicit season found, query season: 1, has other season marker: ${hasOtherSeason}`);
     return !hasOtherSeason;  // 如果没有其他季的标记，则视为第一季
   }
@@ -359,25 +462,75 @@ function filterSameEpisodeTitle(filteredTmpEpisodes) {
 // 从集标题中提取集数（支持多种格式：第1集、第01集、EP01、E01等）
 function extractEpisodeNumberFromTitle(episodeTitle) {
   if (!episodeTitle) return null;
-  
-  // 匹配格式：第1集、第01集、第10集等
+
+  // ===== 优先检查：如果有明确的集数标记，先使用常规逻辑 =====
+  // 这样可以避免"上海滩 第5集"被误识别为"上"=1
   const chineseMatch = episodeTitle.match(/第(\d+)集/);
   if (chineseMatch) {
     return parseInt(chineseMatch[1], 10);
   }
-  
-  // 匹配格式：EP01、EP1、E01、E1等
+
   const epMatch = episodeTitle.match(/[Ee][Pp]?(\d+)/);
   if (epMatch) {
     return parseInt(epMatch[1], 10);
   }
-  
-  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
+
+  // ===== 识别"上下部"标记（仅当没有明确集数时）=====
+  // 匹配"上"、"上集"、"上部"、"Part 1"、"Part I"、"PartⅠ"等
+  // 注意：Part I 必须精确匹配，避免匹配到 Part II 中的 I
+  if (/[（(【]上[部]?[）)】]/.test(episodeTitle) ||
+      episodeTitle.endsWith("上") ||
+      episodeTitle.endsWith("上部") ||
+      /\s上\s/.test(episodeTitle) ||
+      /\s上部\s/.test(episodeTitle) ||
+      /Part\s*1\b/i.test(episodeTitle) ||
+      /PartⅠ/i.test(episodeTitle) ||
+      /Part\s*I\b(?!I)/i.test(episodeTitle) ||  // Part I，但后面不能再跟I
+      /第[一1]部/.test(episodeTitle)) {
+    log("info", `[extractEpisodeNumberFromTitle] 识别为"上部": ${episodeTitle}`);
+    return 1;
+  }
+
+  // 匹配"中"、"中集"、"中部"（仅当有三部曲时）
+  if ((/[（(【]中[部]?[）)】]/.test(episodeTitle) ||
+       episodeTitle.endsWith("中") ||
+       episodeTitle.endsWith("中部") ||
+       /\s中\s/.test(episodeTitle) ||
+       /\s中部\s/.test(episodeTitle)) &&
+      !episodeTitle.includes("中国")) {
+    log("info", `[extractEpisodeNumberFromTitle] 识别为"中部": ${episodeTitle}`);
+    return 2;
+  }
+
+  // 匹配"下"、"下集"、"下部"、"Part 2"、"Part II"、"PartⅡ"等
+  if (/[（(【]下[部]?[）)】]/.test(episodeTitle) ||
+      episodeTitle.endsWith("下") ||
+      episodeTitle.endsWith("下部") ||
+      /\s下\s/.test(episodeTitle) ||
+      /\s下部\s/.test(episodeTitle) ||
+      /Part\s*2\b/i.test(episodeTitle) ||
+      /PartⅡ/i.test(episodeTitle) ||
+      /Part\s*II\b/i.test(episodeTitle) ||
+      /第[二2]部/.test(episodeTitle)) {
+    log("info", `[extractEpisodeNumberFromTitle] 识别为"下部": ${episodeTitle}`);
+    return 2;
+  }
+
+  // 匹配"Part 3"、"Part III"等（三部曲的第三部）
+  if (/Part\s*3\b/i.test(episodeTitle) ||
+      /Part\s*Ⅲ\b/i.test(episodeTitle) ||
+      /Part\s*III\b/i.test(episodeTitle) ||
+      /第[三3]部/.test(episodeTitle)) {
+    log("info", `[extractEpisodeNumberFromTitle] 识别为"第三部": ${episodeTitle}`);
+    return 3;
+  }
+
+  // ===== 最后：匹配纯数字 =====
   const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
   if (numberMatch) {
     return parseInt(numberMatch[1], 10);
   }
-  
+
   return null;
 }
 
