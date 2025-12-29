@@ -23,7 +23,14 @@ jobs:
         run: |
           VERSION=$(grep "VERSION:" danmu_api/configs/globals.js | sed -E "s/.*VERSION: '(.*)'.*/\1/")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
+      # 根据分支设置版本号后缀
+      - name: Set version suffix
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "VERSION_TAG=${{ env.VERSION }}-test" >> $GITHUB_ENV
+          else
+            echo "VERSION_TAG=${{ env.VERSION }}" >> $GITHUB_ENV
+          fi
       # 设置 Docker 镜像缓存（可选，加速构建）
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -39,7 +46,13 @@ jobs:
       # 使用单条命令同时指定两个标签，避免重复构建
       - name: Build and Push Docker image with version and latest tag
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 \
-            -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION }} \
-            -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:latest \
-            --push .
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION_TAG }} \
+              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:latest \
+              --push .
+          else
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION_TAG }} \
+              --push .
+          fi
