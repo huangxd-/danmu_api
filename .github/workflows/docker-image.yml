@@ -1,58 +1,82 @@
-name: Build and Push Docker Image to Docker Hub
+name: 构建并推送 Docker 镜像
 
 on:
+  workflow_dispatch:       # 手动触发
   push:
     branches:
-      - main
+      - main              # 主分支更新触发
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "0 0 * * *"   # 每天午夜执行
+
+permissions:
+  contents: read           # 读取仓库内容
+  packages: write          # GHCR 权限
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------
       # 检出代码
-      - name: Checkout code
-        uses: actions/checkout@v3
+      # -------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 从 danmu_api/configs/globals.js 中读取版本号
-      - name: Read version from globals.js
+      # -------------------------
+      # 获取版本号（可选）
+      # -------------------------
+      - name: Get version from globals.js
         id: version
         run: |
           VERSION=$(grep "VERSION:" danmu_api/configs/globals.js | sed -E "s/.*VERSION: '(.*)'.*/\1/")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-      # 根据分支设置版本号后缀
-      - name: Set version suffix
-        run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "VERSION_TAG=${{ env.VERSION }}-test" >> $GITHUB_ENV
-          else
-            echo "VERSION_TAG=${{ env.VERSION }}" >> $GITHUB_ENV
-          fi
-      # 设置 Docker 镜像缓存（可选，加速构建）
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+          echo "VERSION=$VERSION"
 
-      # 登录 Docker Hub
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+      # -------------------------
+      # 设置版本标签（非 main 分支）
+      # -------------------------
+      - name: Set version tag
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "VERSION_TAG=${VERSION}-test" >> $GITHUB_ENV
+          else
+            echo "VERSION_TAG=${VERSION}" >> $GITHUB_ENV
+          fi
+          echo "VERSION_TAG=${VERSION_TAG}"
+
+      # -------------------------
+      # 设置 QEMU（多平台构建）
+      # -------------------------
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # -------------------------
+      # 设置 Docker Buildx
+      # -------------------------
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------
+      # 登录 GHCR
+      # -------------------------
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 构建 Docker 镜像，并指定平台为 amd64 和 arm64，推送到 Docker Hub
-      # 使用单条命令同时指定两个标签，避免重复构建
-      - name: Build and Push Docker image with version and latest tag
+      # -------------------------
+      # 构建并推送 Docker 镜像
+      # -------------------------
+      - name: Build and push Docker image
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            docker buildx build --platform linux/amd64,linux/arm64 \
-              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION_TAG }} \
-              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:latest \
-              --push .
-          else
-            docker buildx build --platform linux/amd64,linux/arm64 \
-              -t ${{ secrets.DOCKER_USERNAME }}/danmu-api:${{ env.VERSION_TAG }} \
-              --push .
-          fi
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -t ghcr.io/${{ github.repository }}:${VERSION_TAG} \
+            -t ghcr.io/${{ github.repository }}:latest \
+            --push .
