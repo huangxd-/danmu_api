@@ -1,62 +1,71 @@
-name: 构建并推送 Docker 镜像
+name: Fork Sync & Conditional Docker Build
 
 on:
-  workflow_dispatch:       # 手动触发
-  push:
-    branches:
-      - main              # 主分支更新触发
-  pull_request:
-    branches:
-      - main
   schedule:
-    - cron: "0 0 * * *"   # 每天午夜执行
+    - cron: "0 1 * * *"  # 每天 01:00 同步
+  workflow_dispatch:     # 手动触发
 
 permissions:
-  contents: read           # 读取仓库内容
-  packages: write          # GHCR 权限
+  contents: write   # fork 同步需要写权限
+  packages: write   # 推送 Docker 镜像需要写权限
 
 jobs:
-  build:
+  sync-and-build:
     runs-on: ubuntu-latest
 
     steps:
       # -------------------------
-      # 检出代码
+      # 检出 fork 仓库
       # -------------------------
-      - name: Checkout repository
+      - name: Checkout fork repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 完整历史，用于 merge
 
       # -------------------------
-      # 获取版本号（可选）
+      # 添加上游仓库 remote 并同步
       # -------------------------
-      - name: Get version from globals.js
-        id: version
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/ORIGINAL_OWNER/REPO.git
+          git fetch upstream
+          git checkout main
+          git merge upstream/main -m "Sync from upstream" || echo "No changes to merge"
+
+      # -------------------------
+      # 检查是否有变动
+      # -------------------------
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "CHANGED=false" >> $GITHUB_ENV
+          else
+            echo "CHANGED=true" >> $GITHUB_ENV
+            git push origin main
+          fi
+
+      # -------------------------
+      # 仅在有更新时构建镜像
+      # -------------------------
+      - name: Build and push Docker image
+        if: env.CHANGED == 'true'
         run: |
           VERSION=$(grep "VERSION:" danmu_api/configs/globals.js | sed -E "s/.*VERSION: '(.*)'.*/\1/")
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION=$VERSION"
+          echo "Building Docker image version $VERSION"
+          
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -t ghcr.io/${{ github.repository }}:${VERSION} \
+            -t ghcr.io/${{ github.repository }}:latest \
+            --push .
 
       # -------------------------
-      # 设置版本标签（非 main 分支）
-      # -------------------------
-      - name: Set version tag
-        run: |
-          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            echo "VERSION_TAG=${VERSION}-test" >> $GITHUB_ENV
-          else
-            echo "VERSION_TAG=${VERSION}" >> $GITHUB_ENV
-          fi
-          echo "VERSION_TAG=${VERSION_TAG}"
-
-      # -------------------------
-      # 设置 QEMU（多平台构建）
+      # 设置 QEMU 和 Buildx
       # -------------------------
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
 
-      # -------------------------
-      # 设置 Docker Buildx
-      # -------------------------
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -69,14 +78,3 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # -------------------------
-      # 构建并推送 Docker 镜像
-      # -------------------------
-      - name: Build and push Docker image
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            -t ghcr.io/${{ github.repository }}:${VERSION_TAG} \
-            -t ghcr.io/${{ github.repository }}:latest \
-            --push .
