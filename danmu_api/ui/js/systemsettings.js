@@ -255,10 +255,33 @@ function confirmDeploymentByLogs() {
 
 // 检查URL中的token是否与currentAdminToken匹配
 function checkAdminToken() {
-    let _reverseProxy = "";
+    let _reverseProxy = customBaseUrl; // 使用全局变量 customBaseUrl
 
     // 获取URL路径并提取token
-    const urlPath = window.location.pathname.replace(_reverseProxy, "");
+    let urlPath = window.location.pathname;
+    
+    // 如果配置了反代路径，必须先剥离它
+    if(_reverseProxy) {
+        try {
+            // 解析配置中的路径部分，例如 http://192.168.8.1:2333/danmu_api => /danmu_api
+            let proxyPath = _reverseProxy.startsWith('http') 
+                ? new URL(_reverseProxy).pathname 
+                : _reverseProxy;
+            
+            // 确保移除尾部斜杠
+            if (proxyPath.endsWith('/')) {
+                proxyPath = proxyPath.slice(0, -1);
+            }
+            
+            // 如果当前URL包含此前缀，则移除它
+            if(proxyPath && urlPath.startsWith(proxyPath)) {
+                urlPath = urlPath.substring(proxyPath.length);
+            }
+        } catch(e) {
+            console.error("解析反代路径失败", e);
+        }
+    }
+
     const pathParts = urlPath.split('/').filter(part => part !== '');
     const urlToken = pathParts.length > 0 ? pathParts[0] : currentToken; // 如果没有路径段，使用默认token
     
@@ -273,7 +296,21 @@ async function checkDeployPlatformConfig() {
         // 获取当前页面的协议、主机和端口
         const protocol = window.location.protocol;
         const host = window.location.host;
-        return { success: false, message: '请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：' + protocol + '//' + host + '/{ADMIN_TOKEN}' };
+        
+        let displayBase;
+        if (customBaseUrl) {
+            displayBase = customBaseUrl.startsWith('http') 
+                ? customBaseUrl 
+                : (protocol + '//' + host + customBaseUrl);
+        } else {
+            displayBase = protocol + '//' + host;
+        }
+
+        if (displayBase.endsWith('/')) {
+            displayBase = displayBase.slice(0, -1);
+        }
+        
+        return { success: false, message: '请先配置ADMIN_TOKEN环境变量并使用正确的token访问以启用系统部署功能！\\n\\n访问方式：' + displayBase + '/{ADMIN_TOKEN}' };
     }
     
     try {

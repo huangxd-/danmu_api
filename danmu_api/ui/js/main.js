@@ -116,10 +116,39 @@ let currentToken = 'globals.currentToken';
 let currentAdminToken = ''; // admin token，用于系统管理
 let originalToken = '';
 
+// 反向代理/API基础路径配置
+// 从LocalStorage获取用户自定义的Base URL
+let customBaseUrl = localStorage.getItem('logvar_api_base_url') || '';
+
+// 保存自定义Base URL (为空则清除)
+function saveBaseUrl() {
+    const input = document.getElementById('custom-base-url').value.trim();
+    if (input) {
+        // 确保URL不以斜杠结尾，方便后续拼接
+        let formattedUrl = input;
+        if (formattedUrl.endsWith('/')) {
+            formattedUrl = formattedUrl.slice(0, -1);
+        }
+        localStorage.setItem('logvar_api_base_url', formattedUrl);
+        customBaseUrl = formattedUrl;
+        customAlert('API地址配置已保存，即将刷新页面。', '保存成功');
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    } else {
+        // 输入为空，视为清除配置/重置为默认
+        localStorage.removeItem('logvar_api_base_url');
+        customBaseUrl = '';
+        customAlert('配置已重置为默认状态，即将刷新页面。', '操作成功');
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
+}
+
 // 构建带token的API请求路径
 function buildApiUrl(path, isSystemPath = false) {
     let res;
-    let _reverseProxy = "";
     // 如果是系统管理路径且有admin token,则使用admin token
     if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '' && currentAdminToken.trim() !== '*'.repeat(currentAdminToken.length)) {
         res = '/' + currentAdminToken + path;
@@ -127,7 +156,15 @@ function buildApiUrl(path, isSystemPath = false) {
         // 否则使用普通token
         res = (currentToken ? '/' + currentToken : "") + path;
     }
-    return _reverseProxy + res;
+    
+    // 如果配置了自定义基础URL (解决反代问题)
+    if (customBaseUrl) {
+        // 确保路径以/开头
+        const cleanPath = res.startsWith('/') ? res : '/' + res;
+        return customBaseUrl + cleanPath;
+    }
+
+    return res;
 }
 
 // 从API加载真实环境变量数据
@@ -182,9 +219,19 @@ function loadEnvVariables() {
 // 更新API端点信息
 function updateApiEndpoint() {
   return fetch(buildApiUrl('/api/config', true))
-    .then(response => response.json())
+    .then(response => {
+        // 检查ContentType，如果是HTML说明可能是404页面或反代错误页面
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") === -1) {
+             throw new Error("Received HTML instead of JSON. Possible 404 or Proxy Error.");
+        }
+        if (!response.ok) {
+            throw new Error(\`HTTP error! status: \${response.status}\`);
+        }
+        return response.json();
+    })
     .then(config => {
-      let _reverseProxy = "";
+      let _reverseProxy = customBaseUrl; // 使用全局配置
 
       // 获取当前页面的协议、主机和端口
       const protocol = window.location.protocol;
@@ -193,7 +240,22 @@ function updateApiEndpoint() {
       const adminToken = config.originalEnvVars?.ADMIN_TOKEN;
 
       // 获取URL路径并提取token
-      const urlPath = window.location.pathname.replace(_reverseProxy, "");
+      let urlPath = window.location.pathname;
+      if(_reverseProxy) {
+          try {
+              let proxyPath = _reverseProxy.startsWith('http') 
+                  ? new URL(_reverseProxy).pathname 
+                  : _reverseProxy;
+              
+              if (proxyPath.endsWith('/')) {
+                  proxyPath = proxyPath.slice(0, -1);
+              }
+              if(proxyPath && urlPath.startsWith(proxyPath)) {
+                  urlPath = urlPath.substring(proxyPath.length);
+              }
+          } catch(e) { /* ignore */ }
+      }
+
       const pathParts = urlPath.split('/').filter(part => part !== '');
       const urlToken = pathParts.length > 0 ? pathParts[0] : '';
       let apiToken = '********';
@@ -210,7 +272,23 @@ function updateApiEndpoint() {
       }
       
       // 构造API端点URL
-      const apiEndpoint = protocol + '//' + host + _reverseProxy + '/' + apiToken;
+      let baseUrlStr;
+      if (_reverseProxy) {
+          // 如果配置了反代，且是相对路径，则补全协议和主机，确保显示为绝对路径
+          baseUrlStr = _reverseProxy.startsWith('http') 
+              ? _reverseProxy 
+              : (protocol + '//' + host + _reverseProxy);
+      } else {
+          baseUrlStr = protocol + '//' + host;
+      }
+
+      // 确保 baseUrlStr 不以斜杠结尾
+      let cleanBaseUrl = baseUrlStr;
+      if (cleanBaseUrl.endsWith('/')) {
+          cleanBaseUrl = cleanBaseUrl.slice(0, -1);
+      }
+      const apiEndpoint = cleanBaseUrl + '/' + apiToken;
+      
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
@@ -222,11 +300,39 @@ function updateApiEndpoint() {
       // 出错时显示默认值
       const protocol = window.location.protocol;
       const host = window.location.host;
-      const apiEndpoint = protocol + '//' + host + _reverseProxy + '/********';
+      let _reverseProxy = customBaseUrl;
+      
+      // 构造显示用的BaseUrl
+      let baseUrlStr;
+      if (_reverseProxy) {
+          baseUrlStr = _reverseProxy.startsWith('http') 
+              ? _reverseProxy 
+              : (protocol + '//' + host + _reverseProxy);
+      } else {
+          baseUrlStr = protocol + '//' + host;
+      }
+
+      let cleanBaseUrl = baseUrlStr;
+      if (cleanBaseUrl.endsWith('/')) {
+          cleanBaseUrl = cleanBaseUrl.slice(0, -1);
+      }
+      const apiEndpoint = cleanBaseUrl + '/********';
+      
       const apiEndpointElement = document.getElementById('api-endpoint');
       if (apiEndpointElement) {
         apiEndpointElement.textContent = apiEndpoint;
       }
+      
+      // 如果是因为反代导致的问题，显示输入框 (交由renderPreview处理，或者在这里也可以触发)
+      const proxyContainer = document.getElementById('proxy-config-container');
+      if(proxyContainer) {
+          proxyContainer.style.display = 'block';
+          // 填充当前输入框（如果有值）
+          if(customBaseUrl) {
+              document.getElementById('custom-base-url').value = customBaseUrl;
+          }
+      }
+      
       throw error; // 抛出错误，以便调用者可以处理
     });
 }
@@ -259,10 +365,32 @@ function getDockerVersion() {
 function switchSection(section, event = null) {
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
     if (section === 'logs' || section === 'api' || section === 'env' || section === 'push') {
-        let _reverseProxy = "";
+        let _reverseProxy = customBaseUrl; // 使用全局配置
 
         // 获取URL路径并提取token
-        const urlPath = window.location.pathname.replace(_reverseProxy, "");
+        let urlPath = window.location.pathname;
+        if(_reverseProxy) {
+            // 严谨地移除BaseUrl中的path部分
+            try {
+                // 如果_reverseProxy包含完整URL，提取pathname
+                // 如果只是相对路径，直接使用
+                let proxyPath = _reverseProxy.startsWith('http') 
+                    ? new URL(_reverseProxy).pathname 
+                    : _reverseProxy;
+                
+                // 确保移除尾部斜杠，防止匹配失败
+                if (proxyPath.endsWith('/')) {
+                    proxyPath = proxyPath.slice(0, -1);
+                }
+                
+                if(proxyPath && urlPath.startsWith(proxyPath)) {
+                    urlPath = urlPath.substring(proxyPath.length);
+                }
+            } catch(e) {
+                console.error("解析反代路径失败", e);
+            }
+        }
+        
         const pathParts = urlPath.split('/').filter(part => part !== '');
         const urlToken = pathParts.length > 0 ? pathParts[0] : '';
         
@@ -273,7 +401,22 @@ function switchSection(section, event = null) {
                 // 获取当前页面的协议、主机和端口
                 const protocol = window.location.protocol;
                 const host = window.location.host;
-                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + protocol + '//' + host + '/{TOKEN}');
+                
+                // 构造显示的BaseUrl，确保是绝对路径
+                let displayBase;
+                if (_reverseProxy) {
+                    displayBase = _reverseProxy.startsWith('http') 
+                        ? _reverseProxy 
+                        : (protocol + '//' + host + _reverseProxy);
+                } else {
+                    displayBase = protocol + '//' + host;
+                }
+                
+                if (displayBase.endsWith('/')) {
+                    displayBase = displayBase.slice(0, -1);
+                }
+                
+                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + displayBase + '/{TOKEN}');
             }, 100);
             return;
         }
@@ -375,9 +518,20 @@ async function init() {
         addLog('系统初始化完成', 'success');
         // 获取真实日志数据
         fetchRealLogs();
+        
     } catch (error) {
         console.error('初始化失败:', error);
         addLog('系统初始化失败: ' + error.message, 'error');
+        
+        // 确保反代配置框显示
+        const proxyContainer = document.getElementById('proxy-config-container');
+        if(proxyContainer) {
+            proxyContainer.style.display = 'block';
+            if(customBaseUrl) {
+                document.getElementById('custom-base-url').value = customBaseUrl;
+            }
+        }
+        
         // 即使初始化失败，也要尝试获取日志
         fetchRealLogs();
     }

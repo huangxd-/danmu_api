@@ -61,6 +61,19 @@ export const HTML_TEMPLATE = /* html */ `
             <!-- 配置预览 -->
             <div class="section active" id="preview-section">
                 <h2>配置预览</h2>
+                
+                <div id="proxy-config-container" style="display: none; background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                    <h3 style="color: #856404; margin-top: 0; font-size: 16px;">⚠️ 获取配置失败</h3>
+                    <p style="color: #856404; margin-bottom: 10px; font-size: 14px;">
+                        检测到无法获取配置。如果您使用了复杂的反向代理：例如将 <code>http://{ip}:9321/</code> 代理到了 <code>http://{ip}:9321/danmu_api/</code>，请在此处手动输入完整的反代后链接（不包含TOKEN和ADMIN_TOKEN的）
+                    </p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <input type="text" id="custom-base-url" placeholder="例如: http://192.168.8.1:2333/danmu_api/ (留空保存即恢复默认)" style="flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                        <button class="btn btn-primary" onclick="saveBaseUrl()">保存并刷新</button>
+                    </div>
+                    <p style="color: #666; font-size: 12px; margin-top: 5px;">* 设置将保存在浏览器本地存储中，清除网页的‘本地存储空间’或者输入框中留空并保存可恢复默认</p>
+                </div>
+
                 <p style="color: #666; margin-bottom: 20px;">当前生效的环境变量配置</p>
                 <div class="preview-area" id="preview-area"></div>
             </div>
@@ -257,7 +270,7 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div class="form-group" id="value-input-container">
                     <!-- 动态渲染的值输入控件 -->
-                </div>
+                    </div>
                 <div class="form-group">
                     <label>描述</label>
                     <textarea id="env-description" placeholder="配置项说明" readonly></textarea>
