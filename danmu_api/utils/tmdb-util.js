@@ -110,44 +110,133 @@ async function getTmdbAlternativeTitles(mediaType, tmdbId) {
 // 从别名中提取中文别名相关函数
 function extractChineseTitleFromAlternatives(altData, mediaType) {
   if (!altData || !altData.data) return null;
-  
+
   // TV 剧集的别名在 results 字段，电影在 titles 字段
   const titles = altData.data.results || altData.data.titles || [];
-  
+
   if (!Array.isArray(titles) || titles.length === 0) {
     return null;
   }
-  
+
   // 优先级：CN（中国大陆）> TW（台湾）> HK（香港）> SG（新加坡）
   const priorityRegions = ['CN', 'TW', 'HK', 'SG'];
-  
+
   for (const region of priorityRegions) {
     const match = titles.find(t => {
       const iso = t.iso_3166_1 || t.iso_639_1;
       const title = t.title || t.name || "";
       return iso === region && title && !isNonChinese(title);
     });
-    
+
     if (match) {
       const chineseTitle = match.title || match.name;
       log("info", `[TMDB] 从别名中找到中文标题 (${region}): ${chineseTitle}`);
       return chineseTitle;
     }
   }
-  
+
   // 如果没有找到指定地区的，查找任何包含中文的别名
   const anyChineseTitle = titles.find(t => {
     const title = t.title || t.name || "";
     return title && !isNonChinese(title);
   });
-  
+
   if (anyChineseTitle) {
     const title = anyChineseTitle.title || anyChineseTitle.name;
     log("info", `[TMDB] 从别名中找到中文标题 (其他地区): ${title}`);
     return title;
   }
-  
+
   return null;
+}
+
+// 提取所有中文别名（方案C：返回数组，支持多别名重试）
+function extractAllChineseTitles(altData, mediaType) {
+  if (!altData || !altData.data) return [];
+
+  // TV 剧集的别名在 results 字段，电影在 titles 字段
+  const titles = altData.data.results || altData.data.titles || [];
+
+  if (!Array.isArray(titles) || titles.length === 0) {
+    return [];
+  }
+
+  // 优先级：CN（中国大陆）> TW（台湾）> HK（香港）> SG（新加坡）
+  // 由于弹幕源主要是大陆网站，优先提取CN地区别名
+  const priorityRegions = ['CN', 'TW', 'HK', 'SG'];
+
+  const allChineseTitles = [];
+
+  // 按地区优先级提取
+  for (const region of priorityRegions) {
+    const regionTitles = titles
+      .filter(t => {
+        const iso = t.iso_3166_1 || t.iso_639_1;
+        const title = t.title || t.name || "";
+        return iso === region && title && !isNonChinese(title);
+      })
+      .map(t => ({
+        title: t.title || t.name,
+        region: region
+      }));
+
+    if (regionTitles.length > 0) {
+      log("info", `[TMDB] 找到 ${regionTitles.length} 个 ${region} 地区中文别名: ${regionTitles.map(t => t.title).join(', ')}`);
+      allChineseTitles.push(...regionTitles);
+    }
+  }
+
+  // 如果没有找到指定地区的，查找任何包含中文的别名
+  if (allChineseTitles.length === 0) {
+    const anyChineseTitles = titles
+      .filter(t => {
+        const title = t.title || t.name || "";
+        return title && !isNonChinese(title);
+      })
+      .map(t => ({
+        title: t.title || t.name,
+        region: 'other'
+      }));
+
+    if (anyChineseTitles.length > 0) {
+      log("info", `[TMDB] 找到 ${anyChineseTitles.length} 个其他地区中文别名: ${anyChineseTitles.map(t => t.title).join(', ')}`);
+      allChineseTitles.push(...anyChineseTitles);
+    }
+  }
+
+  // 智能排序：纯中文优先、长度优先、CN地区优先
+  allChineseTitles.sort((a, b) => {
+    // 判断是否为纯中文（不含数字、英文字母）
+    const isPureChineseA = !/[0-9a-zA-Z]/.test(a.title);
+    const isPureChineseB = !/[0-9a-zA-Z]/.test(b.title);
+
+    // 优先级1：纯中文优先
+    if (isPureChineseA && !isPureChineseB) return -1;
+    if (!isPureChineseA && isPureChineseB) return 1;
+
+    // 优先级2：CN地区优先
+    if (a.region === 'CN' && b.region !== 'CN') return -1;
+    if (a.region !== 'CN' && b.region === 'CN') return 1;
+
+    // 优先级3：长度优先（更长的标题通常更完整）
+    return b.title.length - a.title.length;
+  });
+
+  // 去重（保留第一个出现的）
+  const uniqueTitles = [];
+  const seen = new Set();
+  for (const item of allChineseTitles) {
+    if (!seen.has(item.title)) {
+      seen.add(item.title);
+      uniqueTitles.push(item.title);
+    }
+  }
+
+  if (uniqueTitles.length > 0) {
+    log("info", `[TMDB] 排序后的中文别名: ${uniqueTitles.join(' > ')}`);
+  }
+
+  return uniqueTitles;
 }
 
 // 别名获取判断相关函数
@@ -544,3 +633,78 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
     return title;
   }
 }
+
+/**
+ * 查询 TMDB 获取中文标题（包含所有备选标题，用于多别名重试）
+ * @param {string} title - 标题
+ * @param {number|string} season - 季数（可选）
+ * @param {number|string} episode - 集数（可选）
+ * @returns {Promise<{primaryTitle: string, alternativeTitles: string[]}>} 返回主标题和备选标题数组
+ */
+export async function getTMDBChineseTitlesWithAlternatives(title, season = null, episode = null) {
+  // 如果包含中文，直接返回原标题
+  if (!isNonChinese(title)) {
+    return { primaryTitle: title, alternativeTitles: [] };
+  }
+
+  // 判断是电影还是电视剧
+  const isTV = season !== null && season !== undefined;
+  const mediaType = isTV ? 'tv' : 'movie';
+
+  try {
+    // 搜索媒体内容
+    const searchResponse = await searchTmdbTitles(title, mediaType);
+
+    // 检查是否有结果
+    if (!searchResponse.data.results || searchResponse.data.results.length === 0) {
+      log("info", '[TMDB] TMDB未找到任何结果');
+      return { primaryTitle: title, alternativeTitles: [] };
+    }
+
+    // 策略1：优先查找已经是中文标题的结果（快速路径）
+    let selectedResult = searchResponse.data.results.find(result => {
+      const resultName = isTV ? result.name : result.title;
+      return resultName && !isNonChinese(resultName);
+    });
+
+    // 策略2：如果没有中文结果，用第一个结果 + alternative_titles API
+    if (!selectedResult) {
+      log("info", "[TMDB] 搜索结果中没有中文标题，将使用第一个结果并查询别名");
+      selectedResult = searchResponse.data.results[0];
+    }
+
+    // 为结果添加 media_type（如果没有的话）
+    if (!selectedResult.media_type) {
+      selectedResult.media_type = mediaType;
+    }
+
+    // 获取 alternative_titles
+    const altResp = await getTmdbAlternativeTitles(selectedResult.media_type, selectedResult.id);
+
+    // 提取所有中文别名（已按优先级排序）
+    const allTitles = extractAllChineseTitles(altResp, selectedResult.media_type);
+
+    if (allTitles.length > 0) {
+      // 第一个是主标题，其余是备选标题
+      const primaryTitle = allTitles[0];
+      const alternativeTitles = allTitles.slice(1);
+      log("info", `原标题: ${title} -> 主标题: ${primaryTitle}, 备选: [${alternativeTitles.join(', ')}]`);
+      return { primaryTitle, alternativeTitles };
+    } else {
+      // 没有找到中文别名，尝试使用搜索结果中的中文标题
+      const resultName = isTV ? selectedResult.name : selectedResult.title;
+      if (resultName && !isNonChinese(resultName)) {
+        log("info", `原标题: ${title} -> 中文标题: ${resultName}`);
+        return { primaryTitle: resultName, alternativeTitles: [] };
+      } else {
+        log("info", `原标题: ${title} -> 未找到中文标题，使用原标题`);
+        return { primaryTitle: title, alternativeTitles: [] };
+      }
+    }
+
+  } catch (error) {
+    log("error", '查询 TMDB 时出错:', error);
+    return { primaryTitle: title, alternativeTitles: [] };
+  }
+}
+

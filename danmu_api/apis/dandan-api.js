@@ -9,7 +9,7 @@ import {
 } from "../utils/cache-util.js";
 import { formatDanmuResponse } from "../utils/danmu-util.js";
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
-import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
+import { getTMDBChineseTitle, getTMDBChineseTitlesWithAlternatives } from "../utils/tmdb-util.js";
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
 import TmdbSource from "../sources/tmdb.js";
@@ -799,13 +799,16 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   }
 
   // 如果外语标题转换中文开关已开启，则尝试获取中文标题
+  let alternativeTitles = [];
   if (globals.titleToChinese) {
     // 如果title中包含.，则用空格替换
-    title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
+    const titleResult = await getTMDBChineseTitlesWithAlternatives(title.replace('.', ' '), season, episode);
+    title = titleResult.primaryTitle;
+    alternativeTitles = titleResult.alternativeTitles;
   }
 
-  log("info", "Parsed title, season, episode, year", {title, season, episode, year});
-  return {title, season, episode, year};
+  log("info", "Parsed title, season, episode, year, alternativeTitles", {title, season, episode, year, alternativeTitles});
+  return {title, season, episode, year, alternativeTitles};
 }
 
 // Extracted function for POST /api/v2/match
@@ -839,15 +842,16 @@ export async function matchAnime(url, req) {
     log("info", `Processing anime match for query: ${fileName}`);
     log("info", `Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
-    let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
+    let {title, season, episode, year, alternativeTitles} = await extractTitleSeasonEpisode(cleanFileName);
 
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
+    // 尝试用主标题匹配
     let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));
-    const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource);
-    const searchData = await searchRes.json();
+    let searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource);
+    let searchData = await searchRes.json();
     log("info", `searchData: ${searchData.animes}`);
 
     let resAnime;
@@ -859,6 +863,7 @@ export async function matchAnime(url, req) {
     log("info", `Dynamic platformOrder: ${dynamicPlatformOrder}`);
     log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
 
+    // 尝试用主标题匹配
     for (const platform of dynamicPlatformOrder) {
       const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
       resEpisode = __ret.resEpisode;
@@ -870,7 +875,45 @@ export async function matchAnime(url, req) {
       }
     }
 
-    // 如果都没有找到则返回第一个满足剧集数的剧集
+    // 如果主标题没有匹配且有备选标题，依次尝试备选标题
+    if (!resAnime && alternativeTitles && alternativeTitles.length > 0) {
+      log("info", `[多别名重试] 主标题 "${title}" 未匹配，尝试 ${alternativeTitles.length} 个备选标题`);
+
+      for (let i = 0; i < alternativeTitles.length; i++) {
+        const altTitle = alternativeTitles[i];
+        log("info", `[多别名重试] 尝试备选标题 ${i + 1}/${alternativeTitles.length}: "${altTitle}"`);
+
+        // 用备选标题重新搜索
+        const altSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${altTitle}`));
+        const altSearchRes = await searchAnime(altSearchUrl, preferAnimeId, preferSource);
+        const altSearchData = await altSearchRes.json();
+
+        if (!altSearchData.animes || altSearchData.animes.length === 0) {
+          log("info", `[多别名重试] 备选标题 "${altTitle}" 未找到搜索结果`);
+          continue;
+        }
+
+        // 尝试用备选标题匹配
+        for (const platform of dynamicPlatformOrder) {
+          const __ret = await matchAniAndEp(season, episode, year, altSearchData, altTitle, req, platform, preferAnimeId);
+          resEpisode = __ret.resEpisode;
+          resAnime = __ret.resAnime;
+
+          if (resAnime) {
+            log("info", `[多别名重试] 成功匹配备选标题 "${altTitle}"，平台: ${platform || 'default'}`);
+            // 更新 searchData 为成功的搜索结果，供后续 fallback 使用
+            searchData = altSearchData;
+            break;
+          }
+        }
+
+        if (resAnime) {
+          break; // 已找到匹配，跳出备选标题循环
+        }
+      }
+    }
+
+    // 如果都没有找到则返回第一个满足剧集数的剧集（使用最后成功搜索的 searchData）
     if (!resAnime) {
       const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
       resEpisode = __ret.resEpisode;
