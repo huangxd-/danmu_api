@@ -512,20 +512,26 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
       return title;
     }
 
-    // 获取第一个匹配结果的 ID
-    // 查找第一个 name/title 包含中文的结果
-    const firstResult = searchResponse.data.results.find(result => {
+    // 策略1：优先查找已经是中文标题的结果（快速路径）
+    let selectedResult = searchResponse.data.results.find(result => {
       const resultName = isTV ? result.name : result.title;
       return resultName && !isNonChinese(resultName);
     });
 
-    // 如果没有找到包含中文的结果，使用第一个结果
-    const selectedResult = firstResult || searchResponse.data.results[0];
+    // 策略2：如果没有中文结果，用第一个结果 + alternative_titles API
+    if (!selectedResult) {
+      log("info", "[TMDB] 搜索结果中没有中文标题，将使用第一个结果并查询别名");
+      selectedResult = searchResponse.data.results[0];
+    }
 
-    // 电视剧使用 name 字段，电影使用 title 字段
-    const chineseTitle = isTV ? selectedResult.name : selectedResult.title;
+    // 为结果添加 media_type（如果没有的话）
+    if (!selectedResult.media_type) {
+      selectedResult.media_type = mediaType;
+    }
 
-    // 如果有中文标题则返回，否则返回原标题
+    // 使用 alternative_titles API 获取中文别名（带托底逻辑）
+    const chineseTitle = await getChineseTitleForResult(selectedResult, null);
+
     if (chineseTitle) {
       log("info", `原标题: ${title} -> 中文标题: ${chineseTitle}`);
       return chineseTitle;

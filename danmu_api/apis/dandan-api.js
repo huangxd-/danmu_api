@@ -714,15 +714,16 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, res
 }
 
 export async function extractTitleSeasonEpisode(cleanFileName) {
-  const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
+  // 支持 S##E## 或单独 E## 格式
+  const regex = /^(.+?)[.\s]+(?:S(\d+))?E(\d+)/i;
   const match = cleanFileName.match(regex);
 
   let title, season, episode, year;
 
   if (match) {
-    // 匹配到 S##E## 格式
+    // 匹配到 S##E## 或 E## 格式
     title = match[1].trim();
-    season = parseInt(match[2], 10);
+    season = match[2] ? parseInt(match[2], 10) : 1;  // E## 格式默认 season=1
     episode = parseInt(match[3], 10);
 
     // ============ 提取年份 =============
@@ -764,18 +765,36 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     title = title.replace(/\.\d{4}$/i, '').trim();
   } else {
     // 没有 S##E## 格式，尝试提取第一个片段作为标题
-    // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
-    const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|E\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
-    const titleMatch = cleanFileName.match(titleRegex);
+    // 先尝试匹配单独的 E## 格式
+    const episodeOnlyRegex = /^(.+?)[.\s]+E(\d+)/i;
+    const episodeMatch = cleanFileName.match(episodeOnlyRegex);
 
-    title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
-    season = null;
-    episode = null;
-    
-    // 从文件名中提取年份
-    const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
-    if (yearMatch) {
-      year = parseInt(yearMatch[1], 10);
+    if (episodeMatch) {
+      // 匹配到单独的 E## 格式
+      title = episodeMatch[1].replace(/[._]/g, ' ').trim();
+      season = 1;  // 默认第一季
+      episode = parseInt(episodeMatch[2], 10);
+
+      // 从文件名中提取年份
+      const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+      if (yearMatch) {
+        year = parseInt(yearMatch[1], 10);
+      }
+    } else {
+      // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
+      // 注意：从技术标记中移除了 E\d+，避免误识别
+      const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
+      const titleMatch = cleanFileName.match(titleRegex);
+
+      title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
+      season = null;
+      episode = null;
+
+      // 从文件名中提取年份
+      const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+      if (yearMatch) {
+        year = parseInt(yearMatch[1], 10);
+      }
     }
   }
 
