@@ -573,7 +573,7 @@ function addSelectedTag(element) {
     // 禁用可选项
     element.classList.add('disabled');
 
-    // 重新设置拖动事件
+    // 重新设置拖动事件，确保新添加的标签也能拖动和删除
     setupDragAndDrop();
 }
 
@@ -596,6 +596,9 @@ function removeSelectedTag(button) {
     if (availableTag) {
         availableTag.classList.remove('disabled');
     }
+    
+    // 重新设置拖动事件，确保其他标签仍然可以拖动
+    setupDragAndDrop();
 }
 
 // 更新多选选项
@@ -621,6 +624,7 @@ function updateMultiOptions() {
 let draggedElement = null;
 let touchDragging = false;
 
+// 为删除按钮添加触摸事件监听器，以确保其可以被点击
 function setupDragAndDrop() {
     const container = document.getElementById('selected-tags');
     const tags = container.querySelectorAll('.selected-tag');
@@ -638,6 +642,19 @@ function setupDragAndDrop() {
         tag.addEventListener('touchstart', handleTouchStart);
         tag.addEventListener('touchmove', handleTouchMove);
         tag.addEventListener('touchend', handleTouchEnd);
+        
+        // 确保删除按钮可以被点击
+        const removeBtn = tag.querySelector('.remove-btn');
+        if (removeBtn) {
+            // 阻止删除按钮上的触摸事件冒泡到父元素
+            removeBtn.addEventListener('touchstart', function(e) {
+                e.stopPropagation();
+            });
+            
+            removeBtn.addEventListener('touchend', function(e) {
+                e.stopPropagation();
+            });
+        }
     });
 }
 
@@ -696,6 +713,12 @@ function handleDrop(e) {
 
 // 触摸拖动事件处理
 function handleTouchStart(e) {
+    // 检查点击的是否是删除按钮
+    if (e.target.classList.contains('remove-btn')) {
+        // 如果点击的是删除按钮，则不执行拖动操作
+        return;
+    }
+    
     // 防止默认的触摸行为
     e.preventDefault();
     
