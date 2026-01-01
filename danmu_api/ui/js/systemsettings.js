@@ -619,18 +619,25 @@ function updateMultiOptions() {
 
 // 设置拖放功能
 let draggedElement = null;
+let touchDragging = false;
 
 function setupDragAndDrop() {
     const container = document.getElementById('selected-tags');
     const tags = container.querySelectorAll('.selected-tag');
 
     tags.forEach(tag => {
+        // 鼠标拖放事件
         tag.addEventListener('dragstart', handleDragStart);
         tag.addEventListener('dragend', handleDragEnd);
         tag.addEventListener('dragover', handleDragOver);
         tag.addEventListener('drop', handleDrop);
         tag.addEventListener('dragenter', handleDragEnter);
         tag.addEventListener('dragleave', handleDragLeave);
+        
+        // 触摸拖放事件
+        tag.addEventListener('touchstart', handleTouchStart);
+        tag.addEventListener('touchmove', handleTouchMove);
+        tag.addEventListener('touchend', handleTouchEnd);
     });
 }
 
@@ -685,6 +692,195 @@ function handleDrop(e) {
 
     this.classList.remove('drag-over');
     return false;
+}
+
+// 触摸拖动事件处理
+function handleTouchStart(e) {
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 获取触摸点
+    const touch = e.touches[0];
+    
+    // 模拟拖动开始
+    draggedElement = this;
+    this.classList.add('dragging');
+    touchDragging = true;
+    
+    // 添加拖动样式
+    this.style.transform = 'rotate(5deg)';
+    this.style.opacity = '0.8';
+    this.style.zIndex = '1000';
+    
+    // 添加触摸移动和结束事件监听器到文档
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+}
+
+function handleTouchMove(e) {
+    if (!touchDragging || !draggedElement) return;
+    
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 使用 requestAnimationFrame 来优化性能
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => {
+            // 获取触摸点位置
+            const touch = e.touches[0];
+            
+            // 获取拖动元素的尺寸
+            const elementRect = draggedElement.getBoundingClientRect();
+            
+            // 创建一个临时的拖动元素，而不是移动原始元素
+            if (!document.getElementById('touch-drag-ghost')) {
+                const ghostElement = draggedElement.cloneNode(true);
+                ghostElement.id = 'touch-drag-ghost';
+                ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
+                ghostElement.style.left = '0';
+                ghostElement.style.top = '0';
+                ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
+                ghostElement.style.zIndex = '9999';
+                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+                ghostElement.style.opacity = '0.8';
+                ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
+                ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
+                ghostElement.style.height = elementRect.height + 'px'; // 固定高度
+                document.body.appendChild(ghostElement);
+            } else {
+                const ghostElement = document.getElementById('touch-drag-ghost');
+                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+            }
+            
+            // 检查与其他元素的碰撞
+            const container = document.getElementById('selected-tags');
+            const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
+            let targetElement = null;
+            
+            for (const tag of tags) {
+                const rect = tag.getBoundingClientRect();
+                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                    targetElement = tag;
+                    break;
+                }
+            }
+            
+            // 高亮目标元素
+            document.querySelectorAll('.selected-tag').forEach(tag => {
+                if (tag !== draggedElement) {
+                    tag.classList.remove('drag-over');
+                }
+            });
+            
+            if (targetElement) {
+                targetElement.classList.add('drag-over');
+            }
+        });
+    } else {
+        // 降级处理，如果不支持 requestAnimationFrame
+        const touch = e.touches[0];
+        
+        // 获取拖动元素的尺寸
+        const elementRect = draggedElement.getBoundingClientRect();
+        
+        // 创建一个临时的拖动元素，而不是移动原始元素
+        if (!document.getElementById('touch-drag-ghost')) {
+            const ghostElement = draggedElement.cloneNode(true);
+            ghostElement.id = 'touch-drag-ghost';
+            ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
+            ghostElement.style.left = '0';
+            ghostElement.style.top = '0';
+            ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
+            ghostElement.style.zIndex = '9999';
+            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+            ghostElement.style.opacity = '0.8';
+            ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
+            ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
+            ghostElement.style.height = elementRect.height + 'px'; // 固定高度
+            document.body.appendChild(ghostElement);
+        } else {
+            const ghostElement = document.getElementById('touch-drag-ghost');
+            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+        }
+        
+        // 检查与其他元素的碰撞
+        const container = document.getElementById('selected-tags');
+        const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
+        let targetElement = null;
+        
+        for (const tag of tags) {
+            const rect = tag.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                targetElement = tag;
+                break;
+            }
+        }
+        
+        // 高亮目标元素
+        document.querySelectorAll('.selected-tag').forEach(tag => {
+            if (tag !== draggedElement) {
+                tag.classList.remove('drag-over');
+            }
+        });
+        
+        if (targetElement) {
+            targetElement.classList.add('drag-over');
+        }
+    }
+}
+
+function handleTouchEnd(e) {
+    if (!touchDragging || !draggedElement) return;
+    
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 移除临时拖动元素
+    const ghostElement = document.getElementById('touch-drag-ghost');
+    if (ghostElement) {
+        document.body.removeChild(ghostElement);
+    }
+    
+    // 找到目标元素（如果有）
+    const touch = e.changedTouches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    const container = document.getElementById('selected-tags');
+    const targetTag = targetElement.closest('.selected-tag');
+    
+    // 如果目标是另一个标签，执行交换
+    if (targetTag && targetTag !== draggedElement && container.contains(targetTag)) {
+        const allTags = Array.from(container.querySelectorAll('.selected-tag'));
+        const draggedIndex = allTags.indexOf(draggedElement);
+        const targetIndex = allTags.indexOf(targetTag);
+
+        if (draggedIndex < targetIndex) {
+            targetTag.parentNode.insertBefore(draggedElement, targetTag.nextSibling);
+        } else {
+            targetTag.parentNode.insertBefore(draggedElement, targetTag);
+        }
+    }
+    
+    // 重置元素样式
+    draggedElement.style.transform = '';
+    draggedElement.style.opacity = '';
+    draggedElement.style.zIndex = '';
+    
+    // 移除拖动类
+    draggedElement.classList.remove('dragging');
+    document.querySelectorAll('.selected-tag').forEach(tag => {
+        tag.classList.remove('drag-over');
+    });
+    
+    // 重置变量
+    touchDragging = false;
+    draggedElement = null;
+    
+    // 移除事件监听器
+    document.removeEventListener('touchmove', handleTouchMove);
+    document.removeEventListener('touchend', handleTouchEnd);
 }
 
 // 显示加载遮罩
