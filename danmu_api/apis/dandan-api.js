@@ -635,6 +635,15 @@ export async function matchAnime(url, req) {
 
     let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
 
+    // 使用剧名映射表转换剧名
+    if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
+      const mappedTitle = globals.titleMappingTable.get(title);
+      if (mappedTitle) {
+        title = mappedTitle;
+        log("info", `Title mapped from original: ${url.searchParams.get("keyword")} to: ${title}`);
+      }
+    }
+
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
