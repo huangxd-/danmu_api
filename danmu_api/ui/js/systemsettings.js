@@ -1114,10 +1114,8 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         const options = Array.from(document.querySelectorAll('.available-tag')).map(el => el.dataset.value);
         itemData = { key, value, description, type, options };
     } else if (type === 'map') {
-        console.log("map");
         // 获取映射表值
         const mapItems = document.querySelectorAll('#map-container .map-item');
-        console.log("mapItems: ", mapItems);
         const pairs = [];
         mapItems.forEach(item => {
             const leftInput = item.querySelector('.map-input-left');
@@ -1129,7 +1127,6 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             }
         });
         value = pairs.join(';');
-        console.log("value: ", value);
         itemData = { key, value, description, type };
     } else {
         value = document.getElementById('text-value').value.trim();
@@ -1203,6 +1200,7 @@ function addMapItem() {
     const newItem = template.cloneNode(true);
     newItem.style.display = 'flex';
     newItem.classList.remove('map-item-template');
+    newItem.classList.add('map-item');
     const index = container.querySelectorAll('.map-item').length;
     newItem.setAttribute('data-index', index);
     container.appendChild(newItem);
