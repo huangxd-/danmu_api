@@ -493,6 +493,38 @@ function renderValueInput(item) {
         // 设置拖动事件
         setupDragAndDrop();
 
+    } else if (type === 'map') {
+        // 映射表类型
+        const pairs = value ? value.split(';').map(pair => pair.trim()).filter(pair => pair) : [];
+        const mapItems = pairs.map(pair => {
+            if (pair.includes('->')) {
+                const [left, right] = pair.split('->').map(s => s.trim());
+                return { left, right };
+            }
+            return { left: pair, right: '' };
+        });
+
+        container.innerHTML = \`
+            <label>映射配置</label>
+            <div class="map-container" id="map-container">
+                \${mapItems.map((item, index) => \`
+                    <div class="map-item" data-index="\${index}">
+                        <input type="text" class="map-input-left" placeholder="原始值" value="\${item.left}">
+                        <span class="map-separator">-></span>
+                        <input type="text" class="map-input-right" placeholder="映射值" value="\${item.right}">
+                        <button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>
+                    </div>
+                \`).join('')}
+                <div class="map-item-template" style="display: none;">
+                    <input type="text" class="map-input-left" placeholder="原始值">
+                    <span class="map-separator">-></span>
+                    <input type="text" class="map-input-right" placeholder="映射值">
+                    <button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addMapItem()">添加映射项</button>
+        \`;
+
     } else {
         // 文本输入
         // 如果值太长，使用textarea而不是input
@@ -949,6 +981,7 @@ function renderEnvList() {
         const typeLabel = item.type === 'boolean' ? '布尔' :
                          item.type === 'number' ? '数字' :
                          item.type === 'select' ? '单选' :
+                         item.type === 'map' ? '映射' :
                          item.type === 'multi-select' ? '多选' : '文本';
         const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
@@ -1080,6 +1113,24 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         value = selectedTags.join(',');
         const options = Array.from(document.querySelectorAll('.available-tag')).map(el => el.dataset.value);
         itemData = { key, value, description, type, options };
+    } else if (type === 'map') {
+        console.log("map");
+        // 获取映射表值
+        const mapItems = document.querySelectorAll('#map-container .map-item');
+        console.log("mapItems: ", mapItems);
+        const pairs = [];
+        mapItems.forEach(item => {
+            const leftInput = item.querySelector('.map-input-left');
+            const rightInput = item.querySelector('.map-input-right');
+            const leftValue = leftInput.value.trim();
+            const rightValue = rightInput.value.trim();
+            if (leftValue && rightValue) {
+                pairs.push(leftValue + '->' + rightValue);
+            }
+        });
+        value = pairs.join(';');
+        console.log("value: ", value);
+        itemData = { key, value, description, type };
     } else {
         value = document.getElementById('text-value').value.trim();
         itemData = { key, value, description, type };
@@ -1144,4 +1195,24 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         addLog(\`❌ 更新环境变量失败: \${error.message}\`, 'error');
     }
 });
+
+// 添加映射项
+function addMapItem() {
+    const container = document.getElementById('map-container');
+    const template = document.querySelector('.map-item-template');
+    const newItem = template.cloneNode(true);
+    newItem.style.display = 'flex';
+    newItem.classList.remove('map-item-template');
+    const index = container.querySelectorAll('.map-item').length;
+    newItem.setAttribute('data-index', index);
+    container.appendChild(newItem);
+}
+
+// 删除映射项
+function removeMapItem(button) {
+    const item = button.closest('.map-item');
+    if (item) {
+        item.remove();
+    }
+}
 `;

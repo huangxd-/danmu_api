@@ -245,7 +245,7 @@ export class Envs {
       'ENABLE_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '集标题过滤开关' },
       'STRICT_TITLE_MATCH': { category: 'match', type: 'boolean', description: '严格标题匹配模式' },
       'TITLE_TO_CHINESE': { category: 'match', type: 'boolean', description: '外语标题转换中文开关' },
-      'TITLE_MAPPING_TABLE': { category: 'match', type: 'text', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
+      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
 
       // 弹幕配置
       'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表' },
