@@ -353,18 +353,4 @@ input:checked + .slider:before {
 .map-item-template {
     display: none;
 }
-
-/* 必填标记 */
-.form-group label:after {
-    content: " *";
-    color: #e74c3c;
-}
-
-/* 表单帮助文本 */
-.form-help {
-    font-size: 12px;
-    color: #666;
-    margin-top: 5px;
-    font-style: italic;
-}
 `;

@@ -18,6 +18,7 @@ import IqiyiSource from "./sources/iqiyi.js";
 import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
+import SohuSource from "./sources/sohu.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
 import { VercelHandler } from "./configs/handlers/vercel-handler.js";
@@ -58,6 +59,7 @@ test('worker.js API endpoints', async (t) => {
   const mangoSource = new MangoSource();
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
+  const sohuSource = new SohuSource();
   const otherSource = new OtherSource();
 
   await t.test('GET / should return welcome message', async () => {
@@ -200,6 +202,28 @@ test('worker.js API endpoints', async (t) => {
   //     "_m_h5_tk_enc": "082c6cbbad97b5b48b7798a51933bbfa"
   //   });
   //   const res = await youkuSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET sohu danmu', async () => {
+  //   const res = await sohuSource.getComments("https://film.sohu.com/album/8345543.html");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET sohu danmu segments', async () => {
+  //   const res = await sohuSource.getComments("https://film.sohu.com/album/8345543.html", "sohu", true);
+  //   assert(res.type === "sohu", `Expected res.type === "sohu", but got ${res.type === "sohu"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET sohu segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'sohu',
+  //     segment_start: 3000,
+  //     segment_end: 3300,
+  //     url: 'https://api.danmu.tv.sohu.com/dmh5/dmListAll?act=dmlist_v2&vid=2547437&aid=8345543&pct=2&time_begin=3000&time_end=3300&dct=1&request_from=h5_js',
+  //   });
+  //   const res = await sohuSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 

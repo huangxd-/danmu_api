@@ -105,7 +105,7 @@ body {
 }
 
 .content {
-    padding: 20px;
+    padding: 15px;
 }
 
 .section {
