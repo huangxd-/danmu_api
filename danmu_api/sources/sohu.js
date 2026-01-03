@@ -63,7 +63,7 @@ export default class SohuSource extends BaseSource {
       log("info", `[Sohu] 开始搜索: ${keyword}`);
 
       // 构造搜索URL
-      const params = new URLSearchParams({
+      const params = {
         'key': keyword,
         'type': '1',
         'page': '1',
@@ -80,7 +80,7 @@ export default class SohuSource extends BaseSource {
         'passport': '',
         'plat': '-1',
         'ssl': '0'
-      });
+      };
 
       // 设置请求头
       const headers = {
@@ -91,7 +91,7 @@ export default class SohuSource extends BaseSource {
         'Origin': 'https://so.tv.sohu.com'
       };
 
-      const searchUrl = `https://m.so.tv.sohu.com/search/pc/keyword?${params.toString()}`;
+      const searchUrl = `https://m.so.tv.sohu.com/search/pc/keyword?${buildQueryString(params)}`;
 
       const response = await httpGet(searchUrl, { headers });
 
@@ -131,17 +131,17 @@ export default class SohuSource extends BaseSource {
 
       let videosData = null;
 
-      const params = new URLSearchParams({
+      const params = {
         'playlistid': id,
         'api_key': "f351515304020cad28c92f70f002261c"
-      });
+      };
 
       const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://tv.sohu.com/'
       };
 
-      const playlistUrl = `https://pl.hd.sohu.com/videolist?${params.toString()}`;
+      const playlistUrl = `https://pl.hd.sohu.com/videolist?${buildQueryString(params)}`;
 
       const response = await httpGet(playlistUrl, { headers, timeout: 15000 });
 
