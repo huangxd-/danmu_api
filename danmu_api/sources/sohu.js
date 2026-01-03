@@ -319,25 +319,43 @@ export default class SohuSource extends BaseSource {
     const segmentList = segmentResult.segmentList;
     log("info", `弹幕分段数量: ${segmentList.length}`);
 
-    // 创建请求Promise数组
+    // 并发请求所有弹幕段，限制并发数量为5
+    const MAX_CONCURRENT = 10;
     const allComments = [];
-    for (const segment of segmentList) {
-      const start = segment.segment_start;
-      const end = segment.segment_end;
+    
+    // 将segmentList分批处理，每批最多MAX_CONCURRENT个请求
+    for (let i = 0; i < segmentList.length; i += MAX_CONCURRENT) {
+      const batch = segmentList.slice(i, i + MAX_CONCURRENT);
       
-      try {
-        const comments = await this.getDanmuSegment(segment);
-
-        if (comments && comments.length > 0) {
-          allComments.push(...comments);
-        } else if (start > 600) {  // 10分钟后无数据可能到末尾
-          break;
+      // 并发处理当前批次的请求
+      const batchPromises = batch.map(segment => this.getDanmuSegment(segment));
+      const batchResults = await Promise.allSettled(batchPromises);
+      
+      // 处理结果
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        const segment = batch[j];
+        const start = segment.segment_start;
+        const end = segment.segment_end;
+        
+        if (result.status === 'fulfilled') {
+          const comments = result.value;
+          
+          if (comments && comments.length > 0) {
+            allComments.push(...comments);
+          } else if (start > 600) {  // 10分钟后无数据可能到末尾
+            // 如果某个分段超过10分钟且没有数据，可以提前结束
+            // 但需要确保当前批次的所有请求都完成
+            break;
+          }
+        } else {
+          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
-
-        // 避免请求过快
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        log("error", `获取弹幕段失败 (${start}-${end}s):`, error.message);
+      }
+      
+      // 批次之间稍作延迟，避免过于频繁的请求
+      if (i + MAX_CONCURRENT < segmentList.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
@@ -358,9 +376,7 @@ export default class SohuSource extends BaseSource {
         'Referer': "https://tv.sohu.com/"
       };
 
-      const danmuUrl = segment.url;
-
-      const response = await httpGet(danmuUrl, { headers, timeout: 10000 });
+      const response = await httpGet(segment.url, { headers, timeout: 10000 });
 
       if (!response || !response.data) {
         log("error", `搜狐视频: 弹幕段响应为空 (${segment.segment_start}-${segment.segment_end}s)`);
