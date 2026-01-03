@@ -266,6 +266,7 @@ export const HTML_TEMPLATE = /* html */ `
                         <option value="number">数字 (1-100)</option>
                         <option value="select">单选</option>
                         <option value="multi-select">多选 (可排序)</option>
+                        <option value="map">映射</option>
                     </select>
                 </div>
                 <div class="form-group" id="value-input-container">

@@ -515,6 +515,10 @@ export const componentsCssContent = /* css */ `
     background: #ff6b6b;
 }
 
+.value-type-badge.map {
+    background: #9b59b6;
+}
+
 /* 进度条 */
 .progress-container {
     position: fixed;

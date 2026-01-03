@@ -180,6 +180,32 @@ export class Envs {
   }
 
   /**
+   * 解析剧名映射表
+   * @returns {Map} 剧名映射表
+   */
+  static resolveTitleMappingTable() {
+    const mappingStr = this.get('TITLE_MAPPING_TABLE', '', 'string').trim();
+    const mappingTable = new Map();
+
+    if (!mappingStr) {
+      return mappingTable;
+    }
+
+    // 解析格式："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"
+    const pairs = mappingStr.split(';');
+    for (const pair of pairs) {
+      if (pair.includes('->')) {
+        const [original, mapped] = pair.split('->').map(s => s.trim());
+        if (original && mapped) {
+          mappingTable.set(original, mapped);
+        }
+      }
+    }
+
+    return mappingTable;
+  }
+
+  /**
    * 获取记录的环境变量 JSON
    * @returns {Map<any, any>} JSON 字符串
    */
@@ -219,6 +245,7 @@ export class Envs {
       'ENABLE_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '集标题过滤开关' },
       'STRICT_TITLE_MATCH': { category: 'match', type: 'boolean', description: '严格标题匹配模式' },
       'TITLE_TO_CHINESE': { category: 'match', type: 'boolean', description: '外语标题转换中文开关' },
+      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
 
       // 弹幕配置
       'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表' },
@@ -282,6 +309,7 @@ export class Envs {
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
       strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean'), // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
+      titleMappingTable: this.resolveTitleMappingTable(), // 剧名映射表，用于自动匹配时替换标题进行搜索
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）
       deployPlatformAccount: this.get('DEPLOY_PLATFROM_ACCOUNT', '', 'string', true), // 部署平台账号ID配置（默认空）

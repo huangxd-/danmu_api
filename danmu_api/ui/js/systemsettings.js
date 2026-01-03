@@ -493,6 +493,38 @@ function renderValueInput(item) {
         // 设置拖动事件
         setupDragAndDrop();
 
+    } else if (type === 'map') {
+        // 映射表类型
+        const pairs = value ? value.split(';').map(pair => pair.trim()).filter(pair => pair) : [];
+        const mapItems = pairs.map(pair => {
+            if (pair.includes('->')) {
+                const [left, right] = pair.split('->').map(s => s.trim());
+                return { left, right };
+            }
+            return { left: pair, right: '' };
+        });
+
+        container.innerHTML = \`
+            <label>映射配置</label>
+            <div class="map-container" id="map-container">
+                \${mapItems.map((item, index) => \`
+                    <div class="map-item" data-index="\${index}">
+                        <input type="text" class="map-input-left" placeholder="原始值" value="\${item.left}">
+                        <span class="map-separator">-></span>
+                        <input type="text" class="map-input-right" placeholder="映射值" value="\${item.right}">
+                        <button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>
+                    </div>
+                \`).join('')}
+                <div class="map-item-template" style="display: none;">
+                    <input type="text" class="map-input-left" placeholder="原始值">
+                    <span class="map-separator">-></span>
+                    <input type="text" class="map-input-right" placeholder="映射值">
+                    <button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addMapItem()">添加映射项</button>
+        \`;
+
     } else {
         // 文本输入
         // 如果值太长，使用textarea而不是input
@@ -573,7 +605,7 @@ function addSelectedTag(element) {
     // 禁用可选项
     element.classList.add('disabled');
 
-    // 重新设置拖动事件
+    // 重新设置拖动事件，确保新添加的标签也能拖动和删除
     setupDragAndDrop();
 }
 
@@ -596,6 +628,9 @@ function removeSelectedTag(button) {
     if (availableTag) {
         availableTag.classList.remove('disabled');
     }
+    
+    // 重新设置拖动事件，确保其他标签仍然可以拖动
+    setupDragAndDrop();
 }
 
 // 更新多选选项
@@ -619,18 +654,39 @@ function updateMultiOptions() {
 
 // 设置拖放功能
 let draggedElement = null;
+let touchDragging = false;
 
+// 为删除按钮添加触摸事件监听器，以确保其可以被点击
 function setupDragAndDrop() {
     const container = document.getElementById('selected-tags');
     const tags = container.querySelectorAll('.selected-tag');
 
     tags.forEach(tag => {
+        // 鼠标拖放事件
         tag.addEventListener('dragstart', handleDragStart);
         tag.addEventListener('dragend', handleDragEnd);
         tag.addEventListener('dragover', handleDragOver);
         tag.addEventListener('drop', handleDrop);
         tag.addEventListener('dragenter', handleDragEnter);
         tag.addEventListener('dragleave', handleDragLeave);
+        
+        // 触摸拖放事件
+        tag.addEventListener('touchstart', handleTouchStart);
+        tag.addEventListener('touchmove', handleTouchMove);
+        tag.addEventListener('touchend', handleTouchEnd);
+        
+        // 确保删除按钮可以被点击
+        const removeBtn = tag.querySelector('.remove-btn');
+        if (removeBtn) {
+            // 阻止删除按钮上的触摸事件冒泡到父元素
+            removeBtn.addEventListener('touchstart', function(e) {
+                e.stopPropagation();
+            });
+            
+            removeBtn.addEventListener('touchend', function(e) {
+                e.stopPropagation();
+            });
+        }
     });
 }
 
@@ -687,6 +743,201 @@ function handleDrop(e) {
     return false;
 }
 
+// 触摸拖动事件处理
+function handleTouchStart(e) {
+    // 检查点击的是否是删除按钮
+    if (e.target.classList.contains('remove-btn')) {
+        // 如果点击的是删除按钮，则不执行拖动操作
+        return;
+    }
+    
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 获取触摸点
+    const touch = e.touches[0];
+    
+    // 模拟拖动开始
+    draggedElement = this;
+    this.classList.add('dragging');
+    touchDragging = true;
+    
+    // 添加拖动样式
+    this.style.transform = 'rotate(5deg)';
+    this.style.opacity = '0.8';
+    this.style.zIndex = '1000';
+    
+    // 添加触摸移动和结束事件监听器到文档
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+}
+
+function handleTouchMove(e) {
+    if (!touchDragging || !draggedElement) return;
+    
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 使用 requestAnimationFrame 来优化性能
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => {
+            // 获取触摸点位置
+            const touch = e.touches[0];
+            
+            // 获取拖动元素的尺寸
+            const elementRect = draggedElement.getBoundingClientRect();
+            
+            // 创建一个临时的拖动元素，而不是移动原始元素
+            if (!document.getElementById('touch-drag-ghost')) {
+                const ghostElement = draggedElement.cloneNode(true);
+                ghostElement.id = 'touch-drag-ghost';
+                ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
+                ghostElement.style.left = '0';
+                ghostElement.style.top = '0';
+                ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
+                ghostElement.style.zIndex = '9999';
+                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+                ghostElement.style.opacity = '0.8';
+                ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
+                ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
+                ghostElement.style.height = elementRect.height + 'px'; // 固定高度
+                document.body.appendChild(ghostElement);
+            } else {
+                const ghostElement = document.getElementById('touch-drag-ghost');
+                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+            }
+            
+            // 检查与其他元素的碰撞
+            const container = document.getElementById('selected-tags');
+            const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
+            let targetElement = null;
+            
+            for (const tag of tags) {
+                const rect = tag.getBoundingClientRect();
+                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                    targetElement = tag;
+                    break;
+                }
+            }
+            
+            // 高亮目标元素
+            document.querySelectorAll('.selected-tag').forEach(tag => {
+                if (tag !== draggedElement) {
+                    tag.classList.remove('drag-over');
+                }
+            });
+            
+            if (targetElement) {
+                targetElement.classList.add('drag-over');
+            }
+        });
+    } else {
+        // 降级处理，如果不支持 requestAnimationFrame
+        const touch = e.touches[0];
+        
+        // 获取拖动元素的尺寸
+        const elementRect = draggedElement.getBoundingClientRect();
+        
+        // 创建一个临时的拖动元素，而不是移动原始元素
+        if (!document.getElementById('touch-drag-ghost')) {
+            const ghostElement = draggedElement.cloneNode(true);
+            ghostElement.id = 'touch-drag-ghost';
+            ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
+            ghostElement.style.left = '0';
+            ghostElement.style.top = '0';
+            ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
+            ghostElement.style.zIndex = '9999';
+            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+            ghostElement.style.opacity = '0.8';
+            ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
+            ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
+            ghostElement.style.height = elementRect.height + 'px'; // 固定高度
+            document.body.appendChild(ghostElement);
+        } else {
+            const ghostElement = document.getElementById('touch-drag-ghost');
+            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+        }
+        
+        // 检查与其他元素的碰撞
+        const container = document.getElementById('selected-tags');
+        const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
+        let targetElement = null;
+        
+        for (const tag of tags) {
+            const rect = tag.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                targetElement = tag;
+                break;
+            }
+        }
+        
+        // 高亮目标元素
+        document.querySelectorAll('.selected-tag').forEach(tag => {
+            if (tag !== draggedElement) {
+                tag.classList.remove('drag-over');
+            }
+        });
+        
+        if (targetElement) {
+            targetElement.classList.add('drag-over');
+        }
+    }
+}
+
+function handleTouchEnd(e) {
+    if (!touchDragging || !draggedElement) return;
+    
+    // 防止默认的触摸行为
+    e.preventDefault();
+    
+    // 移除临时拖动元素
+    const ghostElement = document.getElementById('touch-drag-ghost');
+    if (ghostElement) {
+        document.body.removeChild(ghostElement);
+    }
+    
+    // 找到目标元素（如果有）
+    const touch = e.changedTouches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    const container = document.getElementById('selected-tags');
+    const targetTag = targetElement.closest('.selected-tag');
+    
+    // 如果目标是另一个标签，执行交换
+    if (targetTag && targetTag !== draggedElement && container.contains(targetTag)) {
+        const allTags = Array.from(container.querySelectorAll('.selected-tag'));
+        const draggedIndex = allTags.indexOf(draggedElement);
+        const targetIndex = allTags.indexOf(targetTag);
+
+        if (draggedIndex < targetIndex) {
+            targetTag.parentNode.insertBefore(draggedElement, targetTag.nextSibling);
+        } else {
+            targetTag.parentNode.insertBefore(draggedElement, targetTag);
+        }
+    }
+    
+    // 重置元素样式
+    draggedElement.style.transform = '';
+    draggedElement.style.opacity = '';
+    draggedElement.style.zIndex = '';
+    
+    // 移除拖动类
+    draggedElement.classList.remove('dragging');
+    document.querySelectorAll('.selected-tag').forEach(tag => {
+        tag.classList.remove('drag-over');
+    });
+    
+    // 重置变量
+    touchDragging = false;
+    draggedElement = null;
+    
+    // 移除事件监听器
+    document.removeEventListener('touchmove', handleTouchMove);
+    document.removeEventListener('touchend', handleTouchEnd);
+}
+
 // 显示加载遮罩
 function showLoading(text, detail) {
     document.getElementById('loading-text').textContent = text;
@@ -730,6 +981,7 @@ function renderEnvList() {
         const typeLabel = item.type === 'boolean' ? '布尔' :
                          item.type === 'number' ? '数字' :
                          item.type === 'select' ? '单选' :
+                         item.type === 'map' ? '映射' :
                          item.type === 'multi-select' ? '多选' : '文本';
         const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
@@ -861,6 +1113,21 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         value = selectedTags.join(',');
         const options = Array.from(document.querySelectorAll('.available-tag')).map(el => el.dataset.value);
         itemData = { key, value, description, type, options };
+    } else if (type === 'map') {
+        // 获取映射表值
+        const mapItems = document.querySelectorAll('#map-container .map-item');
+        const pairs = [];
+        mapItems.forEach(item => {
+            const leftInput = item.querySelector('.map-input-left');
+            const rightInput = item.querySelector('.map-input-right');
+            const leftValue = leftInput.value.trim();
+            const rightValue = rightInput.value.trim();
+            if (leftValue && rightValue) {
+                pairs.push(leftValue + '->' + rightValue);
+            }
+        });
+        value = pairs.join(';');
+        itemData = { key, value, description, type };
     } else {
         value = document.getElementById('text-value').value.trim();
         itemData = { key, value, description, type };
@@ -925,4 +1192,25 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         addLog(\`❌ 更新环境变量失败: \${error.message}\`, 'error');
     }
 });
+
+// 添加映射项
+function addMapItem() {
+    const container = document.getElementById('map-container');
+    const template = document.querySelector('.map-item-template');
+    const newItem = template.cloneNode(true);
+    newItem.style.display = 'flex';
+    newItem.classList.remove('map-item-template');
+    newItem.classList.add('map-item');
+    const index = container.querySelectorAll('.map-item').length;
+    newItem.setAttribute('data-index', index);
+    container.appendChild(newItem);
+}
+
+// 删除映射项
+function removeMapItem(button) {
+    const item = button.closest('.map-item');
+    if (item) {
+        item.remove();
+    }
+}
 `;

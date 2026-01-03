@@ -315,4 +315,56 @@ input:checked + .slider:before {
     background: #e8eaf6 !important;
     border-color: #667eea !important;
 }
+
+/* 映射表样式 */
+.map-container {
+    margin-top: 10px;
+}
+
+.map-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+}
+
+.map-input-left, .map-input-right {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.map-separator {
+    font-weight: bold;
+    color: #666;
+}
+
+.map-remove-btn {
+    margin-left: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.map-item-template {
+    display: none;
+}
+
+/* 必填标记 */
+.form-group label:after {
+    content: " *";
+    color: #e74c3c;
+}
+
+/* 表单帮助文本 */
+.form-help {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+    font-style: italic;
+}
 `;
