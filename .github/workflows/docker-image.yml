@@ -7,13 +7,11 @@ on:
   pull_request:
     branches:
       - main
+    if: github.repository == 'huangxd-/danmu_api'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # 只在 secrets 存在时运行
-    if: ${{ env.DOCKER_USERNAME != '' }}
 
     steps:
       # 检出代码
