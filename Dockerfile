@@ -12,6 +12,7 @@ RUN npm install
 
 # 复制所有源代码
 COPY danmu_api/ ./danmu_api/
+COPY config/ ./config_example/
 
 # 设置环境变量 TOKEN 默认值
 ENV TOKEN=87654321

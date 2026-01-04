@@ -12,6 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # 只在 secrets 存在时运行
+    if: github.event.repository.fork == false || secrets.DOCKER_USERNAME != ''
+
     steps:
       # 检出代码
       - name: Checkout code
