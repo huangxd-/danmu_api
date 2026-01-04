@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
-import { httpGet } from "../utils/http-util.js";
+import { httpGet, buildQueryString } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
