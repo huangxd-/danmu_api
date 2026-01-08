@@ -106,9 +106,9 @@ LogVar 弹幕 API 服务器
 3. **配置应用**（可选）：
 
    本项目支持三种配置方式，优先级从高到低：
-   1. **.env 文件**（最高优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
-   2. **config.yaml 文件**（中等优先级）- 复制 `config/config.yaml.example` 为 `config/config.yaml` 并修改
-   3. **系统环境变量**（最低优先级）
+   1. **系统环境变量**（最高优先级）
+   2. **.env 文件**（中等优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
+   3. **config.yaml 文件**（最低优先级）- 复制 `config/config.yaml.example` 为 `config/config.yaml` 并修改
 
    如果某个系统无法编辑 `.env` 文件，可以使用 `config.yaml` 文件替代。
 

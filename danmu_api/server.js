@@ -6,6 +6,9 @@ const fs = require('fs');
 const dotenv = require('dotenv');
 const yaml = require('js-yaml');
 
+// 保存系统环境变量的副本，确保它们具有最高优先级
+const systemEnvBackup = { ...process.env };
+
 // 配置文件路径在项目根目录（server.js 的上一级目录）
 const configDir = path.join(__dirname, '..', 'config');
 const configExampleDir = path.join(__dirname, '..', 'config_example');
@@ -117,12 +120,18 @@ function applyYamlConfig(config) {
 
 function loadEnv() {
   try {
-    // 先加载 YAML 配置（优先级较低）
+    // 首先加载 YAML 配置（优先级最低）
     const yamlConfig = loadYamlConfig();
     applyYamlConfig(yamlConfig);
 
-    // 再加载 .env 文件（优先级较高，会覆盖 YAML 配置）
+    // 然后加载 .env 文件（优先级中等）
     dotenv.config({ path: envPath, override: true });
+
+    // 最后，恢复系统环境变量的值，确保它们具有最高优先级
+    for (const [key, value] of Object.entries(systemEnvBackup)) {
+      process.env[key] = value;
+    }
+
     console.log('[server] .env file loaded successfully');
   } catch (e) {
     console.log('[server] dotenv not available or .env file not found, using system environment variables');
