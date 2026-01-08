@@ -416,7 +416,9 @@ function switchSection(section, event = null) {
                     displayBase = displayBase.slice(0, -1);
                 }
                 
-                customAlert('请在URL中配置相应的TOKEN以访问此功能！\\n\\n访问方式：' + displayBase + '/{TOKEN}');
+                // 根据section类型显示不同的token提示
+                const tokenType = section === 'env' ? 'ADMIN_TOKEN' : 'TOKEN';
+                customAlert('请在URL中配置相应的' + tokenType + '以访问此功能！\\n\\n访问方式：' + displayBase + '/{' + tokenType + '}');
             }, 100);
             return;
         }
