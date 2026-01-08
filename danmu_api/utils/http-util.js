@@ -5,6 +5,23 @@ import { log } from './log-util.js'
 // 请求工具方法
 // =====================
 
+/**
+ * 将外部中断信号链接到内部控制器
+ * @param {AbortSignal} externalSignal 外部传入的信号
+ * @param {AbortController} internalController 内部使用的控制器
+ */
+function linkSignal(externalSignal, internalController) {
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      internalController.abort();
+    } else {
+      externalSignal.addEventListener('abort', () => {
+        internalController.abort();
+      }, { once: true });
+    }
+  }
+}
+
 export async function httpGet(url, options = {}) {
   // 从 options 中获取重试次数，默认为 0
   const maxRetries = parseInt(options.retries || '0', 10) || 0;
@@ -24,6 +41,9 @@ export async function httpGet(url, options = {}) {
     const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    // 链接外部中断信号
+    linkSignal(options.signal, controller);
 
     try {
       const response = await fetch(url, {
@@ -126,6 +146,11 @@ export async function httpGet(url, options = {}) {
       clearTimeout(timeoutId);
       lastError = error;
 
+      // 如果是外部信号导致的中断，停止重试并直接抛出
+      if (options.signal?.aborted) {
+        throw error;
+      }
+
       // 检查是否是超时错误
       if (error.name === 'AbortError') {
         log("error", `[请求模拟] 请求超时:`, error.message);
@@ -179,6 +204,9 @@ export async function httpPost(url, body, options = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    // 链接外部中断信号
+    linkSignal(options.signal, controller);
+
     // 处理请求头、body 和其他参数
     const { headers = {}, params, allow_redirects = true } = options;
     const fetchOptions = {
@@ -229,6 +257,11 @@ export async function httpPost(url, body, options = {}) {
     } catch (error) {
       clearTimeout(timeoutId);
       lastError = error;
+
+      // 如果是外部信号导致的中断，停止重试并直接抛出
+      if (options.signal?.aborted) {
+        throw error;
+      }
 
       // 检查是否是超时错误
       if (error.name === 'AbortError') {
@@ -287,6 +320,11 @@ async function httpRequestMethod(method, url, body, options = {}) {
   // 只有在 body 存在时才设置（DELETE 通常无 body）
   if (body !== undefined && body !== null) {
     fetchOptions.body = body;
+  }
+
+  // 如果传递了 signal，直接透传给 fetch
+  if (options.signal) {
+    fetchOptions.signal = options.signal;
   }
 
   try {
@@ -509,4 +547,128 @@ export function getPathname(url) {
   let pathEnd = queryStart !== -1 ? queryStart : (hashStart !== -1 ? hashStart : url.length);
   const pathname = url.substring(pathStart, pathEnd);
   return pathname || '/';
+}
+
+/**
+ * 流式 GET 请求,支持前置数据缓冲嗅探与熔断
+ * @param {string} url 请求地址
+ * @param {object} options 配置项
+ * @param {number} [options.sniffLimit=32768] 最大嗅探长度(字节)，默认32KB
+ * @param {object} [options.headers] 请求头
+ * @param {function(string): boolean} checkCallback 数据检查回调,返回 false 则中断下载
+ * @returns {Promise<any>} 返回 JSON 数据或 null (被中断时)
+ */
+export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
+  const { headers = {}, sniffLimit } = options;
+  // 默认限制为 32KB
+  const SNIFF_LIMIT = parseInt(sniffLimit || '32768', 10) || 32768;
+  const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // 链接外部中断信号
+  linkSignal(options.signal, controller);
+
+  try {
+    log("info", `[流式请求] HTTP GET: ${url}`);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: headers,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body.getReader ? response.body.getReader() : null;
+
+    // 环境兼容性回退
+    if (!reader) {
+      log("warn", "[流式请求] 环境不支持流式读取,回退到普通请求");
+      const text = await response.text();
+      clearTimeout(timeoutId);
+      if (checkCallback && !checkCallback(text.slice(0, SNIFF_LIMIT))) {
+          log("info", "[流式请求] 检测到无效数据(回退模式),丢弃结果");
+          return null;
+      }
+      try { return JSON.parse(text); } catch { return text; }
+    }
+
+    let receivedLength = 0;
+    let chunks = [];
+    let isAborted = false;
+
+    // 缓冲状态
+    let checkBuffer = "";
+    let stopChecking = false; // 标记是否停止检查
+
+    // 流式读取循环
+    while(true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      // 先累加长度
+      receivedLength += value.length;
+
+      // 1. 数据嗅探逻辑 (仅在前 SNIFF_LIMIT 范围内执行)
+      if (!stopChecking && checkCallback) {
+        // 累积文本
+        const chunkText = new TextDecoder("utf-8").decode(value, {stream: true});
+        checkBuffer += chunkText;
+
+        // 执行回调检查
+        if (!checkCallback(checkBuffer)) {
+          log("info", `[流式请求] 嗅探到无效特征(已读${receivedLength}字节),立即熔断`);
+
+          // 显式取消流读取
+          try {
+              await reader.cancel("Stream aborted by user check");
+          } catch (e) { /* 忽略 cancel 产生的错误 */ }
+
+          controller.abort();
+          isAborted = true;
+          break;
+        }
+
+        // 如果缓冲区超过限制
+        if (receivedLength > SNIFF_LIMIT) {
+            stopChecking = true;
+            checkBuffer = null; // 释放缓冲区内存
+        }
+      }
+
+      chunks.push(value);
+    }
+
+    clearTimeout(timeoutId);
+
+    if (isAborted) return null; // 被中断,返回空
+
+    // 2. 拼接完整数据
+    let chunksAll = new Uint8Array(receivedLength);
+    let position = 0;
+    for(let chunk of chunks) {
+      chunksAll.set(chunk, position);
+      position += chunk.length;
+    }
+
+    const resultText = new TextDecoder("utf-8").decode(chunksAll);
+    try {
+      return JSON.parse(resultText);
+    } catch (e) {
+      return resultText;
+    }
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+       return null;
+    }
+    log("error", `[流式请求] 失败: ${error.message}`);
+    return null;
+  }
 }
