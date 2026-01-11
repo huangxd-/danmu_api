@@ -8,6 +8,12 @@ import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime,
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
+import {
+    handleCookieStatus,
+    handleQRGenerate,
+    handleQRCheck,
+    handleCookieSave
+} from "./utils/cookie-util.js";
 
 let globals;
 
@@ -353,6 +359,28 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/cache/clear - 清理缓存
   if (path === "/api/cache/clear" && method === "POST") {
     return handleClearCache();
+  }
+
+  // ========== Cookie 管理 API ==========
+  
+  // GET /api/cookie/status - 获取Cookie状态
+  if (path === "/api/cookie/status" && method === "GET") {
+    return handleCookieStatus();
+  }
+
+  // POST /api/cookie/qr/generate - 生成登录二维码
+  if (path === "/api/cookie/qr/generate" && method === "POST") {
+    return handleQRGenerate();
+  }
+
+  // POST /api/cookie/qr/check - 检查二维码扫描状态
+  if (path === "/api/cookie/qr/check" && method === "POST") {
+    return handleQRCheck(req);
+  }
+
+  // POST /api/cookie/save - 保存Cookie
+  if (path === "/api/cookie/save" && method === "POST") {
+    return handleCookieSave(req);
   }
 
   return jsonResponse({ message: "Not found" }, 404);
