@@ -105,12 +105,9 @@ LogVar 弹幕 API 服务器
 
 3. **配置应用**（可选）：
 
-   本项目支持三种配置方式，优先级从高到低：
+   本项目支持两种配置方式，优先级从高到低：
    1. **系统环境变量**（最高优先级）
-   2. **.env 文件**（中等优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
-   3. **config.yaml 文件**（最低优先级）- 复制 `config/config.yaml.example` 为 `config/config.yaml` 并修改
-
-   如果某个系统无法编辑 `.env` 文件，可以使用 `config.yaml` 文件替代。
+   2. **.env 文件**（低优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
 
 4. **启动服务器**：
    ```bash
@@ -118,7 +115,7 @@ LogVar 弹幕 API 服务器
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
 
-   **热更新支持**：修改 `config/.env` 或 `config/config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+   **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
 
    或者使用下面的命令
    ```bash
@@ -182,7 +179,7 @@ LogVar 弹幕 API 服务器
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
-   **热更新支持**：如需支持环境变量热更新（修改 `config/.env` 或 `config/config.yaml` 文件后无需重启容器），请使用 Volume 挂载：
+   **热更新支持**：如需支持环境变量热更新（修改 `config/.env` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
    docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/config:/app/config --env-file .env logvar/danmu-api:latest
    ```
@@ -194,9 +191,9 @@ LogVar 弹幕 API 服务器
        image: logvar/danmu-api:latest
        ports:
          - "9321:9321"
-       # 热更新支持：挂载 config/.env 和 config/config.yaml 文件，修改后容器会自动重新加载配置（无需重启容器）
+       # 热更新支持：挂载 config/.env 文件，修改后容器会自动重新加载配置（无需重启容器）
        volumes:
-         - ./config:/app/config    # config目录下需要创建.env或config.yaml
+         - ./config:/app/config    # config目录下需要创建.env
          - ./.chche:/app/.cache    # 配置.chche目录，会将缓存实时保存在本地文件
        restart: unless-stopped
    ```
@@ -306,7 +303,7 @@ LogVar 弹幕 API 服务器
 > cf部署可能不稳定，推荐用vercel/netlify部署。
 
 ## API食用指南
-支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker 等支持弹幕API的播放器。
 
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 
@@ -371,7 +368,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`，不填默认为`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`       |
 | VOD_RETURN_MODE      | 【可选】VOD返回模式，可选值：`all`（返回所有站点结果）、`fastest`（只返回最快的站点结果），默认为`fastest`。当配置多个VOD站点时，`all`模式会返回所有站点的结果（结果较多），`fastest`模式只返回首先响应成功的站点结果（结果较少，避免重复）       |
 | VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`10000`（10秒），建议值：`5000-15000`。由于`fastest`模式只返回最快响应的站点，可以设置较大的超时时间给慢速站点更多机会       |
-| BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕和启用港澳台App接口），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，弹幕获取实际最少只需取 `SESSDATA=xxxx` 字段，但如果需要使用港澳台区域稳定的App搜索接口还需要`bili_jct=xxxx`或`access_key=xxxx` 字段    |
+| BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕和启用港澳台App接口），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，弹幕获取实际最少只需取 `SESSDATA=xxxx` 字段，但如果需要使用港澳台区域稳定的App搜索接口还需要`bili_jct=xxxx`或`access_key=xxxx` 字段，不知道怎么获取cookie的，可以从工具 [cookie-butler](https://cookie-butler.do-u.me) 获取    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,sohu,renren,hanjutv,bahamut,dandan,custom`       |
 | PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, sohu, renren, hanjutv, bahamut, dandan, custom`  |
@@ -465,8 +462,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 ├── vercel.json                 # vercel 配置文件
 ├── wrangler.toml               # cloudflare worker 配置文件
 ├── config/
-│   ├── .env.example            # .env 配置文件示例
-│   └── config.yaml.example     # YAML 配置文件示例（无法编辑 .env 时使用）
+│   └── .env.example            # .env 配置文件示例
 ├── danmu_api/
 │   ├── esm-shim.js             # Node.js低版本兼容层
 │   ├── server.js               # 本地node启动脚本
@@ -550,10 +546,10 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 ## 注意事项
 
 ### 热更新相关
-- **本地运行**：修改 `config/.env` 或 `config/config.yaml` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
-- **Docker 部署**：需要使用 Volume 挂载 `config/.env` 和/或 `config/config.yaml` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改配置文件容器会自动重新加载配置。
+- **本地运行**：修改 `config/.env` 文件后，应用会自动检测并重新加载配置（无需重启应用）。
+- **Docker 部署**：需要使用 Volume 挂载 `config/.env` 文件才能支持热更新。推荐使用 docker compose 部署（见"Docker 一键启动"部分），配置 Volume 后修改配置文件容器会自动重新加载配置。
 - **Vercel/Netlify/Cloudflare**：需要在平台的环境变量设置中修改，然后重新部署才能生效。
-- **配置优先级**：系统环境变量 > .env 文件 > config.yaml 文件
+- **配置优先级**：系统环境变量 > .env 文件
 
 ### 其他注意事项
 - 日志存储在内存中，服务器重启后会清空。

@@ -1213,10 +1213,12 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         } else {
             addLog(\`操作失败: \${result.message}\`, 'error');
             addLog(\`❌ 操作失败: \${result.message}\`, 'error');
+            customAlert(result.message + '，请检查部署平台相关环境变量配置是否正确');
         }
     } catch (error) {
         addLog(\`更新环境变量失败: \${error.message}\`, 'error');
         addLog(\`❌ 更新环境变量失败: \${error.message}\`, 'error');
+        customAlert(result.message + '，请检查部署平台相关环境变量配置是否正确');
     }
 });
 

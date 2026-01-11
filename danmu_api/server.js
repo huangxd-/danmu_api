@@ -4,7 +4,6 @@
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
-const yaml = require('js-yaml');
 
 // 保存系统环境变量的副本，确保它们具有最高优先级
 const systemEnvBackup = { ...process.env };
@@ -13,14 +12,13 @@ const systemEnvBackup = { ...process.env };
 const configDir = path.join(__dirname, '..', 'config');
 const configExampleDir = path.join(__dirname, '..', 'config_example');
 const envPath = path.join(configDir, '.env');
-const yamlPath = path.join(configDir, 'config.yaml');
 
 // 在启动时检查并复制配置文件
 checkAndCopyConfigFiles();
 
 /**
  * 检查并自动复制配置文件
- * 在Node环境下，如果config目录下没有.env和config.yaml，则自动从.env.example拷贝一份生成.env
+ * 在Node环境下，如果config目录下没有.env，则自动从.env.example拷贝一份生成.env
  * 在Docker环境下，如果config目录不存在或缺少配置文件，则从config_example目录复制
  */
 function checkAndCopyConfigFiles() {
@@ -28,13 +26,12 @@ function checkAndCopyConfigFiles() {
   const configExampleEnvPath = path.join(configExampleDir, '.env.example');
 
   const envExists = fs.existsSync(envPath);
-  const yamlExists = fs.existsSync(yamlPath);
   const envExampleExists = fs.existsSync(envExamplePath);
   const configExampleExists = fs.existsSync(configExampleDir);
   const configExampleEnvExists = fs.existsSync(configExampleEnvPath);
 
-  // 如果存在.env或config.yaml，则不需要复制
-  if (envExists || yamlExists) {
+  // 如果存在.env，则不需要复制
+  if (envExists) {
     console.log('[server] Configuration files exist, skipping auto-copy');
     return;
   }
@@ -69,62 +66,9 @@ function checkAndCopyConfigFiles() {
   }
 }
 
-/**
- * 从 YAML 文件加载配置
- * @returns {Object} 解析后的配置对象
- */
-function loadYamlConfig() {
-  try {
-    if (!fs.existsSync(yamlPath)) {
-      return {};
-    }
-    const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-    const config = yaml.load(yamlContent) || {};
-    console.log('[server] config.yaml file loaded successfully');
-    return config;
-  } catch (e) {
-    console.log('[server] Error loading config.yaml:', e.message);
-    return {};
-  }
-}
-
-/**
- * 将 YAML 配置对象转换为环境变量
- * @param {Object} config YAML 配置对象
- */
-function applyYamlConfig(config) {
-  if (!config || typeof config !== 'object') {
-    return;
-  }
-
-  // 递归处理嵌套对象，转换为 UPPER_SNAKE_CASE 环境变量
-  const flattenConfig = (obj, prefix = '') => {
-    for (const [key, value] of Object.entries(obj)) {
-      const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
-
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        // 递归处理嵌套对象
-        flattenConfig(value, envKey);
-      } else if (Array.isArray(value)) {
-        // 数组转换为逗号分隔的字符串
-        process.env[envKey] = value.join(',');
-      } else {
-        // 基本类型直接转换为字符串
-        process.env[envKey] = String(value);
-      }
-    }
-  };
-
-  flattenConfig(config);
-}
-
 function loadEnv() {
   try {
-    // 首先加载 YAML 配置（优先级最低）
-    const yamlConfig = loadYamlConfig();
-    applyYamlConfig(yamlConfig);
-
-    // 然后加载 .env 文件（优先级中等）
+    // 加载 .env 文件（低优先级）
     dotenv.config({ path: envPath, override: true });
 
     // 最后，恢复系统环境变量的值，确保它们具有最高优先级
@@ -141,7 +85,7 @@ function loadEnv() {
 // 初始加载
 loadEnv();
 
-// 监听 .env 和 config.yaml 文件变化（仅在文件存在时）
+// 监听 .env 文件变化（仅在文件存在时）
 let envWatcher = null;
 let reloadTimer = null;
 let mainServer = null;
@@ -149,10 +93,9 @@ let proxyServer = null;
 
 function setupEnvWatcher() {
   const envExists = fs.existsSync(envPath);
-  const yamlExists = fs.existsSync(yamlPath);
 
-  if (!envExists && !yamlExists) {
-    console.log('[server] Neither .env nor config.yaml found, skipping file watcher');
+  if (!envExists) {
+    console.log('[server] .env not found, skipping file watcher');
     return;
   }
 
@@ -160,7 +103,6 @@ function setupEnvWatcher() {
     const chokidar = require('chokidar');
     const watchPaths = [];
     if (envExists) watchPaths.push(envPath);
-    if (yamlExists) watchPaths.push(yamlPath);
 
     envWatcher = chokidar.watch(watchPaths, {
       persistent: true,
@@ -199,21 +141,6 @@ function setupEnvWatcher() {
                 }
               }
             }
-          }
-
-          // 如果是 config.yaml 文件变化
-          if (changedPath === yamlPath && fs.existsSync(yamlPath)) {
-            const yamlConfig = loadYamlConfig();
-            const flattenKeys = (obj, prefix = '') => {
-              for (const [key, value] of Object.entries(obj)) {
-                const envKey = prefix ? `${prefix}_${key.toUpperCase()}` : key.toUpperCase();
-                newEnvKeys.add(envKey);
-                if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                  flattenKeys(value, envKey);
-                }
-              }
-            };
-            flattenKeys(yamlConfig);
           }
 
           // 删除 process.env 中旧的键（不在新配置文件中的键）

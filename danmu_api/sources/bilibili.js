@@ -431,10 +431,20 @@ export default class BilibiliSource extends BaseSource {
         try {
           let links = [];
 
+          // 如果 content 包含"查看全部"，说明搜索结果给的 eps 是残缺预览调用 getEpisodes 获取完整列表
+          const isIncomplete = anime.checkMore?.content?.includes("查看全部");
+
           // 优先使用搜索结果中自带的分集信息 (港澳台/WBI结果)
-          if (anime._eps && anime._eps.length > 0) {
+          if (anime._eps && anime._eps.length > 0 && !isIncomplete) {
              links = anime._eps.map((ep, index) => {
-               const epIndex = ep.title || ep.index_title || ep.index || (index + 1).toString();
+               let realVal;
+               if (anime.isOversea && ep.position) {
+                   realVal = ep.position.toString();
+               } else {
+                   realVal = ep.index_title || ep.index || (index + 1).toString();
+               }
+
+               const epIndex = ep.title || ep.index_title || realVal;
                const longTitle = ep.long_title || "";
                
                let displayTitle = /^\d+(\.\d+)?$/.test(epIndex) ? `第${epIndex}话` : epIndex;
@@ -447,11 +457,20 @@ export default class BilibiliSource extends BaseSource {
                if (anime.isOversea) linkUrl += "&area=hkmt";
 
                return {
-                 name: `${index + 1}`,
+                 name: realVal,
                  url: linkUrl,
                  title: `【bilibili1】 ${displayTitle.trim()}`
                };
              });
+
+             // 按照提取出的 name (真实集号) 进行升序排列
+             links.sort((a, b) => {
+                  const numA = parseFloat(a.name);
+                  const numB = parseFloat(b.name);
+                  if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                  return 0;
+             });
+
              log("info", `[Bilibili] 直接使用搜索结果中的 ${links.length} 集分集`);
           } else {
              const eps = await this.getEpisodes(anime.mediaId);
@@ -868,6 +887,7 @@ export default class BilibiliSource extends BaseSource {
                         imageUrl: i.cover||i.pic||"",
                         episodeCount: 0,
                         _eps: i.episodes || i.episodes_new,
+						checkMore: i.check_more,
                         isOversea: true
                     })).filter(i => i.mediaId);
             }
