@@ -1368,7 +1368,8 @@ function fillBilibiliCookie(cookie) {
         textInput.style.borderColor = 'var(--success-color, #28a745)';
         setTimeout(() => {
             textInput.style.borderColor = '';
-            autoCheckBilibiliCookieStatus();
+            // 填入后不立即检测,提示用户保存
+            showBilibiliCookieSaveHint();
         }, 2000);
     }
 }
@@ -1392,12 +1393,13 @@ async function autoCheckBilibiliCookieStatus() {
     
     const cookie = textInput.value.trim();
     
-    statusEl.innerHTML = '<span class="bili-status-icon">🔍</span><span class="bili-status-text">检测中...</span>';
-    
+    // 如果输入框为空,提示未配置
     if (!cookie) {
         statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">未配置</span>';
         return;
     }
+    
+    statusEl.innerHTML = '<span class="bili-status-icon">🔍</span><span class="bili-status-text">检测中...</span>';
     
     try {
         const response = await fetch(buildApiUrl('/api/cookie/status', true));
@@ -1410,10 +1412,18 @@ async function autoCheckBilibiliCookieStatus() {
             
             statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${result.data.uname} (剩余 \${daysLeft} 天)</span>\`;
         } else {
-            statusEl.innerHTML = '<span class="bili-status-icon">❌</span><span class="bili-status-text">无效或已过期</span>';
+            // 检测到无效时,提示用户保存并重新部署
+            showBilibiliCookieSaveHint();
         }
     } catch (error) {
         statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">检测失败</span>';
     }
+}
+// 显示 Bilibili Cookie 保存提示
+function showBilibiliCookieSaveHint() {
+    const statusEl = document.getElementById('bili-cookie-status');
+    if (!statusEl) return;
+    
+    statusEl.innerHTML = '<span class="bili-status-icon">💾</span><span class="bili-status-text">请点击保存按钮,Vercel等平台需重新部署后生效</span>';
 }
 `;
