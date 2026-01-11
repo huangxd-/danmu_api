@@ -157,6 +157,7 @@ export async function handleCookieStatus() {
 export async function handleQRGenerate() {
     try {
         const response = await fetch('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', {
+            method: 'GET',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.bilibili.com'
@@ -168,28 +169,24 @@ export async function handleQRGenerate() {
         if (data.code !== 0) {
             return jsonResponse({
                 success: false,
-                message: '生成二维码失败: ' + (data.message || '未知错误')
+                message: data.message || '生成失败'
             }, 400);
         }
 
         const qrcodeKey = data.data.qrcode_key;
         const qrcodeUrl = data.data.url;
 
-        // 存储session（5分钟有效期）
         qrLoginSessions.set(qrcodeKey, {
             createTime: Date.now(),
             status: 'pending'
         });
 
-        // 清理过期session（超过5分钟）
         const now = Date.now();
         for (const [key, session] of qrLoginSessions.entries()) {
             if (now - session.createTime > 5 * 60 * 1000) {
                 qrLoginSessions.delete(key);
             }
         }
-
-        log("info", `生成二维码成功, qrcode_key: ${qrcodeKey}`);
 
         return jsonResponse({
             success: true,
@@ -199,8 +196,10 @@ export async function handleQRGenerate() {
             }
         });
     } catch (error) {
-        log("error", `生成二维码异常: ${error.message}`);
-        return jsonResponse({ success: false, message: error.message }, 500);
+        return jsonResponse({ 
+            success: false, 
+            message: error.message 
+        }, 500);
     }
 }
 
@@ -220,91 +219,34 @@ export async function handleQRCheck(request) {
             `https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=${qrcodeKey}`,
             {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://www.bilibili.com'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
             }
         );
 
         const data = await response.json();
-        
         let cookie = null;
-        let refresh_token = null;
 
         if (data.data.code === 0) {
-            try {
-                // 方法1: 从 URL 参数提取
-                if (data.data.url) {
-                    const url = new URL(data.data.url);
-                    const params = new URLSearchParams(url.search);
-                    const SESSDATA = params.get('SESSDATA') || '';
-                    const bili_jct = params.get('bili_jct') || '';
-                    const DedeUserID = params.get('DedeUserID') || '';
-                    const DedeUserID__ckMd5 = params.get('DedeUserID__ckMd5') || '';
-                    
-                    if (SESSDATA) {
-                        const decodedSESSDATA = decodeURIComponent(SESSDATA);
-                        const decodedBiliJct = decodeURIComponent(bili_jct);
-                        const decodedDedeUserID = decodeURIComponent(DedeUserID);
-                        const decodedDedeUserID__ckMd5 = decodeURIComponent(DedeUserID__ckMd5);
-                        
-                        cookie = `SESSDATA=${decodedSESSDATA}; bili_jct=${decodedBiliJct}; DedeUserID=${decodedDedeUserID}; DedeUserID__ckMd5=${decodedDedeUserID__ckMd5}`;
-                    }
-                }
+            // 从URL参数提取Cookie
+            if (data.data.url) {
+                const url = new URL(data.data.url);
+                const params = new URLSearchParams(url.search);
+                const SESSDATA = decodeURIComponent(params.get('SESSDATA') || '');
+                const bili_jct = decodeURIComponent(params.get('bili_jct') || '');
+                const DedeUserID = decodeURIComponent(params.get('DedeUserID') || '');
                 
-                // 方法2: 从 Set-Cookie 响应头提取（更可靠）
-                const setCookieHeaders = response.headers.getSetCookie ? 
-                    response.headers.getSetCookie() : 
-                    [response.headers.get('set-cookie')].filter(Boolean);
-                
-                if (setCookieHeaders && setCookieHeaders.length > 0) {
-                    let cookieParts = {};
-                    
-                    for (const setCookie of setCookieHeaders) {
-                        if (setCookie) {
-                            const parts = setCookie.split(';')[0].split('=');
-                            if (parts.length >= 2) {
-                                const key = parts[0].trim();
-                                const value = parts.slice(1).join('=').trim();
-                                if (['SESSDATA', 'bili_jct', 'DedeUserID', 'DedeUserID__ckMd5', 'sid'].includes(key)) {
-                                    cookieParts[key] = value;
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (Object.keys(cookieParts).length > 0) {
-                        const cookieFromHeaders = Object.entries(cookieParts)
-                            .map(([key, value]) => `${key}=${value}`)
-                            .join('; ');
-                        
-                        if (cookieFromHeaders) {
-                            cookie = cookieFromHeaders;
-                            log("info", `从Set-Cookie响应头提取Cookie成功，长度: ${cookie.length}`);
-                        }
-                    }
+                if (SESSDATA) {
+                    cookie = `SESSDATA=${SESSDATA}; bili_jct=${bili_jct}; DedeUserID=${DedeUserID}`;
                 }
-                
-                // 提取 refresh_token
-                if (data.data.refresh_token) {
-                    refresh_token = data.data.refresh_token;
-                }
-            } catch (parseError) {
-                log("error", `解析登录响应失败: ${parseError.message}`);
             }
-        }
-
-        if (qrLoginSessions.has(qrcodeKey)) {
-            qrLoginSessions.get(qrcodeKey).status = data.data.code === 0 ? 'success' : 'pending';
         }
 
         const result = {
             success: true,
             data: {
                 code: data.data.code,
-                message: data.data.message || '',
-                url: data.data.url || null,
-                refresh_token: refresh_token
+                message: data.data.message || ''
             }
         };
         
@@ -314,7 +256,6 @@ export async function handleQRCheck(request) {
 
         return jsonResponse(result);
     } catch (error) {
-        log("error", `检查二维码状态异常: ${error.message}`);
         return jsonResponse({ success: false, message: error.message }, 500);
     }
 }
