@@ -156,10 +156,8 @@ export async function handleCookieStatus() {
  */
 export async function handleQRGenerate() {
     try {
-        log("info", "开始生成B站登录二维码");
-        
         const response = await fetch('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', {
-            method: 'GET',  // 明确指定GET方法
+            method: 'GET',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.bilibili.com',
@@ -168,51 +166,35 @@ export async function handleQRGenerate() {
         });
 
         if (!response.ok) {
-            log("error", `生成二维码HTTP错误: ${response.status}`);
             return jsonResponse({
                 success: false,
-                message: `HTTP错误: ${response.status}`
+                message: `HTTP ${response.status}`
             }, 400);
         }
 
         const data = await response.json();
         
-        log("info", `二维码API响应: code=${data.code}, message=${data.message || 'success'}`);
-        
         if (data.code !== 0) {
-            log("error", `生成二维码失败: ${JSON.stringify(data)}`);
             return jsonResponse({
                 success: false,
-                message: '生成二维码失败: ' + (data.message || '未知错误')
+                message: data.message || '生成失败'
             }, 400);
         }
 
         const qrcodeKey = data.data.qrcode_key;
         const qrcodeUrl = data.data.url;
 
-        if (!qrcodeKey || !qrcodeUrl) {
-            log("error", "二维码数据不完整");
-            return jsonResponse({
-                success: false,
-                message: '二维码数据不完整'
-            }, 400);
-        }
-
-        // 存储session
         qrLoginSessions.set(qrcodeKey, {
             createTime: Date.now(),
             status: 'pending'
         });
 
-        // 清理过期session（超过5分钟）
         const now = Date.now();
         for (const [key, session] of qrLoginSessions.entries()) {
             if (now - session.createTime > 5 * 60 * 1000) {
                 qrLoginSessions.delete(key);
             }
         }
-
-        log("info", `生成二维码成功, qrcode_key: ${qrcodeKey.substring(0, 10)}...`);
 
         return jsonResponse({
             success: true,
@@ -222,10 +204,9 @@ export async function handleQRGenerate() {
             }
         });
     } catch (error) {
-        log("error", `生成二维码异常: ${error.message}`);
         return jsonResponse({ 
             success: false, 
-            message: '生成二维码异常: ' + error.message 
+            message: error.message 
         }, 500);
     }
 }
