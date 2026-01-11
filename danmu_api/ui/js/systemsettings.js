@@ -527,10 +527,37 @@ function renderValueInput(item) {
 
     } else {
         // 文本输入
-        // 如果值太长，使用textarea而不是input
-        if (value && value.length > 50) {
-            // 计算行数，每行约50个字符
-            const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10); // 最少3行，最多10行
+        const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
+        const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
+        
+        if (isBilibiliCookie) {
+            // Bilibili Cookie 专用编辑界面
+            const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 8) : 3;
+            container.innerHTML = \`
+                <div class="bili-cookie-editor">
+                    <div class="bili-cookie-status" id="bili-cookie-status">
+                        <span class="bili-status-icon">🔍</span>
+                        <span class="bili-status-text">检测中...</span>
+                    </div>
+                    
+                    <div class="bili-cookie-actions">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="startBilibiliQRLogin()">
+                            📱 扫码登录
+                        </button>
+                    </div>
+                    
+                    <label>Cookie 值</label>
+                    <textarea class="form-group" id="text-value" placeholder="SESSDATA=xxx; bili_jct=xxx; DedeUserID=xxx;" rows="\${rows}">\${value}</textarea>
+                    <div class="form-help">推荐使用扫码登录自动获取，或手动粘贴包含 SESSDATA 和 bili_jct 的完整 Cookie</div>
+                </div>
+            \`;
+            
+            // 自动检测 Cookie 状态
+            setTimeout(() => {
+                autoCheckBilibiliCookieStatus();
+            }, 100);
+        } else if (value && value.length > 50) {
+            const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10);
             container.innerHTML = \`
                 <label>变量值 *</label>
                 <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
@@ -1211,6 +1238,182 @@ function removeMapItem(button) {
     const item = button.closest('.map-item');
     if (item) {
         item.remove();
+    }
+}
+/* ========================================
+   Bilibili Cookie 扫码登录功能
+   ======================================== */
+let biliQRCheckInterval = null;
+let biliBiliQRKey = null;
+
+async function startBilibiliQRLogin() {
+    // 创建扫码登录模态框
+    if (!document.getElementById('bili-qr-modal')) {
+        const modalHTML = \`
+            <div class="modal" id="bili-qr-modal">
+                <div class="modal-content" style="max-width: 400px;">
+                    <div class="modal-header">
+                        <h3>📱 扫码登录 Bilibili</h3>
+                        <button class="close-btn" onclick="closeBiliQRModal()">×</button>
+                    </div>
+                    <div class="modal-body" style="text-align: center;">
+                        <div id="bili-qr-container">
+                            <div class="loading-spinner" id="bili-qr-loading"></div>
+                            <p id="bili-qr-status">正在生成二维码...</p>
+                            <div id="bili-qr-code" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        \`;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
+    const modal = document.getElementById('bili-qr-modal');
+    const qrCode = document.getElementById('bili-qr-code');
+    const qrLoading = document.getElementById('bili-qr-loading');
+    const qrStatus = document.getElementById('bili-qr-status');
+    
+    modal.classList.add('active');
+    qrCode.style.display = 'none';
+    qrCode.innerHTML = '';
+    qrLoading.style.display = 'block';
+    qrStatus.textContent = '正在生成二维码...';
+    
+    if (biliQRCheckInterval) {
+        clearInterval(biliQRCheckInterval);
+    }
+    
+    try {
+        const response = await fetch(buildApiUrl('/api/cookie/qr/generate', true), {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            biliBiliQRKey = result.data.qrcode_key;
+            const qrUrl = result.data.url;
+            
+            qrCode.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(qrUrl) + '" alt="二维码">';
+            qrCode.style.display = 'block';
+            qrLoading.style.display = 'none';
+            qrStatus.textContent = '请使用 Bilibili APP 扫描';
+            
+            startBiliQRCheck();
+        } else {
+            throw new Error(result.message || '生成二维码失败');
+        }
+    } catch (error) {
+        qrLoading.style.display = 'none';
+        qrStatus.textContent = '❌ ' + error.message;
+    }
+}
+
+function startBiliQRCheck() {
+    if (!biliBiliQRKey) return;
+    
+    const qrStatus = document.getElementById('bili-qr-status');
+    
+    biliQRCheckInterval = setInterval(async () => {
+        try {
+            const response = await fetch(buildApiUrl('/api/cookie/qr/check', true), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qrcode_key: biliBiliQRKey })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+                const code = result.data.code;
+                
+                switch (code) {
+                    case 86101:
+                        qrStatus.textContent = '⏳ 等待扫码...';
+                        break;
+                    case 86090:
+                        qrStatus.textContent = '📱 已扫码，请确认';
+                        break;
+                    case 86038:
+                        qrStatus.textContent = '❌ 二维码已过期';
+                        clearInterval(biliQRCheckInterval);
+                        break;
+                    case 0:
+                        qrStatus.textContent = '✅ 登录成功！';
+                        clearInterval(biliQRCheckInterval);
+                        
+                        if (result.data.cookie) {
+                            fillBilibiliCookie(result.data.cookie);
+                        }
+                        
+                        setTimeout(() => {
+                            closeBiliQRModal();
+                        }, 1000);
+                        break;
+                }
+            }
+        } catch (error) {
+            console.error('检查扫码状态失败:', error);
+        }
+    }, 2000);
+}
+
+function fillBilibiliCookie(cookie) {
+    const textInput = document.getElementById('text-value');
+    if (textInput) {
+        textInput.value = cookie;
+        textInput.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        textInput.style.borderColor = 'var(--success-color, #28a745)';
+        setTimeout(() => {
+            textInput.style.borderColor = '';
+            autoCheckBilibiliCookieStatus();
+        }, 2000);
+    }
+}
+
+function closeBiliQRModal() {
+    const modal = document.getElementById('bili-qr-modal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    
+    if (biliQRCheckInterval) {
+        clearInterval(biliQRCheckInterval);
+    }
+}
+
+async function autoCheckBilibiliCookieStatus() {
+    const textInput = document.getElementById('text-value');
+    const statusEl = document.getElementById('bili-cookie-status');
+    
+    if (!textInput || !statusEl) return;
+    
+    const cookie = textInput.value.trim();
+    
+    statusEl.innerHTML = '<span class="bili-status-icon">🔍</span><span class="bili-status-text">检测中...</span>';
+    
+    if (!cookie) {
+        statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">未配置</span>';
+        return;
+    }
+    
+    try {
+        const response = await fetch(buildApiUrl('/api/cookie/status', true));
+        const result = await response.json();
+        
+        if (result.success && result.data && result.data.isValid) {
+            const expiresAt = result.data.expiresAt;
+            const now = Math.floor(Date.now() / 1000);
+            const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60));
+            
+            statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${result.data.uname} (剩余 \${daysLeft} 天)</span>\`;
+        } else {
+            statusEl.innerHTML = '<span class="bili-status-icon">❌</span><span class="bili-status-text">无效或已过期</span>';
+        }
+    } catch (error) {
+        statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">检测失败</span>';
     }
 }
 `;
