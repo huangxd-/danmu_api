@@ -712,4 +712,50 @@ export const componentsCssContent = /* css */ `
     display: inline-block;
     margin-left: 10px;
 }
+/* Bilibili Cookie 编辑器样式 */
+.bili-cookie-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.bili-cookie-status {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-left: 4px solid #667eea;
+}
+
+.bili-status-icon {
+    font-size: 18px;
+}
+
+.bili-status-text {
+    flex: 1;
+    font-weight: 500;
+}
+
+.bili-cookie-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .bili-cookie-actions {
+        flex-direction: column;
+    }
+    
+    .bili-cookie-actions .btn {
+        width: 100%;
+    }
+}
 `;
