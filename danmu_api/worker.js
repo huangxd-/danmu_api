@@ -178,7 +178,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (path.startsWith("/api/v2/comment") && method === "GET") {
     const queryFormat = url.searchParams.get('format');
     const videoUrl = url.searchParams.get('url');
-    const segmentFlag = url.searchParams.get('segmentflag');
+    const segmentFlagParam = url.searchParams.get('segmentflag');
+    const segmentFlag = segmentFlagParam === 'true' || segmentFlagParam === '1';
 
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数

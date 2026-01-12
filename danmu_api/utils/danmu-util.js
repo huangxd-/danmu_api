@@ -220,7 +220,7 @@ export function convertToDanmakuJson(contents, platform) {
     let topBottomCount = 0;
     let colorCount = 0;
 
-    convertedDanmus = groupedDanmus.map(danmu => {
+    convertedDanmus = convertedDanmus.map(danmu => {
       const pValues = danmu.p.split(',');
       if (pValues.length < 3) return danmu;
 
