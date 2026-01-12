@@ -10,15 +10,15 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
-// 获取芒果TV弹幕（纯移动端APP接口优化版）
+// 获取芒果TV弹幕(纯移动端APP接口优化版)
 // =====================
 export default class MangoSource extends BaseSource {
   constructor() {
     super();
-    // 移动端User-Agent（从抓包数据中提取）
+    // 移动端User-Agent(从抓包数据中提取)
     this.mobileUA = "Dalvik/2.1.0 (Linux; U; Android 16; 23127PN0CC Build/BP2A.250605.031.A3) imgotv-aphone-9.1.4";
     
-    // APP通用参数（从抓包数据中提取）
+    // APP通用参数(从抓包数据中提取)
     this.appParams = {
       "_support": "10100001",
       "device": "23127PN0CC",
@@ -79,7 +79,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 生成随机seqId（32位十六进制）
+   * 生成随机seqId(32位十六进制)
    */
   _generateSeqId() {
     return Array.from({length: 32}, () => 
@@ -88,11 +88,11 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 搜索（使用移动端APP接口）
+   * 搜索(使用移动端APP接口)
    */
   async search(keyword) {
     try {
-      log("info", `[Mango] 开始搜索（APP接口）: ${keyword}`);
+      log("info", `[Mango] 开始搜索(APP接口): ${keyword}`);
 
       const encodedKeyword = encodeURIComponent(keyword);
       
@@ -129,20 +129,51 @@ export default class MangoSource extends BaseSource {
 
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
+      // 添加详细日志 - 查看完整响应结构
+      log("debug", `[Mango] 搜索响应结构: ${JSON.stringify(data).substring(0, 500)}`);
+
       if (!data.data || !data.data.contents) {
-        log("info", "[Mango] 搜索无结果");
+        log("info", "[Mango] 搜索无结果 - 缺少 data.contents");
         return [];
       }
 
       const results = [];
+      let processedCount = 0;
+      let skippedCount = 0;
+
       for (const content of data.data.contents) {
-        if (content.type !== "media") continue;
+        log("debug", `[Mango] 处理 content.type: ${content.type}`);
+        
+        if (content.type !== "media") {
+          log("debug", `[Mango] 跳过非media类型: ${content.type}`);
+          continue;
+        }
+
+        if (!content.data || !Array.isArray(content.data)) {
+          log("debug", "[Mango] content.data 不存在或非数组");
+          continue;
+        }
 
         for (const item of content.data) {
-          if (item.source !== "imgo") continue;
+          processedCount++;
+          
+          // 详细日志 - 记录每个item的source字段
+          log("debug", `[Mango] 检查item #${processedCount}: source="${item.source}", title="${item.title}"`);
+          
+          // 修改逻辑:如果source字段不存在,假定为imgo(容错处理)
+          const itemSource = item.source || "imgo";
+          
+          if (itemSource !== "imgo") {
+            skippedCount++;
+            log("debug", `[Mango] 跳过非imgo源: source="${itemSource}"`);
+            continue;
+          }
 
           const urlMatch = item.url ? item.url.match(/\/b\/(\d+)/) : null;
-          if (!urlMatch) continue;
+          if (!urlMatch) {
+            log("debug", `[Mango] URL匹配失败: ${item.url}`);
+            continue;
+          }
 
           const mediaId = urlMatch[1];
           const cleanedTitle = item.title ? item.title.replace(/<[^>]+>/g, '').replace(/:/g, '：') : '';
@@ -163,21 +194,28 @@ export default class MangoSource extends BaseSource {
         }
       }
 
-      log("info", `[Mango] 搜索找到 ${results.length} 个有效结果`);
+      log("info", `[Mango] 搜索统计 - 处理:${processedCount}, 跳过:${skippedCount}, 有效:${results.length}`);
+      
+      // 如果没有结果,记录更多调试信息
+      if (results.length === 0 && processedCount > 0) {
+        log("warn", `[Mango] 警告:处理了${processedCount}个条目但没有有效结果`);
+      }
+      
       return results;
 
     } catch (error) {
       log("error", "[Mango] 搜索出错:", error.message);
+      log("error", "[Mango] 错误堆栈:", error.stack);
       return [];
     }
   }
 
   /**
-   * 获取视频详情（使用移动端APP接口 - 从抓包数据）
+   * 获取视频详情(使用移动端APP接口 - 从抓包数据)
    */
   async _getVideoInfo(videoId, clipId) {
     try {
-      log("info", `[Mango] 获取视频详情（APP接口）: videoId=${videoId}, clipId=${clipId}`);
+      log("info", `[Mango] 获取视频详情(APP接口): videoId=${videoId}, clipId=${clipId}`);
 
       const params = new URLSearchParams({
         ...this.appParams,
@@ -228,11 +266,11 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取分集列表（使用移动端APP接口）
+   * 获取分集列表(使用移动端APP接口)
    */
   async getEpisodes(id) {
     try {
-      log("info", `[Mango] 获取分集列表（APP接口）: clipId=${id}`);
+      log("info", `[Mango] 获取分集列表(APP接口): clipId=${id}`);
 
       // 先获取一次视频信息以获取基本数据
       const initialInfo = await this._getVideoInfo("0", id);
@@ -250,7 +288,7 @@ export default class MangoSource extends BaseSource {
         return [];
       }
 
-      // 如果有media数据且fallback为1，说明已经加载了分集列表
+      // 如果有media数据且fallback为1,说明已经加载了分集列表
       if (episodeModule.media && episodeModule.media.fallback === 1) {
         const filters = episodeModule.media.filters || [];
         const featureFilter = filters.find(f => f.filterType === "contentType" && f.contentType === "feature");
@@ -317,7 +355,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 处理分集列表（过滤和标准化）
+   * 处理分集列表(过滤和标准化)
    */
   _processEpisodeList(episodeList, clipId) {
     const mangoBlacklist = /^(.*?)(抢先(看|版)|加更(版)?|花絮|预告|特辑|(特别|惊喜|纳凉)?企划|彩蛋|专访|幕后(花絮)?|直播|纯享|未播|衍生|番外|合伙人手记|会员(专享|加长)|片花|精华|看点|速看|解读|reaction|超前营业|超前(vlog)?|陪看(记)?|.{3,}篇|影评)(.*?)$/i;
@@ -342,7 +380,7 @@ export default class MangoSource extends BaseSource {
       return true;
     });
 
-    // 转换为统一格式（兼容旧代码）
+    // 转换为统一格式(兼容旧代码)
     return episodes.map(ep => ({
       video_id: ep.videoId,
       src_clip_id: clipId,
@@ -356,11 +394,11 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取电影正片（使用APP接口）
+   * 获取电影正片(使用APP接口)
    */
   async _getMovieEpisode(mediaId) {
     try {
-      log("info", `[Mango] 获取电影正片（APP接口）: clipId=${mediaId}`);
+      log("info", `[Mango] 获取电影正片(APP接口): clipId=${mediaId}`);
 
       const episodes = await this.getEpisodes(mediaId);
       
@@ -388,12 +426,12 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 处理综艺分集（保留原有逻辑）
+   * 处理综艺分集(保留原有逻辑)
    */
   _processVarietyEpisodes(rawEpisodes) {
     if (!rawEpisodes || rawEpisodes.length === 0) return [];
 
-    log("debug", `[Mango] 综艺处理开始，原始分集数: ${rawEpisodes.length}`);
+    log("debug", `[Mango] 综艺处理开始,原始分集数: ${rawEpisodes.length}`);
 
     const hasQiFormat = rawEpisodes.some(ep => {
       const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
@@ -479,7 +517,7 @@ export default class MangoSource extends BaseSource {
       });
     }
 
-    log("debug", `[Mango] 综艺处理完成，过滤后分集数: ${episodeInfos.length}`);
+    log("debug", `[Mango] 综艺处理完成,过滤后分集数: ${episodeInfos.length}`);
     return episodeInfos;
   }
 
@@ -577,10 +615,10 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取弹幕（使用移动端APP接口）
+   * 获取弹幕(使用移动端APP接口)
    */
   async getEpisodeDanmu(id) {
-    log("info", "[Mango] 开始获取弹幕（移动端APP接口）...", id);
+    log("info", "[Mango] 开始获取弹幕(移动端APP接口)...", id);
 
     const segmentResult = await this.getEpisodeDanmuSegments(id);
     if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
@@ -635,10 +673,10 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取弹幕分段列表（使用移动端API）
+   * 获取弹幕分段列表(使用移动端API)
    */
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Mango] 获取弹幕分段列表（移动端APP接口）...", id);
+    log("info", "[Mango] 获取弹幕分段列表(移动端APP接口)...", id);
 
     const regex = /^(https?:\/\/[^\/]+)(\/[^?#]*)/;
     const match = id.match(regex);
@@ -679,7 +717,7 @@ export default class MangoSource extends BaseSource {
 
       log("info", `[Mango] 视频时长: ${durationSeconds}秒`);
 
-      // 构建弹幕分段URL（使用galaxy.bz.mgtv.com接口）
+      // 构建弹幕分段URL(使用galaxy.bz.mgtv.com接口)
       return this._buildGalaxySegments(videoId, clipId, durationSeconds);
 
     } catch (error) {
@@ -689,7 +727,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 构建Galaxy弹幕分段（基于抓包数据的移动端接口）
+   * 构建Galaxy弹幕分段(基于抓包数据的移动端接口)
    */
   _buildGalaxySegments(vid, cid, durationSeconds) {
     log("info", "[Mango] 使用Galaxy移动端接口构建弹幕分段");
@@ -719,7 +757,7 @@ export default class MangoSource extends BaseSource {
       });
     }
 
-    log("info", `[Mango] 构建 ${segmentList.length} 个弹幕分段（Galaxy移动端接口）`);
+    log("info", `[Mango] 构建 ${segmentList.length} 个弹幕分段(Galaxy移动端接口)`);
     return new SegmentListResponse({
       "type": "imgo",
       "segmentList": segmentList
@@ -727,7 +765,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 降级弹幕分段（使用移动端接口）
+   * 降级弹幕分段(使用移动端接口)
    */
   _buildFallbackSegments(vid, cid, durationSeconds) {
     log("info", "[Mango] 使用移动端接口降级方案");
