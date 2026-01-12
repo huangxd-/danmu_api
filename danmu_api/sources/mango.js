@@ -108,6 +108,7 @@ export default class MangoSource extends BaseSource {
         "du": "0",
         "pt": "0",
         "corr": "1"
+        "abroad": "0"
       });
 
       const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?${params.toString()}`;
