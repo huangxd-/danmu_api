@@ -10,15 +10,13 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
-// 获取芒果TV弹幕（移动端APP接口优化版）
+// 获取芒果TV弹幕（纯移动端APP接口优化版）
 // =====================
 export default class MangoSource extends BaseSource {
   constructor() {
     super();
     // 移动端User-Agent（从抓包数据中提取）
     this.mobileUA = "Dalvik/2.1.0 (Linux; U; Android 16; 23127PN0CC Build/BP2A.250605.031.A3) imgotv-aphone-9.1.4";
-    // PC端User-Agent
-    this.pcUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     
     // APP通用参数（从抓包数据中提取）
     this.appParams = {
@@ -27,6 +25,10 @@ export default class MangoSource extends BaseSource {
       "osVersion": "16",
       "appVersion": "9.1.4",
       "androidPatch": "9.1.4",
+      "ticket": "C76D0A2C26B83BB186296F90A7D2A685",
+      "userId": "0",
+      "did": "db9451efcc36410672ab179feb425f59",
+      "mac": "db9451efcc36410672ab179feb425f59",
       "osType": "android",
       "channel": "xiaomi",
       "uuid": "e0b4ede4ee9f4c16ac7462624dacb9fa",
@@ -37,7 +39,9 @@ export default class MangoSource extends BaseSource {
       "type": "10",
       "abroad": "0",
       "src": "mgtv",
+      "uid": "e0b4ede4ee9f4c16ac7462624dacb9fa",
       "phonetype": "23127PN0CC",
+      "testversion": "",
       "allowedRC": "1",
       "mf": "Xiaomi",
       "brand": "Xiaomi"
@@ -74,18 +78,47 @@ export default class MangoSource extends BaseSource {
     return "电视剧";
   }
 
+  /**
+   * 生成随机seqId（32位十六进制）
+   */
+  _generateSeqId() {
+    return Array.from({length: 32}, () => 
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+  }
+
+  /**
+   * 搜索（使用移动端APP接口）
+   */
   async search(keyword) {
     try {
-      log("info", `[Mango] 开始搜索: ${keyword}`);
+      log("info", `[Mango] 开始搜索（APP接口）: ${keyword}`);
 
       const encodedKeyword = encodeURIComponent(keyword);
-      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?q=${encodedKeyword}&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000`;
+      
+      // 使用移动端搜索API
+      const params = new URLSearchParams({
+        ...this.appParams,
+        "seqId": this._generateSeqId(),
+        "q": encodedKeyword,
+        "pc": "30",
+        "pn": "1",
+        "sort": "-99",
+        "ty": "0",
+        "du": "0",
+        "pt": "0",
+        "corr": "1"
+      });
+
+      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?${params.toString()}`;
 
       const response = await httpGet(searchUrl, {
         headers: {
-          'User-Agent': this.pcUA,
+          'User-Agent': this.mobileUA,
           'Accept': 'application/json',
-          'Referer': 'https://www.mgtv.com/'
+          'Host': 'mobileso.bz.mgtv.com',
+          'Connection': 'Keep-Alive',
+          'Accept-Encoding': 'gzip'
         }
       });
 
@@ -139,74 +172,143 @@ export default class MangoSource extends BaseSource {
     }
   }
 
+  /**
+   * 获取视频详情（使用移动端APP接口 - 从抓包数据）
+   */
+  async _getVideoInfo(videoId, clipId) {
+    try {
+      log("info", `[Mango] 获取视频详情（APP接口）: videoId=${videoId}, clipId=${clipId}`);
+
+      const params = new URLSearchParams({
+        ...this.appParams,
+        "seqId": this._generateSeqId(),
+        "videoId": videoId,
+        "clipId": clipId,
+        "plId": "0",
+        "fromClipId": clipId,
+        "fromPlId": "0",
+        "fromModuleId": "14",
+        "toModuleId": "14",
+        "platform": "10",
+        "localPlayVideoId": "",
+        "localVideoWatchTime": "",
+        "keepPlay": "1",
+        "cliVodAbConf": "2",
+        "exdef": JSON.stringify({
+          "av01": {"hdr": {"bit_depth": "10", "hdr_type": "1", "max_def": "1920x1080", "max_def_fps": "480", "support": "1"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
+          "h264": {"hdr": {"bit_depth": "10", "hdr_type": "0", "max_def": "0x0", "max_def_fps": "0", "support": "0"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
+          "h265": {"hdr": {"bit_depth": "10", "hdr_type": "2", "max_def": "1920x1080", "max_def_fps": "480", "support": "1"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
+          "sceen_fps": "120", "sceen_ppi": "460", "sceen_size": "1200x2670", "screen_hdr_type": "1", "support": "1", "support_3da": "1", "support_wanos": "0", "version": "4"
+        })
+      });
+
+      const url = `https://mobile-thor.api.mgtv.com/v1/vod/info?${params.toString()}`;
+
+      const response = await httpGet(url, {
+        headers: {
+          'User-Agent': this.mobileUA,
+          'Host': 'mobile-thor.api.mgtv.com',
+          'Connection': 'Keep-Alive',
+          'Accept-Encoding': 'gzip'
+        }
+      });
+
+      if (!response || !response.data) {
+        log("info", "[Mango] 获取视频详情失败");
+        return null;
+      }
+
+      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      return data.data || null;
+
+    } catch (error) {
+      log("error", "[Mango] 获取视频详情出错:", error.message);
+      return null;
+    }
+  }
+
+  /**
+   * 获取分集列表（使用移动端APP接口）
+   */
   async getEpisodes(id) {
     try {
-      log("info", `[Mango] 获取分集列表: collection_id=${id}`);
+      log("info", `[Mango] 获取分集列表（APP接口）: clipId=${id}`);
 
-      let allEpisodes = [];
-      let month = "";
-      let pageIndex = 0;
-      let totalPages = 1;
+      // 先获取一次视频信息以获取基本数据
+      const initialInfo = await this._getVideoInfo("0", id);
+      if (!initialInfo) {
+        log("warn", "[Mango] 无法获取初始视频信息");
+        return [];
+      }
 
-      while (pageIndex < totalPages) {
-        const url = `https://pcweb.api.mgtv.com/variety/showlist?allowedRC=1&collection_id=${id}&month=${month}&page=1&_support=10000000`;
+      // 从模板数据中提取分集信息
+      const modules = initialInfo.template?.modules || [];
+      const episodeModule = modules.find(m => m.dataType === 201);
+      
+      if (!episodeModule) {
+        log("info", "[Mango] 未找到分集模块");
+        return [];
+      }
 
-        const response = await httpGet(url, {
-          headers: {
-            'User-Agent': this.pcUA,
-            'Referer': 'https://www.mgtv.com/'
-          }
-        });
-
-        if (!response || !response.data) {
-          log("info", "[Mango] 未找到分集信息");
-          break;
-        }
-
-        const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-
-        if (!data.data || !data.data.list) {
-          log("info", "[Mango] 分集列表为空");
-          break;
-        }
-
-        if (data.data.list && data.data.list.length > 0) {
-          allEpisodes.push(...data.data.list.filter(ep => ep.src_clip_id === id));
-        }
-
-        if (pageIndex === 0) {
-          totalPages = data.data.tab_m && data.data.tab_m.length > 0 ? data.data.tab_m.length : 1;
-          log("info", `[Mango] 检测到 ${totalPages} 个月份分页`);
-        }
-
-        pageIndex++;
-        if (pageIndex < totalPages && data.data.tab_m && data.data.tab_m[pageIndex]) {
-          month = data.data.tab_m[pageIndex].m;
+      // 如果有media数据且fallback为1，说明已经加载了分集列表
+      if (episodeModule.media && episodeModule.media.fallback === 1) {
+        const filters = episodeModule.media.filters || [];
+        const featureFilter = filters.find(f => f.filterType === "contentType" && f.contentType === "feature");
+        
+        if (featureFilter && featureFilter.list) {
+          log("info", `[Mango] 从缓存数据中获取到 ${featureFilter.list.length} 集`);
+          return this._processEpisodeList(featureFilter.list, id);
         }
       }
 
-      const mangoBlacklist = /^(.*?)(抢先(看|版)|加更(版)?|花絮|预告|特辑|(特别|惊喜|纳凉)?企划|彩蛋|专访|幕后(花絮)?|直播|纯享|未播|衍生|番外|合伙人手记|会员(专享|加长)|片花|精华|看点|速看|解读|reaction|超前营业|超前(vlog)?|陪看(记)?|.{3,}篇|影评)(.*?)$/i;
+      // 否则需要请求分集接口
+      const episodeUrl = episodeModule.url;
+      if (!episodeUrl) {
+        log("warn", "[Mango] 未找到分集URL");
+        return [];
+      }
 
-      const episodes = allEpisodes.filter(ep => {
-        const fullTitle = `${ep.t2 || ''} ${ep.t1 || ''}`.trim();
-
-        if (ep.isnew === "2") {
-          log("debug", `[Mango] 过滤预告片: ${fullTitle}`);
-          return false;
-        }
-
-        if (mangoBlacklist.test(fullTitle)) {
-          log("debug", `[Mango] 黑名单过滤: ${fullTitle}`);
-          return false;
-        }
-
-        return true;
+      const params = new URLSearchParams({
+        ...this.appParams,
+        "seqId": this._generateSeqId(),
+        "jumpUrl": "imgotv://player",
+        "videoId": "0",
+        "clipId": id
       });
 
-      const processedEpisodes = this._processVarietyEpisodes(episodes);
+      const fullUrl = `${episodeUrl}&${params.toString()}`;
 
-      log("info", `[Mango] 共获取 ${processedEpisodes.length} 集`);
-      return processedEpisodes;
+      const response = await httpGet(fullUrl, {
+        headers: {
+          'User-Agent': this.mobileUA,
+          'Host': new URL(fullUrl).host,
+          'Connection': 'Keep-Alive',
+          'Accept-Encoding': 'gzip'
+        }
+      });
+
+      if (!response || !response.data) {
+        log("info", "[Mango] 获取分集列表失败");
+        return [];
+      }
+
+      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+      if (!data.data || !data.data.media || !data.data.media.filters) {
+        log("info", "[Mango] 分集列表为空");
+        return [];
+      }
+
+      const filters = data.data.media.filters;
+      const featureFilter = filters.find(f => f.filterType === "contentType" && f.contentType === "feature");
+      
+      if (!featureFilter || !featureFilter.list) {
+        log("info", "[Mango] 未找到正片分集");
+        return [];
+      }
+
+      log("info", `[Mango] 获取到 ${featureFilter.list.length} 集`);
+      return this._processEpisodeList(featureFilter.list, id);
 
     } catch (error) {
       log("error", "[Mango] 获取分集出错:", error.message);
@@ -214,37 +316,66 @@ export default class MangoSource extends BaseSource {
     }
   }
 
+  /**
+   * 处理分集列表（过滤和标准化）
+   */
+  _processEpisodeList(episodeList, clipId) {
+    const mangoBlacklist = /^(.*?)(抢先(看|版)|加更(版)?|花絮|预告|特辑|(特别|惊喜|纳凉)?企划|彩蛋|专访|幕后(花絮)?|直播|纯享|未播|衍生|番外|合伙人手记|会员(专享|加长)|片花|精华|看点|速看|解读|reaction|超前营业|超前(vlog)?|陪看(记)?|.{3,}篇|影评)(.*?)$/i;
+
+    const episodes = episodeList.filter(ep => {
+      const title = ep.title || "";
+      const detailTitle = ep.detailTitle?.title || "";
+      const fullTitle = `${title} ${detailTitle}`.trim();
+
+      // 过滤预告片
+      if (ep.isIntact === "3" || ep.isIntact === 3) {
+        log("debug", `[Mango] 过滤预告片: ${fullTitle}`);
+        return false;
+      }
+
+      // 黑名单过滤
+      if (mangoBlacklist.test(fullTitle)) {
+        log("debug", `[Mango] 黑名单过滤: ${fullTitle}`);
+        return false;
+      }
+
+      return true;
+    });
+
+    // 转换为统一格式（兼容旧代码）
+    return episodes.map(ep => ({
+      video_id: ep.videoId,
+      src_clip_id: clipId,
+      t1: ep.detailTitle?.title || ep.title || "",
+      t2: ep.detailTitle?.prefix || "",
+      t3: ep.title || "",
+      ts: ep.serialno || "0",
+      isIntact: ep.isIntact,
+      isnew: ep.isIntact === "3" || ep.isIntact === 3 ? "2" : "1"
+    }));
+  }
+
+  /**
+   * 获取电影正片（使用APP接口）
+   */
   async _getMovieEpisode(mediaId) {
     try {
-      log("info", `[Mango] 获取电影正片: collection_id=${mediaId}`);
+      log("info", `[Mango] 获取电影正片（APP接口）: clipId=${mediaId}`);
 
-      const url = `https://pcweb.api.mgtv.com/variety/showlist?allowedRC=1&collection_id=${mediaId}&month=&page=1&_support=10000000`;
-
-      const response = await httpGet(url, {
-        headers: {
-          'User-Agent': this.pcUA,
-          'Referer': 'https://www.mgtv.com/'
-        }
-      });
-
-      if (!response || !response.data) {
+      const episodes = await this.getEpisodes(mediaId);
+      
+      if (!episodes || episodes.length === 0) {
         log("info", "[Mango] 未找到电影信息");
         return null;
       }
 
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-
-      if (!data.data || !data.data.list || data.data.list.length === 0) {
-        log("info", "[Mango] 电影列表为空");
-        return null;
-      }
-
-      let mainFeature = data.data.list.find(ep => ep.isIntact === "1");
+      // 优先选择完整版
+      let mainFeature = episodes.find(ep => ep.isIntact === "1");
       if (!mainFeature) {
-        mainFeature = data.data.list.find(ep => ep.isnew !== "2");
+        mainFeature = episodes.find(ep => ep.isnew !== "2");
       }
       if (!mainFeature) {
-        mainFeature = data.data.list[0];
+        mainFeature = episodes[0];
       }
 
       log("info", `[Mango] 找到电影正片: ${mainFeature.t3 || mainFeature.t1 || '正片'}`);
@@ -256,6 +387,9 @@ export default class MangoSource extends BaseSource {
     }
   }
 
+  /**
+   * 处理综艺分集（保留原有逻辑）
+   */
   _processVarietyEpisodes(rawEpisodes) {
     if (!rawEpisodes || rawEpisodes.length === 0) return [];
 
@@ -443,7 +577,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取弹幕（使用移动端APP接口 - 完全基于抓包数据优化）
+   * 获取弹幕（使用移动端APP接口）
    */
   async getEpisodeDanmu(id) {
     log("info", "[Mango] 开始获取弹幕（移动端APP接口）...", id);
@@ -501,7 +635,7 @@ export default class MangoSource extends BaseSource {
   }
 
   /**
-   * 获取弹幕分段列表（使用移动端API - 完全基于抓包数据）
+   * 获取弹幕分段列表（使用移动端API）
    */
   async getEpisodeDanmuSegments(id) {
     log("info", "[Mango] 获取弹幕分段列表（移动端APP接口）...", id);
@@ -521,94 +655,31 @@ export default class MangoSource extends BaseSource {
     log("info", `[Mango] 解析得到 clipId: ${clipId}, videoId: ${videoId}`);
 
     try {
-      // 1. 使用移动端API获取视频详情（从抓包数据获取）
-      const params = new URLSearchParams({
-        ...this.appParams,
-        "videoId": videoId,
-        "clipId": clipId,
-        "plId": "0",
-        "fromClipId": clipId,
-        "fromPlId": "0",
-        "fromModuleId": "14",
-        "toModuleId": "14",
-        "platform": "10",
-        "localPlayVideoId": "",
-        "localVideoWatchTime": "",
-        "keepPlay": "0",
-        "cliVodAbConf": "2",
-        "seqId": this._generateSeqId(),
-        "uid": this.appParams.uuid,
-        "userId": "0",
-        "ticket": "",
-        "did": "db9451efcc36410672ab179feb425f59",
-        "mac": "db9451efcc36410672ab179feb425f59",
-        "exdef": JSON.stringify({
-          "av01": {"hdr": {"bit_depth": "10", "hdr_type": "1", "max_def": "1920x1080", "max_def_fps": "480", "support": "1"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
-          "h264": {"hdr": {"bit_depth": "10", "hdr_type": "0", "max_def": "0x0", "max_def_fps": "0", "support": "0"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
-          "h265": {"hdr": {"bit_depth": "10", "hdr_type": "2", "max_def": "1920x1080", "max_def_fps": "480", "support": "1"}, "sdr": {"max_def": "1920x1080", "max_def_fps": "480"}, "support": "1"},
-          "sceen_fps": "120", "sceen_ppi": "460", "sceen_size": "1200x2670", "screen_hdr_type": "1", "support": "1", "support_3da": "1", "support_wanos": "0", "version": "4"
-        })
-      });
-
-      const videoInfoUrl = `https://mobile-thor.api.mgtv.com/v1/vod/info?${params.toString()}`;
+      // 使用移动端API获取视频详情
+      const videoInfo = await this._getVideoInfo(videoId, clipId);
       
-      const videoInfoRes = await httpGet(videoInfoUrl, {
-        headers: {
-          "User-Agent": this.mobileUA,
-          "Host": "mobile-thor.api.mgtv.com",
-          "Connection": "Keep-Alive",
-          "Accept-Encoding": "gzip"
-        }
-      });
-
-      if (!videoInfoRes || !videoInfoRes.data) {
+      if (!videoInfo) {
         log("error", "[Mango] 获取视频信息失败");
         return this._buildFallbackSegments(videoId, clipId, 3600);
       }
 
-      const videoData = typeof videoInfoRes.data === "string" 
-        ? JSON.parse(videoInfoRes.data) 
-        : videoInfoRes.data;
-
-      // 从返回数据中提取时长
-      const videoDuration = videoData.data?.info?.video?.partName;
+      // 从视频信息中提取时长
       let durationSeconds = 3600; // 默认1小时
       
-      if (videoDuration) {
-        durationSeconds = time_to_second(videoDuration);
+      // 尝试从多个位置获取时长
+      const video = videoInfo.info?.video;
+      if (video) {
+        // 从partName或其他字段提取时长
+        if (video.duration) {
+          durationSeconds = parseInt(video.duration);
+        } else if (video.partName) {
+          durationSeconds = time_to_second(video.partName);
+        }
       }
 
       log("info", `[Mango] 视频时长: ${durationSeconds}秒`);
 
-      // 2. 使用移动端API获取弹幕配置
-      const danmuParams = new URLSearchParams({
-        ...this.appParams,
-        "videoId": videoId,
-        "clipId": clipId,
-        "fstlvlId": "2",
-        "plId": "0",
-        "needOnlyHighlight": "1",
-        "vid": videoId,
-        "seqId": this._generateSeqId(),
-        "uid": this.appParams.uuid,
-        "userId": "0",
-        "ticket": "",
-        "did": "db9451efcc36410672ab179feb425f59",
-        "mac": "db9451efcc36410672ab179feb425f59"
-      });
-
-      const highlightUrl = `https://mobile-thor.api.mgtv.com/v1/vod/highlight/list?${danmuParams.toString()}`;
-      
-      await httpGet(highlightUrl, {
-        headers: {
-          "User-Agent": this.mobileUA,
-          "Host": "mobile-thor.api.mgtv.com",
-          "Connection": "Keep-Alive",
-          "Accept-Encoding": "gzip"
-        }
-      });
-
-      // 3. 构建弹幕分段URL（使用galaxy.bz.mgtv.com接口）
+      // 构建弹幕分段URL（使用galaxy.bz.mgtv.com接口）
       return this._buildGalaxySegments(videoId, clipId, durationSeconds);
 
     } catch (error) {
@@ -632,16 +703,11 @@ export default class MangoSource extends BaseSource {
       
       const params = new URLSearchParams({
         ...this.appParams,
+        "seqId": this._generateSeqId(),
         "vid": vid,
         "time": String(i * 1000), // 毫秒
         "pid": "0",
         "cid": cid,
-        "seqId": this._generateSeqId(),
-        "uid": this.appParams.uuid,
-        "userId": "0",
-        "ticket": "",
-        "did": "db9451efcc36410672ab179feb425f59",
-        "mac": "db9451efcc36410672ab179feb425f59",
         "platform": "2"
       });
       
@@ -666,15 +732,6 @@ export default class MangoSource extends BaseSource {
   _buildFallbackSegments(vid, cid, durationSeconds) {
     log("info", "[Mango] 使用移动端接口降级方案");
     return this._buildGalaxySegments(vid, cid, durationSeconds);
-  }
-
-  /**
-   * 生成随机seqId（32位十六进制）
-   */
-  _generateSeqId() {
-    return Array.from({length: 32}, () => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
   }
 
   /**
