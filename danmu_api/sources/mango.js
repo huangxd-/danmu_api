@@ -15,37 +15,57 @@ import { SegmentListResponse } from '../models/dandan-model.js';
 export default class MangoSource extends BaseSource {
   constructor() {
     super();
-    // 移动端User-Agent(从抓包数据中提取)
-    this.mobileUA = "Dalvik/2.1.0 (Linux; U; Android 16; 23127PN0CC Build/BP2A.250605.031.A3) imgotv-aphone-9.1.4";
+    // 移动端User-Agent
+    this.mobileUA = "Dalvik/2.1.0 (Linux; U; Android 13; SM-G9960 Build/TP1A.220624.014) imgotv-aphone-9.1.4";
     
-    // APP通用参数(从抓包数据中提取)
+    // APP通用参数
     this.appParams = {
       "_support": "10100001",
-      "device": "23127PN0CC",
-      "osVersion": "16",
+      "device": "SM-G9960",
+      "osVersion": "13",
       "appVersion": "9.1.4",
       "androidPatch": "9.1.4",
-      "ticket": "C76D0A2C26B83BB186296F90A7D2A685",
+      "ticket": "",
       "userId": "0",
-      "did": "db9451efcc36410672ab179feb425f59",
-      "mac": "db9451efcc36410672ab179feb425f59",
+      "did": this._generateDeviceId(),
+      "mac": this._generateDeviceId(),
       "osType": "android",
-      "channel": "xiaomi",
-      "uuid": "e0b4ede4ee9f4c16ac7462624dacb9fa",
+      "channel": "official",
+      "uuid": this._generateUUID(),
       "endType": "mgtvapp",
-      "oaid": "a5bfd047b9aba489",
+      "oaid": "",
       "ageMode": "0",
       "version": "5.2",
       "type": "10",
       "abroad": "0",
       "src": "mgtv",
-      "uid": "e0b4ede4ee9f4c16ac7462624dacb9fa",
-      "phonetype": "23127PN0CC",
+      "uid": this._generateUUID(),
+      "phonetype": "SM-G9960",
       "testversion": "",
       "allowedRC": "1",
-      "mf": "Xiaomi",
-      "brand": "Xiaomi"
+      "mf": "Samsung",
+      "brand": "Samsung"
     };
+  }
+
+  /**
+   * 生成随机设备ID
+   */
+  _generateDeviceId() {
+    return Array.from({length: 32}, () => 
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+  }
+
+  /**
+   * 生成随机UUID
+   */
+  _generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   // 处理 v2_color 对象的转换逻辑
@@ -108,7 +128,6 @@ export default class MangoSource extends BaseSource {
         "du": "0",
         "pt": "0",
         "corr": "1"
-        "abroad": "0"
       });
 
       const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?${params.toString()}`;
@@ -130,8 +149,8 @@ export default class MangoSource extends BaseSource {
 
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
-      // 添加详细日志 - 查看完整响应结构
-      log("debug", `[Mango] 搜索响应结构: ${JSON.stringify(data).substring(0, 500)}`);
+      // 响应结构日志
+      log("info", `[Mango] 搜索响应收到，开始处理数据`);
 
       if (!data.data || !data.data.contents) {
         log("info", "[Mango] 搜索无结果 - 缺少 data.contents");
@@ -158,8 +177,7 @@ export default class MangoSource extends BaseSource {
         for (const item of content.data) {
           processedCount++;
           
-          // 详细日志 - 记录每个item的source字段
-          log("debug", `[Mango] 检查item #${processedCount}: source="${item.source}", title="${item.title}"`);
+          log("debug", `[Mango] 处理项目 #${processedCount}`);
           
           // 修改逻辑:如果source字段不存在,假定为imgo(容错处理)
           const itemSource = item.source || "imgo";
