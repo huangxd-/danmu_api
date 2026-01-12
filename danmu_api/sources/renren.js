@@ -23,25 +23,27 @@ export default class RenrenSource extends BaseSource {
 
   generateAppCommonHeaders(timestamp, sign, xCaSign = null) {
     const headers = {
-      'User-Agent': this.API_CONFIG.USER_AGENT,
+      'clientVersion': this.API_CONFIG.APP_VERSION,
+      'pkt': 'rrmj',
+      'p': 'Android',
       'deviceId': 'T2%2Bjh%2FnHhJkWEzPnQT2E0%2FEw865FTT0uL%2BiBwRa2ZdM%3D',
       'aliId': 'aUzmLtnZIYoDAA9KyLdcLQpM',
       'umId': '53e0f078fa8474ae7ba412f766989b54od',
+      'st': '4c1a2b5a87b8f63045d94156a5881c6a',
       'clientType': 'android_rrsp_xb_XiaoMi',
+      'wcode': '3',
       't': timestamp.toString(),
       'sign': sign,
-      'isAgree': '1',
-      'cv': this.API_CONFIG.APP_VERSION,
-      'ct': 'android_rrsp_xb_XiaoMi',
-      'pkt': 'rrmj',
-      'p': 'Android',
-      'wcode': '3',
-      'et': '2',
-      'uet': '1',
+      'Connection': 'close',
       'folding-screen': '1',
-      'Accept': 'application/json',
-      'Accept-Encoding': 'gzip',
-      'Connection': 'close'
+      'isAgree': '1',
+      'et': '2',
+      'oaid': 'a5bfd047b9aba489',
+      'User-Agent': this.API_CONFIG.USER_AGENT,
+      'uet': '1',
+      'ct': 'android_rrsp_xb_XiaoMi',
+      'cv': this.API_CONFIG.APP_VERSION,
+      'Accept-Encoding': 'gzip'
     };
 
     if (xCaSign) {
