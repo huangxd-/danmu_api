@@ -127,7 +127,7 @@ export default class MangoSource extends BaseSource {
         "ty": "0",
         "du": "0",
         "pt": "0",
-        "corr": "1"
+        "corr": "1",
         "abroad": "0"
       });
 
