@@ -19,6 +19,7 @@ import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
 import SohuSource from "./sources/sohu.js";
+import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
 import { VercelHandler } from "./configs/handlers/vercel-handler.js";
@@ -60,6 +61,7 @@ test('worker.js API endpoints', async (t) => {
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
   const sohuSource = new SohuSource();
+  const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
   await t.test('GET / should return welcome message', async () => {
@@ -301,6 +303,43 @@ test('worker.js API endpoints', async (t) => {
   //   });
   //   const res = await bahamutSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // // 测试Animeko源
+  // await t.test('Animeko Source Search', async () => {
+  //   const source = new AnimekoSource();
+  //   const result = await source.search("我们不可能成为恋人！绝对不行。 (※似乎可行？)");
+  //   console.log(JSON.stringify(result, null, 2));
+  //   assert(result.length > 0);
+  //
+  //   const curAnimes = []; 
+  //   await source.handleAnimes(result, "我们不可能成为恋人！绝对不行。 (※似乎可行？)", curAnimes);
+  //   assert(curAnimes.length > 0);
+  //   
+  //   const animeId = result[0].id;
+  //   const episodes = await source.getEpisodes(animeId);
+  //   
+  //   if (episodes && episodes.length > 0) {
+  //       const firstEp = episodes.find(e => e.type === 0) || episodes[0];
+  //       const testId = firstEp.id;
+  //       
+  //       console.log(`Testing getSegmentComments with ID: ${testId}`);
+  //       
+  //       const segment = { 
+  //           url: String(testId),
+  //           type: 'animeko'
+  //       };
+  //       
+  //       const danmu = await source.getSegmentComments(segment);
+  //       
+  //       console.log("Danmu count:", danmu ? danmu.length : 0);
+  //       assert(Array.isArray(danmu));
+  //       
+  //       if (danmu.length > 0) {
+  //           assert(danmu[0].p !== undefined);
+  //           assert(danmu[0].m !== undefined);
+  //       }
+  //   }
   // });
 
   // await t.test('GET realistic danmu', async () => {
