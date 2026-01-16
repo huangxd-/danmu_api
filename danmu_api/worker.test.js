@@ -19,6 +19,7 @@ import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
 import SohuSource from "./sources/sohu.js";
+import LeshiSource from "./sources/leshi.js";
 import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
@@ -61,6 +62,7 @@ test('worker.js API endpoints', async (t) => {
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
   const sohuSource = new SohuSource();
+  const leshiSource = new LeshiSource();
   const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
@@ -226,6 +228,28 @@ test('worker.js API endpoints', async (t) => {
   //     url: 'https://api.danmu.tv.sohu.com/dmh5/dmListAll?act=dmlist_v2&vid=2547437&aid=8345543&pct=2&time_begin=3000&time_end=3300&dct=1&request_from=h5_js',
   //   });
   //   const res = await sohuSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET leshi danmu', async () => {
+  //   const res = await leshiSource.getComments("https://www.le.com/ptv/vplay/1578861.html");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET leshi danmu segments', async () => {
+  //   const res = await leshiSource.getComments("https://www.le.com/ptv/vplay/1578861.html", "leshi", true);
+  //   assert(res.type === "leshi", `Expected res.type === "leshi", but got ${res.type === "leshi"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET leshi segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'leshi',
+  //     segment_start: 1800,
+  //     segment_end: 2100,
+  //     url: 'https://hd-my.le.com/danmu/list?vid=1578861&start=1800&end=2100&callback=vjs_1768494351290',
+  //   });
+  //   const res = await leshiSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
