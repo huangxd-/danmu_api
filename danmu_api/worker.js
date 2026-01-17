@@ -10,6 +10,7 @@ import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
 import {
     handleCookieStatus,
+    handleCookieVerify,
     handleQRGenerate,
     handleQRCheck,
     handleCookieSave
@@ -379,6 +380,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/cookie/qr/check - 检查二维码扫描状态
   if (path === "/api/cookie/qr/check" && method === "POST") {
     return handleQRCheck(req);
+  }
+
+  // POST /api/cookie/verify - 校验指定Cookie（用于前端实时检测）
+  if (path === "/api/cookie/verify" && method === "POST") {
+    return handleCookieVerify(req);
   }
 
   // POST /api/cookie/save - 保存Cookie
