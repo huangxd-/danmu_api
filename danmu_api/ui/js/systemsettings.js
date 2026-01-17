@@ -1415,7 +1415,7 @@ async function autoCheckBilibiliCookieStatus() {
     statusEl.innerHTML = '<span class="bili-status-icon">🔍</span><span class="bili-status-text">检测中...</span>';
 
     // 脱敏后的 *...* 无法直接校验，后端会自动改为校验“已保存”的 Cookie
-    const isMasked = /^\*+$/.test(cookie);
+    const isMasked = /^[*]+$/.test(cookie);
     const payload = isMasked ? {} : { cookie };
 
     try {
@@ -1436,19 +1436,19 @@ async function autoCheckBilibiliCookieStatus() {
                 let leftText = '';
                 if (typeof expiresAt === 'number' && expiresAt > now) {
                     const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60));
-                    leftText = ' (剩余 ' + daysLeft + ' 天)';
+                    leftText = \` (剩余 \${daysLeft} 天)\`;
                 }
 
                 // 用户手动输入/扫码填入的 Cookie → 提示保存
                 if (!isMasked) {
-                    statusEl.innerHTML = '<span class="bili-status-icon">✅</span><span class="bili-status-text">' + uname + leftText + ' · 请点击保存按钮（Vercel等平台需重新部署后生效）</span>';
+                    statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${uname}\${leftText} · 请点击保存按钮（Vercel等平台需重新部署后生效）</span>\`;
                 } else {
                     // 脱敏显示时只展示当前已保存 Cookie 的状态
-                    statusEl.innerHTML = '<span class="bili-status-icon">✅</span><span class="bili-status-text">' + uname + leftText + '</span>';
+                    statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${uname}\${leftText}</span>\`;
                 }
             } else {
                 const err = result.data.error || 'Cookie无效或已失效';
-                statusEl.innerHTML = '<span class="bili-status-icon">❌</span><span class="bili-status-text">' + err + '，请重新扫码登录并保存</span>';
+                statusEl.innerHTML = \`<span class="bili-status-icon">❌</span><span class="bili-status-text">\${err}，请重新扫码登录并保存</span>\`;
             }
         } else {
             statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">检测失败</span>';
@@ -1463,6 +1463,6 @@ function showBilibiliCookieSaveHint(text) {
     if (!statusEl) return;
 
     const msg = text || '请点击保存按钮,Vercel等平台需重新部署后生效';
-    statusEl.innerHTML = '<span class="bili-status-icon">💾</span><span class="bili-status-text">' + msg + '</span>';
+    statusEl.innerHTML = \`<span class="bili-status-icon">💾</span><span class="bili-status-text">\${msg}</span>\`;
 }
 `;
