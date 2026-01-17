@@ -521,6 +521,16 @@ async function init() {
         // 获取真实日志数据
         fetchRealLogs();
         
+        // 初始化推送弹幕界面
+        if (typeof initPushDanmuInterface === 'function') {
+            initPushDanmuInterface();
+        }
+        
+        // 初始化接口调试界面
+        if (typeof initApiTestInterface === 'function') {
+            initApiTestInterface();
+        }
+        
     } catch (error) {
         console.error('初始化失败:', error);
         addLog('系统初始化失败: ' + error.message, 'error');

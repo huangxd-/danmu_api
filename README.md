@@ -449,7 +449,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | hanjutv  | hanjutv |
 | bahamut  | bahamut |
 | dandan   | dandan |
-| animeko   | [animeko](https://github.com/open-ani/animeko) |
+| animeko  | [animeko](https://github.com/open-ani/animeko) |
 | custom   | custom |
 
 ## 项目结构
