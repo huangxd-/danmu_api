@@ -561,7 +561,7 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值 *</label>
                 <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
-            \`; 
+            \`;
         } else {
             container.innerHTML = \`
                 <label>变量值 *</label>
