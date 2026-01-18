@@ -19,6 +19,19 @@ function setDefaultPushUrl(config) {
     }
 }
 
+// 初始化推送弹幕界面
+function initPushDanmuInterface() {
+    const searchKeywordInput = document.getElementById('push-search-keyword');
+    if (searchKeywordInput) {
+        // 添加回车键搜索事件监听
+        searchKeywordInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                searchAnimeForPush();
+            }
+        });
+    }
+}
+
 // 搜索动漫用于推送
 function searchAnimeForPush() {
     const keyword = document.getElementById('push-search-keyword').value.trim();

@@ -552,16 +552,27 @@ function renderValueInput(item) {
                 </div>
             \`;
             
-            // 自动检测 Cookie 状态
+            // 自动检测 Cookie 状态 + 监听输入变化（防抖）
             setTimeout(() => {
                 autoCheckBilibiliCookieStatus();
-            }, 100);
+
+                const inputEl = document.getElementById('text-value');
+                if (inputEl) {
+                    let debounceTimer = null;
+                    inputEl.addEventListener('input', () => {
+                        if (debounceTimer) clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(() => {
+                            autoCheckBilibiliCookieStatus();
+                        }, 600);
+                    });
+                }
+            }, 120);
         } else if (value && value.length > 50) {
             const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10);
             container.innerHTML = \`
                 <label>变量值 *</label>
                 <textarea id="text-value" placeholder="例如: localhost" rows="\${rows}" class="text-monospace">\${value}</textarea>
-            \`; 
+            \`;
         } else {
             container.innerHTML = \`
                 <label>变量值 *</label>
@@ -1370,8 +1381,8 @@ function fillBilibiliCookie(cookie) {
         textInput.style.borderColor = 'var(--success-color, #28a745)';
         setTimeout(() => {
             textInput.style.borderColor = '';
-            // 填入后不立即检测,提示用户保存
-            showBilibiliCookieSaveHint();
+            // 填入后触发检测一次（会提示用户保存）
+            autoCheckBilibiliCookieStatus();
         }, 2000);
     }
 }
@@ -1402,30 +1413,56 @@ async function autoCheckBilibiliCookieStatus() {
     }
     
     statusEl.innerHTML = '<span class="bili-status-icon">🔍</span><span class="bili-status-text">检测中...</span>';
-    
+
+    // 脱敏后的 *...* 无法直接校验，后端会自动改为校验“已保存”的 Cookie
+    const isMasked = /^[*]+$/.test(cookie);
+    const payload = isMasked ? {} : { cookie };
+
     try {
-        const response = await fetch(buildApiUrl('/api/cookie/status', true));
+        const response = await fetch(buildApiUrl('/api/cookie/verify', true), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
         const result = await response.json();
-        
-        if (result.success && result.data && result.data.isValid) {
-            const expiresAt = result.data.expiresAt;
-            const now = Math.floor(Date.now() / 1000);
-            const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60));
-            
-            statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${result.data.uname} (剩余 \${daysLeft} 天)</span>\`;
+
+        if (result && result.success && result.data) {
+            if (result.data.isValid) {
+                const uname = result.data.uname || '已登录';
+                const expiresAt = result.data.expiresAt;
+                const now = Math.floor(Date.now() / 1000);
+
+                let leftText = '';
+                if (typeof expiresAt === 'number' && expiresAt > now) {
+                    const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60));
+                    leftText = \` (剩余 \${daysLeft} 天)\`;
+                }
+
+                // 用户手动输入/扫码填入的 Cookie → 提示保存
+                if (!isMasked) {
+                    statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${uname}\${leftText} · 请点击保存按钮（Vercel等平台需重新部署后生效）</span>\`;
+                } else {
+                    // 脱敏显示时只展示当前已保存 Cookie 的状态
+                    statusEl.innerHTML = \`<span class="bili-status-icon">✅</span><span class="bili-status-text">\${uname}\${leftText}</span>\`;
+                }
+            } else {
+                const err = result.data.error || 'Cookie无效或已失效';
+                statusEl.innerHTML = \`<span class="bili-status-icon">❌</span><span class="bili-status-text">\${err}，请重新扫码登录并保存</span>\`;
+            }
         } else {
-            // 检测到无效时,提示用户保存并重新部署
-            showBilibiliCookieSaveHint();
+            statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">检测失败</span>';
         }
     } catch (error) {
         statusEl.innerHTML = '<span class="bili-status-icon">⚠️</span><span class="bili-status-text">检测失败</span>';
     }
 }
 // 显示 Bilibili Cookie 保存提示
-function showBilibiliCookieSaveHint() {
+function showBilibiliCookieSaveHint(text) {
     const statusEl = document.getElementById('bili-cookie-status');
     if (!statusEl) return;
-    
-    statusEl.innerHTML = '<span class="bili-status-icon">💾</span><span class="bili-status-text">请点击保存按钮,Vercel等平台需重新部署后生效</span>';
+
+    const msg = text || '请点击保存按钮,Vercel等平台需重新部署后生效';
+    statusEl.innerHTML = \`<span class="bili-status-icon">💾</span><span class="bili-status-text">\${msg}</span>\`;
 }
 `;
