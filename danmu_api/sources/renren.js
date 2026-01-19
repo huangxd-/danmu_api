@@ -23,27 +23,25 @@ export default class RenrenSource extends BaseSource {
 
   generateAppCommonHeaders(timestamp, sign, xCaSign = null) {
     const headers = {
-      'clientVersion': this.API_CONFIG.APP_VERSION,
-      'pkt': 'rrmj',
-      'p': 'Android',
+      'User-Agent': this.API_CONFIG.USER_AGENT,
       'deviceId': 'T2%2Bjh%2FnHhJkWEzPnQT2E0%2FEw865FTT0uL%2BiBwRa2ZdM%3D',
       'aliId': 'aUzmLtnZIYoDAA9KyLdcLQpM',
       'umId': '53e0f078fa8474ae7ba412f766989b54od',
-      'st': '4c1a2b5a87b8f63045d94156a5881c6a',
       'clientType': 'android_rrsp_xb_XiaoMi',
-      'wcode': '3',
       't': timestamp.toString(),
       'sign': sign,
-      'Connection': 'close',
-      'folding-screen': '1',
       'isAgree': '1',
-      'et': '2',
-      'oaid': 'a5bfd047b9aba489',
-      'User-Agent': this.API_CONFIG.USER_AGENT,
-      'uet': '1',
-      'ct': 'android_rrsp_xb_XiaoMi',
       'cv': this.API_CONFIG.APP_VERSION,
-      'Accept-Encoding': 'gzip'
+      'ct': 'android_rrsp_xb_XiaoMi',
+      'pkt': 'rrmj',
+      'p': 'Android',
+      'wcode': '3',
+      'et': '2',
+      'uet': '1',
+      'folding-screen': '1',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip',
+      'Connection': 'close'
     };
 
     if (xCaSign) {
@@ -327,10 +325,10 @@ export default class RenrenSource extends BaseSource {
     const searchSeason = parsedKeyword.season;
 
     let allResults = [];
-    
+
     // 优先使用 APP 接口搜索
     allResults = await this.searchAppContent(searchTitle);
-    
+
     // APP 接口失败时降级到网页接口
     if (allResults.length === 0) {
       log("info", "[Renren] APP 搜索无结果，降级到网页接口");
@@ -354,7 +352,7 @@ export default class RenrenSource extends BaseSource {
     if (resp) {
       return resp.data;
     }
-    
+
     // APP 接口失败时降级到网页接口
     log("info", "[Renren] APP 详情接口失败，降级到网页接口");
     const url = `https://api.rrmj.plus/m-station/drama/page`;
@@ -462,10 +460,10 @@ export default class RenrenSource extends BaseSource {
       "Origin": ClientProfile.origin,
       "Referer": ClientProfile.referer,
     };
-    
+
     const fallbackResp = await this.renrenHttpGet(url, { headers });
     if (!fallbackResp.data) return null;
-    
+
     const data = autoDecode(fallbackResp.data);
     if (Array.isArray(data)) return data;
     if (data?.data && Array.isArray(data.data)) return data.data;
