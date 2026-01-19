@@ -325,10 +325,10 @@ export default class RenrenSource extends BaseSource {
     const searchSeason = parsedKeyword.season;
 
     let allResults = [];
-
+    
     // 优先使用 APP 接口搜索
     allResults = await this.searchAppContent(searchTitle);
-
+    
     // APP 接口失败时降级到网页接口
     if (allResults.length === 0) {
       log("info", "[Renren] APP 搜索无结果，降级到网页接口");
@@ -352,7 +352,7 @@ export default class RenrenSource extends BaseSource {
     if (resp) {
       return resp.data;
     }
-
+    
     // APP 接口失败时降级到网页接口
     log("info", "[Renren] APP 详情接口失败，降级到网页接口");
     const url = `https://api.rrmj.plus/m-station/drama/page`;
@@ -460,10 +460,10 @@ export default class RenrenSource extends BaseSource {
       "Origin": ClientProfile.origin,
       "Referer": ClientProfile.referer,
     };
-
+    
     const fallbackResp = await this.renrenHttpGet(url, { headers });
     if (!fallbackResp.data) return null;
-
+    
     const data = autoDecode(fallbackResp.data);
     if (Array.isArray(data)) return data;
     if (data?.data && Array.isArray(data.data)) return data.data;
