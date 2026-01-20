@@ -416,20 +416,20 @@ function findEpisodeByNumber(filteredEpisodes, targetEpisode, platform = null) {
       return ep;
     }
   }
+
+  // 策略2：使用数组索引
+  if (platformEpisodes.length >= targetEpisode) {
+    const fallbackEp = platformEpisodes[targetEpisode - 1];
+    log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
+    return fallbackEp;
+  }
   
-  // 策略2：使用episodeNumber字段匹配
+  // 策略3：使用episodeNumber字段匹配
   for (const ep of platformEpisodes) {
     if (ep.episodeNumber && parseInt(ep.episodeNumber, 10) === targetEpisode) {
       log("info", `Found episode by episodeNumber: ${ep.episodeTitle} (episodeNumber: ${ep.episodeNumber})`);
       return ep;
     }
-  }
-  
-  // 策略3：回退到数组索引（仅当没有找到匹配时）
-  if (platformEpisodes.length >= targetEpisode) {
-    const fallbackEp = platformEpisodes[targetEpisode - 1];
-    log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
-    return fallbackEp;
   }
   
   return null;
