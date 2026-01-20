@@ -253,6 +253,28 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
+  await t.test('GET xigua danmu', async () => {
+    const res = await xiguaSource.getComments("https://www.le.com/ptv/vplay/1578861.html");
+    assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  });
+
+  // await t.test('GET xigua danmu segments', async () => {
+  //   const res = await xiguaSource.getComments("https://www.le.com/ptv/vplay/1578861.html", "xigua", true);
+  //   assert(res.type === "xigua", `Expected res.type === "xigua", but got ${res.type === "xigua"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET xigua segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'xigua',
+  //     segment_start: 1800,
+  //     segment_end: 2100,
+  //     url: 'https://hd-my.le.com/danmu/list?vid=1578861&start=1800&end=2100&callback=vjs_1768494351290',
+  //   });
+  //   const res = await xiguaSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
   // await t.test('GET other_server danmu', async () => {
   //   const res = await otherSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
