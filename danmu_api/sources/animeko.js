@@ -88,18 +88,44 @@ export default class AnimekoSource extends BaseSource {
   }
 
   /**
+   * 从文本中提取明确的季度数字
+   * @param {string} text 标题文本
+   * @returns {number|null} 季度数字，未找到返回 null
+   */
+  getExplicitSeasonNumber(text) {
+    if (!text) return null;
+    const cleanText = simplized(text);
+
+    // 1. 匹配阿拉伯数字 (S2, Season 2, 第2季)
+    // 排除 S01 或 第1季，因为通常第一季不带标号，需要特殊处理
+    const arabicMatch = cleanText.match(/(?:^|\s|\[|\(|（|【)(?:Season|S|第)\s*(\d+)(?:\s*季|期|部|Season|\]|\)|）|】)?/i);
+    if (arabicMatch && arabicMatch[1]) {
+      return parseInt(arabicMatch[1], 10);
+    }
+
+    // 2. 匹配中文数字 (第二季)
+    const cnNums = {'一':1, '二':2, '三':3, '四':4, '五':5, '六':6, '七':7, '八':8, '九':9, '十':10};
+    const cnMatch = cleanText.match(/第([一二三四五六七八九十]+)[季期部]/);
+    if (cnMatch && cnNums[cnMatch[1]]) {
+      return cnNums[cnMatch[1]];
+    }
+
+    return null;
+  }
+
+  /**
    * 过滤搜索结果
-   * 计算关键词与标题（含中文名、原名及别名）的相似度，剔除低相关度结果
+   * 包含基础相似度过滤和智能季度匹配逻辑
    * @param {Array} list 原始 API 返回结果列表
    * @param {string} keyword 用户搜索关键词
    * @returns {Array} 过滤后的结果列表
    */
   filterSearchResults(list, keyword) {
-    const threshold = 0.4; // 相似度阈值
+    const threshold = 0.6; // 相似度阈值
     const normalizedKeyword = simplized(keyword).toLowerCase().trim();
 
-    return list.filter(item => {
-      // 收集所有可能的标题用于比对
+    // 1. 基础相似度过滤 (获取所有潜在相关结果)
+    const candidates = list.filter(item => {
       const titles = new Set();
       if (item.name) titles.add(item.name);
       if (item.name_cn) titles.add(item.name_cn);
@@ -126,6 +152,41 @@ export default class AnimekoSource extends BaseSource {
 
       return maxScore >= threshold;
     });
+
+    if (candidates.length === 0) return [];
+
+    // 2. 智能季度匹配逻辑
+    // 尝试从关键词中提取目标季度
+    const targetSeason = this.getExplicitSeasonNumber(keyword);
+
+    // 规则1: 如果关键词包含明确的季度信息（且大于1，排除S1干扰），则执行严格匹配
+    if (targetSeason !== null && targetSeason > 1) {
+      log("info", `[Animeko] 检测到指定季度搜索: 第 ${targetSeason} 季`);
+
+      const strictMatches = candidates.filter(item => {
+        // 尝试从结果标题中提取季度，如果提取不到，默认为第 1 季
+        const seasonInName = this.getExplicitSeasonNumber(item.name);
+        const seasonInCn = this.getExplicitSeasonNumber(item.name_cn);
+        
+        // 只要任一标题匹配季度即可
+        // 注意：如果标题中没有季度标识（返回null），我们视为第1季
+        const itemSeason = (seasonInName !== null ? seasonInName : (seasonInCn !== null ? seasonInCn : 1));
+        
+        return itemSeason === targetSeason;
+      });
+
+      // 规则3: 如果有符合条件的结果，返回所有符合项
+      if (strictMatches.length > 0) {
+        return strictMatches;
+      }
+
+      // 规则2: 如果包含季度信息但找不到对应结果，返回最优选（第1个）
+      log("info", `[Animeko] 未找到第 ${targetSeason} 季对应条目，回退至最优结果`);
+      return [candidates[0]];
+    }
+
+    // 规则1(反向): 如果关键词不包含季度信息，走原原本本的逻辑 (返回所有高相似度结果)
+    return candidates;
   }
 
   /**

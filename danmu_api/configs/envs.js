@@ -140,28 +140,39 @@ export class Envs {
    * 解析源合并配置
    * 从环境变量 MERGE_SOURCE_PAIRS 获取配置
    * 支持使用分号或逗号分隔多组配置
-   * 格式示例: bilibili&animeko,animeko&dandan
-   * @returns {Array} 合并配置数组 [{primary: 'animeko', secondary: 'bilibili'}, ...]
+   * 支持一主多从配置，第一个为主源，后续为副源
+   * 格式示例: bilibili&animeko, dandan&animeko&bahamut
+   * @returns {Array} 合并配置数组 [{primary: 'dandan', secondaries: ['animeko', 'bahamut']}, ...]
    */
   static resolveMergeSourcePairs() {
     const config = this.get('MERGE_SOURCE_PAIRS', '', 'string');
     if (!config) return [];
     
-    // 使用正则同时支持分号(;)和逗号(,)作为分隔符
+    // 使用正则同时支持分号(;)和逗号(,)作为配置组的分隔符
     return config.split(/[,;]/)
-      .map(pair => {
+      .map(group => {
         // 过滤空字符串
-        if (!pair || !pair.includes('&')) return null;
+        if (!group || !group.includes('&')) return null;
         
-        const [primary, secondary] = pair.split('&').map(s => s.trim());
+        // 按 & 分割，第一个是主源，剩余的是副源列表
+        const parts = group.split('&').map(s => s.trim()).filter(s => s);
         
-        // 仅当两个源都在 MERGE_ALLOWED_SOURCES 允许列表中时才生效
-        if (primary && secondary && 
-            this.MERGE_ALLOWED_SOURCES.includes(primary) && 
-            this.MERGE_ALLOWED_SOURCES.includes(secondary)) {
-          return { primary, secondary };
-        }
-        return null;
+        if (parts.length < 2) return null;
+
+        const primary = parts[0];
+        const secondaries = parts.slice(1);
+
+        // 验证主源是否在允许列表中
+        if (!this.MERGE_ALLOWED_SOURCES.includes(primary)) return null;
+
+        // 过滤有效的副源，且排除主源本身（防止自我合并）
+        const validSecondaries = secondaries.filter(sec => 
+            sec !== primary && this.MERGE_ALLOWED_SOURCES.includes(sec)
+        );
+
+        if (validSecondaries.length === 0) return null;
+
+        return { primary, secondaries: validSecondaries };
       })
       .filter(Boolean);
   }
@@ -269,7 +280,7 @@ export class Envs {
       'VOD_REQUEST_TIMEOUT': { category: 'source', type: 'number', description: 'VOD请求超时时间，默认10000', min: 5000, max: 30000 },
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置，默认8', min: 1, max: 16 },
-	  'MERGE_SOURCE_PAIRS': { category: 'source', type: 'text', description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，格式：源字段&源字段，示例：dandan&animeko,dandan&bahamut,\n目前允许合并的源字段有：tencent,youku,iqiyi,imgo,bilibili,sohu,renren,hanjutv,bahamut,dandan,animeko' },
+	  'MERGE_SOURCE_PAIRS': { category: 'source', type: 'text', description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，支持多源链式合并，第一个为主源。\n格式：源1&源2&源3，多组用逗号分隔。\n示例：dandan&animeko&bahamut, bilibili&animeko\n目前允许的源：tencent,youku,iqiyi,imgo,bilibili,sohu,leshi,renren,hanjutv,bahamut,dandan,animeko' },
       
       // 匹配配置
       'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置' },

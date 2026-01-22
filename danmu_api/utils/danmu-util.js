@@ -6,9 +6,33 @@ import { jsonResponse, xmlResponse } from "./http-util.js";
 // danmu处理相关函数
 // =====================
 
+/**
+ * 对弹幕进行分组、去重和计数处理
+ * @param {Array} filteredDanmus 已过滤屏蔽词的弹幕列表
+ * @param {number} n 分组时间间隔（分钟），0表示不分组（除非多源合并强制去重）
+ * @returns {Array} 处理后的弹幕列表
+ */
 export function groupDanmusByMinute(filteredDanmus, n) {
-  // 如果 n 为 0，直接返回原始数据
-  if (n === 0) {
+  // 解析弹幕来源标签以确定合并源数量，用于智能去重
+  // 检查第一条弹幕的 p 属性结尾的 [source] 标签
+  let sourceCount = 1;
+  if (filteredDanmus.length > 0 && filteredDanmus[0].p) {
+    const pStr = filteredDanmus[0].p;
+    const match = pStr.match(/\[([^\]]*)\]$/);
+    if (match && match[1]) {
+      // 支持半角 '&' 和全角 '＆' 分隔符
+      sourceCount = match[1].split(/[&＆]/).length;
+    }
+  }
+
+  // 如果检测到多源合并，输出日志提示
+  if (sourceCount > 1) {
+    log("info", `[Smart Deduplication] Detected multi-source merged danmaku (${sourceCount} sources). Applying smart count adjustment.`);
+  }
+
+  // 特殊逻辑：如果未开启分组(n=0)且为单源，直接返回原始数据
+  // 若为多源，即使n=0也强制执行精确时间点去重，以消除源之间的重复数据
+  if (n === 0 && sourceCount === 1) {
     return filteredDanmus.map(danmu => ({
       ...danmu,
       t: danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0])
@@ -16,29 +40,30 @@ export function groupDanmusByMinute(filteredDanmus, n) {
   }
 
   // 按 n 分钟分组
-  const groupedByMinute = filteredDanmus.reduce((acc, danmu) => {
+  const groupedByTime = filteredDanmus.reduce((acc, danmu) => {
     // 获取时间：优先使用 t 字段，如果没有则使用 p 的第一个值
     const time = danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0]);
-    // 计算分组（每 n 分钟一组，向下取整）
-    const group = Math.floor(time / (n * 60));
+    
+    // 确定分组键：n=0时使用精确时间(保留2位小数)，否则使用分钟索引
+    const groupKey = n === 0 ? time.toFixed(2) : Math.floor(time / (n * 60));
 
     // 初始化分组
-    if (!acc[group]) {
-      acc[group] = [];
+    if (!acc[groupKey]) {
+      acc[groupKey] = [];
     }
 
     // 添加到对应分组
-    acc[group].push({ ...danmu, t: time });
+    acc[groupKey].push({ ...danmu, t: time });
     return acc;
   }, {});
 
   // 处理每组的弹幕
-  const result = Object.keys(groupedByMinute).map(group => {
-    const danmus = groupedByMinute[group];
+  const result = Object.keys(groupedByTime).map(key => {
+    const danmus = groupedByTime[key];
 
     // 按消息内容分组
     const groupedByMessage = danmus.reduce((acc, danmu) => {
-      const message = danmu.m.split(' X')[0]; // 提取原始消息（去除 Xn 后缀）
+      const message = danmu.m.split(' X')[0].trim(); // 提取原始消息（去除 Xn 后缀）
       if (!acc[message]) {
         acc[message] = {
           count: 0,
@@ -56,10 +81,17 @@ export function groupDanmusByMinute(filteredDanmus, n) {
     // 转换为结果格式
     return Object.keys(groupedByMessage).map(message => {
       const data = groupedByMessage[message];
+      
+      // 计算显示计数：总次数除以源数量，四舍五入
+      // 过滤因多源合并产生的自然重复
+      let displayCount = Math.round(data.count / sourceCount);
+      if (displayCount < 1) displayCount = 1;
+
       return {
         cid: data.cid,
         p: data.p,
-        m: data.count > 1 ? `${message} x ${data.count}` : message,
+        // 仅当计算后的逻辑计数大于1时才显示 "x N"
+        m: displayCount > 1 ? `${message} x ${displayCount}` : message,
         t: data.earliestT
       };
     });
