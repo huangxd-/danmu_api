@@ -352,11 +352,7 @@ function createServer() {
         }
       }
       // 发送最终数据
-      res.end(buffer);
-
-
-
-      
+      res.end(buffer);      
     } catch (error) {
       console.error('Server error:', error);
       res.statusCode = 500;
