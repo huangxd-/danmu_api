@@ -333,9 +333,30 @@ function createServer() {
       webResponse.headers.forEach((value, key) => {
         res.setHeader(key, value);
       });
-      // 发送响应体
-      const responseText = await webResponse.text();
-      res.end(responseText);
+      // GZIP 出口压缩：仅针对 XML/JSON 等文本内容且体积 > 1KB 时开启
+      const acceptEncoding = req.headers['accept-encoding'] || '';
+      const contentType = webResponse.headers.get('content-type') || '';
+
+      const responseData = await webResponse.arrayBuffer();
+      let buffer = Buffer.from(responseData);
+
+      if (acceptEncoding.includes('gzip') && buffer.length > 1024 &&
+        (contentType.includes('xml') || contentType.includes('json') || contentType.includes('text'))) {
+        try {
+          const compressed = zlib.gzipSync(buffer);
+          res.setHeader('Content-Encoding', 'gzip');
+          res.setHeader('Content-Length', compressed.length);
+          buffer = compressed;
+        } catch (e) {
+          console.error('[GZIP] Compression failed:', e.message);
+        }
+      }
+      // 发送最终数据
+      res.end(buffer);
+
+
+
+      
     } catch (error) {
       console.error('Server error:', error);
       res.statusCode = 500;
