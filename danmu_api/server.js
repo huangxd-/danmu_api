@@ -13,6 +13,9 @@ const configDir = path.join(__dirname, '..', 'config');
 const configExampleDir = path.join(__dirname, '..', 'config_example');
 const envPath = path.join(configDir, '.env');
 
+//引入 zlib 模块，用于响应数据的 GZIP 压缩
+const zlib = require('zlib');
+
 // 在启动时检查并复制配置文件
 checkAndCopyConfigFiles();
 
@@ -329,13 +332,42 @@ function createServer() {
 
       // 将 Web API Response 对象转换为 Node.js 响应
       res.statusCode = webResponse.status;
-      // 设置响应头
-      webResponse.headers.forEach((value, key) => {
-        res.setHeader(key, value);
-      });
-      // 发送响应体
-      const responseText = await webResponse.text();
-      res.end(responseText);
+      // 净化 Header：透传上游头信息，但强制移除传输相关字段 (Encoding/Length)
+            // (防止 Node.js 自动解压后，Header 仍残留 Gzip 标识导致客户端解析乱码)
+            webResponse.headers.forEach((value, key) => {
+                const lowerKey = key.toLowerCase();
+                if (lowerKey === 'content-encoding' || lowerKey === 'content-length') return;
+                res.setHeader(key, value);
+            });
+
+            // [优化] GZIP 出口压缩策略
+            // 触发条件：客户端支持 + 文本类型(XML/JSON) + 体积 > 1KB
+            // 目的：在节省流量与 CPU 开销之间取得平衡，避免负优化小文件
+            const acceptEncoding = req.headers['accept-encoding'] || '';
+            const contentType = webResponse.headers.get('content-type') || '';
+
+            const responseData = await webResponse.arrayBuffer();
+            let buffer = Buffer.from(responseData);
+
+            if (acceptEncoding.includes('gzip') && buffer.length > 1024 &&
+                (contentType.includes('xml') || contentType.includes('json') || contentType.includes('text'))) {
+                try {
+                    const compressed = zlib.gzipSync(buffer);
+                    res.setHeader('Content-Encoding', 'gzip');
+                    res.setHeader('Content-Length', compressed.length); // 更新为压缩后的大小
+                    buffer = compressed;
+                } catch (error) {
+                    console.error('[GZIP] Compression failed, falling back to raw:', error.message);
+                }
+            }
+
+            //  兜底处理：如果最终未压缩，必须补发原始数据的 Content-Length
+            if (!res.hasHeader('Content-Length')) {
+                res.setHeader('Content-Length', buffer.length);
+            }
+
+            // 发送响应数据
+            res.end(buffer);
     } catch (error) {
       console.error('Server error:', error);
       res.statusCode = 500;
