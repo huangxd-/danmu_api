@@ -5,9 +5,8 @@ import { httpGet, buildQueryString } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
-import { searchDoubanTitles } from '../utils/douban-util.js';
 
 // =====================
 // 获取西瓜视频弹幕
@@ -167,7 +166,8 @@ class XiguaSource extends BaseSource {
     try {
       // https://www.douyin.com/lvdetail/6551333775337325060
       // https://m.ixigua.com/video/6551333775337325060
-      const detailQueryString = buildQueryString({...XiguaSource.DEFAULT_PARAMS, episode_id: '6551333775446376974'});
+      const albumId = id.split('/').pop();
+      const detailQueryString = buildQueryString({...XiguaSource.DEFAULT_PARAMS, episode_id: albumId});
       const detailUrl = `https://www.douyin.com/aweme/v1/web/long/video/detail/?${detailQueryString}`;
       
       const resp = await httpGet(detailUrl, {
@@ -185,10 +185,6 @@ class XiguaSource extends BaseSource {
         log("info", "getXiguaDetail: aweme_detail 不存在");
         return [];
       }
-
-      // 正常情况下输出 JSON 字符串
-      log("info", `getXiguaDetail: ${JSON.stringify(resp.data.aweme_detail)}`);
-      console.log(resp.data?.aweme_detail?.aweme_id);
 
       return resp.data.aweme_detail;
     } catch (error) {
@@ -216,10 +212,7 @@ class XiguaSource extends BaseSource {
       //   headers: XiguaSource.DEFAULT_HEADERS
       // });
 
-      // console.log(metaResp.data);
-
       const detailUrl = `https://m.ixigua.com/video/${id}`;
-      console.log(detailUrl);
 
       const detailResp = await httpGet(detailUrl, {
         headers: {
@@ -330,82 +323,130 @@ class XiguaSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    let allDanmus = [];
-    let fromAxis = 0;
-    const maxAxis = 100000000;
-
-    try {
-      while (fromAxis < maxAxis) {
-        const resp = await httpGet(`https://hxqapi.zmdcq.com/api/danmu/playItem/list?fromAxis=${fromAxis}&pid=${id}&toAxis=${maxAxis}`, {
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-          retries: 1,
-        });
-
-        // 将当前请求的 episodes 拼接到总数组
-        if (resp.data && resp.data.danmus) {
-          allDanmus = allDanmus.concat(resp.data.danmus);
-        }
-
-        // 获取 nextAxis，更新 fromAxis
-        const nextAxis = resp.data.nextAxis || maxAxis;
-        if (nextAxis >= maxAxis) {
-          break; // 如果 nextAxis 达到或超过最大值，退出循环
-        }
-        fromAxis = nextAxis;
-      }
-
-      return allDanmus;
-    } catch (error) {
-      // 捕获请求中的错误
-      log("error", "fetchHanjutvEpisodeDanmu error:", {
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
-      });
-      return allDanmus; // 返回已收集的 episodes
+    log("info", "开始从本地请求西瓜视频弹幕...", id);
+    
+    // 获取弹幕分段数据
+    const segmentResult = await this.getEpisodeDanmuSegments(id);
+    if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
+      return [];
     }
+
+    const segmentList = segmentResult.segmentList;
+    log("info", `弹幕分段数量: ${segmentList.length}`);
+
+    // 并发请求所有弹幕段，限制并发数量为50
+    const MAX_CONCURRENT = 100;
+    const allComments = [];
+    
+    // 将segmentList分批处理，每批最多MAX_CONCURRENT个请求
+    for (let i = 0; i < segmentList.length; i += MAX_CONCURRENT) {
+      const batch = segmentList.slice(i, i + MAX_CONCURRENT);
+      
+      // 并发处理当前批次的请求
+      const batchPromises = batch.map(segment => this.getEpisodeSegmentDanmu(segment));
+      const batchResults = await Promise.allSettled(batchPromises);
+      
+      // 处理结果
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        const segment = batch[j];
+        const start = segment.segment_start;
+        const end = segment.segment_end;
+        
+        if (result.status === 'fulfilled') {
+          const comments = result.value;
+          
+          if (comments && comments.length > 0) {
+            allComments.push(...comments);
+          }
+        } else {
+          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+        }
+      }
+      
+      // 批次之间稍作延迟，避免过于频繁的请求
+      if (i + MAX_CONCURRENT < segmentList.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    if (allComments.length === 0) {
+      log("info", `西瓜视频: 该视频暂无弹幕数据 (vid=${id})`);
+      return [];
+    }
+
+    printFirst200Chars(allComments);
+
+    return allComments;
   }
 
   async getEpisodeDanmuSegments(id) {
     log("info", "获取西瓜视频弹幕分段列表...", id);
 
+    const awemeDetail = await this.getDetail(id);
+    const awemeId = awemeDetail?.aweme_id;
+    const duration = awemeDetail?.duration;
+    log("info", "awemeId:", awemeId);
+    log("info", "duration:", duration);
+
+    const segmentDuration = 32000; // 每个分片32秒
+    const segmentList = [];
+
+    for (let i = 0; i < duration; i += segmentDuration) {
+      const segmentStart = i; // 转换为毫秒
+      const segmentEnd = Math.min(i + segmentDuration, duration); // 不超过总时长
+      
+      segmentList.push({
+        "type": "xigua",
+        "segment_start": segmentStart,
+        "segment_end": segmentEnd,
+        "url": awemeId
+      });
+    }
+
     return new SegmentListResponse({
-      "type": "hanjutv",
-      "segmentList": [{
-        "type": "hanjutv",
-        "segment_start": 0,
-        "segment_end": 30000,
-        "url": id
-      }]
+      "type": "xigua",
+      "segmentList": segmentList
     });
   }
 
   async getEpisodeSegmentDanmu(segment) {
-    const danmuQueryString = buildQueryString({
-      ...XiguaSource.DEFAULT_PARAMS, 
-      group_id: "7129808463454113054", 
-      item_id: "7129808463454113054",
-      start_time: 32000,
-    });
-    const danmuUrl = `https://www.douyin.com/aweme/v1/web/danmaku/get_v2/?${danmuQueryString}`;
-    
-    const danmunResp = await httpGet(danmuUrl, {
-      headers: XiguaSource.DEFAULT_HEADERS
-    });
+    try {
+      const danmuQueryString = buildQueryString({
+        ...XiguaSource.DEFAULT_PARAMS, 
+        group_id: segment.url, 
+        item_id: segment.url,
+        start_time: segment.segment_start,
+      });
 
-    console.log(danmunResp.data);
-    return danmunResp.data;
+      const danmuUrl = `https://www.douyin.com/aweme/v1/web/danmaku/get_v2/?${danmuQueryString}`;
+
+      const response = await httpGet(danmuUrl, {
+        headers: XiguaSource.DEFAULT_HEADERS,
+        retries: 1,
+      });
+
+      // 处理响应数据并返回 contents 格式的弹幕
+      let contents = [];
+      if (response && response.data) {
+        const parsedData = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+        const danmakuList = parsedData.danmaku_list ?? [];
+        contents.push(...danmakuList);
+      }
+
+      return contents;
+    } catch (error) {
+      log("error", "请求分片弹幕失败:", error);
+      return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
+    }
   }
 
   formatComments(comments) {
     return comments.map(c => ({
-      cid: Number(c.did),
-      p: `${(c.t / 1000).toFixed(2)},${c.tp === 2 ? 5 : c.tp},${Number(c.sc)},[hanjutv]`,
-      m: c.con,
-      t: Math.round(c.t / 1000)
+      cid: Number(c.danmaku_id),
+      p: `${(c.offset_time / 1000).toFixed(2)},1,16777215,[xigua]`,
+      m: c.text,
+      t: Math.round(c.offset_time / 1000)
     }));
   }
 
