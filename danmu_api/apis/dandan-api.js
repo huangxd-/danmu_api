@@ -27,6 +27,7 @@ import BilibiliSource from "../sources/bilibili.js";
 import YoukuSource from "../sources/youku.js";
 import SohuSource from "../sources/sohu.js";
 import LeshiSource from "../sources/leshi.js";
+import XiguaSource from "../sources/xigua.js";
 import AnimekoSource from "../sources/animeko.js";
 import OtherSource from "../sources/other.js";
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
@@ -49,6 +50,7 @@ const mangoSource = new MangoSource();
 const bilibiliSource = new BilibiliSource();
 const sohuSource = new SohuSource();
 const leshiSource = new LeshiSource();
+const xiguaSource = new XiguaSource();
 const animekoSource = new AnimekoSource();
 const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
@@ -204,6 +206,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       if (source === "bilibili") return bilibiliSource.search(queryTitle);
       if (source === "sohu") return sohuSource.search(queryTitle);
       if (source === "leshi") return leshiSource.search(queryTitle);
+      if (source === "xigua") return xiguaSource.search(queryTitle);
       if (source === "animeko") return animekoSource.search(queryTitle);
     });
 
@@ -223,7 +226,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       vod: animesVodResults, 360: animes360, tmdb: animesTmdb, douban: animesDouban, renren: animesRenren,
       hanjutv: animesHanjutv, bahamut: animesBahamut, dandan: animesDandan, custom: animesCustom, 
       tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili,
-      sohu: animesSohu, leshi: animesLeshi, animeko: animesAnimeko
+      sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, animeko: animesAnimeko
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -282,6 +285,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       } else if (key === 'leshi') {
         // 等待处理Leshi来源
         await leshiSource.handleAnimes(animesLeshi, queryTitle, curAnimes);
+      } else if (key === 'xigua') {
+        // 等待处理Xigua来源
+        await xiguaSource.handleAnimes(animesXigua, queryTitle, curAnimes);
       } else if (key === 'animeko') {
         // 等待处理Animeko来源
         await animekoSource.handleAnimes(animesAnimeko, queryTitle, curAnimes);
@@ -996,6 +1002,7 @@ async function fetchMergedComments(url) {
         else if (sourceName === 'bilibili') sourceInstance = bilibiliSource;
         else if (sourceName === 'sohu') sourceInstance = sohuSource;
         else if (sourceName === 'leshi') sourceInstance = leshiSource;
+        else if (sourceName === 'xigua') sourceInstance = xiguaSource;
         else if (sourceName === 'animeko') sourceInstance = animekoSource;
         // 如有新增允许的源合并，在此处添加
 
@@ -1088,6 +1095,8 @@ export async function getComment(path, queryFormat, segmentFlag) {
       danmus = await sohuSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.le.com')) {
       danmus = await leshiSource.getComments(url, plat, segmentFlag);
+    } else if (url.includes('.douyin.com') || url.includes('.ixigua.com')) {
+      danmus = await xiguaSource.getComments(url, plat, segmentFlag);
     }
 
     // 请求其他平台弹幕
@@ -1199,6 +1208,8 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
       danmus = await sohuSource.getComments(url, "sohu", segmentFlag);
     } else if (url.includes('.le.com')) {
       danmus = await leshiSource.getComments(url, "leshi", segmentFlag);
+    } else if (url.includes('.douyin.com') || url.includes('.ixigua.com')) {
+      danmus = await xiguaSource.getComments(url, "xigua", segmentFlag);
     } else {
       // 如果不是已知平台，尝试第三方弹幕服务器
       const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
@@ -1282,6 +1293,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await sohuSource.getSegmentComments(segment);
     } else if (platform === "leshi") {
       danmus = await leshiSource.getSegmentComments(segment);
+    } else if (platform === "xigua") {
+      danmus = await xiguaSource.getSegmentComments(segment);
     } else if (platform === "hanjutv") {
       danmus = await hanjutvSource.getSegmentComments(segment);
     } else if (platform === "bahamut") {
