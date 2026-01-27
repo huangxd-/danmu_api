@@ -280,7 +280,7 @@ export class Envs {
       'VOD_REQUEST_TIMEOUT': { category: 'source', type: 'number', description: 'VOD请求超时时间，默认10000', min: 5000, max: 30000 },
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置，默认8', min: 1, max: 16 },
-	  'MERGE_SOURCE_PAIRS': { category: 'source', type: 'text', description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，支持多源链式合并，第一个为主源。\n格式：源1&源2&源3，多组用逗号分隔。\n示例：dandan&animeko&bahamut, bilibili&animeko\n目前允许的源：tencent,youku,iqiyi,imgo,bilibili,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko' },
+	    'MERGE_SOURCE_PAIRS': { category: 'source', type: 'text', description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，支持多源链式合并，第一个为主源。\n格式：源1&源2&源3，多组用逗号分隔。\n示例：dandan&animeko&bahamut, bilibili&animeko\n目前允许的源：tencent,youku,iqiyi,imgo,bilibili,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko' },
       
       // 匹配配置
       'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置' },
@@ -294,7 +294,8 @@ export class Envs {
       'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表' },
       'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0表示不去重），默认1', min: 0, max: 30 },
       'DANMU_LIMIT': { category: 'danmu', type: 'number', description: '弹幕数量限制，单位为k，即千：默认 0，表示不限制弹幕数', min: 0, max: 100 },
-      'DANMU_SIMPLIFIED': { category: 'danmu', type: 'boolean', description: '弹幕繁体转简体开关' },
+      'DANMU_SIMPLIFIED': { category: 'danmu', type: 'boolean', description: '弹幕繁体转简体开关，优先级：DANMU_SIMPLIFIED < DANMU_TRADITIONAL，默认值为true' },
+      'DANMU_TRADITIONAL': { category: 'danmu', type: 'boolean', description: '弹幕简体转繁体开关，优先级：DANMU_TRADITIONAL > DANMU_SIMPLIFIED，默认值为false' },
       'CONVERT_TOP_BOTTOM_TO_SCROLL': { category: 'danmu', type: 'boolean', description: '顶部/底部弹幕转换为浮动弹幕' },
       'CONVERT_COLOR': { category: 'danmu', type: 'select', options: ['default', 'white', 'color'], description: '弹幕转换颜色配置' },
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
@@ -331,14 +332,15 @@ export class Envs {
       vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
-	  mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
+	    mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
       platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
       episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
-      danmuSimplified: this.get('DANMU_SIMPLIFIED', true, 'boolean'), // 弹幕繁体转简体开关
+      danmuSimplified: this.get('DANMU_SIMPLIFIED', true, 'boolean'), // 弹幕繁体转简体开关，优先级：DANMU_SIMPLIFIED < DANMU_TRADITIONAL，默认值为true
+      danmuTraditional: this.get('DANMU_TRADITIONAL', false, 'boolean'), // 弹幕简体转繁体开关，优先级：DANMU_TRADITIONAL > DANMU_SIMPLIFIED，默认值为false
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url

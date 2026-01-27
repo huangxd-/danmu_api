@@ -231,6 +231,7 @@ async function testNewFlow() {
       groupMinute: 1,
       danmuLimit: 0,
       danmuSimplified: false,
+      danmuTraditional: false,
       convertTopBottomToScroll: false,
       convertColor: 'default',
       proxyUrl: '',
