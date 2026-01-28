@@ -822,8 +822,8 @@ export default class BilibiliSource extends BaseSource {
 
   formatComments(comments) {
     // 弹幕繁体转简体
-    if (globals.danmuSimplified) {
-        return comments.map(c => { 
+    if (globals.danmuSimplifiedTraditional === 'simplified') {
+        return comments.map(c => {
             if (c.m) c.m = simplized(c.m); 
             return c; 
         });

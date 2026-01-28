@@ -301,8 +301,8 @@ export function convertToDanmakuJson(contents, platform) {
     }
   }
 
-  // 在最后一步转换弹幕文本为繁体字
-  if (globals.danmuTraditional) {
+  // 根据 danmuSimplifiedTraditional 设置转换弹幕文本
+  if (globals.danmuSimplifiedTraditional === 'traditional') {
     convertedDanmus = convertedDanmus.map(danmu => ({
       ...danmu,
       m: traditionalized(danmu.m)

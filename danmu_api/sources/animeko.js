@@ -526,7 +526,7 @@ export default class AnimekoSource extends BaseSource {
         const time = (Number(info.playTime) / 1000).toFixed(2);
         const mode = locationMap[info.location] || 1;
         const color = info.color === -1 ? 16777215 : info.color;
-        const text = globals.danmuSimplified ? simplized(info.text) : info.text;
+        const text = globals.danmuSimplifiedTraditional === 'simplified' ? simplized(info.text) : info.text;
 
         return {
           cid: item.id,
