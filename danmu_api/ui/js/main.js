@@ -577,6 +577,25 @@ function copyApiEndpoint() {
     }
 }
 
+function escapeHtml(text) {
+    // 如果是 null 或 undefined，返回空字符串
+    if (text === null || text === undefined) {
+        return '';
+    }
+    
+    // 将非字符串值转换为字符串
+    const str = String(text);
+    
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return str.replace(/[&<>"']/g, m => map[m]);
+}
+
 
 // 页面加载完成后初始化
 init();

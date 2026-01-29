@@ -1023,11 +1023,13 @@ function renderEnvList() {
                          item.type === 'multi-select' ? '多选' : '文本';
         const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
+        const escapedValue = escapeHtml(item.value);
+
         return \`
             <div class="env-item">
                 <div class="env-info">
                     <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
-                    <div class="text-dark-gray">\${item.value}</div>
+                    <div class="text-dark-gray">\${escapedValue}</div>
                     <div class="text-gray font-size-12 margin-top-3">\${item.description || '无描述'}</div>
                 </div>
                 <div class="env-actions">
