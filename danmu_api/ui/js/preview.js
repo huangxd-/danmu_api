@@ -38,8 +38,6 @@ function renderPreview() {
                     html += \`<h3 class="text-purple margin-bottom-10">\${getCategoryName(category)}</h3>\`;
                     items.forEach(item => {
                         const escapedValue = escapeHtml(item.value);
-                        console.log(item.value);
-                        console.log(escapedValue);
                         html += \`
                             <div class="preview-item">
                                 <div class="preview-item-content">
