@@ -203,7 +203,7 @@ LogVar 弹幕 API 服务器
    ```yaml
    services:
      watchtower:
-       image: containrrr/watchtower
+       image: nickfedor/watchtower
        container_name: watchtower-gx
        restart: always
        volumes:
