@@ -269,9 +269,9 @@ test('worker.js API endpoints', async (t) => {
   // await t.test('GET xigua segment danmu', async () => {
   //   const segment = Segment.fromJson({
   //     type: 'xigua',
-  //     segment_start: 64000,
-  //     segment_end: 96000,
-  //     url: '7129807005509815588'
+  //     segment_start: 1200000,
+  //     segment_end: 1500000,
+  //     url: 'https://ib.snssdk.com/vapp/danmaku/list/v1/?item_id=6551333775341519368&start_time=1200000&end_time=1500000&format=json'
   //   });
   //   const res = await xiguaSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);

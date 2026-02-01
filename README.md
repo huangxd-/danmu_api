@@ -583,7 +583,6 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - 弹幕分片下载请求已加入重试机制，重试次数为1次
 - 如果同时配置了本地缓存和redis缓存，则以redis缓存优先
 - 弹弹play源用的是第三方接口，感谢开源项目 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere)
-- 西瓜视频源因为部分调用了douyin接口，所以在国外环境部署的情况下会获取不到弹幕
 - 有任何问题，如部署/环境变量配置等，可通过deepwiki对本项目进行提问，链接入口：https://deepwiki.com/huangxd-/danmu_api，其中项目内容一般每周刷新一次
 
 ### 关联项目
