@@ -5,7 +5,7 @@ import { httpGet } from "../utils/http-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
-import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
+import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
 import { strictTitleMatch, normalizeSpaces } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
@@ -80,13 +80,17 @@ export default class BahamutSource extends BaseSource {
           // 延迟100毫秒，避免与原始搜索争抢同一连接池
           await new Promise(resolve => setTimeout(resolve, 100));
           
-          // 如果类型不符合会返回null,自然跳过后续搜索
-          const tmdbTitle = await getTmdbJaOriginalTitle(tmdbSearchKeyword, tmdbAbortController.signal, "Bahamut");
+          // 获取 TMDB 日语原名及中文别名 (解构返回值)
+          const tmdbResult = await getTmdbJaOriginalTitle(tmdbSearchKeyword, tmdbAbortController.signal, "Bahamut");
 
-          if (!tmdbTitle) {
+          // 如果没有结果或者没有标题，则停止
+          if (!tmdbResult || !tmdbResult.title) {
             log("info", "[Bahamut] TMDB转换未返回结果，取消日语原名搜索");
             return { success: false, source: 'tmdb' };
           }
+
+          // 解构出日语原名和中文别名
+          const { title: tmdbTitle, cnAlias } = tmdbResult;
 
           log("info", `[Bahamut] 使用日语原名进行搜索: ${tmdbTitle}`);
           const encodedTmdbTitle = encodeURIComponent(tmdbTitle);
@@ -107,6 +111,7 @@ export default class BahamutSource extends BaseSource {
               try {
                 a._originalQuery = keyword;
                 a._searchUsedTitle = tmdbTitle;
+                a._tmdbCnAlias = cnAlias;
               } catch (e) {}
             }
             log("info", `bahamutSearchresp (TMDB): ${JSON.stringify(anime)}`);
@@ -276,6 +281,10 @@ export default class BahamutSource extends BaseSource {
       return bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle);
     });
 
+    // 应用tmdb智能标题替换
+    const cnAlias = filtered.length > 0 ? filtered[0]._tmdbCnAlias : null;
+    smartTitleReplace(filtered, cnAlias);
+
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processBahamutAnimes = await Promise.all(filtered.map(async (anime) => {
       try {
@@ -304,10 +313,14 @@ export default class BahamutSource extends BaseSource {
 
         if (links.length > 0) {
           let yearMatch = (anime.info || "").match(/(\d{4})/);
+          
+          // 优先使用tmdb智能标题替换的标题，否则简转繁处理原标题
+          const displayTitle = anime._displayTitle || simplized(anime.title);
+
           let transformedAnime = {
             animeId: anime.video_sn,
             bangumiId: String(anime.video_sn),
-            animeTitle: `${simplized(anime.title)}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
+            animeTitle: `${displayTitle}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
             type: "动漫",
             typeDescription: "动漫",
             imageUrl: anime.cover,
@@ -389,8 +402,8 @@ export default class BahamutSource extends BaseSource {
     return comments.map(c => ({
       cid: Number(c.sn),
       p: `${Math.round(c.time / 10).toFixed(2)},${positionToMode[c.position] || c.tp},${parseInt(c.color.slice(1), 16)},[bahamut]`,
-      // 根据 globals.danmuSimplified 控制是否繁转简
-      m: globals.danmuSimplified ? simplized(c.text) : c.text,
+      // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
+      m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.text) : c.text,
       t: Math.round(c.time / 10)
     }));
   }

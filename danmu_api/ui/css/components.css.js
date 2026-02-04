@@ -712,6 +712,7 @@ export const componentsCssContent = /* css */ `
     display: inline-block;
     margin-left: 10px;
 }
+
 /* Bilibili Cookie 编辑器样式 */
 .bili-cookie-editor {
     display: flex;
@@ -757,5 +758,186 @@ export const componentsCssContent = /* css */ `
     .bili-cookie-actions .btn {
         width: 100%;
     }
+}
+
+/* 多选标签与合并模式相关样式 */
+.selected-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #667eea;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    cursor: move;
+    user-select: none;
+    transition: all 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    
+    max-width: 100%;
+    height: auto;
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.4;
+}
+
+.merge-mode-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.merge-mode-btn {
+    padding: 6px 12px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.3s;
+    color: #666;
+}
+
+.merge-mode-btn.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+    color: #2196f3;
+    font-weight: 500;
+}
+
+.staging-area {
+    display: none;
+    background: #e3f2fd;
+    border: 2px dashed #90caf9;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-height: 52px;
+    position: relative;
+    transition: all 0.3s;
+}
+
+.staging-area.active {
+    display: flex;
+    animation: slideDown 0.3s;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.staging-area::before {
+    content: '合并组暂存区:';
+    color: #1976d2;
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.staging-tag {
+    background: white;
+    color: #1976d2;
+    border: 1px solid #bbdefb;
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: move; 
+    user-select: none;
+    max-width: 100%;
+    word-break: break-all;
+}
+
+.staging-tag.drag-over {
+    background: #bbdefb;
+    border-color: #2196f3;
+    transform: scale(1.05);
+}
+
+.staging-tag.dragging {
+    opacity: 0.5;
+    transform: scale(0.95);
+    background: #e3f2fd;
+}
+
+.staging-tag .remove-btn {
+    color: #ef5350;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.staging-separator {
+    color: #999;
+    font-weight: bold;
+}
+
+.confirm-merge-btn {
+    margin-left: auto;
+    background: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transition: all 0.2s;
+}
+
+.confirm-merge-btn:hover {
+    background: #43a047;
+    transform: scale(1.1);
+}
+
+.confirm-merge-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.available-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.available-tag {
+    padding: 6px 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.available-tag:hover {
+    background: #f0f0f0;
+    border-color: #bbb;
+}
+
+.available-tag.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #f5f5f5;
+    color: #aaa;
+    pointer-events: none;
+    border-color: #eee;
+    box-shadow: none;
 }
 `;

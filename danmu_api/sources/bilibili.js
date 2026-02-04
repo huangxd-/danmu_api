@@ -8,7 +8,7 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { simplized } from "../utils/zh-util.js";
-import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
+import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
 
 // =====================
 // 获取b站弹幕
@@ -205,10 +205,20 @@ export default class BilibiliSource extends BaseSource {
           .replace(/:/g, '：')
           .trim();
 
+		// 清洗原标题
+        const cleanedOrgTitle = (item.org_title || "")
+          .replace(/<[^>]+>/g, '')
+          .replace(/&[^;]+;/g, match => {
+            const entities = { '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#39;': "'" };
+            return entities[match] || match;
+          })
+          .trim();
+
         const resultItem = {
           provider: "bilibili",
           mediaId,
           title: cleanedTitle,
+		  org_title: cleanedOrgTitle,
           type: mediaType,
           year,
           imageUrl: item.cover || null,
@@ -424,9 +434,13 @@ export default class BilibiliSource extends BaseSource {
       return [];
     }
 
+    // 应用tmdb智能标题替换
+    const cnAlias = sourceAnimes.length > 0 ? sourceAnimes[0]._tmdbCnAlias : null;
+    smartTitleReplace(sourceAnimes, cnAlias);
+
     const processPromises = sourceAnimes
       // 港澳台资源不做严格标题匹配，因为可能搜到的是日语/繁体标题
-      .filter(anime => anime.isOversea || titleMatches(anime.title, queryTitle))
+      .filter(anime => anime.isOversea || titleMatches(anime.title, queryTitle)||(anime.org_title && titleMatches(anime.org_title, queryTitle)))
       .map(async (anime) => {
         try {
           let links = [];
@@ -493,10 +507,14 @@ export default class BilibiliSource extends BaseSource {
           if (links.length === 0) return;
 
           const numericAnimeId = convertToAsciiSum(anime.mediaId);
+          
+          // 优先使用tmdb智能标题替换的标题，否则对原标题进行繁转简处理
+          const displayTitle = anime._displayTitle || simplized(anime.title);
+
           const transformedAnime = {
             animeId: numericAnimeId,
             bangumiId: anime.mediaId,
-            animeTitle: `${anime.title}(${anime.year || 'N/A'})【${anime.type}】from bilibili`,
+            animeTitle: `${displayTitle}(${anime.year || 'N/A'})【${anime.type}】from bilibili`,
             type: anime.type,
             typeDescription: anime.type,
             imageUrl: anime.imageUrl,
@@ -822,8 +840,8 @@ export default class BilibiliSource extends BaseSource {
 
   formatComments(comments) {
     // 弹幕繁体转简体
-    if (globals.danmuSimplified) {
-        return comments.map(c => { 
+    if (globals.danmuSimplifiedTraditional === 'simplified') {
+        return comments.map(c => {
             if (c.m) c.m = simplized(c.m); 
             return c; 
         });
@@ -936,8 +954,37 @@ export default class BilibiliSource extends BaseSource {
   // 综合港澳台搜索入口
   async _searchOversea(keyword) {
       const tmdbAbortController = new AbortController();
-      const t1 = this._searchOverseaRequest(keyword, "Original").then(r => { if(r.length) tmdbAbortController.abort(); return r; }).catch(()=>[]);
-      const t2 = globals.tmdbApiKey ? (new Promise(r=>setTimeout(r,100)).then(()=>getTmdbJaOriginalTitle(keyword, tmdbAbortController.signal, "Bilibili")).then(t => (t&&t!==keyword)?this._searchOverseaRequest(t,"TMDB",tmdbAbortController.signal):[]).catch(()=>[])) : Promise.resolve([]);
+      
+      // 1. 原始关键词搜索
+      const t1 = this._searchOverseaRequest(keyword, "Original").then(r => { 
+          if(r.length) tmdbAbortController.abort(); 
+          // 挂载原始 keyword
+          r.forEach(i => i._originalQuery = keyword); 
+          return r; 
+      }).catch(()=>[]);
+      
+      // 2. TMDB 辅助搜索
+      const t2 = globals.tmdbApiKey ? (new Promise(r=>setTimeout(r,100)).then(async ()=>{
+          // 获取 TMDB 原名及别名
+          const tmdbResult = await getTmdbJaOriginalTitle(keyword, tmdbAbortController.signal, "Bilibili");
+          
+          if (tmdbResult && tmdbResult.title && tmdbResult.title !== keyword) {
+             const { title: tmdbTitle, cnAlias } = tmdbResult;
+             
+             // 使用日语原名进行搜索
+             const results = await this._searchOverseaRequest(tmdbTitle, "TMDB", tmdbAbortController.signal);
+             
+             // 注入上下文信息，包括别名
+             results.forEach(r => {
+                 r._originalQuery = keyword;
+                 r._searchUsedTitle = tmdbTitle;
+                 r._tmdbCnAlias = cnAlias; 
+             });
+             return results;
+          }
+          return [];
+      }).catch(()=>[])) : Promise.resolve([]);
+      
       return (await Promise.all([t1, t2])).flat();
   }
 

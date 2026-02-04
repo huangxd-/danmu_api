@@ -327,7 +327,7 @@ export default class RenrenSource extends BaseSource {
     let allResults = [];
     
     // 优先使用 APP 接口搜索
-    allResults = await this.searchAppContent(searchTitle);
+    // allResults = await this.searchAppContent(searchTitle);
     
     // APP 接口失败时降级到网页接口
     if (allResults.length === 0) {
@@ -348,13 +348,13 @@ export default class RenrenSource extends BaseSource {
 
   async getDetail(id) {
     // 优先使用 APP 接口
-    const resp = await this.getAppDramaDetail(String(id));
-    if (resp) {
-      return resp.data;
-    }
+    // const resp = await this.getAppDramaDetail(String(id));
+    // if (resp) {
+    //   return resp.data;
+    // }
     
-    // APP 接口失败时降级到网页接口
-    log("info", "[Renren] APP 详情接口失败，降级到网页接口");
+    // // APP 接口失败时降级到网页接口
+    // log("info", "[Renren] APP 详情接口失败，降级到网页接口");
     const url = `https://api.rrmj.plus/m-station/drama/page`;
     const params = { hsdrOpen: 0, isAgeLimit: 0, dramaId: String(id), hevcOpen: 1 };
     const fallbackResp = await this.renrenRequest("GET", url, params);
@@ -441,13 +441,13 @@ export default class RenrenSource extends BaseSource {
 
   async getEpisodeDanmu(id) {
     // 优先使用 APP 接口
-    const resp = await this.getAppDanmu(id);
-    if (resp) {
-      return resp;
-    }
+    // const resp = await this.getAppDanmu(id);
+    // if (resp) {
+    //   return resp;
+    // }
 
-    // APP 接口失败时降级到网页接口
-    log("info", "[Renren] APP 弹幕接口失败，降级到网页接口");
+    // // APP 接口失败时降级到网页接口
+    // log("info", "[Renren] APP 弹幕接口失败，降级到网页接口");
     const ClientProfile = {
       user_agent: "Mozilla/5.0",
       origin: "https://rrsp.com.cn",

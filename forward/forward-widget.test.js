@@ -230,7 +230,7 @@ async function testNewFlow() {
       blockedWords: '',
       groupMinute: 1,
       danmuLimit: 0,
-      danmuSimplified: false,
+      danmuSimplifiedTraditional: false,
       convertTopBottomToScroll: false,
       convertColor: 'default',
       proxyUrl: '',
