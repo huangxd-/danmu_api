@@ -481,7 +481,7 @@ export default class AnimekoSource extends BaseSource {
 
               const epNum = ep.sort || ep.ep; 
               const epName = ep.name_cn || ep.name || "";
-              const fullTitle = `EP${epNum} ${epName}`.trim();
+              const fullTitle = `第${epNum}话 ${epName}`.trim();
               
               links.push({
                 "name": `${epNum}`, 
