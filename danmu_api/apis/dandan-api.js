@@ -55,7 +55,7 @@ const leshiSource = new LeshiSource();
 const xiguaSource = new XiguaSource();
 const animekoSource = new AnimekoSource();
 const otherSource = new OtherSource();
-const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
+const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource, miguSource);
 const tmdbSource = new TmdbSource(doubanSource);
 
 // 用于聚合请求的去重Map

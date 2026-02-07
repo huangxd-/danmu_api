@@ -336,7 +336,7 @@ export function rgbToInt(color) {
 export function hexToInt(hex) {
   // 简单校验：确保是 6 位 hex 字符串（不带 #）
   if (typeof hex !== 'string' || hex.length !== 6 || !/^[0-9A-Fa-f]{6}$/.test(hex)) {
-    return -1;  // 无效输入，返回 -1
+    return 16777215;  // 无效输入，返回 16777215 白色
   }
   return parseInt(hex, 16);  // 直接转换为整数
 }

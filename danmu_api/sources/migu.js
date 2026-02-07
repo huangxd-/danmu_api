@@ -158,6 +158,15 @@ class MiguSource extends BaseSource {
       if (eps) {
         return eps;
       } else {
+        // datas不存在，找playing/pID
+        const name = detailResp.data?.body?.data?.name;
+        const pID = detailResp.data?.body?.data?.playing?.pID;
+        if (pID) {
+          return [{
+            name,
+            pID 
+          }];
+        }
         log("info", "getMiguEposides: eps 不存在");
         return [];
       }
@@ -183,27 +192,27 @@ class MiguSource extends BaseSource {
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processMiguAnimes = await Promise.all(sourceAnimes
-      .filter(s => titleMatches(s.name, queryTitle))
+      .filter(s => titleMatches(s.name || s.title, queryTitle))
       .map(async (anime) => {
         try {
-          const eps = await this.getEpisodes(anime.url);
+          const eps = await this.getEpisodes(anime.url || anime.mediaId);
           let links = [];
           for (const ep of eps) {
             links.push({
               "name": ep.name,
-              "url": `https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/${anime.epsId}/${ep.pID}`,
+              "url": `https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/${anime.epsId ?? ep.pID}/${ep.pID}`,
               "title": `【migu】 ${ep.name}`
             });
           }
 
           if (links.length > 0) {
             let transformedAnime = {
-              animeId: convertToAsciiSum(anime.epsId),
-              bangumiId: String(anime.epsId),
-              animeTitle: `${anime.name}(${anime.year})【${anime.type}】from migu`,
+              animeId: convertToAsciiSum(anime.epsId ?? eps[0]?.pID),
+              bangumiId: String(anime.epsId ?? eps[0]?.pID),
+              animeTitle: `${anime.name || anime.title}(${anime.year})【${anime.type}】from migu`,
               type: anime.type,
               typeDescription: anime.type,
-              imageUrl: anime.img,
+              imageUrl: anime.img ?? anime.imageUrl,
               startDate: generateValidStartDate(anime.year),
               episodeCount: links.length,
               rating: 0,
@@ -296,14 +305,14 @@ class MiguSource extends BaseSource {
     log("info", "durationSec:", durationSec);
     log("info", "epsID:", detail.epsID);
 
-    const segmentDuration = 300; // 每个分片5分钟
+    const segmentDuration = 30; // 每个分片30秒钟
     const segmentList = [];
 
     for (let i = 0; i < durationSec; i += segmentDuration) {
       const segmentStart = i; // 转换为毫秒
       const segmentEnd = Math.min(i + segmentDuration, durationSec); // 不超过总时长
 
-      const danmuUrl = `https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/${detail.epsID}/${itemId}/${segmentStart}/${segmentEnd}/020`;
+      const danmuUrl = `https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/${detail.epsID ?? itemId}/${itemId}/${segmentStart}/${segmentEnd}/020`;
       
       segmentList.push({
         "type": "migu",
