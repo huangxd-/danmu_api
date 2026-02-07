@@ -32,7 +32,7 @@ export default class DandanSource extends BaseSource {
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `dandanSearchresp: ${JSON.stringify(resp.data.animes)}`);
+      log("info", `[Dandan] 搜索找到 ${resp.data.animes.length} 个有效结果`);
 
       return resp.data.animes;
     } catch (error) {

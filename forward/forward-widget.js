@@ -16,7 +16,7 @@ WidgetMetadata = {
     // 源配置
     {
       name: "sourceOrder",
-      title: "源排序配置，默认'360,vod,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'sohu', 'leshi', 'xigua', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "源排序配置，默认'360,vod,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'sohu', 'leshi', 'xigua', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
@@ -151,12 +151,12 @@ WidgetMetadata = {
     // 匹配配置
     {
       name: "platformOrder",
-      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'sohu', 'leshi, 'xigua', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi, 'xigua', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
           title: "配置1",
-          value: "qq,qiyi,imgo,bilibili1,youku,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,custom",
+          value: "qq,qiyi,imgo,bilibili1,youku,migu,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,custom",
         },
         {
           title: "配置2",

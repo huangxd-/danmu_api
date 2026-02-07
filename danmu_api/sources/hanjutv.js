@@ -34,7 +34,7 @@ export default class HanjutvSource extends BaseSource {
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `hanjutvSearchresp: ${JSON.stringify(resp.data.seriesData.seriesList)}`);
+      log("info", `[Hanjutv] 搜索找到 ${resp.data.seriesData.seriesList.length} 个有效结果`);
 
       let resList = [];
       for (const anime of resp.data.seriesData.seriesList) {
