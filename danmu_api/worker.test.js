@@ -19,6 +19,9 @@ import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
 import SohuSource from "./sources/sohu.js";
+import LeshiSource from "./sources/leshi.js";
+import XiguaSource from "./sources/xigua.js";
+import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
 import { VercelHandler } from "./configs/handlers/vercel-handler.js";
@@ -60,6 +63,9 @@ test('worker.js API endpoints', async (t) => {
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
   const sohuSource = new SohuSource();
+  const leshiSource = new LeshiSource();
+  const xiguaSource = new XiguaSource();
+  const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
   await t.test('GET / should return welcome message', async () => {
@@ -227,6 +233,50 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
+  // await t.test('GET leshi danmu', async () => {
+  //   const res = await leshiSource.getComments("https://www.le.com/ptv/vplay/1578861.html");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET leshi danmu segments', async () => {
+  //   const res = await leshiSource.getComments("https://www.le.com/ptv/vplay/1578861.html", "leshi", true);
+  //   assert(res.type === "leshi", `Expected res.type === "leshi", but got ${res.type === "leshi"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET leshi segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'leshi',
+  //     segment_start: 1800,
+  //     segment_end: 2100,
+  //     url: 'https://hd-my.le.com/danmu/list?vid=1578861&start=1800&end=2100&callback=vjs_1768494351290',
+  //   });
+  //   const res = await leshiSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET xigua danmu', async () => {
+  //   const res = await xiguaSource.getComments("https://m.ixigua.com/video/6551333775337325060", "xigua");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET xigua danmu segments', async () => {
+  //   const res = await xiguaSource.getComments("https://m.ixigua.com/video/6551333775341519368", "xigua", true);
+  //   assert(res.type === "xigua", `Expected res.type === "xigua", but got ${res.type === "xigua"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET xigua segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'xigua',
+  //     segment_start: 1200000,
+  //     segment_end: 1500000,
+  //     url: 'https://ib.snssdk.com/vapp/danmaku/list/v1/?item_id=6551333775341519368&start_time=1200000&end_time=1500000&format=json'
+  //   });
+  //   const res = await xiguaSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
   // await t.test('GET other_server danmu', async () => {
   //   const res = await otherSource.getComments("https://www.bilibili.com/bangumi/play/ep1231564");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
@@ -301,6 +351,43 @@ test('worker.js API endpoints', async (t) => {
   //   });
   //   const res = await bahamutSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // // 测试Animeko源
+  // await t.test('Animeko Source Search', async () => {
+  //   const source = new AnimekoSource();
+  //   const result = await source.search("我们不可能成为恋人！绝对不行。 (※似乎可行？)");
+  //   console.log(JSON.stringify(result, null, 2));
+  //   assert(result.length > 0);
+  //
+  //   const curAnimes = []; 
+  //   await source.handleAnimes(result, "我们不可能成为恋人！绝对不行。 (※似乎可行？)", curAnimes);
+  //   assert(curAnimes.length > 0);
+  //   
+  //   const animeId = result[0].id;
+  //   const episodes = await source.getEpisodes(animeId);
+  //   
+  //   if (episodes && episodes.length > 0) {
+  //       const firstEp = episodes.find(e => e.type === 0) || episodes[0];
+  //       const testId = firstEp.id;
+  //       
+  //       console.log(`Testing getSegmentComments with ID: ${testId}`);
+  //       
+  //       const segment = { 
+  //           url: String(testId),
+  //           type: 'animeko'
+  //       };
+  //       
+  //       const danmu = await source.getSegmentComments(segment);
+  //       
+  //       console.log("Danmu count:", danmu ? danmu.length : 0);
+  //       assert(Array.isArray(danmu));
+  //       
+  //       if (danmu.length > 0) {
+  //           assert(danmu[0].p !== undefined);
+  //           assert(danmu[0].m !== undefined);
+  //       }
+  //   }
   // });
 
   // await t.test('GET realistic danmu', async () => {

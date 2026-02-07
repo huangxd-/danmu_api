@@ -37,11 +37,12 @@ function renderPreview() {
                 if (items && items.length > 0) {
                     html += \`<h3 class="text-purple margin-bottom-10">\${getCategoryName(category)}</h3>\`;
                     items.forEach(item => {
+                        const escapedValue = escapeHtml(item.value);
                         html += \`
                             <div class="preview-item">
                                 <div class="preview-item-content">
                                     <div class="preview-key"><strong>\${item.key}</strong></div>
-                                    <div class="preview-value">\${item.value}</div>
+                                    <div class="preview-value">\${escapedValue}</div>
                                 </div>
                                 \${item.description ? \`<div class="text-gray font-size-12 margin-top-3">\${item.description}</div>\` : ''}
                             </div>

@@ -49,12 +49,51 @@ const apiConfigs = {
         method: 'POST',
         path: '/api/v2/segmentcomment',
         params: [
-            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] }
+            { name: 'format', label: '格式', type: 'select', required: false, placeholder: '可选: json或xml', options: ['json', 'xml'] },
         ],
         hasBody: true,
         bodyType: 'json'
     }
 };
+
+// 初始化接口调试界面
+function initApiTestInterface() {
+    // 为API选择下拉框添加回车事件监听
+    const apiSelect = document.getElementById('api-select');
+    if (apiSelect) {
+        apiSelect.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                loadApiParams();
+            }
+        });
+    }
+}
+
+// 为参数输入框添加回车事件监听
+function attachEnterEventToParams() {
+    // 延迟执行，确保DOM元素已经渲染
+    setTimeout(() => {
+        // 获取所有参数输入框
+        const paramInputs = document.querySelectorAll('#params-form input[type="text"], #params-form textarea, #params-form select');
+        paramInputs.forEach(input => {
+            // 移除之前的事件监听器（避免重复绑定）
+            input.removeEventListener('keypress', handleParamInputEnter);
+            // 添加新的事件监听器
+            input.addEventListener('keypress', handleParamInputEnter);
+        });
+    }, 100);
+}
+
+// 处理参数输入框的回车事件
+function handleParamInputEnter(event) {
+    if (event.key === 'Enter') {
+        // 触发测试API按钮的点击事件
+        const testButton = document.querySelector('#api-params .btn-success');
+        if (testButton) {
+            testButton.click();
+        }
+    }
+}
 
 // 接口调试相关
 function loadApiParams() {
@@ -123,6 +162,9 @@ function loadApiParams() {
     }
 
     formDiv.innerHTML = html;
+    
+    // 为参数输入框添加回车事件监听
+    attachEnterEventToParams();
 }
 
 function testApi() {
