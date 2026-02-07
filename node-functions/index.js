@@ -27,11 +27,13 @@ export const onRequest = async (context) => {
     return new Response('Invalid URL', { status: 400 });
   }
 
-  // 创建新的 request 对象，替换 url
+  // 创建新的 request 对象，替换 url（保留原始请求体）
+  const method = (request?.method || 'GET').toUpperCase();
+  const body = (method === 'GET' || method === 'HEAD') ? undefined : request.body;
   const modifiedRequest = new Request(fullUrl, {
-    method: request.method,
+    method,
     headers: request.headers,
-    body: JSON.stringify(request.body),
+    body,
     redirect: request.redirect,
     credentials: request.credentials,
     cache: request.cache,
@@ -42,10 +44,10 @@ export const onRequest = async (context) => {
   let clientIp = 'unknown';
 
   // 尝试从 EO-Connecting-IP 获取客户端 IP
-  clientIp = request.headers['eo-connecting-ip'];
+  clientIp = request.headers?.get?.('eo-connecting-ip');
   if (!clientIp) {
     // 如果 EO-Connecting-IP 不存在，尝试从 X-Forwarded-For 获取
-    const forwardedFor = request.headers['x-forwarded-for'];
+    const forwardedFor = request.headers?.get?.('x-forwarded-for');
     if (forwardedFor) {
       // X-Forwarded-For 可能包含多个 IP 地址，选择第一个（最原始客户端 IP）
       clientIp = forwardedFor.split(',')[0].trim();
