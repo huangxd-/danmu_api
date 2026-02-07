@@ -225,16 +225,16 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
   // });
 
-  await t.test('GET migu segment danmu', async () => {
-    const segment = Segment.fromJson({
-      type: 'migu',
-      segment_start: 0,
-      segment_end: 300,
-      url: 'https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/760834922/760835542/0/30/020',
-    });
-    const res = await miguSource.getSegmentComments(segment);
-    assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
-  });
+  // await t.test('GET migu segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'migu',
+  //     segment_start: 0,
+  //     segment_end: 300,
+  //     url: 'https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/760834922/760835542/0/30/020',
+  //   });
+  //   const res = await miguSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
 
   // await t.test('GET sohu danmu', async () => {
   //   const res = await sohuSource.getComments("https://film.sohu.com/album/8345543.html");

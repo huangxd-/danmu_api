@@ -158,6 +158,14 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       platform = "youku";
     } else if (queryTitle.includes(".bilibili.com")) {
       platform = "bilibili1";
+    } else if (queryTitle.includes('.miguvideo.com')) {
+      platform = "migu";
+    } else if (queryTitle.includes('.sohu.com')) {
+      platform = "sohu";
+    } else if (queryTitle.includes('.le.com')) {
+      platform = "leshi";
+    } else if (queryTitle.includes('.douyin.com') || queryTitle.includes('.ixigua.com')) {
+      platform = "xigua";
     }
 
     const pageTitle = await getPageTitle(queryTitle);
