@@ -31,9 +31,13 @@ async function renderRequestRecords() {
             const clientIp = record.clientIp || '未知IP';
 
             // 格式化参数显示
-            const paramsStr = Object.keys(params).length > 0 
-                ? JSON.stringify(params, null, 2) 
-                : '{}';
+            const hasParams = Object.keys(params).length > 0;
+            const paramsHtml = hasParams 
+                ? \`<div class="record-params">
+                    <div class="record-params-title">请求参数</div>
+                    <pre>\${JSON.stringify(params, null, 2)}</pre>
+                   </div>\` 
+                : '';
 
             return \`
             <div class="record-item">
@@ -43,10 +47,7 @@ async function renderRequestRecords() {
                     <div class="record-ip">\${clientIp}</div>
                 </div>
                 <div class="record-timestamp">\${timestamp}</div>
-                <div class="record-params">
-                    <div class="record-params-title">请求参数</div>
-                    <pre>\${paramsStr}</pre>
-                </div>
+                \${paramsHtml}
             </div>\`;
         }).join('');
 
