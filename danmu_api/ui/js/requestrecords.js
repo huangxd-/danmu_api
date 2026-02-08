@@ -24,7 +24,7 @@ async function renderRequestRecords() {
 
         // 生成记录HTML
         const recordsHtml = records.map(record => {
-            const interfaceName = record.interface || '未知接口';
+            const interfaceName = decodeURIComponent(record.interface) || '未知接口';
             const params = record.params || {};
             const timestamp = record.timestamp ? new Date(record.timestamp).toLocaleString('zh-CN') : '未知时间';
             const method = record.method || 'GET';
