@@ -151,6 +151,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <div class="log-controls">
                     <div>
                         <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
+                        <span id="total-requests-today" style="color: #ff5722; margin-left: 15px; vertical-align: middle; font-size: 1.2em; font-weight: bold;"></span>
                     </div>
                     <span style="color: #666;">云服务部署需要配置redis</span>
                 </div>

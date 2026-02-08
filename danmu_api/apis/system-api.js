@@ -204,6 +204,7 @@ export async function handleClearCache() {
 export function handleReqRecords() {
   // 返回请求记录，按时间倒序排列（最新的在前）
   const records = [...globals.reqRecords].reverse();
-  return jsonResponse(records, 200);
+  const todayReqNum = globals.todayReqNum || 0;
+  return jsonResponse({ records, todayReqNum }, 200);
 }
 

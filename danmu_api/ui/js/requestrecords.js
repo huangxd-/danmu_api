@@ -15,7 +15,15 @@ async function renderRequestRecords() {
             throw new Error('获取请求记录失败');
         }
         
-        const records = await response.json();
+        const data = await response.json();
+        const records = data.records;
+        const todayReqNum = data.todayReqNum;
+
+        // 显示今日请求总数
+        const totalRequestsElement = document.getElementById('total-requests-today');
+        if (totalRequestsElement) {
+            totalRequestsElement.textContent = \`今日请求总数: \${todayReqNum}\`;
+        }
 
         if (records.length === 0) {
             recordsContainer.innerHTML = '<div class="no-records">暂无请求记录</div>';
