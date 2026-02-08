@@ -1025,6 +1025,12 @@ export const componentsCssContent = /* css */ `
     gap: 8px;
 }
 
+.record-timestamp.no-params {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
 .record-timestamp::before {
     content: '🕐';
     font-size: 16px;

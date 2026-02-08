@@ -39,6 +39,9 @@ async function renderRequestRecords() {
                    </div>\` 
                 : '';
 
+            // 如果没有参数，给时间戳添加 no-params 类以隐藏虚线
+            const timestampClass = hasParams ? 'record-timestamp' : 'record-timestamp no-params';
+
             return \`
             <div class="record-item">
                 <div class="record-header">
@@ -46,7 +49,7 @@ async function renderRequestRecords() {
                     <div class="record-interface">\${interfaceName}</div>
                     <div class="record-ip">\${clientIp}</div>
                 </div>
-                <div class="record-timestamp">\${timestamp}</div>
+                <div class="\${timestampClass}">\${timestamp}</div>
                 \${paramsHtml}
             </div>\`;
         }).join('');
