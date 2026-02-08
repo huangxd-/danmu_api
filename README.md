@@ -115,6 +115,7 @@ LogVar 弹幕 API 服务器
    npm start
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
+   如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
 
    **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
 

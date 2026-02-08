@@ -249,7 +249,7 @@ process.on('SIGTERM', cleanupWatcher);
 process.on('SIGINT', cleanupWatcher);
 
 /**
- * 创建主业务服务器实例 (端口 9321)
+ * 创建主业务服务器实例 (默认端口 9321，可通过 DANMU_API_PORT 配置)
  * 将 Node.js 请求转换为 Web API Request，并调用 worker.js 处理
  */
 function createServer() {
@@ -455,10 +455,12 @@ async function startServer() {
   // 设置 .env 文件监听
   await setupEnvWatcher();
 
-  // 启动主业务服务器 (9321)
+  // 启动主业务服务器（默认 9321，可通过 DANMU_API_PORT 覆盖）
+  const configuredMainPort = Number.parseInt(process.env.DANMU_API_PORT ?? '', 10);
+  const mainPort = Number.isNaN(configuredMainPort) ? 9321 : configuredMainPort;
   mainServer = createServer();
-  mainServer.listen(9321, '0.0.0.0', () => {
-    console.log('Server running on http://0.0.0.0:9321');
+  mainServer.listen(mainPort, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${mainPort}`);
   });
 
   // 启动5321端口的代理服务
