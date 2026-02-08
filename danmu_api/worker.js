@@ -26,6 +26,42 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
+  // 检查路径是否包含指定的接口关键字
+  const targetPaths = [
+    '/api/v2/search/anime',
+    '/api/v2/match',
+    '/api/v2/search/episodes',
+    '/api/v2/bangumi',
+    '/api/v2/comment',
+    '/api/v2/segmentcomment'
+  ];
+  
+  // 只有当path包含指定接口关键字时才添加到请求记录数组
+  if (targetPaths.some(targetPath => path.includes(targetPath))) {
+    // 处理路径，只保留从/api/v2开始的部分
+    let normalizedPath = path;
+    const apiV2Index = path.indexOf('/api/v2');
+    if (apiV2Index !== -1) {
+      normalizedPath = path.substring(apiV2Index);
+    }
+
+    // 记录请求历史，包括接口/参数/请求时间
+    const requestRecord = {
+      interface: normalizedPath,
+      params: Object.fromEntries(url.searchParams.entries()), // 获取URL参数对象
+      timestamp: new Date().toISOString(), // 请求时间
+      method: method, // HTTP方法
+      clientIp: clientIp // 客户端IP
+    };
+
+    globals.reqRecords.push(requestRecord);
+
+    // 限制记录数量不超过 MAX_RECORDS
+    if (globals.reqRecords.length > globals.MAX_RECORDS) {
+      globals.reqRecords = globals.reqRecords.slice(-globals.MAX_RECORDS);
+    }
+  }
+
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);

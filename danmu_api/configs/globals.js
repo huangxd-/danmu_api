@@ -16,6 +16,7 @@ export const Globals = {
   VERSION: '1.14.0',
   MAX_LOGS: 1000, // 日志存储，最多保存 1000 行
   MAX_ANIMES: 100,
+  MAX_RECORDS: 100, // 请求记录最大数量
 
   // 运行时状态
   animes: [],
@@ -28,11 +29,13 @@ export const Globals = {
   redisValid: false, // redis是否生效
   redisCacheInitialized: false, // redis 缓存是否已初始化
   lastSelectMap: new Map(), // 存储查询关键字上次选择的animeId，用于下次match自动匹配时优先选择该anime
+  reqRecords: [], // 记录请求历史，包括接口/参数/请求时间
   lastHashes: { // 存储上一次各变量哈希值
     animes: null,
     episodeIds: null,
     episodeNum: null,
-    lastSelectMap: null
+    lastSelectMap: null,
+    reqRecords: null
   },
   searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
@@ -158,6 +161,7 @@ export const Globals = {
         if (prop === 'version') return self.VERSION;
         if (prop === 'maxLogs') return self.MAX_LOGS;
         if (prop === 'maxAnimes') return self.MAX_ANIMES;
+        if (prop === 'maxRecords') return self.MAX_RECORDS;
         if (prop === 'maxLastSelectMap') return self.MAX_LAST_SELECT_MAP;
 
         // 暴露方法
