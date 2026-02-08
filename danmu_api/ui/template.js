@@ -151,7 +151,6 @@ export const HTML_TEMPLATE = /* html */ `
                 <div class="log-controls">
                     <div>
                         <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
-                        <button class="btn btn-danger" id="clear-request-records">🗑️ 清空记录</button>
                     </div>
                     <span style="color: #666;">实时请求记录监控</span>
                 </div>

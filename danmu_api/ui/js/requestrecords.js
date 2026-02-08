@@ -97,27 +97,5 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // 添加清空按钮功能
-    const clearBtn = document.getElementById('clear-request-records');
-    if (clearBtn) {
-        clearBtn.onclick = function() {
-            if (confirm('确定要清空所有请求记录吗？此操作不可撤销。')) {
-                // 调用API来清空请求记录
-                fetch('/api/reqrecords/clear', { method: 'POST' })
-                    .then(response => {
-                        if (response.ok) {
-                            // 清空成功后重新加载记录
-                            renderRequestRecords();
-                        } else {
-                            throw new Error('清空请求记录失败');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('清空请求记录时出错:', error);
-                        alert('清空请求记录失败: ' + error.message);
-                    });
-            }
-        };
-    }
 });
 `;

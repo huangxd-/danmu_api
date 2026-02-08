@@ -207,11 +207,3 @@ export function handleReqRecords() {
   return jsonResponse(records, 200);
 }
 
-/**
- * 处理清空请求记录的请求
- * @returns {Response} 表示操作成功的响应
- */
-export function handleClearReqRecords() {
-  globals.reqRecords = [];
-  return jsonResponse({ success: true, message: "Request records cleared" }, 200);
-}
