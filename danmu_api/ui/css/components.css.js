@@ -943,104 +943,142 @@ export const componentsCssContent = /* css */ `
 
 /* 请求记录样式 */
 .request-records-container {
-    background: #f8f9fa;
-    padding: 15px;
     border-radius: 8px;
-    max-height: 500px;
-    overflow-y: auto;
 }
 
 .no-records {
     text-align: center;
-    color: #666;
-    padding: 40px;
+    color: #fff;
+    padding: 60px;
     font-style: italic;
+    font-size: 16px;
 }
 
 .record-item {
-    background: white;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 15px;
+    background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+    border: none;
+    border-radius: 16px;
+    padding: 10px;
     margin-bottom: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.record-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.2);
 }
 
 .record-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 15px;
 }
 
 .record-method {
-    background: #667eea;
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
     color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 14px;
     font-weight: bold;
-    min-width: 50px;
+    min-width: 60px;
     text-align: center;
+    box-shadow: 0 4px 15px rgba(0,180,219,0.3);
 }
 
 .record-interface {
     flex: 1;
-    font-family: monospace;
-    font-weight: 500;
-    color: #495057;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: #2d3748;
     word-break: break-all;
+    font-size: 15px;
+    background: #edf2f7;
+    padding: 8px 16px;
+    border-radius: 8px;
 }
 
 .record-ip {
-    background: #e9ecef;
-    color: #495057;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    min-width: 100px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    min-width: 120px;
     text-align: center;
+    font-weight: 500;
+    box-shadow: 0 4px 15px rgba(245,87,108,0.3);
 }
 
 .record-timestamp {
-    color: #6c757d;
-    font-size: 13px;
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #e9ecef;
+    color: #718096;
+    font-size: 14px;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 2px dashed #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.record-params details {
-    background: #f8f9fa;
-    border-radius: 6px;
-    padding: 10px;
+.record-timestamp::before {
+    content: '🕐';
+    font-size: 16px;
 }
 
-.record-params summary {
-    cursor: pointer;
+.record-params {
+    background: #f5f5f5;
+    border-radius: 12px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+}
+
+.record-params-title {
     color: #667eea;
-    font-weight: 500;
-    outline: none;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.record-params summary:focus {
-    outline: none;
+.record-params-title::before {
+    content: '📋';
+    font-size: 16px;
 }
 
 .record-params pre {
-    margin: 10px 0 0 0;
-    padding: 10px;
-    background: #1e1e1e;
-    color: #d4d4d4;
-    border-radius: 4px;
+    margin: 0;
+    padding: 15px;
+    background: #ffffff;
+    color: #333;
+    border-radius: 8px;
     font-family: 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow-x: auto;
-    max-height: 200px;
-    overflow-y: auto;
+    line-height: 1.6;
+    border: 1px solid #ddd;
+}
+
+/* 请求记录移动端适配 */
+@media (max-width: 768px) {
+    .record-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .record-method,
+    .record-interface,
+    .record-ip {
+        width: 100%;
+        box-sizing: border-box;
+    }
 }
 `;

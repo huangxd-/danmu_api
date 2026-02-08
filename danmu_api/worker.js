@@ -39,16 +39,37 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // 只有当path包含指定接口关键字时才添加到请求记录数组
   if (targetPaths.some(targetPath => path.includes(targetPath))) {
     // 处理路径，只保留从/api/v2开始的部分
-    let normalizedPath = path;
-    const apiV2Index = path.indexOf('/api/v2');
+    let normalizedPath = req.url;
+    const apiV2Index = normalizedPath.indexOf('/api/v2');
     if (apiV2Index !== -1) {
-      normalizedPath = path.substring(apiV2Index);
+      normalizedPath = normalizedPath.substring(apiV2Index);
+    }
+
+    // 获取请求体JSON（如果是POST/PUT/PATCH请求）
+    let requestBody = null;
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      try {
+        const clonedReq = req.clone();
+        const contentType = clonedReq.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          requestBody = await clonedReq.json();
+        } else {
+          // 尝试解析为JSON，即使content-type不匹配
+          const text = await clonedReq.text();
+          if (text) {
+            requestBody = JSON.parse(text);
+          }
+        }
+      } catch (e) {
+        // JSON解析失败，保持为null
+        requestBody = null;
+      }
     }
 
     // 记录请求历史，包括接口/参数/请求时间
     const requestRecord = {
       interface: normalizedPath,
-      params: Object.fromEntries(url.searchParams.entries()), // 获取URL参数对象
+      params: requestBody, // 请求体JSON
       timestamp: new Date().toISOString(), // 请求时间
       method: method, // HTTP方法
       clientIp: clientIp // 客户端IP

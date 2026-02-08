@@ -152,7 +152,7 @@ export const HTML_TEMPLATE = /* html */ `
                     <div>
                         <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
                     </div>
-                    <span style="color: #666;">实时请求记录监控</span>
+                    <span style="color: #666;">云服务部署需要配置redis</span>
                 </div>
                 <div class="request-records-container" id="request-records-list"></div>
             </div>

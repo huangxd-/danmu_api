@@ -44,10 +44,8 @@ async function renderRequestRecords() {
                 </div>
                 <div class="record-timestamp">\${timestamp}</div>
                 <div class="record-params">
-                    <details>
-                        <summary>请求参数</summary>
-                        <pre>\${paramsStr}</pre>
-                    </details>
+                    <div class="record-params-title">请求参数</div>
+                    <pre>\${paramsStr}</pre>
                 </div>
             </div>\`;
         }).join('');
