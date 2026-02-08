@@ -26,6 +26,38 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   let path = url.pathname;
   const method = req.method;
 
+  globals.deployPlatform = deployPlatform;
+  if (deployPlatform === "node") {
+    await judgeLocalCacheValid(path, deployPlatform);
+  }
+  await judgeRedisValid(path);
+
+  log("info", `request url: ${JSON.stringify(url)}`);
+  log("info", `request path: ${path}`);
+  log("info", `client ip: ${clientIp}`);
+
+  // --- 校验 token ---
+  const parts = path.split("/").filter(Boolean); // 去掉空段
+
+  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
+
+  const firstPart = parts[0] || "";
+  const isDefaultToken = globals.token === "87654321";
+  const isValidToken = firstPart === globals.token || firstPart === globals.adminToken;
+
+  globals.currentToken = 
+    isValidToken ? firstPart :
+    isDefaultToken && (firstPart === "87654321" || knownApiPaths.includes(firstPart)) ? 
+      (firstPart === "87654321" ? firstPart : "87654321") :
+    "";
+
+  if (deployPlatform === "node" && globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    await getLocalCaches();
+  }
+  if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    await getRedisCaches();
+  }
+
   // 检查路径是否包含指定的接口关键字
   const targetPaths = [
     '/api/v2/search/anime',
@@ -102,38 +134,6 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     if (globals.reqRecords.length > globals.MAX_RECORDS) {
       globals.reqRecords = globals.reqRecords.slice(-globals.MAX_RECORDS);
     }
-  }
-
-  globals.deployPlatform = deployPlatform;
-  if (deployPlatform === "node") {
-    await judgeLocalCacheValid(path, deployPlatform);
-  }
-  await judgeRedisValid(path);
-
-  log("info", `request url: ${JSON.stringify(url)}`);
-  log("info", `request path: ${path}`);
-  log("info", `client ip: ${clientIp}`);
-
-  // --- 校验 token ---
-  const parts = path.split("/").filter(Boolean); // 去掉空段
-
-  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
-
-  const firstPart = parts[0] || "";
-  const isDefaultToken = globals.token === "87654321";
-  const isValidToken = firstPart === globals.token || firstPart === globals.adminToken;
-
-  globals.currentToken = 
-    isValidToken ? firstPart :
-    isDefaultToken && (firstPart === "87654321" || knownApiPaths.includes(firstPart)) ? 
-      (firstPart === "87654321" ? firstPart : "87654321") :
-    "";
-
-  if (deployPlatform === "node" && globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
-    await getLocalCaches();
-  }
-  if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
-    await getRedisCaches();
   }
 
   // GET /
