@@ -940,4 +940,107 @@ export const componentsCssContent = /* css */ `
     border-color: #eee;
     box-shadow: none;
 }
+
+/* 请求记录样式 */
+.request-records-container {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.no-records {
+    text-align: center;
+    color: #666;
+    padding: 40px;
+    font-style: italic;
+}
+
+.record-item {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.record-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.record-method {
+    background: #667eea;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 50px;
+    text-align: center;
+}
+
+.record-interface {
+    flex: 1;
+    font-family: monospace;
+    font-weight: 500;
+    color: #495057;
+    word-break: break-all;
+}
+
+.record-ip {
+    background: #e9ecef;
+    color: #495057;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    min-width: 100px;
+    text-align: center;
+}
+
+.record-timestamp {
+    color: #6c757d;
+    font-size: 13px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.record-params details {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.record-params summary {
+    cursor: pointer;
+    color: #667eea;
+    font-weight: 500;
+    outline: none;
+}
+
+.record-params summary:focus {
+    outline: none;
+}
+
+.record-params pre {
+    margin: 10px 0 0 0;
+    padding: 10px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+}
 `;

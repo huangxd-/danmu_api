@@ -196,3 +196,22 @@ export async function handleClearCache() {
     return jsonResponse({ success: false, message: `Cache clear failed: ${error.message}` }, 500);
   }
 }
+
+/**
+ * 处理获取请求记录的请求
+ * @returns {Response} 包含请求记录的响应
+ */
+export function handleReqRecords() {
+  // 返回请求记录，按时间倒序排列（最新的在前）
+  const records = [...globals.reqRecords].reverse();
+  return jsonResponse(records, 200);
+}
+
+/**
+ * 处理清空请求记录的请求
+ * @returns {Response} 表示操作成功的响应
+ */
+export function handleClearReqRecords() {
+  globals.reqRecords = [];
+  return jsonResponse({ success: true, message: "Request records cleared" }, 200);
+}

@@ -363,8 +363,8 @@ function getDockerVersion() {
 
 // 切换导航
 function switchSection(section, event = null) {
-    // 检查是否尝试访问受token保护的section（日志查看、接口调试、系统配置需要token访问）
-    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push') {
+    // 检查是否尝试访问受token保护的section（日志查看、接口调试、推送弹幕、请求记录、系统配置需要token访问）
+    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push' || section === 'request-records') {
         let _reverseProxy = customBaseUrl; // 使用全局配置
 
         // 获取URL路径并提取token
@@ -443,7 +443,7 @@ function switchSection(section, event = null) {
                         event.target.classList.add('active');
                     }
 
-                    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
+                    addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : section === 'request-records' ? '请求记录' : '接口调试'}模块\`, 'info');
                 }
             });
         } else {
@@ -456,7 +456,7 @@ function switchSection(section, event = null) {
                 event.target.classList.add('active');
             }
 
-            addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : '接口调试'}模块\`, 'info');
+            addLog(\`切换到\${section === 'env' ? '环境变量' : section === 'preview' ? '配置预览' : section === 'logs' ? '日志查看' : section === 'push' ? '推送弹幕' : section === 'request-records' ? '请求记录' : '接口调试'}模块\`, 'info');
             
             // 如果切换到日志查看页面，则立即刷新日志
             if (section === 'logs') {

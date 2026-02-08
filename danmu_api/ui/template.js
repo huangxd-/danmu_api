@@ -8,6 +8,7 @@ import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
 import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
+import { requestRecordsJsContent } from "./js/requestrecords.js";
 import { systemSettingsJsContent } from "./js/systemsettings.js";
 
 // language=HTML
@@ -54,6 +55,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn" onclick="switchSection('logs', event)">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api', event)">接口调试</button>
                 <button class="nav-btn" onclick="switchSection('push', event)">推送弹幕</button>
+                <button class="nav-btn" onclick="switchSection('request-records', event)">请求记录</button>
                 <button class="nav-btn" onclick="switchSection('env', event)" id="env-nav-btn">系统配置</button>
             </div>
         </div>
@@ -141,6 +143,19 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div id="push-anime-list" class="anime-list" style="display: none;"></div>
                 <div id="push-episode-list" class="episode-list" style="display: none; margin-top: 20px;"></div>
+            </div>
+
+            <!-- 请求记录 -->
+            <div class="section" id="request-records-section">
+                <h2>请求记录</h2>
+                <div class="log-controls">
+                    <div>
+                        <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
+                        <button class="btn btn-danger" id="clear-request-records">🗑️ 清空记录</button>
+                    </div>
+                    <span style="color: #666;">实时请求记录监控</span>
+                </div>
+                <div class="request-records-container" id="request-records-list"></div>
             </div>
 
             <!-- 系统配置 -->
@@ -309,6 +324,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${logviewJsContent}
         ${apitestJsContent}
         ${pushDanmuJsContent}
+        ${requestRecordsJsContent}
         ${systemSettingsJsContent}
     </script>
 </body>
