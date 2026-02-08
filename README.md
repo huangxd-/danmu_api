@@ -85,6 +85,7 @@ LogVar 弹幕 API 服务器
   - 日志查看
   - 接口调试
   - 推送弹幕
+  - 请求记录
   - 系统管理
 
 ## 前置条件
@@ -527,6 +528,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │       ├── main.js         # UI主脚本
 │   │       ├── preview.js      # 预览功能脚本
 │   │       ├── pushdanmu.js    # 推送弹幕脚本
+│   │       ├── requestrecords.js # 请求记录脚本
 │   │       └── systemsettings.js # 系统设置脚本
 │   └── utils/
 │       ├── cache-util.js       # 缓存数据处理工具
@@ -539,6 +541,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── imdb-util.js        # IMDB API请求工具
 │       ├── log-util.js         # 日志工具
 │       ├── merge-util.js       # 源合并处理工具
+│       ├── migu-util.js        # 咪咕工具
 │       ├── redis-util.js       # redis工具
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具
