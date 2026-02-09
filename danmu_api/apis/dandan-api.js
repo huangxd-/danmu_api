@@ -80,7 +80,8 @@ export function matchSeason(anime, queryTitle, season) {
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
 
   if (normalizedAnimeTitle.includes(normalizedQueryTitle)) {
-    const title = normalizedAnimeTitle.split("(")[0].trim();
+    const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
+    const title = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
     if (title.startsWith(normalizedQueryTitle)) {
       const afterTitle = title.substring(normalizedQueryTitle.length).trim();
       if (afterTitle === '' && season === 1) {
