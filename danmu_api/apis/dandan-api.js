@@ -1,6 +1,7 @@
 import { globals } from '../configs/globals.js';
 import { getPageTitle, jsonResponse, httpGet } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js'
+import { simplized } from '../utils/zh-util.js';
 import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
@@ -106,7 +107,7 @@ export function matchSeason(anime, queryTitle, season) {
 
 // Extracted function for GET /api/v2/search/anime
 export async function searchAnime(url, preferAnimeId = null, preferSource = null) {
-  const queryTitle = url.searchParams.get("keyword");
+  let queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
   // 关键字为空直接返回，不用多余查询
@@ -117,6 +118,13 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       errorMessage: "",
       animes: [],
     });
+  }
+
+  // 如果启用了搜索关键字繁转简，则进行转换
+  if (globals.animeTitleSimplified) {
+    const simplifiedTitle = simplized(queryTitle);
+    log("info", `searchAnime converted traditional to simplified: ${queryTitle} -> ${simplifiedTitle}`);
+    queryTitle = simplifiedTitle;
   }
 
   // 检查搜索缓存
@@ -796,6 +804,13 @@ export async function matchAnime(url, req) {
       }
     }
 
+    // 如果启用了搜索关键字繁转简，则进行转换
+    if (globals.animeTitleSimplified) {
+      const simplifiedTitle = simplized(title);
+      log("info", `matchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
+      title = simplifiedTitle;
+    }
+
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
@@ -872,8 +887,15 @@ export async function matchAnime(url, req) {
 
 // Extracted function for GET /api/v2/search/episodes
 export async function searchEpisodes(url) {
-  const anime = url.searchParams.get("anime");
+  let anime = url.searchParams.get("anime");
   const episode = url.searchParams.get("episode") || "";
+
+  // 如果启用了搜索关键字繁转简，则进行转换
+  if (globals.animeTitleSimplified) {
+    const simplifiedTitle = simplized(anime);
+    log("info", `searchEpisodes converted traditional to simplified: ${anime} -> ${simplifiedTitle}`);
+    anime = simplifiedTitle;
+  }
 
   log("info", `Search episodes with anime: ${anime}, episode: ${episode}`);
 
