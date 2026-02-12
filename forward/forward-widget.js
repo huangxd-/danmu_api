@@ -1,6 +1,7 @@
 import { searchAnime, getBangumi, getComment, getSegmentComment, matchSeason } from '../danmu_api/apis/dandan-api.js';
 import { Globals } from '../danmu_api/configs/globals.js';
 import { log } from '../danmu_api/utils/log-util.js';
+import { simplized } from '../danmu_api/utils/zh-util.js';
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
 
@@ -562,7 +563,14 @@ async function searchDanmu(params) {
                     platformOrder, episodeTitleFilter, enableEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplifiedTraditional, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey);
 
-  const response = await searchAnime(new URL(`${PREFIX_URL}/api/v2/search/anime?keyword=${title}`));
+  let simplifiedTitle = title
+  // 如果启用了搜索关键字繁转简，则进行转换
+  if (globals.animeTitleSimplified) {
+    simplifiedTitle = simplized(title);
+    log("info", `searchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
+  }
+
+  const response = await searchAnime(new URL(`${PREFIX_URL}/api/v2/search/anime?keyword=${simplifiedTitle}`));
   const resJson = await response.json();
   const curAnimes = resJson.animes;
 
@@ -576,7 +584,7 @@ async function searchDanmu(params) {
       const nonMatchedAnimes = [];
 
       animes.forEach((anime) => {
-        if (matchSeason(anime, title, season) && !(anime.animeTitle.includes("电影") || anime.animeTitle.includes("movie"))) {
+        if (matchSeason(anime, simplifiedTitle, season) && !(anime.animeTitle.includes("电影") || anime.animeTitle.includes("movie"))) {
             matchedAnimes.push(anime);
         } else {
             nonMatchedAnimes.push(anime);
