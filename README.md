@@ -376,6 +376,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko,custom`       |
 | PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, renren, hanjutv, bahamut, dandan, animeko, custom`  |
 | MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`imgo&iqiyi,dandan&bahamut&animeko,imgo`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko` |
+| ANIME_TITLE_FILTER    | 【可选】剧名过滤规则，用于按正则表达式对剧名进行过滤，适用于过滤一些不需要的剧集，需开启ENABLE_EPISODE_FILTER，默认值：空（不过滤），格式：使用 \| 分隔多个关键词，例如：广告\|预告\|无关剧名       |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
 | ENABLE_EPISODE_FILTER    | 【可选】是否在手动选择接口中启用集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
 | STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |

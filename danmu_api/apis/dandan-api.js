@@ -331,12 +331,12 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   if (globals.enableEpisodeFilter) {
     const validAnimes = [];
     for (const anime of curAnimes) {
-      // // 首先检查动漫名称是否包含过滤关键词
-      // const animeTitle = anime.animeTitle || '';
-      // if (globals.episodeTitleFilter.test(animeTitle)) {
-      //   log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
-      //   continue; // 跳过该动漫
-      // }
+      // 首先检查剧名是否包含过滤关键词
+      const animeTitle = anime.animeTitle || '';
+      if (globals.animeTitleFilter.test(animeTitle)) {
+        log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
+        continue; // 跳过该动漫
+      }
 
       const animeData = globals.animes.find(a => a.animeId === anime.animeId);
       if (animeData && animeData.links) {

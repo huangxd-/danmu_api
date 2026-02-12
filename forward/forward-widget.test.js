@@ -227,6 +227,7 @@ async function testNewFlow() {
       episodeTitleFilter: '',
       enableEpisodeFilter: false,
       strictTitleMatch: false,
+      animeTitleFilter: '',
       animeTitleSimplified: false,
       blockedWords: '',
       groupMinute: 1,
