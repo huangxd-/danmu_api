@@ -225,7 +225,7 @@ async function testNewFlow() {
       bilibiliCookie: '',
       platformOrder: [],
       episodeTitleFilter: '',
-      enableEpisodeFilter: false,
+      enableAnimeEpisodeFilter: false,
       strictTitleMatch: false,
       animeTitleFilter: '',
       animeTitleSimplified: false,
