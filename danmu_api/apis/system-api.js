@@ -3,7 +3,6 @@ import { jsonResponse } from "../utils/http-util.js";
 import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
-import { getDirname, readCacheFromFile, writeCacheToFile } from "../utils/cache-util.js";
 
 export function handleUI() {
   return new Response(HTML_TEMPLATE.replace("globals.currentToken", globals.currentToken), {
@@ -128,7 +127,19 @@ export function handleLogs() {
         `[${log.timestamp}] ${log.level}: ${formatLogMessage(log.message)}`
     )
     .join("\n");
-  return new Response(logText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    
+  // 检查当前 token 是否为 admin_token
+  let processedLogText = logText;
+  if (globals.currentToken !== globals.adminToken) {
+    // 隐藏 client ip 地址，将 "client ip: 127.0.0.1" 中的 IP 地址部分替换为相同长度的 *，但保留 .
+    processedLogText = logText.replace(/(client\s+ip:\s*)([^\n\r]*)/gi, (match, prefix, ipPart) => {
+      // 将 IP 地址中的每个字符（除了 . 和空格）替换为 *
+      const maskedIp = ipPart.replace(/[^.\s\n\r]/g, '*');
+      return prefix + maskedIp;
+    });
+  }
+  
+  return new Response(processedLogText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
 
 /**
