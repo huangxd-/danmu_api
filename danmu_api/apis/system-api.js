@@ -3,6 +3,7 @@ import { jsonResponse } from "../utils/http-util.js";
 import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
+import { getDirname, readCacheFromFile, writeCacheToFile } from "../utils/cache-util.js";
 
 export function handleUI() {
   return new Response(HTML_TEMPLATE.replace("globals.currentToken", globals.currentToken), {
@@ -150,6 +151,8 @@ export async function handleClearCache() {
     globals.episodeIds = [];
     globals.episodeNum = 10001; // 重置为初始值
     globals.lastSelectMap = new Map(); // 重新创建 Map 对象
+    globals.reqRecords = []; // 清空请求记录
+    globals.todayReqNum = 0; // 重置今日请求次数
     
     // 清理搜索和弹幕缓存
     globals.searchCache = new Map();
@@ -189,7 +192,9 @@ export async function handleClearCache() {
       lastSelectMap: 0,
       searchCache: 0,
       commentCache: 0,
-      requestHistory: 0
+      requestHistory: 0,
+      reqRecords: 0,
+      todayReqNum: 0
     }}, 200);
   } catch (error) {
     log("error", `[server] Cache clear failed: ${error.message}`);
