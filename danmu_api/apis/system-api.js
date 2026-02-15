@@ -219,8 +219,22 @@ export async function handleClearCache() {
  */
 export function handleReqRecords() {
   // 返回请求记录，按时间倒序排列（最新的在前）
-  const records = [...globals.reqRecords].reverse();
+  let records = [...globals.reqRecords].reverse();
   const todayReqNum = globals.todayReqNum || 0;
+  
+  // 检查当前 token 是否为 admin_token，如果不是则隐藏 IP 地址
+  if (globals.currentToken !== globals.adminToken) {
+    // 隐藏请求记录中的 IP 地址，将 IP 地址部分替换为相同长度的 *，但保留 .
+    records = records.map(record => {
+      if (record.clientIp) {
+        // 将 IP 地址中的每个字符（除了 .）替换为 *
+        const maskedIp = record.clientIp.replace(/[^.]/g, '*');
+        return { ...record, clientIp: maskedIp };
+      }
+      return record;
+    });
+  }
+  
   return jsonResponse({ records, todayReqNum }, 200);
 }
 
