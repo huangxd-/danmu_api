@@ -346,6 +346,8 @@ export async function getLocalCaches() {
       globals.animes = JSON.parse(readCacheFromFile('animes')) || globals.animes;
       globals.episodeIds = JSON.parse(readCacheFromFile('episodeIds')) || globals.episodeIds;
       globals.episodeNum = JSON.parse(readCacheFromFile('episodeNum')) || globals.episodeNum;
+      globals.reqRecords = JSON.parse(readCacheFromFile('reqRecords')) || globals.reqRecords;
+      globals.todayReqNum = JSON.parse(readCacheFromFile('todayReqNum')) || globals.todayReqNum;
 
       // 恢复 lastSelectMap 并转换为 Map 对象
       const lastSelectMapData = readCacheFromFile('lastSelectMap');
@@ -358,6 +360,8 @@ export async function getLocalCaches() {
       globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
       globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
       globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
+      globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
+      globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
       globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
 
       globals.localCacheInitialized = true;
@@ -380,7 +384,9 @@ export async function updateLocalCaches() {
       { key: 'animes', value: globals.animes },
       { key: 'episodeIds', value: globals.episodeIds },
       { key: 'episodeNum', value: globals.episodeNum },
-      { key: 'lastSelectMap', value: globals.lastSelectMap }
+      { key: 'reqRecords', value: globals.reqRecords },
+      { key: 'lastSelectMap', value: globals.lastSelectMap },
+      { key: 'todayReqNum', value: globals.todayReqNum }
     ];
 
     for (const { key, value } of variables) {

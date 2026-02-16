@@ -472,7 +472,7 @@ function BufferBase64Decode(b64) {
 
 // ====================== 主函数 ======================
 // Uint8Array UTF-8 解码成字符串，替代 TextDecoder
-function utf8BytesToString(bytes) {
+export function utf8BytesToString(bytes) {
   let str = "";
   let i = 0;
   while (i < bytes.length) {
@@ -503,7 +503,7 @@ function utf8BytesToString(bytes) {
 }
 
 // 同时替换 TextEncoder
-function stringToUtf8Bytes(str) {
+export function stringToUtf8Bytes(str) {
   const bytes = [];
   for (let i = 0; i < str.length; i++) {
     let code = str.charCodeAt(i);

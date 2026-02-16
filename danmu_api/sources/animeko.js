@@ -362,11 +362,28 @@ export default class AnimekoSource extends BaseSource {
       }
 
       const titleSuffix = item._relation_mark ? ` ${item._relation_mark}` : "";
+
+      // 提取别名列表 (用于合并工具进行模糊匹配)
+      const aliases = [];
+      if (item.infobox && Array.isArray(item.infobox)) {
+          item.infobox.forEach(info => {
+              if (info.key === '别名' && Array.isArray(info.value)) {
+                  info.value.forEach(v => {
+                      if (v && v.v) aliases.push(v.v);
+                  });
+              }
+          });
+      }
+      // 将中文名也作为别名的一种补充，防止 name 字段是日文而 name_cn 未被命中的情况
+      if (item.name_cn && item.name_cn !== item.name) {
+          aliases.push(item.name_cn);
+      }
       
       return {
         id: item.id,
         name: item.name,
         name_cn: (item.name_cn || item.name) + titleSuffix,
+        aliases: aliases,
         images: item.images,
         air_date: item.date, 
         score: item.score,
@@ -481,7 +498,7 @@ export default class AnimekoSource extends BaseSource {
 
               const epNum = ep.sort || ep.ep; 
               const epName = ep.name_cn || ep.name || "";
-              const fullTitle = `EP${epNum} ${epName}`.trim();
+              const fullTitle = `第${epNum}话 ${epName}`.trim();
               
               links.push({
                 "name": `${epNum}`, 
@@ -498,6 +515,7 @@ export default class AnimekoSource extends BaseSource {
               animeId: anime.id,
               bangumiId: String(anime.id),
               animeTitle: `${anime.name_cn || anime.name}(${yearStr})【${anime.typeDescription || '动漫'}】from animeko`,
+              aliases: anime.aliases || [],
               type: "动漫",
               typeDescription: anime.typeDescription || "动漫",
               imageUrl: anime.images ? (anime.images.common || anime.images.large) : "",

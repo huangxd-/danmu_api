@@ -623,12 +623,6 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
         // 执行回调检查
         if (!checkCallback(checkBuffer)) {
           log("info", `[流式请求] 嗅探到无效特征(已读${receivedLength}字节),立即熔断`);
-
-          // 显式取消流读取
-          try {
-              await reader.cancel("Stream aborted by user check");
-          } catch (e) { /* 忽略 cancel 产生的错误 */ }
-
           controller.abort();
           isAborted = true;
           break;

@@ -1,6 +1,7 @@
 import { globals } from '../configs/globals.js';
 import { getPageTitle, jsonResponse, httpGet } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js'
+import { simplized } from '../utils/zh-util.js';
 import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
@@ -24,6 +25,7 @@ import TencentSource from "../sources/tencent.js";
 import IqiyiSource from "../sources/iqiyi.js";
 import MangoSource from "../sources/mango.js";
 import BilibiliSource from "../sources/bilibili.js";
+import MiguSource from "../sources/migu.js";
 import YoukuSource from "../sources/youku.js";
 import SohuSource from "../sources/sohu.js";
 import LeshiSource from "../sources/leshi.js";
@@ -48,12 +50,13 @@ const youkuSource = new YoukuSource();
 const iqiyiSource = new IqiyiSource();
 const mangoSource = new MangoSource();
 const bilibiliSource = new BilibiliSource();
+const miguSource = new MiguSource();
 const sohuSource = new SohuSource();
 const leshiSource = new LeshiSource();
 const xiguaSource = new XiguaSource();
 const animekoSource = new AnimekoSource();
 const otherSource = new OtherSource();
-const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource);
+const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource, miguSource);
 const tmdbSource = new TmdbSource(doubanSource);
 
 // 用于聚合请求的去重Map
@@ -78,7 +81,8 @@ export function matchSeason(anime, queryTitle, season) {
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
 
   if (normalizedAnimeTitle.includes(normalizedQueryTitle)) {
-    const title = normalizedAnimeTitle.split("(")[0].trim();
+    const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
+    const title = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
     if (title.startsWith(normalizedQueryTitle)) {
       const afterTitle = title.substring(normalizedQueryTitle.length).trim();
       if (afterTitle === '' && season === 1) {
@@ -103,7 +107,7 @@ export function matchSeason(anime, queryTitle, season) {
 
 // Extracted function for GET /api/v2/search/anime
 export async function searchAnime(url, preferAnimeId = null, preferSource = null) {
-  const queryTitle = url.searchParams.get("keyword");
+  let queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
   // 关键字为空直接返回，不用多余查询
@@ -114,6 +118,13 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       errorMessage: "",
       animes: [],
     });
+  }
+
+  // 如果启用了搜索关键字繁转简，则进行转换
+  if (globals.animeTitleSimplified) {
+    const simplifiedTitle = simplized(queryTitle);
+    log("info", `searchAnime converted traditional to simplified: ${queryTitle} -> ${simplifiedTitle}`);
+    queryTitle = simplifiedTitle;
   }
 
   // 检查搜索缓存
@@ -156,6 +167,14 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       platform = "youku";
     } else if (queryTitle.includes(".bilibili.com")) {
       platform = "bilibili1";
+    } else if (queryTitle.includes('.miguvideo.com')) {
+      platform = "migu";
+    } else if (queryTitle.includes('.sohu.com')) {
+      platform = "sohu";
+    } else if (queryTitle.includes('.le.com')) {
+      platform = "leshi";
+    } else if (queryTitle.includes('.douyin.com') || queryTitle.includes('.ixigua.com')) {
+      platform = "xigua";
     }
 
     const pageTitle = await getPageTitle(queryTitle);
@@ -204,6 +223,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       if (source === "iqiyi") return iqiyiSource.search(queryTitle);
       if (source === "imgo") return mangoSource.search(queryTitle);
       if (source === "bilibili") return bilibiliSource.search(queryTitle);
+      if (source === "migu") return miguSource.search(queryTitle);
       if (source === "sohu") return sohuSource.search(queryTitle);
       if (source === "leshi") return leshiSource.search(queryTitle);
       if (source === "xigua") return xiguaSource.search(queryTitle);
@@ -226,7 +246,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       vod: animesVodResults, 360: animes360, tmdb: animesTmdb, douban: animesDouban, renren: animesRenren,
       hanjutv: animesHanjutv, bahamut: animesBahamut, dandan: animesDandan, custom: animesCustom, 
       tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili,
-      sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, animeko: animesAnimeko
+      migu: animesMigu, sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, animeko: animesAnimeko
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -279,6 +299,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       } else if (key === 'bilibili') {
         // 等待处理Bilibili来源
         await bilibiliSource.handleAnimes(animesBilibili, queryTitle, curAnimes);
+      } else if (key === 'migu') {
+        // 等待处理Migu来源
+        await miguSource.handleAnimes(animesMigu, queryTitle, curAnimes);
       } else if (key === 'sohu') {
         // 等待处理Sohu来源
         await sohuSource.handleAnimes(animesSohu, queryTitle, curAnimes);
@@ -305,12 +328,12 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   storeAnimeIdsToMap(curAnimes, queryTitle);
 
   // 如果启用了集标题过滤，则为每个动漫添加过滤后的 episodes
-  if (globals.enableEpisodeFilter) {
+  if (globals.enableAnimeEpisodeFilter) {
     const validAnimes = [];
     for (const anime of curAnimes) {
-      // 首先检查动漫名称是否包含过滤关键词
+      // 首先检查剧名是否包含过滤关键词
       const animeTitle = anime.animeTitle || '';
-      if (globals.episodeTitleFilter.test(animeTitle)) {
+      if (globals.animeTitleFilter && globals.animeTitleFilter.test(animeTitle)) {
         log("info", `[searchAnime] Anime ${anime.animeId} filtered by name: ${animeTitle}`);
         continue; // 跳过该动漫
       }
@@ -781,6 +804,13 @@ export async function matchAnime(url, req) {
       }
     }
 
+    // 如果启用了搜索关键字繁转简，则进行转换
+    if (globals.animeTitleSimplified) {
+      const simplifiedTitle = simplized(title);
+      log("info", `matchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
+      title = simplifiedTitle;
+    }
+
     // 获取prefer animeIdgetPreferAnimeId
     const [preferAnimeId, preferSource] = getPreferAnimeId(title);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
@@ -857,8 +887,15 @@ export async function matchAnime(url, req) {
 
 // Extracted function for GET /api/v2/search/episodes
 export async function searchEpisodes(url) {
-  const anime = url.searchParams.get("anime");
+  let anime = url.searchParams.get("anime");
   const episode = url.searchParams.get("episode") || "";
+
+  // 如果启用了搜索关键字繁转简，则进行转换
+  if (globals.animeTitleSimplified) {
+    const simplifiedTitle = simplized(anime);
+    log("info", `searchEpisodes converted traditional to simplified: ${anime} -> ${simplifiedTitle}`);
+    anime = simplifiedTitle;
+  }
 
   log("info", `Search episodes with anime: ${anime}, episode: ${episode}`);
 
@@ -984,7 +1021,7 @@ export async function getBangumi(path) {
   }
 
   // 如果启用了集标题过滤，则应用过滤
-  if (globals.enableEpisodeFilter) {
+  if (globals.enableAnimeEpisodeFilter) {
     episodesList = episodesList.filter(episode => {
       return !globals.episodeTitleFilter.test(episode.episodeTitle);
     });
@@ -1094,6 +1131,7 @@ async function fetchMergedComments(url) {
         else if (sourceName === 'iqiyi') sourceInstance = iqiyiSource;
         else if (sourceName === 'imgo') sourceInstance = mangoSource;
         else if (sourceName === 'bilibili') sourceInstance = bilibiliSource;
+        else if (sourceName === 'migu') sourceInstance = miguSource;
         else if (sourceName === 'sohu') sourceInstance = sohuSource;
         else if (sourceName === 'leshi') sourceInstance = leshiSource;
         else if (sourceName === 'xigua') sourceInstance = xiguaSource;
@@ -1185,6 +1223,8 @@ export async function getComment(path, queryFormat, segmentFlag) {
       danmus = await bilibiliSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.youku.com')) {
       danmus = await youkuSource.getComments(url, plat, segmentFlag);
+    } else if (url.includes('.miguvideo.com')) {
+      danmus = await miguSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.sohu.com')) {
       danmus = await sohuSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.le.com')) {
@@ -1298,6 +1338,8 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
       danmus = await bilibiliSource.getComments(url, "bilibili1", segmentFlag);
     } else if (url.includes('.youku.com')) {
       danmus = await youkuSource.getComments(url, "youku", segmentFlag);
+    } else if (url.includes('.miguvideo.com')) {
+      danmus = await miguSource.getComments(url, "migu", segmentFlag);
     } else if (url.includes('.sohu.com')) {
       danmus = await sohuSource.getComments(url, "sohu", segmentFlag);
     } else if (url.includes('.le.com')) {
@@ -1383,6 +1425,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await bilibiliSource.getSegmentComments(segment);
     } else if (platform === "youku") {
       danmus = await youkuSource.getSegmentComments(segment);
+    } else if (platform === "migu") {
+      danmus = await miguSource.getSegmentComments(segment);
     } else if (platform === "sohu") {
       danmus = await sohuSource.getSegmentComments(segment);
     } else if (platform === "leshi") {

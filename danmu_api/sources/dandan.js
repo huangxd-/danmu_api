@@ -32,7 +32,7 @@ export default class DandanSource extends BaseSource {
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `dandanSearchresp: ${JSON.stringify(resp.data.animes)}`);
+      log("info", `[Dandan] 搜索找到 ${resp.data.animes.length} 个有效结果`);
 
       return resp.data.animes;
     } catch (error) {
@@ -46,6 +46,7 @@ export default class DandanSource extends BaseSource {
     }
   }
 
+  // 获取番剧详情和剧集列表
   async getEpisodes(id) {
     try {
       const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/bangumi/${id}`, {
@@ -58,19 +59,30 @@ export default class DandanSource extends BaseSource {
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
         log("info", "getDandanEposides: 请求失败或无数据返回");
-        return [];
+        return { episodes: [], titles: [] };
       }
 
-      // 判断 seriesData 是否存在
-      if (!resp.data.bangumi && !resp.data.bangumi.episodes) {
-        log("info", "getDandanEposides: episodes 不存在");
-        return [];
+      // 判断 bangumi 数据是否存在
+      if (!resp.data.bangumi) {
+        log("info", "getDandanEposides: bangumi 数据不存在");
+        return { episodes: [], titles: [] };
       }
+
+      const bangumiData = resp.data.bangumi;
+      
+      // 提取剧集列表，确保它是数组
+      const episodes = Array.isArray(bangumiData.episodes) ? bangumiData.episodes : [];
+      
+      // 提取标题别名列表
+      // 数据源格式: [{"language":"主标题","title":"雨天遇见狸"}, ...]
+      const titles = Array.isArray(bangumiData.titles) ? bangumiData.titles.map(t => t.title) : [];
 
       // 正常情况下输出 JSON 字符串
       log("info", `getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
 
-      return resp.data.bangumi.episodes;
+      // 返回包含剧集和别名的完整对象
+      return { episodes, titles };
+
     } catch (error) {
       // 捕获请求中的错误
       log("error", "getDandanEposides error:", {
@@ -78,10 +90,11 @@ export default class DandanSource extends BaseSource {
         name: error.name,
         stack: error.stack,
       });
-      return [];
+      return { episodes: [], titles: [] };
     }
   }
 
+  // 处理并转换番剧信息
   async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
     const tmpAnimes = [];
 
@@ -95,9 +108,14 @@ export default class DandanSource extends BaseSource {
     const processDandanAnimes = await Promise.all(sourceAnimes
       .map(async (anime) => {
         try {
-          const eps = await this.getEpisodes(anime.animeId);
+          // 获取详情数据（包含剧集和别名）
+          const details = await this.getEpisodes(anime.animeId);
+          const eps = details.episodes; // 提取剧集列表
+          const aliases = details.titles; // 提取别名列表
+
           let links = [];
           for (const ep of eps) {
+            // 格式化剧集标题
             const epTitle = ep.episodeTitle && ep.episodeTitle.trim() !== "" ? `${ep.episodeTitle}` : `第${ep.episodeNumber}集`;
             links.push({
               "name": epTitle,
@@ -107,10 +125,12 @@ export default class DandanSource extends BaseSource {
           }
 
           if (links.length > 0) {
+            // 构造标准番剧对象
             let transformedAnime = {
               animeId: anime.animeId,
               bangumiId: String(anime.animeId),
               animeTitle: `${anime.animeTitle}(${new Date(anime.startDate).getFullYear()})【${anime.typeDescription}】from dandan`,
+              aliases: aliases,
               type: anime.type,
               typeDescription: anime.typeDescription,
               imageUrl: anime.imageUrl,
@@ -123,8 +143,10 @@ export default class DandanSource extends BaseSource {
 
             tmpAnimes.push(transformedAnime);
 
+            // 添加到全局缓存
             addAnime({...transformedAnime, links: links});
 
+            // 维护缓存大小
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
@@ -133,6 +155,7 @@ export default class DandanSource extends BaseSource {
       })
     );
 
+    // 按年份排序并推入当前列表
     this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
 
     return processDandanAnimes;

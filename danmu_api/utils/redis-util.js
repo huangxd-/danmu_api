@@ -152,7 +152,7 @@ export async function getRedisCaches() {
   if (!globals.redisCacheInitialized) {
     try {
       log("info", 'getRedisCaches start.');
-      const keys = ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap'];
+      const keys = ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'];
       const commands = keys.map(key => ['GET', key]); // 构造 pipeline 命令
       const results = await runPipeline(commands);
 
@@ -160,19 +160,23 @@ export async function getRedisCaches() {
       globals.animes = results[0].result ? JSON.parse(results[0].result) : globals.animes;
       globals.episodeIds = results[1].result ? JSON.parse(results[1].result) : globals.episodeIds;
       globals.episodeNum = results[2].result ? JSON.parse(results[2].result) : globals.episodeNum;
+      globals.reqRecords = results[3].result ? JSON.parse(results[3].result) : globals.reqRecords;
 
       // 恢复 lastSelectMap 并转换为 Map 对象
-      const lastSelectMapData = results[3].result ? JSON.parse(results[3].result) : null;
+      const lastSelectMapData = results[4].result ? JSON.parse(results[4].result) : null;
       if (lastSelectMapData && typeof lastSelectMapData === 'object') {
         globals.lastSelectMap = new Map(Object.entries(lastSelectMapData));
         log("info", `Restored lastSelectMap from Redis with ${globals.lastSelectMap.size} entries`);
       }
+      globals.todayReqNum = results[5].result ? parseInt(results[5].result, 10) : globals.todayReqNum;
 
       // 更新哈希值
       globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
       globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
       globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
+      globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
       globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
+      globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
 
       globals.redisCacheInitialized = true;
       log("info", 'getRedisCaches completed successfully.');
@@ -195,7 +199,9 @@ export async function updateRedisCaches() {
       { key: 'animes', value: globals.animes },
       { key: 'episodeIds', value: globals.episodeIds },
       { key: 'episodeNum', value: globals.episodeNum },
-      { key: 'lastSelectMap', value: globals.lastSelectMap }
+      { key: 'reqRecords', value: globals.reqRecords },
+      { key: 'lastSelectMap', value: globals.lastSelectMap },
+      { key: 'todayReqNum', value: globals.todayReqNum }
     ];
 
     for (const { key, value } of variables) {

@@ -15,7 +15,8 @@ const apiConfigs = {
         method: 'GET',
         path: '/api/v2/search/episodes',
         params: [
-            { name: 'anime', label: '动漫名称', type: 'text', required: true, placeholder: '示例: 生万物' }
+            { name: 'anime', label: '动漫名称', type: 'text', required: true, placeholder: '示例: 生万物' },
+            { name: 'episode', label: '集', type: 'text', required: false, placeholder: '示例: 1, movie' }
         ]
     },
     matchAnime: {

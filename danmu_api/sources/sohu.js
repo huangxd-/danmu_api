@@ -34,17 +34,39 @@ export default class SohuSource extends BaseSource {
       return null;
     }
 
+    // 过滤仅预告片结果 通过 is_trailer 字段判断 (1 为预告片)
+    if (item.is_trailer === 1) {
+      return null;
+    }
+
+    // 过滤仅预告片结果 通过角标文字判断 (corner_mark.text 为 "预告")
+    if (item.corner_mark && item.corner_mark.text === '预告') {
+      return null;
+    }
+
     // 清理标题中的高亮标记
     let title = item.album_name.replace('<<<', '').replace('>>>', '');
 
     // 从meta中提取类型信息
     // meta格式: ["20集全", "电视剧 | 内地 | 2018年", "主演：..."]
     let categoryName = null;
-    if (item.meta && item.meta.length >= 2) {
-      const metaText = item.meta[0].txt; // "电视剧 | 内地 | 2018年"
-      const parts = metaText.split('|');
-      if (parts.length > 0) {
-        categoryName = parts[0].trim(); // "电视剧"
+    if (item.meta && Array.isArray(item.meta)) {
+      // 遍历 meta 数组，寻找包含 "|" 的条目 (例如: "电视剧 | 美国 | 2018年")
+      for (const metaData of item.meta) {
+        if (metaData.txt && metaData.txt.includes('|')) {
+          const parts = metaData.txt.split('|');
+          if (parts.length > 0) {
+            const firstPart = parts[0].trim();
+            // 额外处理：如果第一部分是 "别名：XXX"，则取第二部分
+            // (例如 "别名：铁面无私包公 | 电影 | ...")
+            if (firstPart.includes('别名') && parts.length > 1) {
+               categoryName = parts[1].trim();
+            } else {
+               categoryName = firstPart;
+            }
+            break; // 找到后立即停止
+          }
+        }
       }
     }
 

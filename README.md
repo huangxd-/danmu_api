@@ -18,7 +18,7 @@ LogVar 弹幕 API 服务器
 
 ---
 
-一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
 
 本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。
 
@@ -71,7 +71,7 @@ LogVar 弹幕 API 服务器
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
-- **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔播放链接可获取弹幕，如`senplayer`。
+- **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
   - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
   - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`）
@@ -85,6 +85,7 @@ LogVar 弹幕 API 服务器
   - 日志查看
   - 接口调试
   - 推送弹幕
+  - 请求记录
   - 系统管理
 
 ## 前置条件
@@ -115,6 +116,7 @@ LogVar 弹幕 API 服务器
    npm start
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
+   如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
 
    **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
 
@@ -318,7 +320,7 @@ LogVar 弹幕 API 服务器
 <img src="https://i.mji.rip/2025/09/14/80aa5205d49a767447f61938f2dada20.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/9fdf945fb247994518042691f60d7849.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
-4. 现已支持手动搜索标题输入爱优腾芒哔播放链接获取弹幕。
+4. 现已支持手动搜索标题输入爱优腾芒哔咪狐乐西播放链接获取弹幕。
 
 ### XML 格式说明
 
@@ -371,14 +373,16 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`10000`（10秒），建议值：`5000-15000`。由于`fastest`模式只返回最快响应的站点，可以设置较大的超时时间给慢速站点更多机会       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕和启用港澳台App接口），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，弹幕获取实际最少只需取 `SESSDATA=xxxx` 字段，但如果需要使用港澳台区域稳定的App搜索接口还需要`bili_jct=xxxx`或`access_key=xxxx` 字段，不知道怎么获取cookie的，可以从工具 [cookie-butler](https://cookie-butler.do-u.me) 获取    |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
-| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko,custom`       |
-| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, sohu, leshi, xigua, renren, hanjutv, bahamut, dandan, animeko, custom`  |
-| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`imgo&iqiyi,dandan&bahamut&animeko,imgo`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko` |
+| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko,custom`       |
+| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, renren, hanjutv, bahamut, dandan, animeko, custom`  |
+| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`imgo&iqiyi,dandan&bahamut&animeko,imgo`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,renren,hanjutv,bahamut,dandan,animeko` |
+| ANIME_TITLE_FILTER    | 【可选】剧名过滤规则，用于按正则表达式对剧名进行过滤，适用于过滤一些不需要的剧集，需开启ENABLE_ANIME_EPISODE_FILTER，默认值：空（不过滤），格式：使用 \| 分隔多个关键词，例如：广告\|预告\|无关剧名       |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
-| ENABLE_EPISODE_FILTER    | 【可选】是否在手动选择接口中启用集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
+| ENABLE_ANIME_EPISODE_FILTER    | 【可选】控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
 | STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
 | TITLE_TO_CHINESE    | 【可选】是否在match自动匹配时将外语标题转换成中文标题，适用于网盘没有刮削的资源，默认值：false（不转换），说明：需配合TMDB_API_KEY使用       |
 | TITLE_MAPPING_TABLE    | 【可选】剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
+| ANIME_TITLE_SIMPLIFIED    | 【可选】是否在搜索时将繁体剧名标题自动转换为简体，适用于繁体标题搜索，默认值：false（不转换），可选值：`true`、`false`       |
 | BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，示例如下       |
 | GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不去重       |
 | DANMU_LIMIT    | 【可选】等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000       |
@@ -437,13 +441,14 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | ----------- | ----------- |
 | 360      | qiyi, bilibili1, imgo, youku, qq |
 | vod      | qiyi, bilibili1, imgo, youku, qq |
-| tmdb     | qiyi, bilibili1, youku, qq |
-| douban   | qiyi, bilibili1, youku, qq |
+| tmdb     | qiyi, bilibili1, youku, qq, migu |
+| douban   | qiyi, bilibili1, youku, qq, migu |
 | tencent  | qq |
 | youku    | youku |
 | iqiyi    | qiyi |
 | imgo     | imgo |
 | bilibili | bilibili1 |
+| migu     | migu |
 | sohu     | sohu |
 | leshi    | leshi |
 | xigua    | xigua |
@@ -503,6 +508,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │   ├── kan360.js           # 360看源
 │   │   ├── leshi.js            # 乐视视频源
 │   │   ├── mango.js            # 芒果TV源
+│   │   ├── migu.js             # 咪咕视频源
 │   │   ├── other.js            # 第三方弹幕服务器
 │   │   ├── renren.js           # 人人视频源
 │   │   ├── sohu.js             # 搜狐视频源
@@ -525,6 +531,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │       ├── main.js         # UI主脚本
 │   │       ├── preview.js      # 预览功能脚本
 │   │       ├── pushdanmu.js    # 推送弹幕脚本
+│   │       ├── requestrecords.js # 请求记录脚本
 │   │       └── systemsettings.js # 系统设置脚本
 │   └── utils/
 │       ├── cache-util.js       # 缓存数据处理工具
@@ -537,6 +544,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── imdb-util.js        # IMDB API请求工具
 │       ├── log-util.js         # 日志工具
 │       ├── merge-util.js       # 源合并处理工具
+│       ├── migu-util.js        # 咪咕工具
 │       ├── redis-util.js       # redis工具
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具

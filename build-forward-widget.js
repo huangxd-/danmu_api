@@ -1,8 +1,8 @@
-const esbuild = require('esbuild');
-const fs = require('fs');
+import * as esbuild from 'esbuild';
+import fs from 'fs';
 
 // 动态获取版本号
-const { Globals } = require('./danmu_api/configs/globals.js');
+import { Globals } from './danmu_api/configs/globals.js';
 
 // 定义要排除的UI相关模块
 const uiModules = [

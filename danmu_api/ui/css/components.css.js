@@ -940,4 +940,151 @@ export const componentsCssContent = /* css */ `
     border-color: #eee;
     box-shadow: none;
 }
+
+/* 请求记录样式 */
+.request-records-container {
+    border-radius: 8px;
+}
+
+.no-records {
+    text-align: center;
+    color: #fff;
+    padding: 60px;
+    font-style: italic;
+    font-size: 16px;
+}
+
+.record-item {
+    background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+    border: none;
+    border-radius: 16px;
+    padding: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.record-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+}
+
+.record-header {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.record-method {
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    min-width: 60px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,180,219,0.3);
+}
+
+.record-interface {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: #2d3748;
+    word-break: break-all;
+    font-size: 15px;
+    background: #edf2f7;
+    padding: 8px 16px;
+    border-radius: 8px;
+}
+
+.record-ip {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    min-width: 120px;
+    text-align: center;
+    font-weight: 500;
+    box-shadow: 0 4px 15px rgba(245,87,108,0.3);
+}
+
+.record-timestamp {
+    color: #718096;
+    font-size: 14px;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 2px dashed #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.record-timestamp.no-params {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.record-timestamp::before {
+    content: '🕐';
+    font-size: 16px;
+}
+
+.record-params {
+    background: #f5f5f5;
+    border-radius: 12px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+}
+
+.record-params-title {
+    color: #667eea;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.record-params-title::before {
+    content: '📋';
+    font-size: 16px;
+}
+
+.record-params pre {
+    margin: 0;
+    padding: 15px;
+    background: #ffffff;
+    color: #333;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+    line-height: 1.6;
+    border: 1px solid #ddd;
+}
+
+/* 请求记录移动端适配 */
+@media (max-width: 768px) {
+    .record-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .record-method,
+    .record-interface,
+    .record-ip {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
 `;

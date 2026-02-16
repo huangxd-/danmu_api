@@ -18,6 +18,7 @@ import IqiyiSource from "./sources/iqiyi.js";
 import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
+import MiguSource from "./sources/migu.js";
 import SohuSource from "./sources/sohu.js";
 import LeshiSource from "./sources/leshi.js";
 import XiguaSource from "./sources/xigua.js";
@@ -62,6 +63,7 @@ test('worker.js API endpoints', async (t) => {
   const mangoSource = new MangoSource();
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
+  const miguSource = new MiguSource();
   const sohuSource = new SohuSource();
   const leshiSource = new LeshiSource();
   const xiguaSource = new XiguaSource();
@@ -208,6 +210,29 @@ test('worker.js API endpoints', async (t) => {
   //     "_m_h5_tk_enc": "082c6cbbad97b5b48b7798a51933bbfa"
   //   });
   //   const res = await youkuSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET migu danmu', async () => {
+  //   const res = await miguSource.getComments("https://www.miguvideo.com/p/detail/725117610", "migu");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET migu danmu segments', async () => {
+  //   const res = await miguSource.getComments("https://www.miguvideo.com/p/detail/725117610", "migu", true);
+  //   console.log(res.segmentList);
+  //   assert(res.type === "migu", `Expected res.type === "migu", but got ${res.type === "migu"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET migu segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'migu',
+  //     segment_start: 0,
+  //     segment_end: 300,
+  //     url: 'https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/760834922/760835542/0/30/020',
+  //   });
+  //   const res = await miguSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 

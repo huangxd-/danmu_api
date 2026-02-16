@@ -5,7 +5,7 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -56,6 +56,84 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getRedisCaches();
+  }
+
+  // 检查路径是否包含指定的接口关键字
+  const targetPaths = [
+    '/api/v2/search/anime',
+    '/api/v2/match',
+    '/api/v2/search/episodes',
+    '/api/v2/bangumi',
+    '/api/v2/comment',
+    '/api/v2/segmentcomment'
+  ];
+  
+  // 只有当path包含指定接口关键字时才添加到请求记录数组
+  if (targetPaths.some(targetPath => path.includes(targetPath))) {
+    // 更新今日请求计数
+    // 从 reqRecords 最后一个元素获取上一个请求的时间
+    const lastRecord = globals.reqRecords.length > 0 ? globals.reqRecords[globals.reqRecords.length - 1] : null;
+    const currentDate = new Date().toDateString();
+    
+    if (lastRecord) {
+      const lastDate = new Date(lastRecord.timestamp).toDateString();
+      console.log("currentDate: ", currentDate);
+      console.log("lastDate: ", lastDate);
+      if (lastDate !== currentDate) {
+        // 新的一天，重置计数
+        globals.todayReqNum = 1;
+      } else {
+        // 同一天，计数加1
+        globals.todayReqNum++;
+      }
+    } else {
+      // 没有历史记录，重置为1
+      globals.todayReqNum = 1;
+    }
+
+    // 处理路径，只保留从/api/v2开始的部分
+    let normalizedPath = req.url;
+    const apiV2Index = normalizedPath.indexOf('/api/v2');
+    if (apiV2Index !== -1) {
+      normalizedPath = normalizedPath.substring(apiV2Index);
+    }
+
+    // 获取请求体JSON（如果是POST/PUT/PATCH请求）
+    let requestBody = null;
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      try {
+        const clonedReq = req.clone();
+        const contentType = clonedReq.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          requestBody = await clonedReq.json();
+        } else {
+          // 尝试解析为JSON，即使content-type不匹配
+          const text = await clonedReq.text();
+          if (text) {
+            requestBody = JSON.parse(text);
+          }
+        }
+      } catch (e) {
+        // JSON解析失败，保持为null
+        requestBody = null;
+      }
+    }
+
+    // 记录请求历史，包括接口/参数/请求时间
+    const requestRecord = {
+      interface: normalizedPath,
+      params: requestBody, // 请求体JSON
+      timestamp: new Date().toISOString(), // 请求时间
+      method: method, // HTTP方法
+      clientIp: clientIp // 客户端IP
+    };
+
+    globals.reqRecords.push(requestRecord);
+
+    // 限制记录数量不超过 MAX_RECORDS
+    if (globals.reqRecords.length > globals.MAX_RECORDS) {
+      globals.reqRecords = globals.reqRecords.slice(-globals.MAX_RECORDS);
+    }
   }
 
   // GET /
@@ -118,6 +196,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleConfig(true); // 有权限
   }
 
+  // GET /api/reqrecords - 获取请求记录 (需要 token)
+  if (path === "/api/reqrecords" && method === "GET") {
+    return handleReqRecords();
+  }
+
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
@@ -127,14 +210,14 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
       
-      // 1. 清理：应对“用户填写/api/v2”+“客户端添加/api/v2”导致的重复前缀
+      // 1. 清理：应对"用户填写/api/v2"+"客户端添加/api/v2"导致的重复前缀
       while (path.startsWith('/api/v2/api/v2/')) {
           log("info", `[Path Check] Found redundant /api/v2 prefix. Cleaning...`);
           // 从第二个 /api/v2 的位置开始截取，相当于移除第一个
           path = path.substring('/api/v2'.length);
       }
       
-      // 打印日志：只有在发生清理时才显示清理后的路径，否则显示“无需清理”
+      // 打印日志：只有在发生清理时才显示清理后的路径，否则显示"无需清理"
       if (path !== pathBeforeCleanup) {
           log("info", `[Path Check] Path after cleanup: "${path}"`);
       } else {
@@ -150,7 +233,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
           path = '/api/v2' + path;
       }
         
-      // 打印日志：只有在发生添加前缀时才显示添加后的路径，否则显示“无需补全”
+      // 打印日志：只有在发生添加前缀时才显示添加后的路径，否则显示"无需补全"
       if (path === pathBeforePrefixCheck) {
           log("info", `[Path Check] Prefix Check: No prefix addition needed.`);
       }

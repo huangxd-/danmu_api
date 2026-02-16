@@ -74,7 +74,7 @@ export function handleConfig(hasPermission = false) {
     originalEnvVars: originalEnvVars, // 系统设置使用原始环境变量（已脱敏）
     hasAdminToken: hasAdminToken, // 添加admin token配置状态
     repository: "https://github.com/huangxd-/danmu_api.git",
-    description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
+    description: "一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。",
     notice: "本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。有问题提issue或私信机器人都ok，TG MSG ROBOT: [https://t.me/ddjdd_bot]; 推荐加互助群咨询，TG GROUP: [https://t.me/logvar_danmu_group]; 关注频道获取最新更新内容，TG CHANNEL: [https://t.me/logvar_danmu_channel]。"
   });
 }
@@ -127,7 +127,19 @@ export function handleLogs() {
         `[${log.timestamp}] ${log.level}: ${formatLogMessage(log.message)}`
     )
     .join("\n");
-  return new Response(logText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    
+  // 检查当前 token 是否为 admin_token
+  let processedLogText = logText;
+  if (globals.currentToken !== globals.adminToken) {
+    // 隐藏 client ip 地址，将 "client ip: 127.0.0.1" 中的 IP 地址部分替换为相同长度的 *，但保留 .
+    processedLogText = logText.replace(/(client\s+ip:\s*)([^\n\r]*)/gi, (match, prefix, ipPart) => {
+      // 将 IP 地址中的每个字符（除了 . 和空格）替换为 *
+      const maskedIp = ipPart.replace(/[^.\s\n\r]/g, '*');
+      return prefix + maskedIp;
+    });
+  }
+  
+  return new Response(processedLogText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
 
 /**
@@ -150,6 +162,8 @@ export async function handleClearCache() {
     globals.episodeIds = [];
     globals.episodeNum = 10001; // 重置为初始值
     globals.lastSelectMap = new Map(); // 重新创建 Map 对象
+    globals.reqRecords = []; // 清空请求记录
+    globals.todayReqNum = 0; // 重置今日请求次数
     
     // 清理搜索和弹幕缓存
     globals.searchCache = new Map();
@@ -189,10 +203,38 @@ export async function handleClearCache() {
       lastSelectMap: 0,
       searchCache: 0,
       commentCache: 0,
-      requestHistory: 0
+      requestHistory: 0,
+      reqRecords: 0,
+      todayReqNum: 0
     }}, 200);
   } catch (error) {
     log("error", `[server] Cache clear failed: ${error.message}`);
     return jsonResponse({ success: false, message: `Cache clear failed: ${error.message}` }, 500);
   }
 }
+
+/**
+ * 处理获取请求记录的请求
+ * @returns {Response} 包含请求记录的响应
+ */
+export function handleReqRecords() {
+  // 返回请求记录，按时间倒序排列（最新的在前）
+  let records = [...globals.reqRecords].reverse();
+  const todayReqNum = globals.todayReqNum || 0;
+  
+  // 检查当前 token 是否为 admin_token，如果不是则隐藏 IP 地址
+  if (globals.currentToken !== globals.adminToken) {
+    // 隐藏请求记录中的 IP 地址，将 IP 地址部分替换为相同长度的 *，但保留 .
+    records = records.map(record => {
+      if (record.clientIp) {
+        // 将 IP 地址中的每个字符（除了 .）替换为 *
+        const maskedIp = record.clientIp.replace(/[^.]/g, '*');
+        return { ...record, clientIp: maskedIp };
+      }
+      return record;
+    });
+  }
+  
+  return jsonResponse({ records, todayReqNum }, 200);
+}
+

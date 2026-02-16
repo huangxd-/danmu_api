@@ -8,6 +8,7 @@ import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
 import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
+import { requestRecordsJsContent } from "./js/requestrecords.js";
 import { systemSettingsJsContent } from "./js/systemsettings.js";
 
 // language=HTML
@@ -54,6 +55,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn" onclick="switchSection('logs', event)">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api', event)">接口调试</button>
                 <button class="nav-btn" onclick="switchSection('push', event)">推送弹幕</button>
+                <button class="nav-btn" onclick="switchSection('request-records', event)">请求记录</button>
                 <button class="nav-btn" onclick="switchSection('env', event)" id="env-nav-btn">系统配置</button>
             </div>
         </div>
@@ -141,6 +143,19 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div id="push-anime-list" class="anime-list" style="display: none;"></div>
                 <div id="push-episode-list" class="episode-list" style="display: none; margin-top: 20px;"></div>
+            </div>
+
+            <!-- 请求记录 -->
+            <div class="section" id="request-records-section">
+                <h2>请求记录</h2>
+                <div class="log-controls">
+                    <div>
+                        <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
+                        <span id="total-requests-today" style="color: #ff5722; margin-left: 15px; vertical-align: middle; font-size: 1.2em; font-weight: bold;"></span>
+                    </div>
+                    <span style="color: #666;">云服务部署需要配置redis</span>
+                </div>
+                <div class="request-records-container" id="request-records-list"></div>
             </div>
 
             <!-- 系统配置 -->
@@ -288,7 +303,7 @@ export const HTML_TEMPLATE = /* html */ `
     <!-- 项目声明 -->
     <footer class="footer">
         <p class="footer-text">
-            一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+            一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
         </p>
         <p class="footer-text">本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。</p>
         <p class="footer-links">
@@ -309,6 +324,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${logviewJsContent}
         ${apitestJsContent}
         ${pushDanmuJsContent}
+        ${requestRecordsJsContent}
         ${systemSettingsJsContent}
     </script>
 </body>

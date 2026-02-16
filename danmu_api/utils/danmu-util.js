@@ -332,6 +332,15 @@ export function rgbToInt(color) {
   return color.r * 256 * 256 + color.g * 256 + color.b;
 }
 
+// 解析 hex 到 int（假设不带 #）
+export function hexToInt(hex) {
+  // 简单校验：确保是 6 位 hex 字符串（不带 #）
+  if (typeof hex !== 'string' || hex.length !== 6 || !/^[0-9A-Fa-f]{6}$/.test(hex)) {
+    return 16777215;  // 无效输入，返回 16777215 白色
+  }
+  return parseInt(hex, 16);  // 直接转换为整数
+}
+
 // 将弹幕 JSON 数据转换为 XML 格式（Bilibili 标准格式）
 export function convertDanmuToXml(danmuData) {
   let xml = '<?xml version="1.0" ?>\n';
