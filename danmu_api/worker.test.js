@@ -22,6 +22,7 @@ import MiguSource from "./sources/migu.js";
 import SohuSource from "./sources/sohu.js";
 import LeshiSource from "./sources/leshi.js";
 import XiguaSource from "./sources/xigua.js";
+import MaiduiduiSource from "./sources/maiduidui.js";
 import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
@@ -67,6 +68,7 @@ test('worker.js API endpoints', async (t) => {
   const sohuSource = new SohuSource();
   const leshiSource = new LeshiSource();
   const xiguaSource = new XiguaSource();
+  const maiduiduiSource = new MaiduiduiSource();
   const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
@@ -299,6 +301,29 @@ test('worker.js API endpoints', async (t) => {
   //     url: 'https://ib.snssdk.com/vapp/danmaku/list/v1/?item_id=6551333775341519368&start_time=1200000&end_time=1500000&format=json'
   //   });
   //   const res = await xiguaSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu segments', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui", true);
+  //   console.log(res.segmentList);
+  //   assert(res.type === "maiduidui", `Expected res.type === "maiduidui", but got ${res.type === "maiduidui"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET maiduidui segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'maiduidui',
+  //     segment_start: 120,
+  //     segment_end: 180,
+  //     url: 'https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0'
+  //   });
+  //   const res = await maiduiduiSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
