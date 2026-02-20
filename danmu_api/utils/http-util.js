@@ -200,7 +200,7 @@ export async function httpPost(url, body, options = {}) {
     }
 
     // 设置超时时间（默认5秒）
-    const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
+    const timeout = parseInt(options.timeout || globals.vodRequestTimeout || '5000', 10) || 5000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 

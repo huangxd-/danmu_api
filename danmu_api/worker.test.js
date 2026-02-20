@@ -10,6 +10,7 @@ import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./ut
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
+import AIClient from './utils/ai-util.js';
 import RenrenSource from "./sources/renren.js";
 import HanjutvSource from "./sources/hanjutv.js";
 import BahamutSource from "./sources/bahamut.js";
@@ -101,6 +102,25 @@ test('worker.js API endpoints', async (t) => {
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
   });
+
+  // await t.test('Test ai cilent', async () => {
+  //   const ai = new AIClient({
+  //     apiKey: 'xxxxxxxxxxxxxxxxxxxxx',
+  //     baseURL: 'https://open.bigmodel.cn/api/paas/v4', // 换成任意兼容 OpenAI 协议的地址
+  //     model: 'GLM-4.7-FlashX',
+  //     systemPrompt: '回答尽量简洁',
+  //   })
+
+  //   // const answer = await ai.ask('你好')
+  //   // console.log(answer);
+
+  //   const status = await ai.verify()
+  //   if (status.ok) {
+  //     console.log('连接正常:', status)
+  //   } else {
+  //     console.log('连接失败:', status.error)
+  //   }
+  // });
 
   // await t.test('GET tencent danmu', async () => {
   //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html", "qq");

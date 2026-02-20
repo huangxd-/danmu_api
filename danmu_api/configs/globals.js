@@ -27,6 +27,7 @@ export const Globals = {
   localCacheValid: false, // 本地缓存是否生效
   localCacheInitialized: false, // 本地缓存是否已初始化
   redisValid: false, // redis是否生效
+  aiValid: false, // AI配置是否生效
   redisCacheInitialized: false, // redis 缓存是否已初始化
   lastSelectMap: new Map(), // 存储查询关键字上次选择的animeId，用于下次match自动匹配时优先选择该anime
   reqRecords: [], // 记录请求历史，包括接口/参数/请求时间

@@ -32,6 +32,7 @@ export function handleConfig(hasPermission = false) {
     ...globals.accessedEnvVars,
     localCacheValid: globals.localCacheValid,
     redisValid: globals.redisValid,
+    aiValid: globals.aiValid,
     deployPlatform: globals.deployPlatform
   };
   

@@ -12,6 +12,7 @@ import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.j
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER } from "../utils/merge-util.js";
+import AIClient from '../utils/ai-util.js';
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
 import TmdbSource from "../sources/tmdb.js";
@@ -520,6 +521,117 @@ function findEpisodeByNumber(filteredEpisodes, targetEpisode, platform = null) {
   return null;
 }
 
+async function matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId) {
+  // 从全局配置获取AI相关设置
+  const aiBaseUrl = globals.aiBaseUrl;
+  const aiModel = globals.aiModel;
+  const aiApiKey = globals.aiApiKey;
+  const aiMatchPrompt = globals.aiMatchPrompt;
+
+  // 检查AI配置是否完整
+  if (!globals.aiValid || !aiMatchPrompt) {
+    log("warn", "AI configuration is incomplete, falling back to normal matching");
+    // 如果AI配置不完整，返回null以使用常规匹配
+    return { resEpisode: null, resAnime: null };
+  }
+
+  // 创建AIClient实例
+  const aiClient = new AIClient({
+    apiKey: aiApiKey,
+    baseURL: aiBaseUrl,
+    model: aiModel,
+    systemPrompt: aiMatchPrompt
+  });
+
+  // 准备AI匹配的数据
+  const matchData = {
+    season,
+    episode,
+    year,
+    title,
+    dynamicPlatformOrder,
+    preferAnimeId,
+    animes: searchData.animes
+  };
+
+  try {
+    // 构建AI提示词
+    const prompt = `请根据以下信息匹配动漫和集数：
+    查询标题: ${title}
+    季数: ${season || 'N/A'}
+    集数: ${episode || 'N/A'}
+    年份: ${year || 'N/A'}
+    平台: ${dynamicPlatformOrder || 'N/A'}
+    偏好动漫ID: ${preferAnimeId || 'N/A'}
+    
+    可选的动漫列表:
+    ${JSON.stringify(matchData.animes, null, 2)}
+    
+    请分析哪个动漫最符合查询条件，如果指定了季数和集数，请也返回对应的集信息。
+    请严格按照以下JSON格式返回结果：
+    {
+      "animeIndex": 匹配的动漫在列表中的索引(从0开始) 或 null,
+      "episodeIndex": 匹配的集数在动漫剧集列表中的索引(从0开始) 或 null
+    }
+    
+    如果没有找到合适的匹配，请返回:
+    {
+      "animeIndex": null,
+      "episodeIndex": null
+    }`;
+
+    // 调用AI获取匹配结果
+    const aiResponse = await aiClient.ask(prompt);
+    log("info", `AI match response: ${aiResponse}`);
+
+    // 解析AI响应
+    let parsedResponse;
+    try {
+      // 提取JSON部分（以防AI返回了额外的文本）
+      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```|```([\s\S]*?)\s*```|({[\s\S]*})/);
+      const jsonString = jsonMatch ? (jsonMatch[1] || jsonMatch[2] || jsonMatch[3]) : aiResponse;
+      parsedResponse = JSON.parse(jsonString.trim());
+    } catch (parseError) {
+      log("error", `Failed to parse AI response: ${parseError.message}`);
+      return { resEpisode: null, resAnime: null };
+    }
+
+    // 获取匹配的动漫和集数
+    const animeIndex = parsedResponse.animeIndex;
+    let episodeIndex = parsedResponse.episodeIndex;
+
+    if (animeIndex === null || animeIndex === undefined) {
+      return { resEpisode: null, resAnime: null };
+    }
+
+    const selectedAnime = matchData.animes[animeIndex];
+    if (!selectedAnime) {
+      log("error", `AI returned invalid anime index: ${animeIndex}`);
+      return { resEpisode: null, resAnime: null };
+    }
+
+    // 获取动漫的详细信息（包括剧集列表）
+    let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${selectedAnime.bangumiId}`));
+    const bangumiRes = await getBangumi(originBangumiUrl.pathname);
+    const bangumiData = await bangumiRes.json();
+
+    // 返回匹配结果
+    let selectedEpisode = null;
+    if (episodeIndex === null || episodeIndex === undefined) {
+      episodeIndex = 0;
+    }
+    if (bangumiData.bangumi?.episodes?.length > episodeIndex) {
+      selectedEpisode = bangumiData.bangumi.episodes[episodeIndex];
+    }
+
+    return { resEpisode: selectedEpisode, resAnime: selectedAnime };
+  } catch (error) {
+    log("error", `AI matching failed: ${error.message}`);
+    // 如果AI匹配失败，返回null以使用常规匹配
+    return { resEpisode: null, resAnime: null };
+  }
+}
+
 async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId) {
   // 定义最佳匹配结果容器
   let bestRes = {
@@ -838,22 +950,31 @@ export async function matchAnime(url, req) {
     log("info", `Dynamic platformOrder: ${dynamicPlatformOrder}`);
     log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
 
-    for (const platform of dynamicPlatformOrder) {
-      const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
-      resEpisode = __ret.resEpisode;
-      resAnime = __ret.resAnime;
+    // 尝试使用AI进行匹配
+    const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId);
+    if (aiMatchResult.resAnime) {
+      resAnime = aiMatchResult.resAnime;
+      resEpisode = aiMatchResult.resEpisode;
+      log("info", `AI match found: ${resAnime.animeTitle}; episode: ${resEpisode.episodeTitle}`);
+    } else {
+      // AI匹配失败或未配置，使用传统匹配方式
+      for (const platform of dynamicPlatformOrder) {
+        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
+        resEpisode = __ret.resEpisode;
+        resAnime = __ret.resAnime;
 
-      if (resAnime) {
-        log("info", `Found match with platform: ${platform || 'default'}`);
-        break;
+        if (resAnime) {
+          log("info", `Found match with platform: ${platform || 'default'}`);
+          break;
+        }
       }
-    }
 
-    // 如果都没有找到则返回第一个满足剧集数的剧集
-    if (!resAnime) {
-      const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
-      resEpisode = __ret.resEpisode;
-      resAnime = __ret.resAnime;
+      // 如果都没有找到则返回第一个满足剧集数的剧集
+      if (!resAnime) {
+        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
+        resEpisode = __ret.resEpisode;
+        resAnime = __ret.resAnime;
+      }
     }
 
     let resData = {
