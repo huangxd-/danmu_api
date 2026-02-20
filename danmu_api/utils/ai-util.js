@@ -22,7 +22,7 @@ export default class AIClient {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
       },
-      timeout: 30000
+      timeout: 60000
     });
     const data = res.data;
 
