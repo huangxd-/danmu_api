@@ -545,6 +545,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │       ├── requestrecords.js # 请求记录脚本
 │   │       └── systemsettings.js # 系统设置脚本
 │   └── utils/
+│       ├── ai-util.js          # AI相关处理工具
 │       ├── cache-util.js       # 缓存数据处理工具
 │       ├── codec-util.js       # 编解码工具
 │       ├── common-util.js      # 通用工具

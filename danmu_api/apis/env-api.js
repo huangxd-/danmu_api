@@ -1,6 +1,7 @@
 import { jsonResponse } from '../utils/http-util.js';
 import { HandlerFactory } from '../configs/handlers/handler-factory.js';
 import { globals } from '../configs/globals.js';
+import AIClient from '../utils/ai-util.js';
 
 /**
  * 处理设置环境变量的请求
@@ -92,5 +93,59 @@ export async function handleDelEnv(request) {
   } catch (error) {
     console.error('删除环境变量失败:', error);
     return jsonResponse({ success: false, message: `删除环境变量失败: ${error.message}` }, 500);
+  }
+}
+
+/**
+ * 处理AI连通性验证请求
+ */
+export async function handleAiVerify(request) {
+  try {
+    const body = await request.json();
+    
+    // 从请求体获取配置，如果没有则使用全局配置
+    const aiBaseUrl = body.aiBaseUrl || globals.aiBaseUrl || 'https://api.openai.com/v1';
+    const aiModel = body.aiModel || globals.aiModel || 'gpt-4o';
+    const aiApiKey = body.aiApiKey || globals.aiApiKey;
+    
+    if (!aiApiKey) {
+      return jsonResponse({ 
+        success: false, 
+        ok: false,
+        message: 'AI_API_KEY 未配置' 
+      }, 400);
+    }
+    
+    // 创建 AI 客户端
+    const ai = new AIClient({
+      baseURL: aiBaseUrl,
+      model: aiModel,
+      apiKey: aiApiKey,
+      systemPrompt: '回答尽量简洁',
+    });
+    
+    // 执行验证
+    const status = await ai.verify();
+    
+    if (status.ok) {
+      return jsonResponse({ 
+        success: true, 
+        ok: true,
+        message: 'AI 服务连通性测试成功' 
+      });
+    } else {
+      return jsonResponse({ 
+        success: false, 
+        ok: false,
+        message: `AI 服务连通性测试失败: ${status.error}` 
+      }, 200);
+    }
+  } catch (error) {
+    console.error('AI 连通性验证失败:', error);
+    return jsonResponse({ 
+      success: false, 
+      ok: false,
+      message: `AI 连通性验证失败: ${error.message}` 
+    }, 500);
   }
 }
