@@ -6,7 +6,7 @@
 LogVar 弹幕 API 服务器
 </h2>
 
-[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/danmu_api)
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/13266750/danmu_api)
 ![GitHub forks](https://img.shields.io/github/forks/huangxd-/danmu_api)
 ![GitHub Repo stars](https://img.shields.io/github/stars/huangxd-/danmu_api)
 ![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
@@ -80,7 +80,7 @@ LogVar 弹幕 API 服务器
 - **弹幕分片请求**：
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
   - `/api/v2/segmentcomment` 通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据
-- **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
+- **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/13266750/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
   - 配置预览
   - 日志查看
   - 接口调试
@@ -234,9 +234,9 @@ LogVar 弹幕 API 服务器
 ### 一键部署
 点击以下按钮即可将项目快速部署到 Vercel：
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/huangxd-/danmu_api&project-name=danmu_api&repository-name=danmu_api)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/13266750/danmu_api&project-name=danmu_api&repository-name=danmu_api)
 
-**注意**：请将按钮链接中的 `https://github.com/huangxd-/danmu_api` 替换为你的实际 Git 仓库地址。编辑 `README.md` 并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
+**注意**：请将按钮链接中的 `https://github.com/13266750/danmu_api` 替换为你的实际 Git 仓库地址。编辑 `README.md` 并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
 - **设置环境变量**：部署后，在 Vercel 仪表板中：
   1. 转到你的项目设置。
   2. 在“Environment Variables”部分添加 `TOKEN` 变量，输入你的 API 令牌值。
@@ -254,7 +254,7 @@ LogVar 弹幕 API 服务器
 ### 一键部署
 点击以下按钮即可将项目快速部署到 Netlify：
 
-<a href="https://app.netlify.com/start/deploy?repository=https://github.com/huangxd-/danmu_api"><img src="https://www.netlify.com/img/deploy/button.svg"></a>
+<a href="https://app.netlify.com/start/deploy?repository=https://github.com/13266750/danmu_api"><img src="https://www.netlify.com/img/deploy/button.svg"></a>
 
 > 默认访问domain：https://{你的部署项目名}.netlify.app
 > > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{你的部署项目名}.netlify.app/api/v2/search/anime?keyword=子夜归`
@@ -267,7 +267,7 @@ LogVar 弹幕 API 服务器
 ## 部署到 腾讯云 edgeone pages
 
 ### 一键部署
-[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
+[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?template=https://github.com/13266750/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 
 > 注意：部署时请在环境变量配置区域填写你的TOKEN值，该变量将用于API服务的身份验证相关功能
 > 
@@ -276,7 +276,7 @@ LogVar 弹幕 API 服务器
 >
 > 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
 > 
-> 也可直接用国际站的部署按钮一键部署，默认选择"全球可用区（不含中国大陆）" [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
+> 也可直接用国际站的部署按钮一键部署，默认选择"全球可用区（不含中国大陆）" [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=https://github.com/13266750/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 > 
 <img src="https://i.mji.rip/2025/09/17/3a675876dabb92e4ce45c10d543ce66b.png" style="width:400px" />
 
@@ -289,9 +289,9 @@ LogVar 弹幕 API 服务器
 ### 一键部署
 点击以下按钮即可将项目快速部署到 Cloudflare：
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/huangxd-/danmu_api)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/13266750/danmu_api)
 
-**注意**：请将按钮链接中的 `https://github.com/huangxd-/danmu_api` 替换为你的实际 Git 仓库地址。编辑 `README.md` 并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
+**注意**：请将按钮链接中的 `https://github.com/13266750/danmu_api` 替换为你的实际 Git 仓库地址。编辑 `README.md` 并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
 - **设置环境变量**：部署后，在 Cloudflare 仪表板中：
   1. 转到你的 Workers 项目。
   2. 转到“Settings” > “Variables”。
@@ -308,7 +308,7 @@ LogVar 弹幕 API 服务器
 ## API食用指南
 支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer 等支持弹幕API的播放器。
 
-配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
+配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/13266750/danmu_api/pull/98) 。
 
 以`senplayer`为例：
 1. 获取到部署之后的API地址，如 `http://192.168.1.7:9321/87654321` ，其中`87654321`是默认token（默认为87654321的情况下也可以不带token），如果有自定义环境变量TOKEN，请替换成相应的token；API地址也可直接在UI界面上点击API端点直接复制
@@ -357,7 +357,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 > 
 > （已对小幻做兼容，`/api/v2`可加可不加都可以正确处理）
 > 
-> 小幻在使用时可能出现掉匹配无法加载弹幕的问题，详见[这个issue](https://github.com/huangxd-/danmu_api/issues/33)，可以通过配置环境变量`UPSTASH_REDIS_REST_URL`和`UPSTASH_REDIS_REST_TOKEN`，开启upstash redis存储解决
+> 小幻在使用时可能出现掉匹配无法加载弹幕的问题，详见[这个issue](https://github.com/13266750/danmu_api/issues/33)，可以通过配置环境变量`UPSTASH_REDIS_REST_URL`和`UPSTASH_REDIS_REST_TOKEN`，开启upstash redis存储解决
 > 
 > 有很多人问FW能不能用，FW推荐直接使用插件，如果非要使用，则可以配合 `https://raw.githubusercontent.com/huangxd-/ForwardWidgets/refs/heads/main/widgets.fwd` 里的`danmu_api`插件使用
 
@@ -400,9 +400,9 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
-| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
-| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/13266750/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
+| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/13266750/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/13266750/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | NODE_TLS_REJECT_UNAUTHORIZED      | 【可选】在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1       |
 | AI_BASE_URL      | 【可选】AI服务的基础URL地址，用于配置AI相关功能的API端点，不填默认为https://api.openai.com/v1       |
 | AI_MODEL      | 【可选】AI模型名称，指定使用的AI模型，不填默认为gpt-4o       |
@@ -657,7 +657,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 4. 如果你播放的影片片名不规范，很可能搜不到，请确保片名规范
 
 ### 贡献者
-<a href="https://github.com/huangxd-/danmu_api/graphs/contributors">
+<a href="https://github.com/13266750/danmu_api/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=huangxd-/danmu_api" alt="contributors" />
 </a>
 
