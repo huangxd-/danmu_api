@@ -129,13 +129,15 @@ export default class HanjutvSource extends BaseSource {
         throw new Error(`s5 响应解密失败: ${error.message}`);
       }
 
+      log("info", `[Hanjutv] s5 解密后 ${JSON.stringify(decoded)}`);
+
       const items = this.extractSearchItems(decoded);
-      if (items.length === 0) throw new Error(`s5 解密后无有效结果 ${JSON.stringify(decoded)}`);
+      if (items.length === 0) throw new Error(`s5 解密后无有效结果`);
       return items;
     }
 
     const plainItems = this.extractSearchItems(payload);
-    if (plainItems.length === 0) throw new Error(`s5 无有效结果 ${JSON.stringify(payload)}`);
+    if (plainItems.length === 0) throw new Error(`s5 无有效结果`);
     return plainItems;
   }
 
@@ -184,7 +186,6 @@ export default class HanjutvSource extends BaseSource {
 
       log("info", `[Hanjutv] 搜索候选统计 s5=${s5List.length}, web=${webList.length}`);
       log("info", `[Hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
-      log("info", `[Hanjutv] 搜索找到 ${resultList}`);
 
       return resultList.map((anime) => {
         const animeId = convertToAsciiSum(anime.sid);
