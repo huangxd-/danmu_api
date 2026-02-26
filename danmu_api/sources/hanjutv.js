@@ -129,8 +129,6 @@ export default class HanjutvSource extends BaseSource {
         throw new Error(`s5 响应解密失败: ${error.message}`);
       }
 
-      log("info", `[Hanjutv] s5 解密后 ${JSON.stringify(decoded)}`);
-
       const items = this.extractSearchItems(decoded);
       if (items.length === 0) throw new Error(`s5 解密后无有效结果`);
       return items;
