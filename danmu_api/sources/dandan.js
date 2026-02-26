@@ -5,6 +5,7 @@ import { httpGet } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
+import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
 
 // =====================
 // 获取弹弹play弹幕
@@ -12,29 +13,122 @@ import { SegmentListResponse } from '../models/dandan-model.js';
 export default class DandanSource extends BaseSource {
   async search(keyword) {
     try {
-      const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/anime?keyword=${keyword}`, {
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": `LogVar Danmu API/${globals.version}`,
-        },
-      });
+      log("info", `[Dandan] 原始搜索词: ${keyword}`);
 
-      // 判断 resp 和 resp.data 是否存在
-      if (!resp || !resp.data) {
-        log("info", "dandanSearchresp: 请求失败或无数据返回");
-        return [];
+      // 创建 AbortController 用于取消 TMDB 流程
+      const tmdbAbortController = new AbortController();
+
+      // 第一次搜索：使用原始关键词搜索番剧列表
+      const originalSearchPromise = (async () => {
+        try {
+          const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/anime?keyword=${keyword}`, {
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": `LogVar Danmu API/${globals.version}`,
+            },
+          });
+
+          // 判断 resp 和 resp.data 是否存在
+          if (!resp || !resp.data) {
+            log("info", "[Dandan] 原始搜索请求失败或无数据返回 (source: original)");
+            return { success: false, source: 'original' };
+          }
+
+          // 判断 animes 是否存在且有结果
+          if (!resp.data.animes || resp.data.animes.length === 0) {
+            log("info", "[Dandan] 原始搜索成功，但未返回任何结果 (source: original)");
+            return { success: false, source: 'original' };
+          }
+
+          // 原始搜索有结果，中断 TMDB 流程
+          tmdbAbortController.abort();
+          const animes = resp.data.animes;
+          log("info", `dandanSearchresp (original): ${JSON.stringify(animes)}`);
+          log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: original)`);
+          return { success: true, data: animes, source: 'original' };
+        } catch (error) {
+          // 捕获原始搜索错误，但不阻塞 TMDB 搜索
+          log("error", "getDandanAnimes error:", {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          });
+          return { success: false, source: 'original' };
+        }
+      })();
+
+      // 第二次搜索：TMDB 日语原名转换后使用 episodes 接口搜索（并行执行）
+      const tmdbSearchPromise = (async () => {
+        try {
+          // 延迟100毫秒，避免与原始搜索争抢同一连接池
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // 获取 TMDB 日语原名
+          const tmdbResult = await getTmdbJaOriginalTitle(keyword, tmdbAbortController.signal, "Dandan");
+
+          // 如果没有结果或者没有标题，则停止
+          if (!tmdbResult || !tmdbResult.title) {
+            log("info", "[Dandan] TMDB转换未返回结果，取消日语原名搜索");
+            return { success: false, source: 'tmdb' };
+          }
+
+          const { title: tmdbTitle } = tmdbResult;
+          log("info", `[Dandan] 使用日语原名通过 episodes 接口进行搜索: ${tmdbTitle}`);
+
+          // episodes 接口对日语原名的支持更好，使用其进行 TMDB 原名搜索
+          const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/episodes?anime=${encodeURIComponent(tmdbTitle)}`, {
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": `LogVar Danmu API/${globals.version}`,
+            },
+            signal: tmdbAbortController.signal,
+          });
+
+          // 判断 resp 和 resp.data 是否存在
+          if (!resp || !resp.data) {
+            log("info", "[Dandan] 日语原名搜索请求失败或无数据返回 (source: tmdb)");
+            return { success: false, source: 'tmdb' };
+          }
+
+          // 判断 animes 是否存在且有结果
+          if (!resp.data.animes || resp.data.animes.length === 0) {
+            log("info", "[Dandan] 日语原名搜索成功，但未返回任何结果 (source: tmdb)");
+            return { success: false, source: 'tmdb' };
+          }
+
+          const animes = resp.data.animes;
+          log("info", `dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
+          log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: tmdb)`);
+          return { success: true, data: animes, source: 'tmdb' };
+        } catch (error) {
+          // 捕获被中断的错误
+          if (error.name === 'AbortError') {
+            log("info", "[Dandan] 原始搜索成功，中断日语原名搜索");
+            return { success: false, source: 'tmdb', aborted: true };
+          }
+          // 抛出其他错误（例如 httpGet 超时）
+          throw error;
+        }
+      })();
+
+      // 等待两个搜索任务同时完成，优先采用原始搜索结果
+      const [originalResult, tmdbResult] = await Promise.all([
+        originalSearchPromise,
+        tmdbSearchPromise
+      ]);
+
+      // 优先返回原始搜索结果
+      if (originalResult.success) {
+        return originalResult.data;
       }
 
-      // 判断 seriesData 是否存在
-      if (!resp.data.animes) {
-        log("info", "dandanSearchresp: seriesData 或 seriesList 不存在");
-        return [];
+      // 原始搜索无结果，返回 TMDB 搜索结果
+      if (tmdbResult.success) {
+        return tmdbResult.data;
       }
 
-      // 正常情况下输出 JSON 字符串
-      log("info", `[Dandan] 搜索找到 ${resp.data.animes.length} 个有效结果`);
-
-      return resp.data.animes;
+      log("info", "[Dandan] 原始搜索和基于TMDB的搜索均未返回任何结果");
+      return [];
     } catch (error) {
       // 捕获请求中的错误
       log("error", "getDandanAnimes error:", {
@@ -84,11 +178,14 @@ export default class DandanSource extends BaseSource {
       const type = bangumiData.type || null;
       const typeDescription = bangumiData.typeDescription || null;
 
+      // 提取封面图片 URL，用于 episodes 接口返回结果缺少 imageUrl 时的数据补全
+      const imageUrl = bangumiData.imageUrl || null;
+
       // 正常情况下输出 JSON 字符串
       log("info", `getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
 
-      // 返回包含剧集、别名、相关作品及类型信息的完整对象
-      return { episodes, titles, relateds, type, typeDescription };
+      // 返回包含剧集、别名、相关作品、类型及封面信息的完整对象
+      return { episodes, titles, relateds, type, typeDescription, imageUrl };
 
     } catch (error) {
       // 捕获请求中的错误
@@ -97,7 +194,7 @@ export default class DandanSource extends BaseSource {
         name: error.name,
         stack: error.stack,
       });
-      return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null };
+      return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null, imageUrl: null };
     }
   }
 
@@ -196,7 +293,7 @@ export default class DandanSource extends BaseSource {
               aliases: aliases,
               type: resolvedType,
               typeDescription: resolvedTypeDescription,
-              imageUrl: anime.imageUrl,
+              imageUrl: details.imageUrl || anime.imageUrl,
               startDate: resolvedStartDate,
               episodeCount: links.length,
               rating: anime.rating || 0,
