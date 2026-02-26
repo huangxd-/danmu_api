@@ -105,6 +105,58 @@ export default class HanjutvSource extends BaseSource {
     return Array.from(map.values());
   }
 
+  countMatchedItems(items = [], keyword = "") {
+    if (!Array.isArray(items) || !keyword) return 0;
+    return items.reduce((count, item) => {
+      const name = item?.name ? String(item.name) : "";
+      return count + (titleMatches(name, keyword) ? 1 : 0);
+    }, 0);
+  }
+
+  mergeSearchCandidates(keyword, s5List = [], webList = []) {
+    const s5Candidates = this.dedupeBySid(s5List);
+    const webCandidates = this.dedupeBySid(webList);
+
+    const s5Matched = [];
+    const s5Unmatched = [];
+    for (const item of s5Candidates) {
+      if (titleMatches(item?.name || "", keyword)) s5Matched.push(item);
+      else s5Unmatched.push(item);
+    }
+
+    const webMatched = [];
+    const webUnmatched = [];
+    for (const item of webCandidates) {
+      if (titleMatches(item?.name || "", keyword)) webMatched.push(item);
+      else webUnmatched.push(item);
+    }
+
+    // 优先返回可命中标题的结果，避免 s5 非空但无效时阻断 legacy。
+    const hasMatched = (s5Matched.length + webMatched.length) > 0;
+    const orderedCandidates = hasMatched
+      ? [...s5Matched, ...webMatched, ...s5Unmatched, ...webUnmatched]
+      : [...s5Candidates, ...webCandidates];
+
+    const resultList = [];
+    const sidSet = new Set();
+    for (const item of orderedCandidates) {
+      const sid = item?.sid ? String(item.sid) : "";
+      if (!sid || sidSet.has(sid)) continue;
+      sidSet.add(sid);
+      resultList.push(item);
+    }
+
+    return {
+      resultList,
+      stats: {
+        s5Total: s5Candidates.length,
+        s5Matched: s5Matched.length,
+        webTotal: webCandidates.length,
+        webMatched: webMatched.length,
+      }
+    };
+  }
+
   async searchWithS5Api(keyword) {
     const uid = createHanjutvUid();
     const headers = await createHanjutvSearchHeaders(uid);
@@ -159,30 +211,36 @@ export default class HanjutvSource extends BaseSource {
 
       let s5List = [];
       let webList = [];
+      let s5Error = null;
 
       try {
         s5List = await this.searchWithS5Api(key);
       } catch (error) {
+        s5Error = error;
         log("warn", `[Hanjutv] s5 搜索失败，降级旧接口: ${error.message}`);
       }
 
-      let resultList = this.dedupeBySid(s5List);
-
-      if (resultList.length === 0) {
+      const s5MatchedCount = this.countMatchedItems(s5List, key);
+      const needLegacySearch = s5List.length === 0 || s5MatchedCount === 0;
+      if (needLegacySearch) {
+        if (!s5Error && s5List.length > 0 && s5MatchedCount === 0) {
+          log("warn", `[Hanjutv] s5 返回 ${s5List.length} 条但标题零命中，触发 legacy 补偿检索`);
+        }
         try {
           webList = await this.searchWithLegacyApi(key);
         } catch (error) {
           log("warn", `[Hanjutv] 旧搜索接口失败: ${error.message}`);
         }
-        resultList = this.dedupeBySid(webList);
       }
+
+      const { resultList, stats } = this.mergeSearchCandidates(key, s5List, webList);
 
       if (resultList.length === 0) {
         log("info", "hanjutvSearchresp: s5 与旧接口均无有效结果");
         return [];
       }
 
-      log("info", `[Hanjutv] 搜索候选统计 s5=${s5List.length}, web=${webList.length}`);
+      log("info", `[Hanjutv] 搜索候选统计 s5=${stats.s5Total}(命中${stats.s5Matched}), web=${stats.webTotal}(命中${stats.webMatched})`);
       log("info", `[Hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
 
       return resultList.map((anime) => {
