@@ -184,6 +184,7 @@ export default class HanjutvSource extends BaseSource {
 
       log("info", `[Hanjutv] 搜索候选统计 s5=${s5List.length}, web=${webList.length}`);
       log("info", `[Hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
+      log("info", `[Hanjutv] 搜索找到 ${resultList}`);
 
       return resultList.map((anime) => {
         const animeId = convertToAsciiSum(anime.sid);
