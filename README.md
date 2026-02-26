@@ -18,7 +18,7 @@ LogVar 弹幕 API 服务器
 
 ---
 
-一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西埋弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
 
 本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。
 
@@ -76,6 +76,7 @@ LogVar 弹幕 API 服务器
   - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
   - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`）
   - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
+  - 增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
 - **弹幕分片请求**：
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
@@ -587,6 +588,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── cookie-util.js      # b站 cookie获取工具
 │       ├── danmu-util.js       # 弹幕处理工具
 │       ├── douban-util.js      # 豆瓣API请求工具
+│       ├── hanjutv-util.js     # 韩剧tv加解密工具
 │       ├── http-util.js        # 请求工具
 │       ├── imdb-util.js        # IMDB API请求工具
 │       ├── log-util.js         # 日志工具

@@ -130,12 +130,12 @@ export default class HanjutvSource extends BaseSource {
       }
 
       const items = this.extractSearchItems(decoded);
-      if (items.length === 0) throw new Error("s5 解密后无有效结果");
+      if (items.length === 0) throw new Error(`s5 解密后无有效结果 ${JSON.stringify(decoded)}`);
       return items;
     }
 
     const plainItems = this.extractSearchItems(payload);
-    if (plainItems.length === 0) throw new Error("s5 无有效结果");
+    if (plainItems.length === 0) throw new Error(`s5 无有效结果 ${JSON.stringify(payload)}`);
     return plainItems;
   }
 
