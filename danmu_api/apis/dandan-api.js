@@ -12,6 +12,7 @@ import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.j
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER } from "../utils/merge-util.js";
+import AIClient from '../utils/ai-util.js';
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
 import TmdbSource from "../sources/tmdb.js";
@@ -30,6 +31,7 @@ import YoukuSource from "../sources/youku.js";
 import SohuSource from "../sources/sohu.js";
 import LeshiSource from "../sources/leshi.js";
 import XiguaSource from "../sources/xigua.js";
+import MaiduiduiSource from "../sources/maiduidui.js";
 import AnimekoSource from "../sources/animeko.js";
 import OtherSource from "../sources/other.js";
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
@@ -54,6 +56,7 @@ const miguSource = new MiguSource();
 const sohuSource = new SohuSource();
 const leshiSource = new LeshiSource();
 const xiguaSource = new XiguaSource();
+const maiduiduiSource = new MaiduiduiSource();
 const animekoSource = new AnimekoSource();
 const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource, miguSource);
@@ -175,6 +178,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       platform = "leshi";
     } else if (queryTitle.includes('.douyin.com') || queryTitle.includes('.ixigua.com')) {
       platform = "xigua";
+    } else if (queryTitle.includes('.mddcloud.com.cn')) {
+      platform = "maiduidui";
     }
 
     const pageTitle = await getPageTitle(queryTitle);
@@ -227,6 +232,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       if (source === "sohu") return sohuSource.search(queryTitle);
       if (source === "leshi") return leshiSource.search(queryTitle);
       if (source === "xigua") return xiguaSource.search(queryTitle);
+      if (source === "maiduidui") return maiduiduiSource.search(queryTitle);
       if (source === "animeko") return animekoSource.search(queryTitle);
     });
 
@@ -246,7 +252,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       vod: animesVodResults, 360: animes360, tmdb: animesTmdb, douban: animesDouban, renren: animesRenren,
       hanjutv: animesHanjutv, bahamut: animesBahamut, dandan: animesDandan, custom: animesCustom, 
       tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili,
-      migu: animesMigu, sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, animeko: animesAnimeko
+      migu: animesMigu, sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, maiduidui: animesMaiduidui, 
+      animeko: animesAnimeko
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -311,6 +318,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       } else if (key === 'xigua') {
         // 等待处理Xigua来源
         await xiguaSource.handleAnimes(animesXigua, queryTitle, curAnimes);
+      } else if (key === 'maiduidui') {
+        // 等待处理Maiduidui来源
+        await maiduiduiSource.handleAnimes(animesMaiduidui, queryTitle, curAnimes);
       } else if (key === 'animeko') {
         // 等待处理Animeko来源
         await animekoSource.handleAnimes(animesAnimeko, queryTitle, curAnimes);
@@ -509,6 +519,107 @@ function findEpisodeByNumber(filteredEpisodes, targetEpisode, platform = null) {
   }
   
   return null;
+}
+
+async function matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId) {
+  const aiBaseUrl = globals.aiBaseUrl;
+  const aiModel = globals.aiModel;
+  const aiApiKey = globals.aiApiKey;
+  const aiMatchPrompt = globals.aiMatchPrompt;
+
+  if (!globals.aiValid || !aiMatchPrompt) {
+    log("warn", "AI configuration is incomplete, falling back to normal matching");
+    return { resEpisode: null, resAnime: null };
+  }
+
+  const aiClient = new AIClient({
+    apiKey: aiApiKey,
+    baseURL: aiBaseUrl,
+    model: aiModel,
+    systemPrompt: aiMatchPrompt
+  });
+
+  const matchData = {
+    title,
+    season,
+    episode,
+    year,
+    dynamicPlatformOrder,
+    preferAnimeId,
+    animes: searchData.animes.map(anime => {
+      const normalizedAnimeTitle = anime.animeTitle || '';
+      const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
+      const title = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
+      return {
+        animeId: anime.animeId,
+        animeTitle: title,
+        type: anime.type,
+        year: anime.startDate ? anime.startDate.slice(0, 4) : null,
+        episodeCount: anime.episodeCount,
+        source: anime.source
+      };
+    })
+  };
+
+  try {
+    // userPrompt 只传入结构化数据
+    const userPrompt = JSON.stringify(matchData, null, 2);
+
+    const aiResponse = await aiClient.ask(userPrompt);
+    // const aiResponse = '{ "animeIndex": 0 }';
+    log("info", `AI match response: ${aiResponse}`);
+
+    let parsedResponse;
+    try {
+      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```|```([\s\S]*?)\s*```|({[\s\S]*})/);
+      const jsonString = jsonMatch ? (jsonMatch[1] || jsonMatch[2] || jsonMatch[3]) : aiResponse;
+      parsedResponse = JSON.parse(jsonString.trim());
+    } catch (parseError) {
+      log("error", `Failed to parse AI response: ${parseError.message}`);
+      return { resEpisode: null, resAnime: null };
+    }
+
+    const animeIndex = parsedResponse.animeIndex;
+
+    if (animeIndex === null || animeIndex === undefined) {
+      return { resEpisode: null, resAnime: null };
+    }
+
+    const selectedAnime = searchData.animes[animeIndex];
+    if (!selectedAnime) {
+      log("error", `AI returned invalid anime index: ${animeIndex}`);
+      return { resEpisode: null, resAnime: null };
+    }
+
+    let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${selectedAnime.animeId}`));
+    const bangumiRes = await getBangumi(originBangumiUrl.pathname);
+    const bangumiData = await bangumiRes.json();
+
+    let filteredEpisode = null;
+    
+    if (season && episode) {
+        // 剧集模式逻辑
+        const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
+          return !globals.episodeTitleFilter.test(episode.episodeTitle);
+        });
+        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
+        
+        log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
+
+        // 匹配集数 (注意：findEpisodeByNumber 已增强支持模糊平台匹配)
+        filteredEpisode = findEpisodeByNumber(filteredEpisodes, episode);
+    } else {
+        // 电影模式逻辑
+        if (bangumiData.bangumi.episodes.length > 0) {
+          filteredEpisode = bangumiData.bangumi.episodes[0];
+        }
+    }
+
+    return { resEpisode: filteredEpisode, resAnime: selectedAnime };
+  } catch (error) {
+    log("error", `AI matching failed: ${error.message}`);
+    return { resEpisode: null, resAnime: null };
+  }
 }
 
 async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId) {
@@ -829,22 +940,31 @@ export async function matchAnime(url, req) {
     log("info", `Dynamic platformOrder: ${dynamicPlatformOrder}`);
     log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
 
-    for (const platform of dynamicPlatformOrder) {
-      const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
-      resEpisode = __ret.resEpisode;
-      resAnime = __ret.resAnime;
+    // 尝试使用AI进行匹配
+    const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId);
+    if (aiMatchResult.resAnime) {
+      resAnime = aiMatchResult.resAnime;
+      resEpisode = aiMatchResult.resEpisode;
+      log("info", `AI match found: ${resAnime.animeTitle}; episode: ${resEpisode.episodeTitle}`);
+    } else {
+      // AI匹配失败或未配置，使用传统匹配方式
+      for (const platform of dynamicPlatformOrder) {
+        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
+        resEpisode = __ret.resEpisode;
+        resAnime = __ret.resAnime;
 
-      if (resAnime) {
-        log("info", `Found match with platform: ${platform || 'default'}`);
-        break;
+        if (resAnime) {
+          log("info", `Found match with platform: ${platform || 'default'}`);
+          break;
+        }
       }
-    }
 
-    // 如果都没有找到则返回第一个满足剧集数的剧集
-    if (!resAnime) {
-      const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
-      resEpisode = __ret.resEpisode;
-      resAnime = __ret.resAnime;
+      // 如果都没有找到则返回第一个满足剧集数的剧集
+      if (!resAnime) {
+        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
+        resEpisode = __ret.resEpisode;
+        resAnime = __ret.resAnime;
+      }
     }
 
     let resData = {
@@ -1135,6 +1255,7 @@ async function fetchMergedComments(url) {
         else if (sourceName === 'sohu') sourceInstance = sohuSource;
         else if (sourceName === 'leshi') sourceInstance = leshiSource;
         else if (sourceName === 'xigua') sourceInstance = xiguaSource;
+        else if (sourceName === 'maiduidui') sourceInstance = maiduiduiSource;
         else if (sourceName === 'animeko') sourceInstance = animekoSource;
         // 如有新增允许的源合并，在此处添加
 
@@ -1231,6 +1352,8 @@ export async function getComment(path, queryFormat, segmentFlag) {
       danmus = await leshiSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.douyin.com') || url.includes('.ixigua.com')) {
       danmus = await xiguaSource.getComments(url, plat, segmentFlag);
+    } else if (url.includes('.mddcloud.com.cn')) {
+      danmus = await maiduiduiSource.getComments(url, plat, segmentFlag);
     }
 
     // 请求其他平台弹幕
@@ -1346,6 +1469,8 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag) {
       danmus = await leshiSource.getComments(url, "leshi", segmentFlag);
     } else if (url.includes('.douyin.com') || url.includes('.ixigua.com')) {
       danmus = await xiguaSource.getComments(url, "xigua", segmentFlag);
+    } else if (url.includes('.mddcloud.com.cn')) {
+      danmus = await maiduiduiSource.getComments(url, "maiduidui", segmentFlag);
     } else {
       // 如果不是已知平台，尝试第三方弹幕服务器
       const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
@@ -1433,6 +1558,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await leshiSource.getSegmentComments(segment);
     } else if (platform === "xigua") {
       danmus = await xiguaSource.getSegmentComments(segment);
+    } else if (platform === "maiduidui") {
+      danmus = await maiduiduiSource.getSegmentComments(segment);
     } else if (platform === "hanjutv") {
       danmus = await hanjutvSource.getSegmentComments(segment);
     } else if (platform === "bahamut") {

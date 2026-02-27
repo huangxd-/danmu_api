@@ -70,12 +70,15 @@ export function groupDanmusByMinute(filteredDanmus, n) {
           count: 0,
           earliestT: danmu.t,
           cid: danmu.cid,
-          p: danmu.p
+          p: danmu.p,
+          like: 0  // 初始化like字段
         };
       }
       acc[message].count += 1;
       // 更新最早时间
       acc[message].earliestT = Math.min(acc[message].earliestT, danmu.t);
+      // 合并like字段，如果是undefined则视为0
+      acc[message].like += (danmu.like !== undefined ? danmu.like : 0);
       return acc;
     }, {});
 
@@ -93,7 +96,8 @@ export function groupDanmusByMinute(filteredDanmus, n) {
         p: data.p,
         // 仅当计算后的逻辑计数大于1时才显示 "x N"
         m: displayCount > 1 ? `${message} x ${displayCount}` : message,
-        t: data.earliestT
+        t: data.earliestT,
+        like: data.like // 包含合并后的like字段
       };
     });
   });
@@ -102,6 +106,50 @@ export function groupDanmusByMinute(filteredDanmus, n) {
   return result.flat().sort((a, b) => a.t - b.t);
 }
 
+/**
+ * 处理弹幕的点赞数显示
+ * @param {Array} groupedDanmus 弹幕列表
+ * @returns {Array} 处理后的弹幕列表
+ */
+export function handleDanmusLike(groupedDanmus) {
+  return groupedDanmus.map(item => {
+    // 如果item没有like字段或者like值小于5，则不处理
+    if (!item.like || item.like < 5) {
+      return item;
+    }
+
+    // 获取弹幕来源信息，判断是否为hanjutv
+    const isHanjutv = item.p.includes('[hanjutv]');
+
+    // 确定阈值：hanjutv中>=100用🔥，其他>=1000用🔥
+    const threshold = isHanjutv ? 100 : 1000;
+    const icon = item.like >= threshold ? '🔥' : '❤️';
+
+    // 格式化点赞数，缩写显示
+    let formattedLike;
+    if (item.like >= 10000) {
+      // 万级别，如 1.2w
+      formattedLike = (item.like / 10000).toFixed(1) + 'w';
+    } else if (item.like >= 1000) {
+      // 千级别，如 1.2k
+      formattedLike = (item.like / 1000).toFixed(1) + 'k';
+    } else {
+      // 百级别及以下，直接显示数字
+      formattedLike = item.like.toString();
+    }
+
+    // 在弹幕内容m字段后面添加点赞信息
+    const likeText = ` ${icon} ${formattedLike}`;
+    const newM = item.m + likeText;
+
+    // 创建新对象，复制原属性，更新m字段，并删除like字段
+    const { like, ...rest } = item;
+    return {
+      ...rest,
+      m: newM
+    };
+  });
+}
 
 export function limitDanmusByCount(filteredDanmus, danmuLimit) {
   // 如果 danmuLimit 为 0，直接返回原始数据
@@ -215,7 +263,7 @@ export function convertToDanmakuJson(contents, platform) {
       `[${platform}]`
     ].join(",");
 
-    danmus.push({ p: attributes, m, cid: cidCounter++ });
+    danmus.push({ p: attributes, m, cid: cidCounter++, like: item?.like });
   }
 
   // 切割字符串成正则表达式数组
@@ -247,8 +295,11 @@ export function convertToDanmakuJson(contents, platform) {
   log("info", `去重分钟数: ${globals.groupMinute}`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute);
 
+  // 处理点赞数
+  const likeDanmus = handleDanmusLike(groupedDanmus);
+
   // 应用弹幕转换规则（在去重和限制弹幕数之后）
-  let convertedDanmus = limitDanmusByCount(groupedDanmus, globals.danmuLimit);
+  let convertedDanmus = limitDanmusByCount(likeDanmus, globals.danmuLimit);
   if (globals.convertTopBottomToScroll || globals.convertColor === 'white' || globals.convertColor === 'color') {
     let topBottomCount = 0;
     let colorCount = 0;
