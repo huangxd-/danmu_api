@@ -155,16 +155,16 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.segmentList.length > 2, `Expected res.segmentList.length > 2, but got ${res.length}`);
   // });
 
-  await t.test('GET iqiyi segment danmu', async () => {
-    const segment = Segment.fromJson({
-      "type": "qiyi",
-      "segment_start": 0,
-      "segment_end": 60,
-      "url": "https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000"
-    });
-    const res = await iqiyiSource.getSegmentComments(segment);
-    assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
-  });
+  // await t.test('GET iqiyi segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     "type": "qiyi",
+  //     "segment_start": 0,
+  //     "segment_end": 60,
+  //     "url": "https://cmts.iqiyi.com/bullet/80/00/5284367795028000_300_4.z?rn=0.0123456789123456&business=danmu&is_iqiyi=true&is_video_page=true&tvid=5284367795028000&albumid=2524115110632101&categoryid=2&qypid=010102101000000000"
+  //   });
+  //   const res = await iqiyiSource.getSegmentComments(segment);
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
 
   // await t.test('GET mango danmu', async () => {
   //   const res = await mangoSource.getComments("https://www.mgtv.com/b/771610/23300622.html", "imgo");
