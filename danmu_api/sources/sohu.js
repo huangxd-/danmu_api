@@ -512,7 +512,8 @@ export default class SohuSource extends BaseSource {
           cid: String(danmuId),
           p: pString,
           m: comment.c || '',
-          t: parseFloat(vtime)
+          t: parseFloat(vtime),
+          like: comment.fcount
         };
       } catch (error) {
         log("error", `格式化弹幕失败: ${error.message}, 弹幕数据:`, comment);

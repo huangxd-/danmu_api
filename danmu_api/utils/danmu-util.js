@@ -118,11 +118,12 @@ export function handleDanmusLike(groupedDanmus) {
       return item;
     }
 
-    // 获取弹幕来源信息，判断是否为hanjutv
-    const isHanjutv = item.p.includes('[hanjutv]');
+    // 获取弹幕来源信息，判断是否为需要特殊处理的源（低阈值）
+    const lowThresholdSources = ['[hanjutv]', '[sohu]'];
+    const isLowThresholdSource = lowThresholdSources.some(source => item.p.includes(source));
 
-    // 确定阈值：hanjutv中>=100用🔥，其他>=1000用🔥
-    const threshold = isHanjutv ? 100 : 1000;
+    // 确定阈值：特定源中>=100用🔥，其他>=1000用🔥
+    const threshold = isLowThresholdSource ? 100 : 1000;
     const icon = item.like >= threshold ? '🔥' : '❤️';
 
     // 格式化点赞数，缩写显示
