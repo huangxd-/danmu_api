@@ -189,7 +189,12 @@ export function addAnime(anime) {
         }
 
         log("info", `animes: ${JSON.stringify(
-          globals.animes,
+          globals.animes.map(anime => ({
+            links: anime.links,
+            animeId: anime.animeId,
+            bangumiId: anime.bangumiId,
+            animeTitle: anime.animeTitle
+          })),
           (key, value) => key === 'links' ? value.length : value
         )}`);
 

@@ -244,12 +244,12 @@ export function titleMatches(title, query) {
   if (t.includes(q)) return true;
 
   // 策略3：相似度匹配 (阈值0.8)
-  // 解决"和/与"等翻译差异，只要搜索词中 80% 的字符出现在标题里，即视为匹配
+  // 解决"和/与"等翻译差异，只要搜索词中 大于 80% 的字符出现在标题里，即视为匹配
   const qSet = new Set(q);
   const tSet = new Set(t);
   const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
   
-  return (matchCount / qSet.size) >= 0.8;
+  return (matchCount / qSet.size) > 0.8;
 }
 
 /**

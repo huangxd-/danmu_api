@@ -200,7 +200,7 @@ export async function httpPost(url, body, options = {}) {
     }
 
     // 设置超时时间（默认5秒）
-    const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
+    const timeout = parseInt(options.timeout || globals.vodRequestTimeout || '5000', 10) || 5000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -437,7 +437,8 @@ export function xmlResponse(data, status = 200) {
   });
 }
 
-export function buildQueryString(params) {
+export function buildQueryString(params, encode = true) {
+  const encodeFn = encode ? encodeURIComponent : (v) => v;
   let queryString = '';
 
   // 遍历 params 对象的每个属性
@@ -449,7 +450,7 @@ export function buildQueryString(params) {
       }
 
       // 将 key 和 value 使用 encodeURIComponent 编码，并拼接成查询字符串
-      queryString += encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+      queryString += encodeFn(key) + '=' + encodeFn(params[key]);
     }
   }
 

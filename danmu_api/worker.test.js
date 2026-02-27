@@ -10,6 +10,7 @@ import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./ut
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
+import AIClient from './utils/ai-util.js';
 import RenrenSource from "./sources/renren.js";
 import HanjutvSource from "./sources/hanjutv.js";
 import BahamutSource from "./sources/bahamut.js";
@@ -22,6 +23,7 @@ import MiguSource from "./sources/migu.js";
 import SohuSource from "./sources/sohu.js";
 import LeshiSource from "./sources/leshi.js";
 import XiguaSource from "./sources/xigua.js";
+import MaiduiduiSource from "./sources/maiduidui.js";
 import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
@@ -67,6 +69,7 @@ test('worker.js API endpoints', async (t) => {
   const sohuSource = new SohuSource();
   const leshiSource = new LeshiSource();
   const xiguaSource = new XiguaSource();
+  const maiduiduiSource = new MaiduiduiSource();
   const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
@@ -99,6 +102,25 @@ test('worker.js API endpoints', async (t) => {
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
   });
+
+  // await t.test('Test ai cilent', async () => {
+  //   const ai = new AIClient({
+  //     apiKey: 'xxxxxxxxxxxxxxxxxxxxx',
+  //     baseURL: 'https://open.bigmodel.cn/api/paas/v4', // 换成任意兼容 OpenAI 协议的地址
+  //     model: 'GLM-4.7-FlashX',
+  //     systemPrompt: '回答尽量简洁',
+  //   })
+
+  //   // const answer = await ai.ask('你好')
+  //   // console.log(answer);
+
+  //   const status = await ai.verify()
+  //   if (status.ok) {
+  //     console.log('连接正常:', status)
+  //   } else {
+  //     console.log('连接失败:', status.error)
+  //   }
+  // });
 
   // await t.test('GET tencent danmu', async () => {
   //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html", "qq");
@@ -299,6 +321,29 @@ test('worker.js API endpoints', async (t) => {
   //     url: 'https://ib.snssdk.com/vapp/danmaku/list/v1/?item_id=6551333775341519368&start_time=1200000&end_time=1500000&format=json'
   //   });
   //   const res = await xiguaSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu segments', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui", true);
+  //   console.log(res.segmentList);
+  //   assert(res.type === "maiduidui", `Expected res.type === "maiduidui", but got ${res.type === "maiduidui"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET maiduidui segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'maiduidui',
+  //     segment_start: 120,
+  //     segment_end: 180,
+  //     url: 'https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0'
+  //   });
+  //   const res = await maiduiduiSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 

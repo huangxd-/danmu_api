@@ -839,14 +839,13 @@ export default class BilibiliSource extends BaseSource {
   }
 
   formatComments(comments) {
-    // 弹幕繁体转简体
-    if (globals.danmuSimplifiedTraditional === 'simplified') {
-        return comments.map(c => {
-            if (c.m) c.m = simplized(c.m); 
-            return c; 
-        });
-    }
-    return comments;
+    return comments.map(c => {
+        if (globals.danmuSimplifiedTraditional === 'simplified') {
+            if (c.m) c.m = simplized(c.m);
+        }
+        c.like = c.like_num;
+        return c;
+    });
   }
 
   // 构建代理URL

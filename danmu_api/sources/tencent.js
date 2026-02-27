@@ -616,6 +616,8 @@ export default class TencentSource extends BaseSource {
         }
       }
 
+      content.like = parseInt(item.up_count) || 0;
+
       return content;
     });
   }
