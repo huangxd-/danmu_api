@@ -870,11 +870,13 @@ export default class IqiyiSource extends BaseSource {
         const danmaku = extract(xml, "content");
         const showTime = extract(xml, "showTime");
         const color = extract(xml, "color");
+        const like = extract(xml, "likeCount");
 
         contents.push(...danmaku.map((content, i) => ({
           content,
           showTime: showTime[i],
           color: color[i],
+          like: parseInt(like[i]) || 0,
         })));
       }
 
@@ -900,6 +902,7 @@ export default class IqiyiSource extends BaseSource {
       content.color = parseInt(item["color"], 16);
       content.content = decodeHtmlEntities(item["content"]);
       content.size = 25;
+      content.like = item["like"];
       return content;
     });
   }

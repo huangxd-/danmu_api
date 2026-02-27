@@ -682,6 +682,7 @@ export default class YoukuSource extends BaseSource {
         else if (pos === 2) content.ct = 4;
       }
       content.content = item.content;
+      content.like = item.extFields.voteUp;
       return content;
     });
   }

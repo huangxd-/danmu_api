@@ -119,7 +119,7 @@ export function handleDanmusLike(groupedDanmus) {
     }
 
     // 获取弹幕来源信息，判断是否为需要特殊处理的源（低阈值）
-    const lowThresholdSources = ['[hanjutv]', '[sohu]'];
+    const lowThresholdSources = ['[hanjutv]', '[sohu]', '[bilibili1]', '[migu]'];
     const isLowThresholdSource = lowThresholdSources.some(source => item.p.includes(source));
 
     // 确定阈值：特定源中>=100用🔥，其他>=1000用🔥

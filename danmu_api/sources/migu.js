@@ -359,7 +359,8 @@ class MiguSource extends BaseSource {
       cid: Number(c.cid),
       p: `${c.playtime},1,${hexToInt(c.textcolor)},[migu]`,
       m: c.msg,
-      t: c.playtime
+      t: c.playtime,
+      like: c.praiseCount
     }));
   }
 
