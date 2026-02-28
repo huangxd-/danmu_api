@@ -1,20 +1,11 @@
-/**
- * merge-util.js
- * * [核心功能]
- * 多源番剧数据合并引擎。负责将异构来源（如 Bilibili, Tencent, Dandan 等）的番剧数据
- * 基于标题语义分析、集数加权对齐、发布时间窗口匹配进行智能聚合。
- * * [工程设计]
- * - Configuration: 核心算法权重与阈值集中管理，与业务逻辑分离。
- * - Performance: 采用正则缓存、结构化克隆、循环不变量提取等手段优化高频路径。
- * - Stability: 严格保留历史迭代产生的边缘情况处理（Edge Cases）和特定源适配逻辑。
- * - Documentation: 全量 JSDoc 覆盖，确保每一处业务逻辑都有据可查。
- * * @module merge-util
- */
-
 import { globals } from '../configs/globals.js';
 import { log as baseLog } from './log-util.js';
 import { addAnime } from './cache-util.js';
 import { simplized } from '../utils/zh-util.js';
+
+// =====================
+// 源合并处理工具
+// =====================
 
 // ==========================================
 // 1. 核心配置与常量 (Immutable Configuration)
@@ -224,6 +215,8 @@ const SEASON_PATTERNS = [
   { regex: /sp/, val: 'SP' },
   { regex: /[^0-9](\d)$/, prefix: 'S', useCleaned: true } 
 ];
+
+const NORMALIZE_REGEX = /[\s\u3000-\u303f\uff00-\uffef]/g;
 
 // ==========================================
 // 3. 基础文本处理工具 (Utilities)
@@ -2403,4 +2396,157 @@ export function mergeDanmakuList(listA, listB) {
   };
   final.sort((a, b) => getTime(a) - getTime(b));
   return final;
+}
+
+/**
+ * 跨源时间轴对齐：以 dandan 为基准，对其他源计算并应用全局偏移
+ * 要求副源弹幕与基准源的文本重合度达到指定比例（默认80%）才启用对齐
+ * @param {Array<Array<Object>>} results - 各源弹幕数组（与 sourceNames/realIds 同序）
+ * @param {Array<string>} sourceNames - 源名数组（如 ['dandan', 'bilibili']）
+ * @param {Array<string>} realIds - 对应的 ID 数组（与 sourceNames 同序）
+ * @param {number} [minMatchRatio=0.8] - 最少匹配比例，低于此比例不应用对齐
+ * @param {number} [offsetThreshold=3] - 偏移量阈值（秒），绝对值大于此值才应用全局偏移
+ * @returns {Array<Array<Object>>} 对齐后的各源弹幕数组
+ */
+export function alignSourceTimelines(results, sourceNames, realIds, minMatchRatio = 0.8, offsetThreshold = 3) {
+  const dandanIndex = sourceNames.findIndex(name => name === 'dandan');
+  if (dandanIndex === -1 || !results[dandanIndex] || results[dandanIndex].length === 0) {
+    log("info", "[Merge][AlignTimeline] 无 dandan 源或无数据，跳过时间轴对齐");
+    return results;
+  }
+  
+  // 提取基准时间表
+  const dandanMap = new Map();
+  for (const danmu of results[dandanIndex]) {
+    const text = normalizeText(getDanmuText(danmu));
+    if (!text) continue;
+    const time = getDanmuTime(danmu);
+    if (!dandanMap.has(text) || time < dandanMap.get(text)) {
+      dandanMap.set(text, time);
+    }
+  }
+  
+  // 遍历其他来源进行对齐
+  for (let idx = 0; idx < results.length; idx++) {
+    const sourceName = sourceNames[idx];
+    const realId = realIds[idx];
+    const list = results[idx];
+    
+    if (sourceName === 'dandan' || !Array.isArray(list) || list.length === 0) {
+      continue;
+    }
+    
+    const sourceMap = new Map();
+    const parsedCache = new Array(list.length);
+    
+    for (let i = 0; i < list.length; i++) {
+      const danmu = list[i];
+      const text = normalizeText(getDanmuText(danmu));
+      const time = getDanmuTime(danmu);
+      parsedCache[i] = { danmu, text, time };
+      
+      if (text && (!sourceMap.has(text) || time < sourceMap.get(text))) {
+        sourceMap.set(text, time);
+      }
+    }
+    
+    if (sourceMap.size === 0) continue;
+    
+    const offsetCounts = new Map();
+    let matchCount = 0;
+    
+    for (const [text, sourceTime] of sourceMap) {
+      if (dandanMap.has(text)) {
+        const dandanTime = dandanMap.get(text);
+        const offset = Math.round((sourceTime - dandanTime) * 100) / 100;
+        offsetCounts.set(offset, (offsetCounts.get(offset) || 0) + 1);
+        matchCount++;
+      }
+    }
+    
+    // 校验匹配比例
+    const matchRatio = matchCount / sourceMap.size;
+    if (matchRatio < minMatchRatio) {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 匹配率过低 (${(matchRatio * 100).toFixed(1)}% < ${(minMatchRatio * 100).toFixed(1)}%)，跳过时间轴对齐`);
+      continue;
+    }
+    
+    // 寻找众数偏移量
+    let bestOffset = 0;
+    let maxCount = 0;
+    for (const [offset, count] of offsetCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        bestOffset = offset;
+      }
+    }
+    
+    if (Math.abs(bestOffset) < offsetThreshold) {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 最佳偏移量 ${bestOffset}s 过小，跳过时间轴对齐`);
+      continue;
+    }
+    
+    log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用时间轴偏移 ${bestOffset}s（匹配率: ${(matchRatio * 100).toFixed(1)}%，${maxCount} 票）`);
+    
+    for (let i = 0; i < parsedCache.length; i++) {
+      const { danmu, text, time } = parsedCache[i];
+      const targetTime = (text && dandanMap.has(text)) 
+        ? dandanMap.get(text) 
+        : Math.max(0, time - bestOffset); 
+      
+      if (danmu.p && typeof danmu.p === 'string') {
+        const firstComma = danmu.p.indexOf(',');
+        if (firstComma !== -1) {
+          danmu.p = targetTime.toFixed(2) + danmu.p.substring(firstComma);
+        }
+      }
+      if (danmu.t !== undefined && danmu.t !== null) {
+        danmu.t = targetTime;
+      }
+      if (typeof danmu.progress === 'number') {
+        danmu.progress = Math.round(targetTime * 1000);
+      }
+    }
+  }
+  
+  // 直接返回修改后的原始数组，不再产生深拷贝开销
+  return results;
+}
+
+/**
+ * 获取弹幕时间（秒），兼容 dandan (p 字符串) 与 bilibili (progress 毫秒)
+ * @param {Object} danmu
+ * @returns {number}
+ */
+function getDanmuTime(danmu) {
+  if (danmu.t !== undefined && danmu.t !== null) return Number(danmu.t);
+  if (danmu.p && typeof danmu.p === 'string') {
+    const pTime = parseFloat(danmu.p.split(',')[0]);
+    if (!isNaN(pTime)) return pTime;
+  }
+  if (typeof danmu.progress === 'number') {
+    return danmu.progress / 1000;
+  }
+  return 0;
+}
+  
+/**
+ * 获取弹幕文本，兼容 dandan (m) 与其他源 (content)
+ * @param {Object} danmu
+ * @returns {string}
+ */
+function getDanmuText(danmu) {
+  if (typeof danmu.m === 'string') return danmu.m;
+  if (typeof danmu.content === 'string') return danmu.content;
+  return '';
+}
+  
+/**
+ * 文本标准化：去除空格、标点、转小写
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeText(text) {
+  if (typeof text !== 'string') return '';
+  return text.replace(NORMALIZE_REGEX, '').toLowerCase();
 }
