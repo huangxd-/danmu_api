@@ -11,7 +11,7 @@ import {
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
-import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER } from "../utils/merge-util.js";
+import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines } from "../utils/merge-util.js";
 import AIClient from '../utils/ai-util.js';
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
@@ -1288,6 +1288,17 @@ async function fetchMergedComments(url) {
 
   // 等待所有源请求完成
   const results = await Promise.all(tasks);
+  
+  // 跨源时间轴对齐（仅当存在 dandan 源时）  
+  if (sourceNames.includes('dandan')) {  
+    const realIds = parts.map(part => {  
+      const firstColonIndex = part.indexOf(':');  
+      return firstColonIndex === -1 ? '' : part.substring(firstColonIndex + 1);  
+    });  
+    const alignedResults = alignSourceTimelines(results, sourceNames, realIds);  
+    // 用对齐后的结果替换原 results
+    results.splice(0, results.length, ...alignedResults);  
+  }
   
   // 3. 合并数据
   let mergedList = [];
