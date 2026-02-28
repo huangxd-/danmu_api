@@ -1289,15 +1289,15 @@ async function fetchMergedComments(url) {
   // 等待所有源请求完成
   const results = await Promise.all(tasks);
   
-  // 跨源时间轴对齐（仅当存在 dandan 源时）  
-  if (sourceNames.includes('dandan')) {  
-    const realIds = parts.map(part => {  
-      const firstColonIndex = part.indexOf(':');  
-      return firstColonIndex === -1 ? '' : part.substring(firstColonIndex + 1);  
-    });  
-    const alignedResults = alignSourceTimelines(results, sourceNames, realIds);  
-    // 用对齐后的结果替换原 results
-    results.splice(0, results.length, ...alignedResults);  
+  // 跨源时间轴对齐（仅当存在 dandan 源时执行）
+  if (sourceNames.includes('dandan')) {
+    const realIds = parts.map(part => {
+      const firstColonIndex = part.indexOf(':');
+      return firstColonIndex === -1 ? '' : part.substring(firstColonIndex + 1);
+    });
+
+    // 执行对齐函数
+    alignSourceTimelines(results, sourceNames, realIds);
   }
   
   // 3. 合并数据
