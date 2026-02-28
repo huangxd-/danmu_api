@@ -145,6 +145,8 @@ export default class HanjutvSource extends BaseSource {
       sidSet.add(sid);
       resultList.push(item);
     }
+    
+    const pluckNames = (list) => list?.map(item => item.name) || [];
 
     return {
       resultList,
@@ -153,6 +155,10 @@ export default class HanjutvSource extends BaseSource {
         s5Matched: s5Matched.length,
         webTotal: webCandidates.length,
         webMatched: webMatched.length,
+        s5MatchedList: pluckNames(s5Matched),
+        s5UnmatchedList: pluckNames(s5Unmatched),
+        webMatchedList: pluckNames(webMatched),
+        webUnmatchedList: pluckNames(webUnmatched)
       }
     };
   }
@@ -240,6 +246,7 @@ export default class HanjutvSource extends BaseSource {
         return [];
       }
 
+      log("info", `[Hanjutv] 搜索候选统计 s5MatchedList=${JSON.stringify(stats.s5MatchedList)}, s5UnmatchedList=${JSON.stringify(stats.s5UnmatchedList)}, webMatchedList=${JSON.stringify(stats.webMatchedList)}, webMatchedList=${JSON.stringify(stats.webUnmatchedList)}`);
       log("info", `[Hanjutv] 搜索候选统计 s5=${stats.s5Total}(命中${stats.s5Matched}), web=${stats.webTotal}(命中${stats.webMatched})`);
       log("info", `[Hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
 
