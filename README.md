@@ -389,6 +389,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | DANMU_LIMIT    | 【可选】等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000       |
 | CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
 | CONVERT_COLOR    | 【可选】弹幕转换颜色配置，默认为`default`（不转换），`white` 将所有非白色的弹幕颜色转换为纯白色，`color` 将所有白色弹幕转换为随机颜色（包含白色），可选值：`default`、`white`、`color`       |
+| LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
 | DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
 | PROXY_URL    | 【可选】代理/反代地址，目前只对巴哈姆特、TMDB API、bilibili生效，支持格式：<br> 正常代理：`http://127.0.0.1:7890` <br> 万能反代：`@http://127.0.0.1` <br> 特定反代：`源字段@http://127.0.0.1`，目前支持的字段有：`bahamut,tmdb,bilibili`（bilibili字段会启用阿b的港澳台番剧的搜索与获取）<br> 混合配置/示例：`http://你的代理地址:28233,bahamut@你的巴哈反代地址,tmdb@你的tmdb反代地址,@你的万能反代地址` <br> 优先级：特定反代 > 万能反代 > 正常代理，高优先级覆盖低优先级使用。 <br> （注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址或者反代（[Netlify反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |

@@ -401,6 +401,7 @@ export class Envs {
       'CONVERT_COLOR': { category: 'danmu', type: 'select', options: ['default', 'white', 'color'], description: '弹幕转换颜色配置' },
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
+      'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
 
       // 缓存配置
       'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认1', min: 1, max: 120 },
@@ -443,6 +444,7 @@ export class Envs {
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
       danmuSimplifiedTraditional: this.get('DANMU_SIMPLIFIED_TRADITIONAL', 'default', 'string'), // 弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
+      likeSwitch: this.get('LIKE_SWITCH', true, 'boolean'), // 弹幕点赞数显示开关，默认开启
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url
       redisToken: this.get('UPSTASH_REDIS_REST_TOKEN', '', 'string', true), // upstash redis url
