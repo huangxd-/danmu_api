@@ -468,6 +468,9 @@ export default class HanjutvSource extends BaseSource {
         if (nextAxis >= maxAxis) {
           break; // 如果 nextAxis 达到或超过最大值，退出循环
         }
+        if (nextAxis <= fromAxis) {
+          break; // 如果 nextAxis 未前进，退出循环，避免卡死
+        }
         fromAxis = nextAxis;
       }
 
