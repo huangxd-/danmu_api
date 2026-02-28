@@ -460,7 +460,7 @@ export default class HanjutvSource extends BaseSource {
 
         // 将当前请求的 episodes 拼接到总数组
         if (resp.data && resp.data.danmus) {
-          allDanmus = allDanmus.concat(resp.data.danmus);
+          allDanmus.push(...resp.data.danmus);
         }
 
         // 获取 nextAxis，更新 fromAxis
