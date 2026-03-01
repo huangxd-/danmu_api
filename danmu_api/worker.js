@@ -2,7 +2,6 @@ import { Globals } from './configs/globals.js';
 import { jsonResponse } from './utils/http-util.js';
 import { log, formatLogMessage } from './utils/log-util.js'
 import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
-import { getLocalRedisCaches, judgeLocalRedisValid } from "./utils/local-redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
@@ -31,6 +30,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);
+    const { judgeLocalRedisValid } = await import("./utils/local-redis-util.js");
     await judgeLocalRedisValid(path);
   }
   await judgeRedisValid(path);
@@ -74,6 +74,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     await getRedisCaches();
   }
   if (deployPlatform === "node" && globals.localRedisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    const { getLocalRedisCaches } = await import("./utils/local-redis-util.js");
     await getLocalRedisCaches();
   }
 
