@@ -21,6 +21,7 @@ export default class HanjutvSource extends BaseSource {
     this.defaultRefer = "2JGztvGjRVpkxcr0T4ZWG2k+tOlnHmDGUNMwAGSeq548YV2FMbs0h0bXNi6DJ00L";
     this.webUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
     this.appUserAgent = "HanjuTV/6.8 (23127PN0CC; Android 16; Scale/2.00)";
+    this.s5StableUid = createHanjutvUid();
   }
 
   getWebHeaders() {
@@ -158,37 +159,56 @@ export default class HanjutvSource extends BaseSource {
   }
 
   async searchWithS5Api(keyword) {
-    const uid = createHanjutvUid();
-    const headers = await createHanjutvSearchHeaders(uid);
     const q = encodeURIComponent(keyword);
 
-    const resp = await httpGet(`https://hxqapi.hiyun.tv/api/search/s5?k=${q}&srefer=search_input&type=0&page=1`, {
-      headers,
-      timeout: 10000,
-      retries: 1,
-    });
+    const requestWithUid = async (uid) => {
+      const headers = await createHanjutvSearchHeaders(uid);
+      const resp = await httpGet(`https://hxqapi.hiyun.tv/api/search/s5?k=${q}&srefer=search_input&type=0&page=1`, {
+        headers,
+        timeout: 10000,
+        retries: 1,
+      });
 
-    const payload = resp?.data;
-    if (!payload || typeof payload !== "object") {
-      throw new Error("s5 响应为空");
-    }
-
-    if (typeof payload.data === "string" && payload.data.length > 0) {
-      let decoded;
-      try {
-        decoded = await decodeHanjutvEncryptedPayload(payload, uid);
-      } catch (error) {
-        throw new Error(`s5 响应解密失败: ${error.message}`);
+      const payload = resp?.data;
+      if (!payload || typeof payload !== "object") {
+        throw new Error("s5 响应为空");
       }
 
-      const items = this.extractSearchItems(decoded);
-      if (items.length === 0) throw new Error("s5 解密后无有效结果");
+      if (typeof payload.data === "string" && payload.data.length > 0) {
+        let decoded;
+        try {
+          decoded = await decodeHanjutvEncryptedPayload(payload, uid);
+        } catch (error) {
+          throw new Error(`s5 响应解密失败: ${error.message}`);
+        }
+
+        const items = this.extractSearchItems(decoded);
+        if (items.length === 0) throw new Error("s5 解密后无有效结果");
+        return items;
+      }
+
+      const plainItems = this.extractSearchItems(payload);
+      if (plainItems.length === 0) throw new Error("s5 无有效结果");
+      return plainItems;
+    };
+
+    const currentUid = this.s5StableUid || createHanjutvUid();
+
+    try {
+      const items = await requestWithUid(currentUid);
+      this.s5StableUid = currentUid;
+      return items;
+    } catch (error) {
+      const message = String(error?.message || "");
+      const shouldRotateUid = message.startsWith("s5 响应解密失败:") || message === "s5 解密后无有效结果";
+      if (!shouldRotateUid) throw error;
+
+      const rotatedUid = createHanjutvUid();
+      log("debug", `[Hanjutv] s5 命中可轮换错误，切换 uid 重试一次: ${message}`);
+      const items = await requestWithUid(rotatedUid);
+      this.s5StableUid = rotatedUid;
       return items;
     }
-
-    const plainItems = this.extractSearchItems(payload);
-    if (plainItems.length === 0) throw new Error("s5 无有效结果");
-    return plainItems;
   }
 
   async searchWithLegacyApi(keyword) {
