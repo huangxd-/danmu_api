@@ -1,8 +1,8 @@
-name: Force sync upstream danmu_api
+name: Sync upstream danmu_api
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0  0  * * *"   # 每 6 小时同步一次
   workflow_dispatch:
 
 jobs:
@@ -14,13 +14,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Add upstream & fetch
         run: |
           git remote add upstream https://github.com/huangxd-/danmu_api.git
           git fetch upstream
 
-      - name: Hard reset main to upstream/main
+      - name: Merge upstream/main into main
         run: |
           git checkout main
-          git reset --hard upstream/main
-          git push --force origin main
+          git merge --no-edit upstream/main
+          git push origin main
