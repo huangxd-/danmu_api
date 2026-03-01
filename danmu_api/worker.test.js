@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
+import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
@@ -783,3 +784,50 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
 });
+
+// // 测试本地 Redis 功能
+// test('local-redis functions', async (t) => {
+//   // 测试设置和获取本地 Redis 键值
+//   await t.test('setLocalRedisKey and getLocalRedisKey', async () => {
+//     try {
+//       const testKey = 'test_key_local_redis';
+//       const testValue = 'Hello Local Redis';
+
+//       // 设置键值
+//       const setResult = await setLocalRedisKey(testKey, testValue);
+//       // 验证设置结果
+//       assert.ok(setResult.result === 'OK' || setResult.result === 'ERROR', 
+//         `setLocalRedisKey returned valid result: ${JSON.stringify(setResult)}`);
+
+//       // 获取键值
+//       const getResult = await getLocalRedisKey(testKey);
+//       // 验证获取结果（如果 Redis 不可用，可能返回 null）
+//       if (getResult !== null) {
+//         // 如果返回了结果，验证它是否是我们设置的值（可能是序列化的）
+//         assert.ok(typeof getResult === 'string' || getResult === null, 
+//           `getLocalRedisKey returned expected type: ${typeof getResult}`);
+//       } else {
+//         // 如果返回 null，也是可以接受的（表示 Redis 不可用）
+//         assert.strictEqual(getResult, null, 'getLocalRedisKey returned null when Redis is not available');
+//       }
+//     } catch (error) {
+//       assert.ok(true, `setLocalRedisKey/getLocalRedisKey handled error gracefully: ${error.message}`);
+//     }
+//   });
+
+//   // 测试设置带过期时间的本地 Redis 键值
+//   await t.test('setLocalRedisKeyWithExpiry', async () => {
+//     try {
+//       const testKey = 'test_expiry_key_local_redis';
+//       const testValue = 'Temporary Value';
+//       const expirySeconds = 2; // 2秒过期
+
+//       const setResult = await setLocalRedisKeyWithExpiry(testKey, testValue, expirySeconds);
+//       // 验证设置结果
+//       assert.ok(setResult.result === 'OK' || setResult.result === 'ERROR', 
+//         `setLocalRedisKeyWithExpiry returned valid result: ${JSON.stringify(setResult)}`);
+//     } catch (error) {
+//       assert.ok(true, `setLocalRedisKeyWithExpiry handled error gracefully: ${error.message}`);
+//     }
+//   });
+// });

@@ -3,6 +3,7 @@ import { getPageTitle, jsonResponse, httpGet } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js'
 import { simplized } from '../utils/zh-util.js';
 import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
+import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
@@ -201,6 +202,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     if (globals.redisValid && curAnimes.length !== 0) {
       await updateRedisCaches();
     }
+    if (globals.localRedisValid && curAnimes.length !== 0) {
+      await updateLocalRedisCaches();
+    }
 
     return jsonResponse({
       errorCode: 0,
@@ -381,6 +385,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   // 如果有新的anime获取到，则更新redis
   if (globals.redisValid && curAnimes.length !== 0) {
     await updateRedisCaches();
+  }
+  if (globals.localRedisValid && curAnimes.length !== 0) {
+    await updateLocalRedisCaches();
   }
 
   // 缓存搜索结果
@@ -1388,6 +1395,9 @@ export async function getComment(path, queryFormat, segmentFlag) {
     }
     if (globals.redisValid && animeId) {
         setRedisKey('lastSelectMap', globals.lastSelectMap).catch(e => log("error", "Redis set error", e));
+    }
+    if (globals.localRedisValid && animeId) {
+        setLocalRedisKey('lastSelectMap', globals.lastSelectMap);
     }
   }
 

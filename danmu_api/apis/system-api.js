@@ -32,6 +32,7 @@ export function handleConfig(hasPermission = false) {
     ...globals.accessedEnvVars,
     localCacheValid: globals.localCacheValid,
     redisValid: globals.redisValid,
+    localRedisValid: globals.localRedisValid,
     aiValid: globals.aiValid,
     deployPlatform: globals.deployPlatform
   };
@@ -194,6 +195,17 @@ export async function handleClearCache() {
       }
     } catch (redisError) {
       log("warn", `[server] Redis may not be available: ${redisError.message}`);
+    }
+
+    try {
+      // 如果本地Redis有效，更新本地Redis缓存
+      if (globals.localRedisValid) {
+        const { updateLocalRedisCaches } = await import("../utils/local-redis-util.js");
+        await updateLocalRedisCaches();
+        log("info", `[server] LocalRedis cache cleared successfully`);
+      }
+    } catch (redisError) {
+      log("warn", `[server] LocalRedis may not be available: ${redisError.message}`);
     }
     
     log("info", `[server] All caches cleared successfully`);

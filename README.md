@@ -67,7 +67,7 @@ LogVar 弹幕 API 服务器
   - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
   - 弹幕缓存（可通过 `COMMENT_CACHE_MINUTES` 配置，默认5分钟）
   - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
-  - Redis 分布式缓存支持（可选）
+  - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
@@ -402,6 +402,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| LOCAL_REDIS_URL    | 【可选】本地Redis连接URL，用于本地缓存存储，适用于docker和本地部署环境，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地Redis）       |
 | DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
 | DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
@@ -592,6 +593,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── hanjutv-util.js     # 韩剧tv加解密工具
 │       ├── http-util.js        # 请求工具
 │       ├── imdb-util.js        # IMDB API请求工具
+│       ├── local-redis-util.js # 本地redis工具
 │       ├── log-util.js         # 日志工具
 │       ├── merge-util.js       # 源合并处理工具
 │       ├── migu-util.js        # 咪咕工具
@@ -623,6 +625,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - 日志存储在内存中，服务器重启后会清空。
 - `/api/logs` 中的 JSON 日志会格式化显示，带缩进以提高可读性。
 - 搜索结果和弹幕数据存储在内存中，服务器重启后会清空，可通过配置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN` 启用 Redis 持久化存储。
+- 已支持本地redis，可通过配置 `LOCAL_REDIS_URL` 启用，只支持docker和本地部署环境。
 - 搜索结果缓存默认时间为 1 分钟，可通过环境变量 `SEARCH_CACHE_MINUTES` 调整（设置为 0 表示不缓存）。
 - 确保 `package.json` 中包含 `node-fetch` 依赖。
 - 一键部署需要将项目推送到公开的 Git 仓库（如 GitHub），并更新按钮中的仓库地址。
@@ -639,7 +642,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - TMDB源请求逻辑：search tmdb -> tmdbId -> imdbId -> doubanId -> playUrl；优点：emby通过tmdb刮削，标题通过tmdb搜索，返回的信息可能更加匹配；缺点：链条过长，请求时长5-10s左右，中间一环数据有缺失，就没有返回结果。
 - TMDB源在SOURCE_ORDER添加tmdb的同时，需要添加TMDB_API_KEY环境变量
 - 弹幕分片下载请求已加入重试机制，重试次数为1次
-- 如果同时配置了本地缓存和redis缓存，则以redis缓存优先
+- 如果同时配置了本地缓存和upstash redis缓存和本地redis缓存，优先级为本地redis > upstash redis缓存 > 本地缓存
 - 弹弹play源用的是第三方接口，感谢开源项目 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere)
 - 有任何问题，如部署/环境变量配置等，可通过deepwiki对本项目进行提问，链接入口：https://deepwiki.com/huangxd-/danmu_api，其中项目内容一般每周刷新一次
 
