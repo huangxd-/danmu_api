@@ -29,7 +29,7 @@ export default class AnimekoSource extends BaseSource {
 
   /**
    * 搜索动画条目
-   * 使用 Bangumi V0 POST 接口进行搜索，并进行后置过滤和关系检测
+   * 使用 Bangumi V0 POST 接口进行搜索，支持偏移翻页、结果过滤及关系检测
    * @param {string} keyword 搜索关键词
    * @returns {Promise<Array>} 转换后的搜索结果列表
    */
@@ -37,49 +37,74 @@ export default class AnimekoSource extends BaseSource {
     try {
       // 标准化函数
       const searchKeyword = keyword.replace(/[._]/g, ' ').replace(/\s+/g, ' ').trim();
-      
       log("info", `[Animeko] 开始搜索 (V0): ${searchKeyword}`);
 
-      const searchUrl = `https://api.bgm.tv/v0/search/subjects?limit=5`;
-      
-      const payload = {
-        keyword: searchKeyword,
-        filter: {
-          type: [2] // 2 代表动画类型
+      let allFilteredResults = [];
+      let offset = 0;
+      const limit = 20;
+
+      while (true) {
+        const searchUrl = `https://api.bgm.tv/v0/search/subjects?limit=${limit}&offset=${offset}`;
+        
+        const payload = {
+          keyword: searchKeyword,
+          filter: {
+            type: [2] // 2 代表动画类型
+          }
+        };
+
+        const resp = await httpPost(searchUrl, JSON.stringify(payload), {
+          headers: this.headers
+        });
+
+        if (!resp || !resp.data) {
+          log("info", `[Animeko] 搜索请求失败或无数据返回 (offset: ${offset})`);
+          break;
         }
-      };
 
-      const resp = await httpPost(searchUrl, JSON.stringify(payload), {
-        headers: this.headers
-      });
+        const currentBatch = resp.data.data || [];
 
-      if (!resp || !resp.data) {
-        log("info", "[Animeko] 搜索请求失败或无数据返回");
-        return [];
+        if (currentBatch.length === 0) {
+          break;
+        }
+
+        // 执行结果相关度过滤 (剔除强大的模糊搜索带来的杂项)
+        const filteredBatch = this.filterSearchResults(currentBatch, keyword);
+        
+        if (filteredBatch.length > 0) {
+          allFilteredResults = allFilteredResults.concat(filteredBatch);
+        }
+
+        // 核心分页判断逻辑
+        if (filteredBatch.length < limit) {
+          log("info", `[Animeko] 过滤后当前批次剩 ${filteredBatch.length} 个结果，停止翻页`);
+          break;
+        }
+
+        offset += limit;
+
+        // 安全熔断：限制最大翻页次数（例如获取前 60 条）防止特殊情况下的无意义消耗
+        if (offset >= 60) {
+          log("warn", `[Animeko] 搜索翻页达到安全上限(60)，强制停止`);
+          break;
+        }
       }
 
-      let resultsList = resp.data.data || [];
-
-      if (resultsList.length === 0) {
-        log("info", "[Animeko] 未找到相关条目");
-        return [];
-      }
-
-      // 执行结果相关度过滤
-      resultsList = this.filterSearchResults(resultsList, keyword);
-
-      if (resultsList.length === 0) {
+      if (allFilteredResults.length === 0) {
         log("info", "[Animeko] 过滤后无匹配结果");
         return [];
       }
 
+      // 跨页合并后，为了防止多页触发同样的“智能季度匹配兜底”导致重复，这里做一次 ID 去重
+      let uniqueResults = Array.from(new Map(allFilteredResults.map(item => [item.id, item])).values());
+
       // 检测条目间关系 (如处理续篇、剧场版等层级关系)
-      if (resultsList.length > 1) {
-        resultsList = await this.checkRelationsAndModifyTitles(resultsList);
+      if (uniqueResults.length > 1) {
+        uniqueResults = await this.checkRelationsAndModifyTitles(uniqueResults);
       }
       
-      log("info", `[Animeko] 搜索完成，找到 ${resultsList.length} 个有效结果`);
-      return this.transformResults(resultsList);
+      log("info", `[Animeko] 搜索完成，共找到 ${uniqueResults.length} 个有效结果`);
+      return this.transformResults(uniqueResults);
     } catch (error) {
       log("error", "[Animeko] Search error:", {
         message: error.message,
