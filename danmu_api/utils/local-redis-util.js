@@ -1,7 +1,6 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
 import { simpleHash, serializeValue } from "./codec-util.js";
-import { createClient } from 'redis';
 
 // =====================
 // 本地 Redis 读写请求
@@ -22,6 +21,8 @@ async function createLocalRedisClient() {
 
   try {
     log("info", `[local-redis] 正在连接本地 Redis`);
+
+    const { createClient } = await import('redis');
     
     localRedisClient = createClient({
       url: localRedisUrl,

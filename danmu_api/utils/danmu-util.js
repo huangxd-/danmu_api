@@ -95,7 +95,7 @@ export function groupDanmusByMinute(filteredDanmus, n) {
         cid: data.cid,
         p: data.p,
         // 仅当计算后的逻辑计数大于1时才显示 "x N"
-        m: displayCount > 1 ? `${message} x ${displayCount}` : message,
+        m: displayCount > 1 ? `${message}\u200Ax\u200A${displayCount}` : message,
         t: data.earliestT,
         like: data.like // 包含合并后的like字段
       };
@@ -143,7 +143,7 @@ export function handleDanmusLike(groupedDanmus) {
     }
 
     // 在弹幕内容m字段后面添加点赞信息
-    const likeText = `${icon}${formattedLike}`;
+    const likeText = `\u200A${icon}${formattedLike}`;
     const newM = item.m + likeText;
 
     // 创建新对象，复制原属性，更新m字段，并删除like字段
