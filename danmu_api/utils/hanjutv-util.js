@@ -1,5 +1,6 @@
 import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes } from "./codec-util.js";
 
+// 移动端参数
 const HANJUTV_VERSION = "6.5.3";
 const HANJUTV_VC = "a_7980";
 const HANJUTV_UA = "HanjuTV/6.5.3 (Pixel 2 XL; Android 11; Scale/2.00)";
@@ -7,6 +8,12 @@ const HANJUTV_UK_KEY = "f349wghhe784tqwh";
 const HANJUTV_UK_IV = "d3w8hf94fidk38lk";
 const HANJUTV_RESPONSE_SECRET = "34F9Q53w/HJW8E6Q";
 const UID_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+// TV版本参数
+const UK_KEY = "f349wghhe784tqwh";
+const UK_IV = "d3w8hf94fidk38lk";
+const RESPONSE_SECRET = "34F9Q53w/HJW8E6Q";
+const SAID = "fb3597b87601d5a7";
 
 const SBOX = [
   0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -305,6 +312,13 @@ export function createHanjutvUid(length = 20) {
   return uid;
 }
 
+function randomFrom(chars, len) {
+  let s = "";
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+// 移动端headers
 export async function createHanjutvSearchHeaders(uid, timestamp = Date.now()) {
   const ts = Number(timestamp);
   const uidMd5 = md5(uid);
@@ -324,6 +338,43 @@ export async function createHanjutvSearchHeaders(uid, timestamp = Date.now()) {
     "auth-token": "",
     "Accept-Encoding": "gzip",
     Connection: "Keep-Alive",
+  };
+}
+
+// TV端headers
+export async function buildLiteHeaders(sessionInitTs = Date.now()) {
+  const uid = randomFrom("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 20);
+  const oa = randomFrom("0123456789abcdef", 16);
+
+  return async function makeHeaders(reqTs = Date.now()) {
+    const uidMd5 = md5(uid);
+    const rpPayload = JSON.stringify({
+      emu: 0, ou: 0, it: sessionInitTs, iit: sessionInitTs, bs: 0, uid,
+      isp: "", pc: 0, tm: 50, d8m: "0,0,0,0,0,0,14,7", md: "23127PN0CC",
+      dn: "", osv: "16", br: 50, rpc: 0, scc: 1, plc: 1, toc: 5, tsc: 7,
+      ts: reqTs, nw: 2, px: "0", ai: SAID, oa, dpc: 0, dsc: 0, qpc: 0, apad: 0,
+    });
+
+    const di = await aesCbcEncryptToBase64(uid, UK_KEY, UK_IV);
+    const rp = await aesCbcEncryptToBase64(rpPayload, uidMd5.slice(0, 16), uidMd5.slice(16, 32));
+
+    return {
+      uid,
+      headers: {
+        version: "a_22570",
+        "version-name": "1.7.2",
+        channel: "xiaomi",
+        "app-type": "ztv",
+        "User-Agent": "ZTV/1.7.2 (23127PN0CC; Android 16; Scale/2.00)",
+        said: SAID,
+        di,
+        token: "",
+        uid: "",
+        rp,
+        "Accept-Encoding": "gzip",
+        Connection: "Keep-Alive",
+      },
+    };
   };
 }
 
