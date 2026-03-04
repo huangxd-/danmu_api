@@ -7,7 +7,7 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
-import { createHanjutvUid, createHanjutvSearchHeaders, decodeHanjutvEncryptedPayload } from "../utils/hanjutv-util.js";
+import { createHanjutvUid, createHanjutvSearchHeaders, decodeHanjutvEncryptedPayload, buildLiteHeaders } from "../utils/hanjutv-util.js";
 
 // =====================
 // 获取韩剧TV弹幕
@@ -17,6 +17,7 @@ export default class HanjutvSource extends BaseSource {
     super();
     this.webHost = "https://hxqapi.hiyun.tv";
     this.appHost = "https://hxqapi.hiyun.tv";
+    this.tvHost = "https://api.xiawen.tv";
     this.oldDanmuHost = "https://hxqapi.zmdcq.com";
     this.defaultRefer = "2JGztvGjRVpkxcr0T4ZWG2k+tOlnHmDGUNMwAGSeq548YV2FMbs0h0bXNi6DJ00L";
     this.webUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
@@ -91,7 +92,7 @@ export default class HanjutvSource extends BaseSource {
   }
 
   extractSearchItems(data) {
-    const list = data?.seriesData?.seriesList || data?.seriesList || [];
+    const list = data?.seriesData?.seriesList || data?.seriesList || data?.seriesData?.series || [];
     return this.normalizeSearchItems(list);
   }
 
@@ -210,6 +211,41 @@ export default class HanjutvSource extends BaseSource {
     return this.extractSearchItems(resp?.data);
   }
 
+  async searchWithTvApi(keyword) {
+    const q = encodeURIComponent(keyword);
+    const makeHeaders = await buildLiteHeaders(Date.now());
+    const headerInfo = await makeHeaders(Date.now());
+    const headers = headerInfo.headers;
+
+    const resp = await httpGet(`https://api.xiawen.tv/api/v1/aggregate/search?key=${q}&scope=101&page=1`, {
+      headers,
+      timeout: 10000,
+      retries: 1,
+    });
+
+    const payload = resp?.data;
+    if (!payload || typeof payload !== "object") {
+      throw new Error("tv 响应为空");
+    }
+
+    if (typeof payload.data === "string" && payload.data.length > 0) {
+      let decoded;
+      try {
+        decoded = await decodeHanjutvEncryptedPayload(payload, headerInfo.uid);
+      } catch (error) {
+        throw new Error(`tv 响应解密失败: ${error.message}`);
+      }
+
+      const items = this.extractSearchItems(decoded);
+      if (items.length === 0) throw new Error("tv 解密后无有效结果");
+      return items;
+    }
+
+    const plainItems = this.extractSearchItems(payload);
+    if (plainItems.length === 0) throw new Error("tv 无有效结果");
+    return plainItems;
+  }
+
   async search(keyword) {
     try {
       const key = String(keyword || "").trim();
@@ -217,7 +253,9 @@ export default class HanjutvSource extends BaseSource {
 
       let s5List = [];
       let webList = [];
+      let tvList = [];
       let s5Error = null;
+      let webError = null;
 
       try {
         s5List = await this.searchWithS5Api(key);
@@ -235,14 +273,31 @@ export default class HanjutvSource extends BaseSource {
         try {
           webList = await this.searchWithLegacyApi(key);
         } catch (error) {
+          webError = error;
           log("warn", `[Hanjutv] 旧搜索接口失败: ${error.message}`);
+        }
+
+        const webMatchedCount = this.countMatchedItems(webList, key);
+        const needTvSearch = webList.length === 0 || webMatchedCount === 0;
+
+        if (needTvSearch) {
+          if (!webError && webList.length > 0 && webMatchedCount === 0) {
+            log("warn", `[Hanjutv] web 返回 ${webList.length} 条但标题零命中，触发 TV 补偿检索`);
+          }
+          // 如果web接口也失败，则尝试TV端接口作为最终降级方案
+          try {
+            log("info", `[Hanjutv] 尝试TV端搜索接口作为降级方案`);
+            tvList = await this.searchWithTvApi(key);
+          } catch (tvError) {
+            log("warn", `[Hanjutv] TV端搜索接口也失败: ${tvError.message}`);
+          }
         }
       }
 
-      const { resultList, stats } = this.mergeSearchCandidates(key, s5List, webList);
+      const { resultList, stats } = this.mergeSearchCandidates(key, s5List, [...webList, ...tvList]);
 
       if (resultList.length === 0) {
-        log("info", "hanjutvSearchresp: s5 与旧接口均无有效结果");
+        log("info", "hanjutvSearchresp: s5、旧接口和TV端接口均无有效结果");
         return [];
       }
 
@@ -290,6 +345,27 @@ export default class HanjutvSource extends BaseSource {
           });
           detail = webResp?.data?.series || null;
         } catch {
+        }
+      }
+
+      if (!detail) {
+        const makeHeaders = await buildLiteHeaders(Date.now());
+        const headerInfo = await makeHeaders(Date.now());
+        const headers = headerInfo.headers;
+        try {
+          const tvResp = await httpGet(`${this.tvHost}/api/v1/series/detail/query?sid=${sid}`, {
+            headers: headers,
+            timeout: 10000,
+            retries: 1,
+          });
+          const decoded = await decodeHanjutvEncryptedPayload(tvResp?.data, headerInfo.uid);
+          detail = decoded?.series || null;
+        } catch (error) {
+          log("error", "getHanjutvDetail error:", {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          });
         }
       }
 
@@ -367,6 +443,27 @@ export default class HanjutvSource extends BaseSource {
           });
           episodes = this.normalizeEpisodes(webResp?.data?.episodes || []);
         } catch {
+        }
+      }
+
+      if (episodes.length === 0) {
+        const makeHeaders = await buildLiteHeaders(Date.now());
+        const headerInfo = await makeHeaders(Date.now());
+        const headers = headerInfo.headers;
+        try {
+          const tvResp = await httpGet(`${this.tvHost}/api/v1/series/detail/query?sid=${sid}`, {
+            headers: headers,
+            timeout: 10000,
+            retries: 1,
+          });
+          const decoded = await decodeHanjutvEncryptedPayload(tvResp?.data, headerInfo.uid);
+          episodes = this.normalizeEpisodes(decoded?.episodes || []);
+        } catch {
+          log("error", "getHanjutvDetail episodes:", {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          });
         }
       }
 
@@ -452,8 +549,11 @@ export default class HanjutvSource extends BaseSource {
 
   async getEpisodeDanmu(id) {
     let allDanmus = [];
+    let prevId = 0;
     let fromAxis = 0;
+    let pageCount = 0;
     const maxAxis = 100000000;
+    const maxPages = 120;
 
     try {
       while (fromAxis < maxAxis) {
@@ -479,6 +579,43 @@ export default class HanjutvSource extends BaseSource {
           break; // 如果 nextAxis 未前进，退出循环，避免卡死
         }
         fromAxis = nextAxis;
+      }
+
+      if (allDanmus.length === 0) {
+        while (fromAxis < maxAxis && pageCount < maxPages) {
+          const makeHeaders = await buildLiteHeaders(Date.now());
+          const headerInfo = await makeHeaders(Date.now());
+          const headers = headerInfo.headers;
+          try {
+            const tvResp = await httpGet(`${this.tvHost}/api/v1/bulletchat/episode/get?eid=${id}&prevId=${prevId}&fromAxis=${fromAxis}&toAxis=${maxAxis}&offset=0`, {
+              headers: headers,
+              timeout: 10000,
+              retries: 1,
+            });
+            const data = await decodeHanjutvEncryptedPayload(tvResp?.data, headerInfo.uid);
+
+            pageCount += 1;
+
+            allDanmus.push(...data.bulletchats);
+
+            const hasMore = Number(data.more ?? 0) === 1 || data.more === true || data.more === "1";
+            const nextAxis = Number(data.nextAxis ?? maxAxis);
+            const lastId = Number(data.lastId ?? prevId);
+
+            if (Number.isFinite(lastId) && lastId > prevId) prevId = lastId;
+            if (!Number.isFinite(nextAxis) || nextAxis <= fromAxis) break;
+            if (nextAxis >= maxAxis) break;
+
+            fromAxis = nextAxis;
+            if (!hasMore) prevId = 0;
+          } catch {
+            log("error", "fetchHanjutvEpisodeDanmu:", {
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+            });
+          }
+        }
       }
 
       return allDanmus;
