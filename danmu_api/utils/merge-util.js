@@ -1,20 +1,11 @@
-/**
- * merge-util.js
- * * [核心功能]
- * 多源番剧数据合并引擎。负责将异构来源（如 Bilibili, Tencent, Dandan 等）的番剧数据
- * 基于标题语义分析、集数加权对齐、发布时间窗口匹配进行智能聚合。
- * * [工程设计]
- * - Configuration: 核心算法权重与阈值集中管理，与业务逻辑分离。
- * - Performance: 采用正则缓存、结构化克隆、循环不变量提取等手段优化高频路径。
- * - Stability: 严格保留历史迭代产生的边缘情况处理（Edge Cases）和特定源适配逻辑。
- * - Documentation: 全量 JSDoc 覆盖，确保每一处业务逻辑都有据可查。
- * * @module merge-util
- */
-
 import { globals } from '../configs/globals.js';
 import { log as baseLog } from './log-util.js';
 import { addAnime } from './cache-util.js';
 import { simplized } from '../utils/zh-util.js';
+
+// =====================
+// 源合并处理工具
+// =====================
 
 // ==========================================
 // 1. 核心配置与常量 (Immutable Configuration)
@@ -2403,4 +2394,104 @@ export function mergeDanmakuList(listA, listB) {
   };
   final.sort((a, b) => getTime(a) - getTime(b));
   return final;
+}
+
+/**
+ * 跨源时间轴对齐：应用 dandan related 接口下发的准确偏移量实现对齐
+ * @param {Array<Array<Object>>} results - 各源弹幕数组（与 sourceNames/realIds 同序）
+ * @param {Array<string>} sourceNames - 源名数组（如 ['dandan', 'bilibili']）
+ * @param {Array<string>} realIds - 对应的 ID 数组（与 sourceNames 同序）
+ * @param {Object} [dandanShifts={}] - Dandan提供的精确偏移字典，如 { 'bilibili:bilibili.com/bangumi/play/ep1551029': 48 }
+ * @returns {Array<Array<Object>>} 对齐后的各源弹幕数组
+ */
+export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts = {}) {
+  const dandanIndex = sourceNames.findIndex(name => name === 'dandan');
+  if (dandanIndex === -1 || !results[dandanIndex] || results[dandanIndex].length === 0) {
+    log("info", "[Merge][AlignTimeline] 无 dandan 源或无数据，跳过时间轴对齐");
+    return results;
+  }
+
+  // 核心标识提取函数，保持与 dandan 源内部一致的去噪匹配逻辑
+  const getCoreIdentifier = (targetStr, sName) => {
+    if (sName === 'bahamut') {
+      const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
+      return match ? (match[1] || match[0]) : targetStr;
+    }
+    return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+  };
+  
+  // 遍历其他来源进行对齐
+  for (let idx = 0; idx < results.length; idx++) {
+    const sourceName = sourceNames[idx];
+    const realId = realIds[idx];
+    const list = results[idx];
+    
+    if (sourceName === 'dandan' || !Array.isArray(list) || list.length === 0) {
+      continue;
+    }
+
+    const coreMId = getCoreIdentifier(realId, sourceName);
+    let appliedShift = undefined;
+
+    // 遍历 dandanShifts 寻找匹配当前核心特征的精确偏移量
+    for (const [key, shift] of Object.entries(dandanShifts)) {
+      const prefix = sourceName + ':';
+      if (key.startsWith(prefix)) {
+        const shiftCoreUrl = key.substring(prefix.length);
+        // 核心特征双向包含比对
+        if (shiftCoreUrl.includes(coreMId) || coreMId.includes(shiftCoreUrl)) {
+          appliedShift = shift;
+          break;
+        }
+      }
+    }
+
+    // 仅根据 dandan related 接口提供的精确偏移量进行对齐，未命中则跳过
+    if (appliedShift !== undefined) {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用 dandan API 精确偏移量 ${appliedShift}s`);
+      
+      for (let i = 0; i < list.length; i++) {
+        const danmu = list[i];
+        const time = getDanmuTime(danmu);
+        // 原本 time 是基准，shift表示加上该偏差到达 Dandan 时间轴
+        const targetTime = Math.max(0, time + appliedShift);
+        
+        // 替换位移
+        if (danmu.p && typeof danmu.p === 'string') {
+          const firstComma = danmu.p.indexOf(',');
+          if (firstComma !== -1) {
+            danmu.p = targetTime.toFixed(2) + danmu.p.substring(firstComma);
+          }
+        }
+        if (danmu.t !== undefined && danmu.t !== null) {
+          danmu.t = targetTime;
+        }
+        if (typeof danmu.progress === 'number') {
+          danmu.progress = Math.round(targetTime * 1000);
+        }
+      }
+    } else {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 未找到相关 API 偏移量数据，跳过时间轴对齐`);
+    }
+  }
+  
+  // 直接返回修改后的原始数组，不再产生深拷贝开销
+  return results;
+}
+
+/**
+ * 获取弹幕时间（秒），兼容 dandan (p 字符串) 与 bilibili (progress 毫秒)
+ * @param {Object} danmu
+ * @returns {number}
+ */
+function getDanmuTime(danmu) {
+  if (danmu.t !== undefined && danmu.t !== null) return Number(danmu.t);
+  if (danmu.p && typeof danmu.p === 'string') {
+    const pTime = parseFloat(danmu.p.split(',')[0]);
+    if (!isNaN(pTime)) return pTime;
+  }
+  if (typeof danmu.progress === 'number') {
+    return danmu.progress / 1000;
+  }
+  return 0;
 }

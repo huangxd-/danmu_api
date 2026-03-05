@@ -317,10 +317,21 @@ export default class BahamutSource extends BaseSource {
           // 优先使用tmdb智能标题替换的标题，否则简转繁处理原标题
           const displayTitle = anime._displayTitle || simplized(anime.title);
 
+          // 解析剧集类型
+          let itemType = "动漫"; // 默认类型
+          // 从 epData 中获取完整标题 (优先使用 anime.title)
+          const fullTitle = (epData.anime && epData.anime.title) || (detail && detail.title) || "";
+          
+          if (fullTitle.includes("[電影]")) {
+            itemType = "剧场版";
+          } else if (fullTitle.includes("[特別篇]")) {
+            itemType = "OVA";
+          }
+
           let transformedAnime = {
             animeId: anime.video_sn,
             bangumiId: String(anime.video_sn),
-            animeTitle: `${displayTitle}(${(anime.info.match(/(\d{4})/) || [null])[0]})【动漫】from bahamut`,
+            animeTitle: `${displayTitle}(${(anime.info.match(/(\d{4})/) || [null])[0]})【${itemType}】from bahamut`,
             type: "动漫",
             typeDescription: "动漫",
             imageUrl: anime.cover,

@@ -19,6 +19,7 @@ const uiModules = [
   './ui/js/apitest.js',
   './ui/js/pushdanmu.js',
   './ui/js/systemsettings.js',
+  './utils/local-redis-util.js',
   'danmu_api/ui/template.js',
   'danmu_api/ui/css/base.css.js',
   'danmu_api/ui/css/components.css.js',
@@ -29,7 +30,8 @@ const uiModules = [
   'danmu_api/ui/js/logview.js',
   'danmu_api/ui/js/apitest.js',
   'danmu_api/ui/js/pushdanmu.js',
-  'danmu_api/ui/js/systemsettings.js'
+  'danmu_api/ui/js/systemsettings.js',
+  'danmu_api/utils/local-redis-util.js'
 ];
 
 let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8');
@@ -45,13 +47,14 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
       target: 'es2020',
       outfile: 'dist/logvar-danmu.js',
       format: 'esm', // 保持ES模块格式
+      external: ['redis'],
       plugins: [
         // 插件：排除UI相关模块
         {
           name: 'exclude-ui-modules',
           setup(build) {
             // 拦截对UI相关模块的导入
-            build.onResolve({ filter: /.*ui.*\.(css|js)$|.*template\.js$/ }, (args) => {
+            build.onResolve({ filter: /.*ui.*\.(css|js)$|.*template\.js$|.*local-redis-util\.js$/ }, (args) => {
               if (uiModules.some(uiModule => args.path.includes(uiModule.replace('./', '').replace('../', '')))) {
                 return { path: args.path, external: true };
               }
@@ -73,6 +76,10 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
                 // 替换 httpGet 和 httpPost
                 outputContent = outputContent.replace(/await\s+httpGet/g, 'await Widget.http.get');
                 outputContent = outputContent.replace(/await\s+httpPost/g, 'await Widget.http.post');
+
+                // 删除本地redis相关
+                outputContent = outputContent.replace(/.*setLocalRedisKey.*\n?/g, '\n');
+                outputContent = outputContent.replace(/.*updateLocalRedisCaches.*\n?/g, '\n');
                 
                 // 保存修改后的内容
                 fs.writeFileSync('dist/logvar-danmu.js', outputContent);

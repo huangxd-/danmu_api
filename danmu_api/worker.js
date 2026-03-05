@@ -30,6 +30,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);
+    const { judgeLocalRedisValid } = await import("./utils/local-redis-util.js");
+    await judgeLocalRedisValid(path);
   }
   await judgeRedisValid(path);
   if (!globals.aiValid && globals.aiBaseUrl && globals.aiModel && globals.aiApiKey && path !== "/favicon.ico" && path !== "/robots.txt") {
@@ -70,6 +72,10 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getRedisCaches();
+  }
+  if (deployPlatform === "node" && globals.localRedisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    const { getLocalRedisCaches } = await import("./utils/local-redis-util.js");
+    await getLocalRedisCaches();
   }
 
   // 检查路径是否包含指定的接口关键字

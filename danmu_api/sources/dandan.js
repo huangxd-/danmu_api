@@ -6,6 +6,19 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { getTmdbJaOriginalTitle } from "../utils/tmdb-util.js";
+import TencentSource from "./tencent.js";
+import IqiyiSource from "./iqiyi.js";
+import MangoSource from "./mango.js";
+import BilibiliSource from "./bilibili.js";
+import YoukuSource from "./youku.js";
+import BahamutSource from "./bahamut.js";
+
+const tencentSource = new TencentSource();
+const iqiyiSource = new IqiyiSource();
+const mangoSource = new MangoSource();
+const bilibiliSource = new BilibiliSource();
+const youkuSource = new YoukuSource();
+const bahamutSource = new BahamutSource();
 
 // =====================
 // 获取弹弹play弹幕
@@ -321,33 +334,140 @@ export default class DandanSource extends BaseSource {
     return tmpAnimes;
   }
 
-  async getEpisodeDanmu(id) {
+  // 接收 mergedSources 参数，包含所有参与合并的具体源链接信息，用于避免重复获取
+  async getEpisodeDanmu(id, mergedSources = []) {
     let allDanmus = [];
+    let relatedShifts = {}; // 存储传给合并工具的精确偏移值，格式: { 'sourceName:coreUrl': shift }
+    const stats = {}; // 统计各源弹幕数量
 
     try {
-      const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=%2Fv2%2Fcomment%2F${id}%3Ffrom%3D0%26withRelated%3Dtrue%26chConvert%3D0`, {
+      // 获取 dandan 弹幕
+      const dandanPromise = httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=%2Fv2%2Fcomment%2F${id}%3Ffrom%3D0%26withRelated%3Dtrue%26chConvert%3D0`, {
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         },
         retries: 1,
-      });
+      }).catch(e => { log('error', `dandan base comments error: ${e.message}`); return null; });
 
-      // 将当前请求的 episodes 拼接到总数组
-      if (resp.data && resp.data.comments) {
-        allDanmus = resp.data.comments;
+      // 根据功能开关决定是否请求 related 关联数据，避免未开启功能时产生无效的网络开销
+      // 判定条件：全局开启了实时拉取，或全局开启了合并功能，或当前请求明确处于合并管线中
+      let relatedPromise = Promise.resolve(null);
+      if (globals.realTimePullDandan || (globals.mergeSourcePairs && globals.mergeSourcePairs.length > 0) || (mergedSources && mergedSources.length > 0)) {
+        relatedPromise = httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/related/${id}`, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          retries: 1,
+        }).catch(e => { log('error', `dandan related data error: ${e.message}`); return null; });
       }
 
-      return allDanmus;
+      const [resp, relatedResp] = await Promise.all([dandanPromise, relatedPromise]);
+
+      if (resp && resp.data && resp.data.comments) {
+        allDanmus = resp.data.comments;
+        stats['dandan'] = allDanmus.length;
+      } else {
+        stats['dandan'] = 0;
+      }
+
+      // 处理第三方关联源
+      if (relatedResp && relatedResp.data && relatedResp.data.relateds) {
+        const relatedTasks = [];
+
+        // 核心标识提取函数：滤除干扰因素，提取唯一特征以供比对
+        const getCoreIdentifier = (targetStr, sName) => {
+          // 巴哈姆特专属逻辑：提取纯数字ID
+          if (sName === 'bahamut') {
+            const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
+            return match ? (match[1] || match[0]) : targetStr;
+          }
+          // 常规平台逻辑：统一剥离 http/https协议、www.前缀，并截断 ? 后面的所有查询参数
+          return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+        };
+
+        for (const rel of relatedResp.data.relateds) {
+          const url = rel.url;
+          const shift = rel.shift || 0;
+          const sourceInfo = this.parseRelatedUrl(url);
+          
+          if (!sourceInfo) continue;
+
+          const { sourceName } = sourceInfo;
+          const coreUrl = getCoreIdentifier(url, sourceName);
+          
+          // 构建唯一键存储偏移量，包含平台与核心标识，防止同平台多链接导致数据覆盖
+          relatedShifts[`${sourceName}:${coreUrl}`] = shift;
+
+          // 拦截：判断用户是否开启实时拉取功能
+          if (!globals.realTimePullDandan) {
+            continue;
+          }
+
+          // 拦截：判断用户是否开启该源
+          if (!globals.sourceOrderArr.includes(sourceName)) {
+            continue;
+          }
+
+          // 拦截：判断当前关联的具体链接是否已被合并工具明确包含，支持同源多链接的精细区分
+          const isAlreadyMerged = mergedSources.some(part => {
+            const firstColonIndex = part.indexOf(':');
+            if (firstColonIndex === -1) return false;
+            const mSource = part.substring(0, firstColonIndex);
+            const mId = part.substring(firstColonIndex + 1);
+            
+            // 来源标识必须一致
+            if (mSource !== sourceName) return false;
+
+            const coreMId = getCoreIdentifier(mId, mSource);
+
+            // 核心特征双向包含比对
+            return coreUrl.includes(coreMId) || coreMId.includes(coreUrl);
+          });
+
+          if (isAlreadyMerged) {
+            log("info", `[Dandan] 链接 ${url} 已被合并工具包含，交由合并工具处理，跳过原生实时拉取`);
+            continue;
+          }
+
+          // 执行本地实时拉取，并应用偏移，同时统计返回的弹幕数量
+          log("info", `[Dandan] 触发第三方源实时拉取: ${sourceName} - ${url} (偏移: ${shift}s)`);
+          relatedTasks.push(
+            this.pullRealTimeDanmu(sourceName, url, shift).then(comments => {
+              stats[sourceName] = (stats[sourceName] || 0) + comments.length;
+              return comments;
+            })
+          );
+        }
+
+        // 并发等待所有第三方弹幕请求
+        if (relatedTasks.length > 0) {
+          const extraDanmusArrays = await Promise.all(relatedTasks);
+          for (const extra of extraDanmusArrays) {
+            if (extra && Array.isArray(extra) && extra.length > 0) {
+              allDanmus = allDanmus.concat(extra);
+            }
+          }
+          
+          // 汇总日志：仅在产生实际拉取任务时，输出拉取总数与原生基础数据
+          const totalCount = allDanmus.length;
+          const dandanCount = stats['dandan'] || 0;
+          log("info", `[Dandan] 实时拉取原始数据完成: 现总计 ${totalCount} 条 (原始弹幕数：${dandanCount})`);
+        }
+      }
+
     } catch (error) {
-      // 捕获请求中的错误
-      log("error", "fetchDandanEpisodeDanmu error:", {
+      log("error", "getEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
       });
-      return allDanmus; // 返回已收集的 episodes
     }
+
+    // 挂载精确偏移量字典，以便外层截获
+    allDanmus.relatedShifts = relatedShifts;
+    return allDanmus;
   }
 
   async getEpisodeDanmuSegments(id) {
@@ -368,19 +488,94 @@ export default class DandanSource extends BaseSource {
     return this.getEpisodeDanmu(segment.url);
   }
 
+// 解析 Related 接口中的 URL 对应内部源标识
+  parseRelatedUrl(url) {
+    if (!url) return null;
+    if (url.includes('bilibili.com')) return { sourceName: 'bilibili' };
+    if (url.includes('gamer.com.tw')) return { sourceName: 'bahamut' };
+    if (url.includes('iqiyi.com')) return { sourceName: 'iqiyi' };
+    if (url.includes('youku.com')) return { sourceName: 'youku' };
+    if (url.includes('qq.com')) return { sourceName: 'tencent' };
+    if (url.includes('mgtv.com')) return { sourceName: 'imgo' };
+    return null;
+  }
+
+  // 独立出来的实时拉取与偏移应用方法
+  async pullRealTimeDanmu(sourceName, url, shift) {
+    try {
+      let comments = [];
+      let sourceInstance = null;
+      let platName = sourceName; // 映射标准平台名称用于去重工具
+      
+      // 匹配对应的源实例，并处理标准平台名
+      if (sourceName === 'tencent') { sourceInstance = tencentSource; platName = 'qq'; }
+      else if (sourceName === 'iqiyi') { sourceInstance = iqiyiSource; platName = 'qiyi'; }
+      else if (sourceName === 'imgo') { sourceInstance = mangoSource; platName = 'imgo'; }
+      else if (sourceName === 'bilibili') { sourceInstance = bilibiliSource; platName = 'bilibili1'; }
+      else if (sourceName === 'youku') { sourceInstance = youkuSource; platName = 'youku'; }
+      else if (sourceName === 'bahamut') { sourceInstance = bahamutSource; platName = 'bahamut'; }
+
+      if (sourceInstance) {
+        // 调用底层的 getEpisodeDanmu
+        const raw = await sourceInstance.getEpisodeDanmu(url);
+        comments = sourceInstance.formatComments(raw) || [];
+      }
+
+      // 应用偏移量，并打上特殊标记
+      if (comments && comments.length > 0) {
+        for (const c of comments) {
+          if (shift !== 0) {
+            if (c.p && typeof c.p === 'string') {
+              const parts = c.p.split(',');
+              const time = parseFloat(parts[0]);
+              if (!isNaN(time)) {
+                parts[0] = Math.max(0, time + shift).toFixed(2);
+                c.p = parts.join(',');
+              }
+            }
+            if (c.t !== undefined && c.t !== null) {
+              c.t = Math.max(0, Number(c.t) + shift);
+            }
+            if (typeof c.progress === 'number') {
+              c.progress = Math.max(0, c.progress + Math.round(shift * 1000));
+            }
+          }
+          // 打上免二次解析的标记
+          c.isRealTimePulled = true; 
+          // 将标准平台标识传给外部，供 danmu-util 组装标签
+          c.realTimeSource = platName;
+        }
+      }
+      return comments;
+    } catch (error) {
+      log("error", `[Dandan] 实时拉取 ${sourceName} 失败: ${error.message}`);
+      return [];
+    }
+  }
+
   formatComments(comments) {
-    return comments.map(c => ({
-      cid: c.cid,
-      p: `${c.p.replace(/([A-Za-z]+)([0-9a-fA-F]{6})/, (_, platform, hexColor) => {
-        // 转换 hexColor 为十进制颜色值
-        const r = parseInt(hexColor.substring(0, 2), 16);
-        const g = parseInt(hexColor.substring(2, 4), 16);
-        const b = parseInt(hexColor.substring(4, 6), 16);
-        const decimalColor = r * 256 * 256 + g * 256 + b;
-        return `${platform}${decimalColor}`;
-      })}`,
-      // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
-      m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.m) : c.m,
-    }));
+    return comments.map(c => {
+      // 已经被实时抓取的其它源弹幕，略过复杂的 Dandan 转换，进行繁转简处理
+      if (c.isRealTimePulled) {
+        if (globals.danmuSimplifiedTraditional === 'simplified' && c.m) {
+          return { ...c, m: simplized(c.m) };
+        }
+        return c;
+      }
+      
+      return {
+        cid: c.cid,
+        p: `${c.p.replace(/([A-Za-z]+)([0-9a-fA-F]{6})/, (_, platform, hexColor) => {
+          // 转换 hexColor 为十进制颜色值
+          const r = parseInt(hexColor.substring(0, 2), 16);
+          const g = parseInt(hexColor.substring(2, 4), 16);
+          const b = parseInt(hexColor.substring(4, 6), 16);
+          const decimalColor = r * 256 * 256 + g * 256 + b;
+          return `${platform}${decimalColor}`;
+        })}`,
+        // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
+        m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.m) : c.m,
+      };
+    });
   }
 }

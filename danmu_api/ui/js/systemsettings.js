@@ -392,7 +392,14 @@ function renderValueInput(item) {
 
     if (type === 'boolean') {
         // 布尔开关
-        const checked = value === 'true' || value === true;
+        // 对于LIKE_SWITCH变量，默认值设为true（开启状态）
+        let checked;
+        if (currentKey === 'LIKE_SWITCH' || currentKey === 'REMEMBER_LAST_SELECT') {
+            // 如果值为空或未定义，LIKE_SWITCH和REMEMBER_LAST_SELECT默认为true（开启）
+            checked = value === 'true' || value === true || (value === '' || value === undefined || value === null);
+        } else {
+            checked = value === 'true' || value === true;
+        }
         container.innerHTML = \`
             <label>值</label>
             <div class="switch-container">
