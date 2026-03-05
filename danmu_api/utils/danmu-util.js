@@ -11,29 +11,13 @@ import { traditionalized } from './zh-util.js';
  * 对弹幕进行分组、去重和计数处理
  * @param {Array} filteredDanmus 已过滤屏蔽词的弹幕列表
  * @param {number} n 分组时间间隔（分钟），0表示不分组（除非多源合并强制去重）
+ * @param {boolean} isMultiSource 是否为多源弹幕
  * @returns {Array} 处理后的弹幕列表
  */
-export function groupDanmusByMinute(filteredDanmus, n) {
-  // 解析弹幕来源标签以确定合并源数量，用于智能去重
-  // 检查第一条弹幕的 p 属性结尾的 [source] 标签
-  let sourceCount = 1;
-  if (filteredDanmus.length > 0 && filteredDanmus[0].p) {
-    const pStr = filteredDanmus[0].p;
-    const match = pStr.match(/\[([^\]]*)\]$/);
-    if (match && match[1]) {
-      // 支持半角 '&' 和全角 '＆' 分隔符
-      sourceCount = match[1].split(/[&＆]/).length;
-    }
-  }
-
-  // 如果检测到多源合并，输出日志提示
-  if (sourceCount > 1) {
-    log("info", `[Smart Deduplication] Detected multi-source merged danmaku (${sourceCount} sources). Applying smart count adjustment.`);
-  }
-
+export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
   // 特殊逻辑：如果未开启分组(n=0)且为单源，直接返回原始数据
   // 若为多源，即使n=0也强制执行精确时间点去重，以消除源之间的重复数据
-  if (n === 0 && sourceCount === 1) {
+  if (n === 0 && !isMultiSource) {
     return filteredDanmus.map(danmu => ({
       ...danmu,
       t: danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0])
@@ -71,7 +55,8 @@ export function groupDanmusByMinute(filteredDanmus, n) {
           earliestT: danmu.t,
           cid: danmu.cid,
           p: danmu.p,
-          like: 0  // 初始化like字段
+          like: 0,  // 初始化like字段
+          sources: new Set() // 收集当前具体弹幕内容的真实独立来源
         };
       }
       acc[message].count += 1;
@@ -79,6 +64,16 @@ export function groupDanmusByMinute(filteredDanmus, n) {
       acc[message].earliestT = Math.min(acc[message].earliestT, danmu.t);
       // 合并like字段，如果是undefined则视为0
       acc[message].like += (danmu.like !== undefined ? danmu.like : 0);
+      
+      // 提取当前弹幕的来源并加入集合中，建立弹幕内容与平台的精确映射
+      if (danmu.p) {
+        const match = danmu.p.match(/\[([^\]]*)\]$/);
+        if (match && match[1]) {
+            match[1].split(/[&＆]/).forEach(s => {
+                if (s.trim()) acc[message].sources.add(s.trim());
+            });
+        }
+      }
       return acc;
     }, {});
 
@@ -86,14 +81,19 @@ export function groupDanmusByMinute(filteredDanmus, n) {
     return Object.keys(groupedByMessage).map(message => {
       const data = groupedByMessage[message];
       
-      // 计算显示计数：总次数除以源数量，四舍五入
-      // 过滤因多源合并产生的自然重复
-      let displayCount = Math.round(data.count / sourceCount);
+      // 以当前这句弹幕实际跨越的独立平台数作为除数，进行局部精准降噪，保留单平台内真实的重复计数
+      let localSourceCount = Math.max(1, data.sources.size);
+      let displayCount = Math.round(data.count / localSourceCount);
+      
       if (displayCount < 1) displayCount = 1;
+
+      // 将收集到的所有真实独立来源重新拼装回 p 属性标签中
+      const combinedSources = Array.from(data.sources).join('＆');
+      const newP = data.p.replace(/\[([^\]]*)\]$/, `[${combinedSources}]`);
 
       return {
         cid: data.cid,
-        p: data.p,
+        p: newP,
         // 仅当计算后的逻辑计数大于1时才显示 "x N"
         m: displayCount > 1 ? `${message}\u200Ax\u200A${displayCount}` : message,
         t: data.earliestT,
@@ -187,6 +187,7 @@ export function limitDanmusByCount(filteredDanmus, danmuLimit) {
 export function convertToDanmakuJson(contents, platform) {
   let danmus = [];
   let cidCounter = 1;
+  let isMultiSource = false; // 用于记录当前弹幕集合是否为多源组合
 
   // 统一处理输入为数组
   let items = [];
@@ -260,11 +261,24 @@ export function convertToDanmakuJson(contents, platform) {
       m = item.m;
     }
 
+    // 优先使用弹幕自带的 _sourceLabel（应对合并工具），其次是外部传入的宏观 platform
+    let currentPlatform = item._sourceLabel || platform;
+    
+    // 如果存在实时拉取的副源标签，安全追加
+    if (item.realTimeSource && !currentPlatform.includes(item.realTimeSource)) {
+        currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
+    }
+
+    // 在组装字符串时，顺带通过符号检测判定当前是否为多源组合数据
+    if (!isMultiSource && /[&＆]/.test(currentPlatform)) {
+        isMultiSource = true;
+    }
+
     attributes = [
       time,
       mode,
       color,
-      `[${platform}]`
+      `[${currentPlatform}]`
     ].join(",");
 
     danmus.push({ p: attributes, m, cid: cidCounter++, like: item?.like });
@@ -297,7 +311,7 @@ export function convertToDanmakuJson(contents, platform) {
 
   // 按n分钟内去重
   log("info", `去重分钟数: ${globals.groupMinute}`);
-  const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute);
+  const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource);
 
   // 处理点赞数
   const likeDanmus = handleDanmusLike(groupedDanmus);
