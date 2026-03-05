@@ -1269,8 +1269,19 @@ async function fetchMergedComments(url) {
         if (sourceInstance) {
           try {
             // 获取原始数据 -> 格式化
-            const raw = await sourceInstance.getEpisodeDanmu(realId);
+            const raw = await sourceInstance.getEpisodeDanmu(realId, parts);
             const formatted = sourceInstance.formatComments(raw);
+            
+			// 给合并工具里的每一条弹幕打上独立的原始源标签
+            if (formatted && Array.isArray(formatted)) {
+                formatted.forEach(item => item._sourceLabel = sourceName);
+            }
+			
+            // 提取并挂载 dandan 源传出的精确偏移量
+            if (raw && raw.relatedShifts) {
+              formatted.relatedShifts = raw.relatedShifts;
+            }
+
             stats[sourceName] = formatted.length;
             return formatted;
           } catch (e) {
@@ -1303,8 +1314,12 @@ async function fetchMergedComments(url) {
       return firstColonIndex === -1 ? '' : part.substring(firstColonIndex + 1);
     });
 
+    // 提取精确偏移集合
+    const dandanIndex = sourceNames.indexOf('dandan');
+    const dandanShifts = (results[dandanIndex] && results[dandanIndex].relatedShifts) ? results[dandanIndex].relatedShifts : {};
+
     // 执行对齐函数
-    alignSourceTimelines(results, sourceNames, realIds);
+    alignSourceTimelines(results, sourceNames, realIds, dandanShifts);
   }
   
   // 3. 合并数据

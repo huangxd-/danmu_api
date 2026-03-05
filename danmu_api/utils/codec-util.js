@@ -335,12 +335,12 @@ function rotWord(word){
 }
 
 // 字节代换
-function subWord(word){
+export function subWord(word){
   return Uint8Array.from(word.map(b=>SBOX[b]));
 }
 
 // 扩展密钥 16 字节 -> 176 字节
-function keyExpansion(key) {
+export function keyExpansion(key) {
   const Nk = 4, Nb=4, Nr=10;
   const w = new Array(Nb*(Nr+1));
   for(let i=0;i<Nk;i++){
@@ -372,7 +372,7 @@ function aesDecryptBlock(input, w) {
 }
 
 // AES 辅助函数
-function addRoundKey(state, w){
+export function addRoundKey(state, w){
   const out = new Uint8Array(16);
   for(let c=0;c<4;c++)
     for(let r=0;r<4;r++)
@@ -380,13 +380,13 @@ function addRoundKey(state, w){
   return out;
 }
 
-function invSubBytes(state){
+export function invSubBytes(state){
   const INV_SBOX = new Array(256);
   for(let i=0;i<256;i++) INV_SBOX[SBOX[i]]=i;
   return Uint8Array.from(state.map(b=>INV_SBOX[b]));
 }
 
-function invShiftRows(state){
+export function invShiftRows(state){
   const out = new Uint8Array(16);
   for(let r=0;r<4;r++)
     for(let c=0;c<4;c++)

@@ -216,8 +216,6 @@ const SEASON_PATTERNS = [
   { regex: /[^0-9](\d)$/, prefix: 'S', useCleaned: true } 
 ];
 
-const NORMALIZE_REGEX = /[\s\u3000-\u303f\uff00-\uffef]/g;
-
 // ==========================================
 // 3. 基础文本处理工具 (Utilities)
 // ==========================================
@@ -2399,32 +2397,28 @@ export function mergeDanmakuList(listA, listB) {
 }
 
 /**
- * 跨源时间轴对齐：以 dandan 为基准，对其他源计算并应用全局偏移
- * 要求副源弹幕与基准源的文本重合度达到指定比例（默认80%）才启用对齐
+ * 跨源时间轴对齐：应用 dandan related 接口下发的准确偏移量实现对齐
  * @param {Array<Array<Object>>} results - 各源弹幕数组（与 sourceNames/realIds 同序）
  * @param {Array<string>} sourceNames - 源名数组（如 ['dandan', 'bilibili']）
  * @param {Array<string>} realIds - 对应的 ID 数组（与 sourceNames 同序）
- * @param {number} [minMatchRatio=0.8] - 最少匹配比例，低于此比例不应用对齐
- * @param {number} [offsetThreshold=3] - 偏移量阈值（秒），绝对值大于此值才应用全局偏移
+ * @param {Object} [dandanShifts={}] - Dandan提供的精确偏移字典，如 { 'bilibili:bilibili.com/bangumi/play/ep1551029': 48 }
  * @returns {Array<Array<Object>>} 对齐后的各源弹幕数组
  */
-export function alignSourceTimelines(results, sourceNames, realIds, minMatchRatio = 0.8, offsetThreshold = 3) {
+export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts = {}) {
   const dandanIndex = sourceNames.findIndex(name => name === 'dandan');
   if (dandanIndex === -1 || !results[dandanIndex] || results[dandanIndex].length === 0) {
     log("info", "[Merge][AlignTimeline] 无 dandan 源或无数据，跳过时间轴对齐");
     return results;
   }
-  
-  // 提取基准时间表
-  const dandanMap = new Map();
-  for (const danmu of results[dandanIndex]) {
-    const text = normalizeText(getDanmuText(danmu));
-    if (!text) continue;
-    const time = getDanmuTime(danmu);
-    if (!dandanMap.has(text) || time < dandanMap.get(text)) {
-      dandanMap.set(text, time);
+
+  // 核心标识提取函数，保持与 dandan 源内部一致的去噪匹配逻辑
+  const getCoreIdentifier = (targetStr, sName) => {
+    if (sName === 'bahamut') {
+      const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
+      return match ? (match[1] || match[0]) : targetStr;
     }
-  }
+    return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+  };
   
   // 遍历其他来源进行对齐
   for (let idx = 0; idx < results.length; idx++) {
@@ -2435,77 +2429,49 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
     if (sourceName === 'dandan' || !Array.isArray(list) || list.length === 0) {
       continue;
     }
-    
-    const sourceMap = new Map();
-    const parsedCache = new Array(list.length);
-    
-    for (let i = 0; i < list.length; i++) {
-      const danmu = list[i];
-      const text = normalizeText(getDanmuText(danmu));
-      const time = getDanmuTime(danmu);
-      parsedCache[i] = { danmu, text, time };
-      
-      if (text && (!sourceMap.has(text) || time < sourceMap.get(text))) {
-        sourceMap.set(text, time);
-      }
-    }
-    
-    if (sourceMap.size === 0) continue;
-    
-    const offsetCounts = new Map();
-    let matchCount = 0;
-    
-    for (const [text, sourceTime] of sourceMap) {
-      if (dandanMap.has(text)) {
-        const dandanTime = dandanMap.get(text);
-        const offset = Math.round((sourceTime - dandanTime) * 100) / 100;
-        offsetCounts.set(offset, (offsetCounts.get(offset) || 0) + 1);
-        matchCount++;
-      }
-    }
-    
-    // 校验匹配比例
-    const matchRatio = matchCount / sourceMap.size;
-    if (matchRatio < minMatchRatio) {
-      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 匹配率过低 (${(matchRatio * 100).toFixed(1)}% < ${(minMatchRatio * 100).toFixed(1)}%)，跳过时间轴对齐`);
-      continue;
-    }
-    
-    // 寻找众数偏移量
-    let bestOffset = 0;
-    let maxCount = 0;
-    for (const [offset, count] of offsetCounts) {
-      if (count > maxCount) {
-        maxCount = count;
-        bestOffset = offset;
-      }
-    }
-    
-    if (Math.abs(bestOffset) < offsetThreshold) {
-      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 最佳偏移量 ${bestOffset}s 过小，跳过时间轴对齐`);
-      continue;
-    }
-    
-    log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用时间轴偏移 ${bestOffset}s（匹配率: ${(matchRatio * 100).toFixed(1)}%，${maxCount} 票）`);
-    
-    for (let i = 0; i < parsedCache.length; i++) {
-      const { danmu, text, time } = parsedCache[i];
-      const targetTime = (text && dandanMap.has(text)) 
-        ? dandanMap.get(text) 
-        : Math.max(0, time - bestOffset); 
-      
-      if (danmu.p && typeof danmu.p === 'string') {
-        const firstComma = danmu.p.indexOf(',');
-        if (firstComma !== -1) {
-          danmu.p = targetTime.toFixed(2) + danmu.p.substring(firstComma);
+
+    const coreMId = getCoreIdentifier(realId, sourceName);
+    let appliedShift = undefined;
+
+    // 遍历 dandanShifts 寻找匹配当前核心特征的精确偏移量
+    for (const [key, shift] of Object.entries(dandanShifts)) {
+      const prefix = sourceName + ':';
+      if (key.startsWith(prefix)) {
+        const shiftCoreUrl = key.substring(prefix.length);
+        // 核心特征双向包含比对
+        if (shiftCoreUrl.includes(coreMId) || coreMId.includes(shiftCoreUrl)) {
+          appliedShift = shift;
+          break;
         }
       }
-      if (danmu.t !== undefined && danmu.t !== null) {
-        danmu.t = targetTime;
+    }
+
+    // 仅根据 dandan related 接口提供的精确偏移量进行对齐，未命中则跳过
+    if (appliedShift !== undefined) {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用 dandan API 精确偏移量 ${appliedShift}s`);
+      
+      for (let i = 0; i < list.length; i++) {
+        const danmu = list[i];
+        const time = getDanmuTime(danmu);
+        // 原本 time 是基准，shift表示加上该偏差到达 Dandan 时间轴
+        const targetTime = Math.max(0, time + appliedShift);
+        
+        // 替换位移
+        if (danmu.p && typeof danmu.p === 'string') {
+          const firstComma = danmu.p.indexOf(',');
+          if (firstComma !== -1) {
+            danmu.p = targetTime.toFixed(2) + danmu.p.substring(firstComma);
+          }
+        }
+        if (danmu.t !== undefined && danmu.t !== null) {
+          danmu.t = targetTime;
+        }
+        if (typeof danmu.progress === 'number') {
+          danmu.progress = Math.round(targetTime * 1000);
+        }
       }
-      if (typeof danmu.progress === 'number') {
-        danmu.progress = Math.round(targetTime * 1000);
-      }
+    } else {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 未找到相关 API 偏移量数据，跳过时间轴对齐`);
     }
   }
   
@@ -2528,25 +2494,4 @@ function getDanmuTime(danmu) {
     return danmu.progress / 1000;
   }
   return 0;
-}
-  
-/**
- * 获取弹幕文本，兼容 dandan (m) 与其他源 (content)
- * @param {Object} danmu
- * @returns {string}
- */
-function getDanmuText(danmu) {
-  if (typeof danmu.m === 'string') return danmu.m;
-  if (typeof danmu.content === 'string') return danmu.content;
-  return '';
-}
-  
-/**
- * 文本标准化：去除空格、标点、转小写
- * @param {string} text
- * @returns {string}
- */
-function normalizeText(text) {
-  if (typeof text !== 'string') return '';
-  return text.replace(NORMALIZE_REGEX, '').toLowerCase();
 }
