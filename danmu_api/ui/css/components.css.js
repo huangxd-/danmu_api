@@ -1424,21 +1424,7 @@ export const componentsCssContent = /* css */ `
 .danmu-export-btns {
     display: flex;
     gap: 8px;
-}
-
-.btn-export {
-    background: #f8f9fa;
-    color: #555;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-export:hover {
-    background: #667eea;
-    color: white;
-    border-color: #667eea;
+    margin-left: auto;
 }
 
 /* 弹幕测试移动端适配 */

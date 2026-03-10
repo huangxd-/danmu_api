@@ -647,11 +647,11 @@ async function fetchDanmuForTest(episodeId, title, source) {
         // 重建结果区内容：auto模式只有导出按钮，manual模式有返回+导出
         let toolbarHtml = '<div class="danmu-result-toolbar">';
         if (source === 'manual') {
-            toolbarHtml += backBtnHtml('返回剧集列表', 'backToEpisodeList()');
+            toolbarHtml += backBtnHtml('返回列表', 'backToEpisodeList()');
         }
         toolbarHtml += '<div class="danmu-export-btns">' +
-                '<button class="btn btn-sm btn-export" onclick="exportDanmu(\\'json\\')">导出 JSON</button>' +
-                '<button class="btn btn-sm btn-export" onclick="exportDanmu(\\'xml\\')">导出 XML</button>' +
+                '<button class="btn btn-sm btn-primary" onclick="exportDanmu(\\'json\\')">导出 JSON</button>' +
+                '<button class="btn btn-sm btn-primary" onclick="exportDanmu(\\'xml\\')">导出 XML</button>' +
             '</div></div>';
 
         resultArea.innerHTML =
