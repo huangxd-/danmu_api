@@ -625,7 +625,7 @@ async function fetchDanmuForTest(episodeId, title, source) {
 
     const startTime = performance.now();
     try {
-        const resp = await fetch(buildApiUrl('/api/v2/comment/' + episodeId));
+        const resp = await fetch(buildApiUrl('/api/v2/comment/' + episodeId + "?format=json"));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
