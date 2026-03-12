@@ -218,12 +218,30 @@ export function strictTitleMatch(title, query) {
   if (t === q) return true;
 
   // 标题以搜索词开头，且后面跟着空格、括号等分隔符
-  const separators = [' ', '(', '（', ':', '：', '-', '—', '·', '第', 'S', 's'];
+  const separators = [' ', '(', '（', ':', '：', '-', '—', '·', '第', 'S', 's', '年番', '合集'];
   for (const sep of separators) {
     if (t.startsWith(q + sep)) return true;
   }
 
   return false;
+}
+
+/**
+ * 从文本中提取明确的季度数字
+ * 支持提取包含阿拉伯数字或中文数字的季度标识
+ * @param {string} text 需要解析的文本
+ * @returns {number|null} 提取出的季度数字，未匹配到时返回 null
+ */
+export function getExplicitSeasonNumber(text) {
+  if (!text) return null;
+  const match = text.match(/(?:第\s*([0-9一二三四五六七八九十百千万]+)\s*[季期部])|(?:S(?:eason)?\s*(\d+))|(?:Part\s*(\d+))/i);
+  if (match) {
+    const numStr = match[1] || match[2] || match[3];
+    if (numStr) {
+      return convertChineseNumber(numStr); 
+    }
+  }
+  return null;
 }
 
 /**
@@ -242,6 +260,20 @@ export function titleMatches(title, query) {
 
   // 策略2：包含匹配优先 (性能最优且准确，只要完整包含即匹配)
   if (t.includes(q)) return true;
+
+  // 季度特征校验 (针对策略3的宽松相似度，防止字符集混淆导致季度错乱)
+  const querySeason = getExplicitSeasonNumber(query);
+  if (querySeason !== null) {
+    const titleSeason = getExplicitSeasonNumber(title);
+    
+    if (querySeason > 1) {
+      // 搜索指定续作(>1)时，标题必须明确包含该季度标识
+      if ((titleSeason || 1) !== querySeason) return false;
+    } else if (querySeason === 1) {
+      // 搜索第1季时，拦截明确标明为其他季度(如第2季、第3季)的结果
+      if (titleSeason !== null && titleSeason !== 1) return false;
+    }
+  }
 
   // 策略3：相似度匹配 (阈值0.8)
   // 解决"和/与"等翻译差异，只要搜索词中 大于 80% 的字符出现在标题里，即视为匹配

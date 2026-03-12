@@ -2485,11 +2485,11 @@ export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts
  * @returns {number}
  */
 function getDanmuTime(danmu) {
-  if (danmu.t !== undefined && danmu.t !== null) return Number(danmu.t);
   if (danmu.p && typeof danmu.p === 'string') {
     const pTime = parseFloat(danmu.p.split(',')[0]);
     if (!isNaN(pTime)) return pTime;
   }
+  if (danmu.t !== undefined && danmu.t !== null) return Number(danmu.t);
   if (typeof danmu.progress === 'number') {
     return danmu.progress / 1000;
   }

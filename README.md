@@ -84,7 +84,7 @@ LogVar 弹幕 API 服务器
 - **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
   - 配置预览
   - 日志查看
-  - 接口调试
+  - 接口调试/弹幕测试
   - 推送弹幕
   - 请求记录
   - 系统管理
