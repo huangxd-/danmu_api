@@ -579,10 +579,21 @@ function displayManualEpisodeList(animeTitle, episodes) {
     let html = backBtnHtml('返回搜索结果', 'backToManualSearch()');
     html += '<h3 style="margin:15px 0 10px;">剧集列表</h3>';
     html += '<h4 class="text-yellow-gold">' + escapeHtml(animeTitle) + '</h4>';
+    
+    // 添加跳转到指定集数的功能
+    html += \`
+    <div class="jump-to-episode" style="margin-top: 15px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 12px; display: flex; align-items: center; gap: 10px;">
+        <span>跳转到第</span>
+        <input type="number" id="jump-episode-input" placeholder="输入集数" min="1" style="padding: 8px; width: 90px; border: 1px solid #ccc; border-radius: 8px;">
+        <span>集</span>
+        <button class="btn btn-primary btn-sm" onclick="jumpToEpisode()" style="margin-left: 5px; border-radius: 8px;">跳转</button>
+        <span style="margin-left: 5px; color: #666; font-size: 14px;">共\${episodes.length}集</span>
+    </div>\`;
+    
     html += '<div class="episode-list-container">';
     episodes.forEach(ep => {
         const title = escapeHtml(animeTitle) + ' 第' + ep.episodeNumber + '集';
-        html += '<div class="episode-item">';
+        html += '<div class="episode-item" id="episode-item-' + ep.episodeNumber + '">';
         html += '<div class="episode-item-content"><strong>第' + ep.episodeNumber + '集</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
         html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + ep.episodeId + ', \\'' + title + '\\', \\'manual\\')">获取弹幕</button>';
         html += '</div>';
@@ -601,6 +612,31 @@ function backToManualSearch() {
 // 返回剧集列表
 function backToEpisodeList() {
     showDanmuView(['manual-episode-list'], ['danmu-result-area']);
+}
+
+// 跳转到指定集数
+function jumpToEpisode() {
+    const episodeInput = document.getElementById('jump-episode-input');
+    const episodeNumber = parseInt(episodeInput.value);
+    
+    if (!episodeNumber || episodeNumber <= 0) {
+        customAlert('请输入有效的集数（正整数）');
+        return;
+    }
+    
+    // 查找对应集数的元素
+    const episodeElement = document.getElementById('episode-item-' + episodeNumber);
+    if (episodeElement) {
+        // 滚动到指定元素位置
+        episodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 添加高亮效果以便识别
+        episodeElement.style.backgroundColor = '#fff3cd'; // 黄色背景高亮
+        setTimeout(() => {
+            episodeElement.style.backgroundColor = ''; // 恢复原色
+        }, 2000);
+    } else {
+        customAlert('找不到第' + episodeNumber + '集');
+    }
 }
 
 // =====================
