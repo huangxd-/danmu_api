@@ -118,6 +118,12 @@ export default class DandanSource extends BaseSource {
           }
 
           const animes = resp.data.animes;
+          
+          // 标记 TMDB 来源，供后续处理环节识别以跳过常规标题匹配
+          for (const anime of animes) {
+            anime.isTmdbSource = true;
+          }
+
           log("info", `dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
           log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: tmdb)`);
           return { success: true, data: animes, source: 'tmdb' };
@@ -297,8 +303,8 @@ export default class DandanSource extends BaseSource {
           const allTitles = [anime.animeTitle, ...aliases];
           let isMatch = false;
 
-          if (anime.isRelated) {
-            // 相关作品逻辑：仅执行单纯的季度过滤，跳过常规标题匹配，防止译名差距大误判
+          if (anime.isRelated || anime.isTmdbSource) {
+            // 相关作品及TMDB原名搜索结果逻辑：仅执行单纯的季度过滤，跳过常规标题匹配，防止标题语言差异导致误判
             const querySeason = getExplicitSeasonNumber(queryTitle);
             if (querySeason !== null) {
               let titleSeason = null;
