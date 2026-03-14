@@ -1,7 +1,7 @@
 import { globals } from '../configs/globals.js';
 
 // =====================
-// 路由请求相关
+// 日志记录工具
 // =====================
 
 export function log(level, ...args) {
