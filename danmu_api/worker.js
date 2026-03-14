@@ -52,6 +52,18 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   log("info", `request path: ${path}`);
   log("info", `client ip: ${clientIp}`);
 
+  // --- IP 黑名单拦截 ---
+  if (globals.ipBlacklist?.length) {
+    const isBlocked = globals.ipBlacklist.some(rule => matchIpBlacklistRule(rule, clientIp));
+    if (isBlocked) {
+      log("warn", `[IP Blacklist] Blocked request from IP: ${clientIp}`);
+      return jsonResponse(
+        { errorCode: 403, success: false, errorMessage: "Forbidden" },
+        403
+      );
+    }
+  }
+
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
 
@@ -503,6 +515,106 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
 
   return jsonResponse({ message: "Not found" }, 404);
+}
+
+function matchIpBlacklistRule(rule, clientIp) {
+  if (!rule || !clientIp || clientIp === 'unknown') return false;
+
+  if (rule.type === 'exact') {
+    return rule.value === clientIp;
+  }
+
+  if (rule.type === 'regex') {
+    return rule.value.test(clientIp);
+  }
+
+  if (rule.type === 'cidr') {
+    return isIpInCidr(clientIp, rule.ip, rule.prefix);
+  }
+
+  return false;
+}
+
+function isIpInCidr(ip, cidrIp, prefix) {
+  const isIpv6 = ip.includes(':') || cidrIp.includes(':');
+  if (isIpv6) {
+    const ipBytes = ipv6ToBytes(ip);
+    const cidrBytes = ipv6ToBytes(cidrIp);
+    if (!ipBytes || !cidrBytes || prefix < 0 || prefix > 128) return false;
+    const fullBytes = Math.floor(prefix / 8);
+    const remainingBits = prefix % 8;
+
+    for (let i = 0; i < fullBytes; i++) {
+      if (ipBytes[i] !== cidrBytes[i]) return false;
+    }
+
+    if (remainingBits > 0) {
+      const mask = (0xff << (8 - remainingBits)) & 0xff;
+      return (ipBytes[fullBytes] & mask) === (cidrBytes[fullBytes] & mask);
+    }
+
+    return true;
+  }
+
+  const ipInt = ipv4ToInt(ip);
+  const cidrInt = ipv4ToInt(cidrIp);
+  if (ipInt === null || cidrInt === null || prefix < 0 || prefix > 32) return false;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (ipInt & mask) === (cidrInt & mask);
+}
+
+function ipv4ToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  const nums = parts.map(part => Number(part));
+  if (nums.some(num => Number.isNaN(num) || num < 0 || num > 255)) return null;
+  return ((nums[0] << 24) >>> 0) + (nums[1] << 16) + (nums[2] << 8) + nums[3];
+}
+
+function ipv6ToBytes(ip) {
+  if (!ip || typeof ip !== 'string' || !ip.includes(':')) return null;
+  const normalized = ip.trim();
+  const segments = normalized.split('::');
+  if (segments.length > 2) return null;
+
+  let leftParts = segments[0] ? segments[0].split(':').filter(Boolean) : [];
+  let rightParts = segments[1] ? segments[1].split(':').filter(Boolean) : [];
+
+  const expandIpv4Part = (parts) => {
+    if (parts.length === 0) return parts;
+    const last = parts[parts.length - 1];
+    if (!last.includes('.')) return parts;
+    const ipv4Int = ipv4ToInt(last);
+    if (ipv4Int === null) return null;
+    const high = ((ipv4Int >>> 16) & 0xffff).toString(16);
+    const low = (ipv4Int & 0xffff).toString(16);
+    return [...parts.slice(0, -1), high, low];
+  };
+
+  leftParts = expandIpv4Part(leftParts);
+  rightParts = expandIpv4Part(rightParts);
+  if (!leftParts || !rightParts) return null;
+
+  if (segments.length === 1) {
+    if (leftParts.length !== 8) return null;
+  } else {
+    const totalParts = leftParts.length + rightParts.length;
+    if (totalParts > 8) return null;
+    const missing = 8 - totalParts;
+    rightParts = new Array(missing).fill('0').concat(rightParts);
+  }
+
+  const parts = leftParts.concat(rightParts);
+  if (parts.length !== 8) return null;
+
+  const bytes = [];
+  for (const part of parts) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return null;
+    const value = parseInt(part, 16);
+    bytes.push((value >> 8) & 0xff, value & 0xff);
+  }
+
+  return bytes;
 }
 
 function isRunningOnVercel() {
