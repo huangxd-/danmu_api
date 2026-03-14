@@ -280,7 +280,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/match
   if (path === "/api/v2/match" && method === "POST") {
-    return matchAnime(url, req);
+    return matchAnime(url, req, clientIp);
   }
 
   // GET /api/v2/bangumi/:animeId
@@ -402,7 +402,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
-    return getComment(path, queryFormat, segmentFlag);
+    return getComment(path, queryFormat, segmentFlag, clientIp);
   }
 
   // POST /api/v2/segmentcomment - 接收segment类的JSON请求体

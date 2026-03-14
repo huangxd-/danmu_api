@@ -7,7 +7,7 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches
+    updateLocalCaches, setLastSearch, getLastSearch
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
@@ -629,7 +629,23 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
   }
 }
 
-async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId) {
+function computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode) {
+  const match = offsets[season].match(/^([^:]+):(.+)$/);
+  const offsetEpisode = Number(match?.[1]) || 0;
+  const offsetEpisodeTitle = match?.[2] || '';
+  // 计算本次获取和保存的Episode差值
+  const offset = episode - offsetEpisode;
+  // 通过offsetEpisodeTitle获取保存的所在集index
+  const offsetIndex = filteredEpisodes.findIndex(episode => episode.episodeTitle === offsetEpisodeTitle);
+  if (offsetIndex !== -1) {
+    // 计算本次获取的目标index
+    targetEpisode = offsetIndex + offset + 1;
+    log("info", `Applying offset "${offsets[season]}" for S${season}E${episode} -> ${targetEpisode}`);
+  }
+  return targetEpisode;
+}
+
+async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets) {
   // 定义最佳匹配结果容器
   let bestRes = {
     anime: null,
@@ -707,8 +723,13 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
         
         log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
+        let targetEpisode = episode;
+        if (offsets && offsets[season] !== undefined) {
+          targetEpisode = computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode);
+        }
+
         // 匹配集数 (注意：findEpisodeByNumber 已增强支持模糊平台匹配)
-        matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, platform);
+        matchedEpisode = findEpisodeByNumber(filteredEpisodes, targetEpisode, platform);
     } else {
         // 电影模式逻辑
         if (bangumiData.bangumi.episodes.length > 0) {
@@ -765,7 +786,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
   return { resEpisode: bestRes.episode, resAnime: bestRes.anime };
 }
 
-async function fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime) {
+async function fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets) {
   for (const anime of searchData.animes) {
     // 年份匹配优先（如果提供了年份）
     if (year && !matchYear(anime, year)) {
@@ -786,8 +807,15 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, res
       // 过滤集标题一致的 episode，且保留首次出现的集标题的 episode
       const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
 
+      log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
+
+      let targetEpisode = episode;
+      if (offsets && offsets[season] !== undefined) {
+        targetEpisode = computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode);
+      }
+
       // 使用新的集数匹配策略
-      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, null);
+      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, targetEpisode, null);
       if (matchedEpisode) {
         resEpisode = matchedEpisode;
         resAnime = anime;
@@ -881,7 +909,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
 }
 
 // Extracted function for POST /api/v2/match
-export async function matchAnime(url, req) {
+export async function matchAnime(url, req, clientIp) {
   try {
     // 获取请求体
     const body = await req.json();
@@ -913,6 +941,10 @@ export async function matchAnime(url, req) {
 
     let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
 
+    if (clientIp) {
+      setLastSearch(clientIp, { title, season, episode });
+    }
+
     // 使用剧名映射表转换剧名
     if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
       const mappedTitle = globals.titleMappingTable.get(title);
@@ -930,7 +962,7 @@ export async function matchAnime(url, req) {
     }
 
     // 获取prefer animeIdgetPreferAnimeId
-    const [preferAnimeId, preferSource] = getPreferAnimeId(title);
+    const [preferAnimeId, preferSource, offsets] = getPreferAnimeId(title);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
     let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));
@@ -956,7 +988,7 @@ export async function matchAnime(url, req) {
     } else {
       // AI匹配失败或未配置，使用传统匹配方式
       for (const platform of dynamicPlatformOrder) {
-        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId);
+        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets);
         resEpisode = __ret.resEpisode;
         resAnime = __ret.resAnime;
 
@@ -968,7 +1000,7 @@ export async function matchAnime(url, req) {
 
       // 如果都没有找到则返回第一个满足剧集数的剧集
       if (!resAnime) {
-        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime);
+        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets);
         resEpisode = __ret.resEpisode;
         resAnime = __ret.resAnime;
       }
@@ -1336,7 +1368,7 @@ async function fetchMergedComments(url) {
 }
 
 // Extracted function for GET /api/v2/comment/:commentId
-export async function getComment(path, queryFormat, segmentFlag) {
+export async function getComment(path, queryFormat, segmentFlag, clientIp) {
   const commentId = parseInt(path.split("/").pop());
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
@@ -1413,9 +1445,21 @@ export async function getComment(path, queryFormat, segmentFlag) {
     }
   }
 
-  const [animeId, source] = findAnimeIdByCommentId(commentId);
+  const [animeId, source, episodeTitle] = findAnimeIdByCommentId(commentId);
   if (animeId && source) {
-    setPreferByAnimeId(animeId, source);
+    let season = null;
+    let offset = null;
+
+    if (clientIp) {
+      const lastSearch = getLastSearch(clientIp);
+      if (lastSearch && lastSearch.season && lastSearch.episode && episodeTitle) {
+        season = lastSearch.season;
+        offset = `${lastSearch.episode}:${episodeTitle}`;
+        log("info", `Calculated offset for IP ${clientIp}: Query E${lastSearch.episode}, Selected ${episodeTitle} -> Offset ${offset} (Season ${season})`);
+      }
+    }
+
+    setPreferByAnimeId(animeId, source, season, offset);
     if (globals.localCacheValid && animeId) {
         writeCacheToFile('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
     }

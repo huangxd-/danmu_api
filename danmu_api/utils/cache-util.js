@@ -8,6 +8,25 @@ let fs, path;
 // cache数据结构处理函数
 // =====================
 
+// 用于存储最后一次搜索的上下文 (IP -> Context)
+const lastSearchMap = new Map();
+
+export function setLastSearch(ip, data) {
+    lastSearchMap.set(ip, { ...data, timestamp: Date.now() });
+    // 简单的清理逻辑：如果map太大，清理一半
+    if (lastSearchMap.size > 200) {
+        for (const [key, value] of lastSearchMap) {
+            if (Date.now() - value.timestamp > 3600 * 1000) { // 清理超过1小时的
+                lastSearchMap.delete(key);
+            }
+        }
+    }
+}
+
+export function getLastSearch(ip) {
+    return lastSearchMap.get(ip);
+}
+
 // 检查搜索缓存是否有效（未过期）
 export function isSearchCacheValid(keyword) {
     if (!globals.searchCache.has(keyword)) {
@@ -239,6 +258,7 @@ export function storeAnimeIdsToMap(curAnimes, key) {
     const oldValue = globals.lastSelectMap.get(key);
     const oldPrefer = oldValue?.prefer;
     const oldSource = oldValue?.source;
+    const oldOffsets = oldValue?.offsets;
 
     // 如果key已存在，先删除它（为了更新顺序，保证 FIFO）
     if (globals.lastSelectMap.has(key)) {
@@ -248,7 +268,7 @@ export function storeAnimeIdsToMap(curAnimes, key) {
     // 添加新记录，保留prefer字段
     globals.lastSelectMap.set(key, {
         animeIds: [...uniqueAnimeIds],
-        ...(oldPrefer !== undefined && { prefer: oldPrefer, source: oldSource })
+        ...(oldPrefer !== undefined && { prefer: oldPrefer, source: oldSource, offsets: oldOffsets })
     });
 
     // 检查是否超过 MAX_LAST_SELECT_MAP，超过则删除最早的
@@ -264,19 +284,23 @@ export function findAnimeIdByCommentId(commentId) {
   for (const anime of globals.animes) {
     for (const link of anime.links) {
       if (link.id === commentId) {
-        return [anime.animeId, anime.source];
+        return [anime.animeId, anime.source, link.title];
       }
     }
   }
-  return [null, null];
+  return [null, null, null];
 }
 
 // 通过 animeId 查找 lastSelectMap 中 animeIds 包含该 animeId 的 key，并设置其 prefer 为 animeId
-export function setPreferByAnimeId(animeId, source) {
+export function setPreferByAnimeId(animeId, source, season = null, offset = null) {
   for (const [key, value] of globals.lastSelectMap.entries()) {
     if (value.animeIds && value.animeIds.includes(animeId)) {
       value.prefer = animeId;
       value.source = source;
+      if (season !== null && offset !== null) {
+        value.offsets = value.offsets || {};
+        value.offsets[season] = offset;
+      }
       globals.lastSelectMap.set(key, value); // 确保更新被保存
       return key; // 返回被修改的 key
     }
@@ -288,9 +312,9 @@ export function setPreferByAnimeId(animeId, source) {
 export function getPreferAnimeId(title) {
   const value = globals.lastSelectMap.get(title);
   if (!value || !value.prefer) {
-    return [null, null];
+    return [null, null, null];
   }
-  return [value.prefer, value.source];
+  return [value.prefer, value.source, value.offsets];
 }
 
 // 清理所有过期的 IP 记录（超过 1 分钟没有请求的 IP）

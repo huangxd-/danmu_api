@@ -70,7 +70,7 @@ LogVar 弹幕 API 服务器
   - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
-- **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
+- **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
   - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
