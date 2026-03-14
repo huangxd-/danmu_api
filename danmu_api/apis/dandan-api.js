@@ -7,10 +7,10 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches, setLastSearch, getLastSearch
+    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
-import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear } from "../utils/common-util.js";
+import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear, titleMatches } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines } from "../utils/merge-util.js";
 import AIClient from '../utils/ai-util.js';
@@ -1370,6 +1370,7 @@ async function fetchMergedComments(url) {
 // Extracted function for GET /api/v2/comment/:commentId
 export async function getComment(path, queryFormat, segmentFlag, clientIp) {
   const commentId = parseInt(path.split("/").pop());
+  let animeTitle = findAnimeTitleById(commentId);
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
   let plat = title ? (title.match(/【(.*?)】/) || [null])[0]?.replace(/[【】]/g, '') : null;
@@ -1447,19 +1448,27 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp) {
 
   const [animeId, source, episodeTitle] = findAnimeIdByCommentId(commentId);
   if (animeId && source) {
-    let season = null;
+    let lastTitle = null;
+    let lastSeason = null;
     let offset = null;
 
     if (clientIp) {
       const lastSearch = getLastSearch(clientIp);
-      if (lastSearch && lastSearch.season && lastSearch.episode && episodeTitle) {
-        season = lastSearch.season;
+      if (lastSearch && lastSearch.title && lastSearch.season && lastSearch.episode && episodeTitle) {
+        lastTitle = lastSearch.title;
+        lastSeason = lastSearch.season;
         offset = `${lastSearch.episode}:${episodeTitle}`;
-        log("info", `Calculated offset for IP ${clientIp}: Query E${lastSearch.episode}, Selected ${episodeTitle} -> Offset ${offset} (Season ${season})`);
+        log("info", `Calculated offset for IP ${clientIp}: Query E${lastSearch.episode}, Selected ${episodeTitle} -> Offset ${offset} (Season ${lastSeason})`);
       }
     }
 
-    setPreferByAnimeId(animeId, source, season, offset);
+    log("info", `animeTitle：${animeTitle}; lastTitle：${lastTitle}; titleMatches：${titleMatches(animeTitle, lastTitle)}`)
+
+    if (titleMatches(animeTitle, lastTitle)) {
+      log("info", `excute setPreferByAnimeId`)
+      setPreferByAnimeId(animeId, source, lastSeason, offset);
+    }
+
     if (globals.localCacheValid && animeId) {
         writeCacheToFile('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
     }

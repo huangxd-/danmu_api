@@ -160,6 +160,22 @@ export function findTitleById(id) {
     return null;
 }
 
+// 根据 ID 查找 animeTitle
+export function findAnimeTitleById(id) {
+    for (const anime of globals.animes) {
+        if (!anime.links || !Array.isArray(anime.links)) {
+            continue;
+        }
+        const match = anime.links.find(link => link.id === id);
+        if (match) {
+            log("info", `Found animeTitle for ID ${id}: ${anime.animeTitle}`);
+            return anime.animeTitle;
+        }
+    }
+    log("error", `No animeTitle found for ID: ${id}`);
+    return null;
+}
+
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
 export function addAnime(anime) {
     anime = Anime.fromJson(anime);
