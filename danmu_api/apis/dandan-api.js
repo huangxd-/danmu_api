@@ -608,7 +608,8 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
 }
 
 function computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode) {
-  const match = offsets[season].match(/^([^:]+):(.+)$/);
+  const seasonKey = String(season);
+  const match = offsets[seasonKey].match(/^([^:]+):(.+)$/);
   const offsetEpisode = Number(match?.[1]) || 0;
   const offsetEpisodeTitle = match?.[2] || '';
   // 计算本次获取和保存的Episode差值
@@ -618,7 +619,7 @@ function computeTargetEpisode(offsets, season, episode, filteredEpisodes, target
   if (offsetIndex !== -1) {
     // 计算本次获取的目标index
     targetEpisode = offsetIndex + offset + 1;
-    log("info", `Applying offset "${offsets[season]}" for S${season}E${episode} -> ${targetEpisode}`);
+    log("info", `Applying offset "${offsets[seasonKey]}" for S${season}E${episode} -> ${targetEpisode}`);
   }
   return targetEpisode;
 }
@@ -702,7 +703,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
         log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
         let targetEpisode = episode;
-        if (offsets && offsets[season] !== undefined) {
+        if (offsets && offsets[String(season)] !== undefined) {
           targetEpisode = computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode);
         }
 
@@ -788,7 +789,7 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, res
       log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
       let targetEpisode = episode;
-      if (offsets && offsets[season] !== undefined) {
+      if (offsets && offsets[String(season)] !== undefined) {
         targetEpisode = computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode);
       }
 
@@ -939,8 +940,8 @@ export async function matchAnime(url, req, clientIp) {
       title = simplifiedTitle;
     }
 
-    // 获取prefer animeIdgetPreferAnimeId
-    const [preferAnimeId, preferSource, offsets] = getPreferAnimeId(title);
+    // 获取 prefer animeId（按 season 维度）
+    const [preferAnimeId, preferSource, offsets] = getPreferAnimeId(title, season);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
     let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));

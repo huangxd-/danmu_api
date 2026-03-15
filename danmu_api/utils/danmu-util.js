@@ -530,7 +530,7 @@ function parseOffset(env) {
 export function getOffset(anime, season, episode) {
   const map = parseOffset(globals.danmuOffset);
   log("info", `getOffset params: ${anime}, ${season}, ${episode}`);
-  log("info", `getOffset map: ${JSON.stringify(map)}`);
+  log("info", `getOffset map: ${JSON.stringify([...map])}`);
   return (
     map.get(`${anime}/${season}/${episode}`) ??  // 集级
     map.get(`${anime}/${season}`) ??             // 季级
