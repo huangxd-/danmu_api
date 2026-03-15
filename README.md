@@ -1,44 +1,44 @@
-<div align="center">
-  <img src="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg" alt="Clash" width="128" style="border-radius: 16px;" />
-</div>
+<div对齐="中心">
+<IMGsrc="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg"alt="冲突"宽度="128"风格="边界半径：16PX；"/>
+</div>div>
 
-<h2 align="center">
-LogVar 弹幕 API 服务器
-</h2>
+<H2对齐="中心">
+LogVar弹幕API服务器
+</H2>H2>
 
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/huangxd-/danmu_api)
-![GitHub forks](https://img.shields.io/github/forks/huangxd-/danmu_api)
-![GitHub Repo stars](https://img.shields.io/github/stars/huangxd-/danmu_api)
-![GitHub License](https://img.shields.io/github/license/huangxd-/danmu_api)
-![Docker Image Version](https://img.shields.io/docker/v/logvar/danmu-api?sort=semver)
-![Docker Pulls](https://img.shields.io/docker/pulls/logvar/danmu-api)
-[![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_channel&color=blue)](https://t.me/logvar_danmu_channel)
-[![telegram](https://img.shields.io/static/v1?label=telegram&message=telegram_group&color=blue)](https://t.me/logvar_danmu_group)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/huangxd-/danmu_api)
+![GitHub分叉](https://img.shields.io/github/forks/huangxd-/danmu_api)
+![GitHub回购星](https://img.shields.io/github/stars/huangxd-/danmu_api)
+![GitHub许可证](https://img.shields.io/github/license/huangxd-/danmu_api)
+![Docker映像版本](https://img.shields.io/docker/v/logvar/danmu-api?sort=semver)
+![Docker拉动](https://img.shields.io/docker/pulls/logvar/danmu-api)
+[![电报](https://img.shields.io/static/v1?label=telegram&message=telegram_channel&color=blue)](https://t.me/logvar_danmu_channel)
+[![电报](https://img.shields.io/static/v1?label=telegram&message=telegram_group&color=blue)](https://t.me/logvar_danmu_group)
+[![询问DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/huangxd-/danmu_api)
 
 ---
 
-一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西埋弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+一个人人都能部署的基于js的弹幕API服务器，支持爱优腾芒哔哔咪人韩巴狐乐西埋弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持Vercel/Netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署.
 
-本项目仅为个人学习爱好开发，代码开源。如有任何侵权行为，请联系本人删除。
+本项目仅为个人学习爱好开发，代码开源。 如有任何侵权行为，请联系本人删除。
 
-有问题提issue或 [私信机器人](https://t.me/ddjdd_bot) 都ok。
+有问题提发或[私信机器人](https://t.me/ddjdd_bot)都ok.
 
-新加了 [tg频道](https://t.me/logvar_danmu_channel) ，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个 [互助群](https://t.me/logvar_danmu_group) ，大家有问题可以在群里求助。
+新加了[tg频道](https://t.me/logvar_danmu_channel)，方便发送更新通知，以及群组，太多人私信咨询了，索性增加一个[互助群](https://t.me/logvar_danmu_group)，大家有问题可以在群里求助。
 
-> 请不要在国内媒体平台宣传本项目！
+>请不要在国内媒体平台宣传本项目！
 
-# 目录
+#目录
 
 - [功能](#功能)
 - [前置条件](#前置条件)
 - [本地运行](#本地运行)
-- [使用 Docker 运行](#使用-docker-运行)
-- [Docker 一键启动 【推荐】](#docker-一键启动-推荐)
-- [部署到 Vercel 【推荐】](#部署到-vercel-推荐)
-- [部署到 Netlify 【推荐】](#部署到-netlify-推荐)
-- [部署到 腾讯云 edgeone pages](#部署到-腾讯云-edgeone-pages)
-- [部署到 Cloudflare](#部署到-cloudflare)
+- [使用Docker运行](#使用-码头工人-运行)
+- [Docker一键启动【推荐】](#docker-一键启动-推荐)
+- [部署到韦塞尔【推荐】](#部署到-vercel-推荐)
+- [部署到Netlify【推荐】](#部署到-netlify-推荐)
+- [部署到腾讯云edgeone页面](#部署到-腾讯云-edgeone-页)
+- [部署到CloudFlare](#部署到-CloudFlare)
 - [API食用指南](#api食用指南)
 - [环境变量列表](#环境变量列表)
 - [采集源及对应平台列表](#采集源及对应平台列表)
@@ -46,6 +46,31 @@ LogVar 弹幕 API 服务器
 - [注意事项](#注意事项)
 - [贡献者](#贡献者)
 
+##功能
+- **API接口**：
+  - `get/api/v2/搜索/动漫？关键字=${queryTitle}`：根据关键字搜索动漫。
+  - `post/api/v2/match`：根据关键字匹配动漫，用于自动匹配。(已支持在match接口中通过@语法动态指定平台优先级，如`赴山海第一季第28集@qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取标题/季/集)；已支持外语标题匹配，如`血河第一季第五集`，需配置环境变量`title_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
+  - `get/api/v2/搜索/剧集`：根据关键词搜索所有匹配的剧集信息。
+  - `get/api/v2/bangumi/：animeId`：获取指定动漫的详细信息。
+  - `get/api/v2/comment/：Commentid？format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
+  - `get/api/v2/comment？URL=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
+  - `post/api/v2/segmentComment？format=json`：通过评论接口返回体中的段类JSON数据获取单独一个分片的弹幕数据。
+  - `get/api/logs`：获取最近的日志（最多 500 行，格式为`[时间戳] 级别: 消息`）。
+- **弹幕格式输出**：支持JSON和XML两种格式输出，通过以下方式配置：
+-环境变量：`Danmu_OUTPUT_FORMAT=json|xml`（默认：JSON)
+-查询参数：`？format=xml`或`？format=json`（优先级最高）
+-优先级：查询参数 > 环境变量 > 默认值
+-示例：`get/api/v2/comment/10001？format=xml`返回XML格式弹幕
+  - **XML格式说明**：完全遵循哔哩哔哩标准格式，8字段标准弹幕属性
+- **日志记录**：捕获`console.log`(信息级别）和`console.error`(误差级别），JSON内容格式化输出。
+- **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。 包括：
+-搜索结果缓存（可通过`search_CACHE_MINUTES`配置，默认1分钟）
+-弹幕缓存（可通过`comment_CACHE_MINUTES`配置，默认5分钟）
+-用户偏好记录（可通过`Max_LAST_SELECT_MAP`配置，默认100条）
+-Redis分布式缓存支持，包括本地redis和upstash redis（可选）
+-本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可)
+- **部署支持**：支持本地运行、Docker容器化、韦塞尔一键部署、Netlify一键部署、埃奇通一键部署、CloudFlare一键部署、Claw部署和Docker一键启动。
+- **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
 ## 功能
 - **API 接口**：
   - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
@@ -73,13 +98,29 @@ LogVar 弹幕 API 服务器
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
-  - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
-  - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`）
-  - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
-  - 增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
+-将顶部和底部弹幕转换为浮动弹幕（`convert_TOP_BOTTOM_TO_SCROLL`）
+-转换弹幕颜色为白色或彩色（`convert_COLOR`）
+-解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
+-增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
 - **弹幕时间偏移功能**：支持通过环境变量 `DANMU_OFFSET` 配置弹幕时间偏移，解决弹幕与视频不同步的问题。格式为 `剧名:秒`（全剧偏移）、`剧名/季:秒`（整季偏移）、`剧名/季/集:秒`（单集偏移），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02:120, re-zero/S02/E03:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。
 - **弹幕分片请求**：
+  - `/api/v2/comment`请求时支持定义`segmentflag=true`参数，用于请求弹幕分片列表
+-'/api/v2/segmentComment'通过评论接口返回体中的段类JSON数据获取单独一个分片的弹幕数据-`/api/v2/segmentComment`通过评论接口返回体中的段类JSON数据获取单独一个分片的弹幕数据
+-**UI界面-后台配置管理系统**：支持通过UI执行一些操作(详细见[UI系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md))，包括：**UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见[UI系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md)），包括：
+-配置预览
+-日志查看
+-接口调试
+-推送弹幕
+-请求记录
+-系统管理
+
+##前置条件
+-Node.js(v18.0.0或更高版本；理论兼容更低版本，请自行测试）
+-npm
+-Docker（可选，用于容器化部署）
+
+##本地运行
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
   - `/api/v2/segmentcomment` 通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据
 - **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
@@ -97,183 +138,183 @@ LogVar 弹幕 API 服务器
 
 ## 本地运行
 1. **克隆仓库**：
-   ```bash
-   git clone <仓库地址>
-   cd <项目目录>
+   ```猛击
+   git克隆<仓库地址>
+   CD<项目目录>
    ```
 
 2. **安装依赖**：
-   ```bash
-   npm install
+   ```猛击
+   npm安装
    ```
 
 3. **配置应用**（可选）：
 
-   本项目支持两种配置方式，优先级从高到低：
+本项目支持两种配置方式，优先级从高到低：
    1. **系统环境变量**（最高优先级）
-   2. **.env 文件**（低优先级）- 复制 `config/.env.example` 为 `config/.env` 并修改
+   2. **.env文件**（低优先级）- 复制`config/.env.example`为`config/.env`并修改
 
 4. **启动服务器**：
-   ```bash
-   npm start
+   ```猛击
+   npm启动
    ```
-   服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
-   如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
+服务器将在`http://{ip}：9321`运行，默认token是`87654321`。
+如需修改端口，可设置环境变量`Danmu_API_PORT`（例如`Danmu_API_PORT=8080npm start`）。
 
-   **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
+   **热更新支持**：修改`config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
 
-   或者使用下面的命令
-   ```bash
-   # 启动
-   node ./danmu_api/server.js
-   # 测试
-   node --test ./danmu_api/worker.test.js
-   # 构建forward弹幕插件
-   node build-forward-widget.js
-   # 测试forward弹幕插件
-   node danmu_api/forward-widget.test.js
+或者使用下面的命令
+   ```猛击
+# 启动
+node./danmu_api/server.js
+# 测试
+节点--test./danmu_api/worker.test.js
+#构建向前地弹幕插件
+节点build-forward-widget.js
+#测试向前地弹幕插件
+节点Danmu_api/forward-widget.test.js
    ```
 
-5. **测试 API**：
-   使用 Postman 或 curl 测试：
-   - `GET http://{ip}:9321/87654321`
-   - `GET http://{ip}:9321/87654321/api/v2/search/anime?keyword=生万物`
-   - `POST http://{ip}:9321/87654321/api/v2/match`
-   - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
-   - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
-   - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json`
-   - `GET http://{ip}:9321/87654321/api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
-   - `POST http://{ip}:9321/87654321/api/v2/segmentcomment?format=json` (请求体包含segment类JSON数据，示例 `{"type": "qq","segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}` )
-   - `GET http://{ip}:9321/87654321/api/logs`
-   > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
+5. **测试API**：
+使用postman或curl测试：
+   - `得到http://{ip}:9321/87654321`
+   - `得到http://{ip}：9321/87654321/api/v2/search/anime？关键字=生物`
+   - `发布http://{ip}：9321/87654321/api/v2/match`
+   - `得到http://{ip}：9321/87654321/api/v2/search/sets？anime=生物`
+   - `get http://{ip}：9321/87654321/api/v2/bangumi/1`
+   - `得到http://{ip}：9321/87654321/api/v2/comment/1？format=json`
+   - `获取http://{ip}：9321/87654321/api/v2/comment？URL=https://v.qq.com/x/cover/xxx.html&format=json`
+   - `邮件http://{ip}：9321/87654321/api/v2/segmentComment？format=json`(请求体包含段类JSON数据，示例`{"type"："qq"，"segment_start"：0，"segment_end"：30000，"url"："https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}` )
+Docker（可选，用于容器化部署）-`获取http://{ip}：9321/87654321/api/logs`
+   >注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}：9321/api/v2/search/anime？关键字=生物`
 
-## 使用 Docker 运行
-1. **构建 Docker 镜像**：
-   ```bash
-   docker build -t danmu-api .
+##使用Docker运行
+1. **构建Docker镜像**：
+   ```猛击
+   码头建造-t danmu-api.
    ```
 
 2. **运行容器**：
-   ```bash
-   docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 danmu-api
+   ```猛击
+   Docker run-d-p9321:9321--名称danmu-api-e TOKEN=87654321danmu-api
    ```
-   - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
-   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
+-使用`-e TOKEN=87654321`设置`令牌`环境变量，覆盖Dockerfile中的默认值。
+-或使用`--env-file.env`加载.env文件中的所有环境变量：`Docker run-d-p9321:9321-name danmu-api-env-file.env丹木阿皮`
 
-   **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
-   ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/.env:/app/.env --env-file .env danmu-api
+   **热更新支持**：如需支持环境变量热更新（修改`.env`文件后无需重启容器），请使用体积挂载：
+   ```猛击
+Docker run-d-p9321:9321--名称danmu-api-v$(pwd)/.env:/app/.env--env-file.env丹木阿皮
    ```
 
-   > **推荐**：使用 docker compose 部署可以更方便地管理配置和支持热更新，详见下方"Docker 一键启动"部分。
+   > **推荐**：使用Docker合成部署可以更方便地管理配置和支持热更新，详见下方"Docker一键启动"部分。
 
-3. **测试 API**：
-   使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
-   > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
+3. **测试API**：
+使用`http://{ip}：9321/{TOKEN}`访问上述API接口.
+   >注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}：9321/api/v2/search/anime？关键字=生物`
 
-## Docker 一键启动 【推荐】
+##Docker一键启动【推荐】
 1. **拉取镜像**：
-   ```bash
-   docker pull logvar/danmu-api:latest
-   ```
+   ```猛击
+   Docker拉力logvar/danmu-api：最新
+```
 
 2. **运行容器**：
-   ```bash
-   docker run -d -p 9321:9321 --name danmu-api -e TOKEN=87654321 logvar/danmu-api:latest
+```猛击
+Docker run-d-p9321:9321--名称danmu-api-e TOKEN=87654321logvar/danmu-api：最新
+```
+使用postman或curl测试：-使用`-e TOKEN=87654321`设置`令牌`环境变量。
+-或使用`--env-file.env`加载.env文件中的所有环境变量：`Docker run-d-p9321:9321--名称danmu-api--env-file.env logvar/danmu-api：最新`
+
+   **热更新支持**：如需支持环境变量热更新（修改`config/.env`文件后无需重启容器），请使用体积挂载：
+```猛击
+Docker run-d-p9321:9321--名称danmu-api-v$(pwd)/config:/app/config--env-file.env logvar/danmu-api：最新
+```
+
+或使用Docker合成部署（**推荐，支持环境变量热更新**）：
+   ```YAML
+服务：
+丹木阿皮：
+图片：logvar/danmu-api：最新
+端口：
+- "9321:9321"
+#热更新支持：挂载config/.env文件，修改后容器会自动重新加载配置（无需重启容器）
+卷：
+-./config:/app/config#config目录下需要创建.env
+-./.chche:/app/.cache#配置.chche目录，会将缓存实时保存在本地文件
+重新启动：除非已停止
+```
+
+可以使用瞭望塔监控有新版本自动更新：
+   ```YAML
+服务：
+瞭望塔：
+图片：nickfedor/瞭望塔
+容器名称：瞭望塔-gx
+重新启动：始终
+卷：
+-/var/run/docker.sock:/var/run/docker.sock
+环境：
+-TZ=亚洲/上海#保持时区正确
+命令：
+---清理#更新后清理旧镜像
+---间隔#间隔参数
+- "12600"           # 30分钟（1800秒），适合测试
+-丹木阿比#监控的目标容器名
    ```
-   - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量。
-   - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env logvar/danmu-api:latest`
 
-   **热更新支持**：如需支持环境变量热更新（修改 `config/.env` 文件后无需重启容器），请使用 Volume 挂载：
-   ```bash
-   docker run -d -p 9321:9321 --name danmu-api -v $(pwd)/config:/app/config --env-file .env logvar/danmu-api:latest
-   ```
+3. **测试API**：
+使用`http://{ip}：9321/{TOKEN}`访问上述API接口.
+   >注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}：9321/api/v2/search/anime？关键字=生物`
 
-   或使用 docker compose 部署（**推荐，支持环境变量热更新**）：
-   ```yaml
-   services:
-     danmu-api:
-       image: logvar/danmu-api:latest
-       ports:
-         - "9321:9321"
-       # 热更新支持：挂载 config/.env 文件，修改后容器会自动重新加载配置（无需重启容器）
-       volumes:
-         - ./config:/app/config    # config目录下需要创建.env
-         - ./.chche:/app/.cache    # 配置.chche目录，会将缓存实时保存在本地文件
-       restart: unless-stopped
-   ```
+###一键安装脚本
+`bash<(curl-fsSL https://raw.githubusercontent.com/dukiii1928/danmu-install/refs/heads/main/install.sh)`
 
-   可以使用 watchtower 监控有新版本自动更新：
-   ```yaml
-   services:
-     watchtower:
-       image: nickfedor/watchtower
-       container_name: watchtower-gx
-       restart: always
-       volumes:
-         - /var/run/docker.sock:/var/run/docker.sock
-       environment:
-         - TZ=Asia/Shanghai  # 保持时区正确
-       command:
-         - --cleanup         # 更新后清理旧镜像
-         - --interval        # 间隔参数
-         - "12600"           # 30分钟（1800秒），适合测试
-         - danmu-api         # 监控的目标容器名
-   ```
+##安卓App
+请前往@lilixu3 的项目[单目-api-android](https://github.com/lilixu3/danmu-api-android/releases)下载
 
-3. **测试 API**：
-   使用 `http://{ip}:9321/{TOKEN}` 访问上述 API 接口。
-   > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
+##部署到韦塞尔【推荐】
 
-### 一键安装脚本
-`bash <(curl -fsSL https://raw.githubusercontent.com/dukiii1928/danmu-install/refs/heads/main/install.sh)`
+###一键部署
+点击以下按钮即可将项目快速部署到Vercel：
 
-## 安卓App
-请前往 @lilixu3 的项目 [danmu-api-android](https://github.com/lilixu3/danmu-api-android/releases) 下载
+[![使用韦塞尔部署](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/xitcz/danmu_api&project-name=danmu_api&repository-name=danmu_api)
 
-## 部署到 Vercel 【推荐】
+**注意**：请将按钮链接中的`https://github.com/huangxd-/danmu_api`替换为你的实际Git仓库地址.编辑`README.md`并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
+- **设置环境变量**：部署后，在韦塞尔仪表板中：
+1.转到你的项目设置。
+2.在"环境变量"部分添加`令牌`变量，输入你的API令牌值.
+3.保存更改并重新部署。
+-示例请求：`HTTPS://{您的域}。Vercel.App/87654321/api/v2/搜索/动漫？关键词=子夜归`
+  >注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{your_domain}.版本.app/api/v2/search/anime？keyword=子夜归`
 
-### 一键部署
-点击以下按钮即可将项目快速部署到 Vercel：
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/huangxd-/danmu_api&project-name=danmu_api&repository-name=danmu_api)
-
-**注意**：请将按钮链接中的 `https://github.com/huangxd-/danmu_api` 替换为你的实际 Git 仓库地址。编辑 `README.md` 并更新链接后，推送到仓库，点击按钮即可自动克隆和部署。
-- **设置环境变量**：部署后，在 Vercel 仪表板中：
-  1. 转到你的项目设置。
-  2. 在“Environment Variables”部分添加 `TOKEN` 变量，输入你的 API 令牌值。
-  3. 保存更改并重新部署。
-- 示例请求：`https://{your_domain}.vercel.app/87654321/api/v2/search/anime?keyword=子夜归`
-  > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{your_domain}.vercel.app/api/v2/search/anime?keyword=子夜归`
-
-### 优化点
-- Settings > Functions > Advanced Setting > Function Region 切换为 新加坡/韩国/日本等，能提高访问速度，体验更优
-  > hk有可能访问不了360或其他源，可以尝试切其他region
+###优化点
+-设置>功能>高级设置>功能区域切换为新加坡/韩国/日本等，能提高访问速度，体验更优
+  >hk有可能访问不了360或其他源，可以尝试切其他地区
 - vercel在国内被墙，请配合代理或绑定自定义域名使用
 
 ## 部署到 Netlify 【推荐】
 
-### 一键部署
+###一键部署
 点击以下按钮即可将项目快速部署到 Netlify：
 
-<a href="https://app.netlify.com/start/deploy?repository=https://github.com/huangxd-/danmu_api"><img src="https://www.netlify.com/img/deploy/button.svg"></a>
+<a href="https://app.netlify.com/start/deploy?repository=https://github.com/huangxd-/danmu_api"><IMGsrc="https://www.netlify.com/img/deploy/button.svg"></a>
 
 > 默认访问domain：https://{你的部署项目名}.netlify.app
-> > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{你的部署项目名}.netlify.app/api/v2/search/anime?keyword=子夜归`
+> >注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{你的部署项目名}.netlify.app/api/v2/search/anime?keyword=子夜归`
 
 - **设置环境变量**：部署后，在 Netlify 仪表板中：
   1. 点击Project configuration。
-  2. 在“Environment variables”部分点击 “Add a variable” 添加 `TOKEN` 变量，输入你的 API 令牌值。
-  3. 保存更改并重新部署。
+  2. 在“Environment variables”部分点击 “Add a variable” 添加 `令牌`变量，输入你的API令牌值.
+  3.保存更改并重新部署。
 
 ## 部署到 腾讯云 edgeone pages
 
-### 一键部署
+###一键部署
 [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 
 > 注意：部署时请在环境变量配置区域填写你的TOKEN值，该变量将用于API服务的身份验证相关功能
 > 
-> 示例请求：`https://{your_domain}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
+>示例请求：`https://{your_domain}/{TOKEN}/api/v2/search/anime?keyword=子夜归`确认是否部署成功
 > > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{your_domain}.vercel.app/api/v2/search/anime?keyword=子夜归`
 >
 > 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
