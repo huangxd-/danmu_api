@@ -346,7 +346,7 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
   if (trailingNumber) {
     return {
       season: parseInt(trailingNumber[1], 10),
-      baseTitle: titleWithoutYear.replace(trailingNumber[0], "").trim(),
+      baseTitle: titleWithoutYear.slice(0, titleWithoutYear.lastIndexOf(trailingNumber[1])).trim(),
     };
   }
 
