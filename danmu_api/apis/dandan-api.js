@@ -7,7 +7,7 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById
+    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson, getOffset, applyDanmuOffset } from "../utils/danmu-util.js";
 import { 
@@ -1436,7 +1436,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp) {
         lastTitle = lastSearch.title;
         lastSeason = lastSearch.season;
         offset = `${lastSearch.episode}:${episodeTitle}`;
-        log("info", `Calculated offset for IP ${clientIp}: Query E${lastSearch.episode}, Selected ${episodeTitle} -> Offset ${offset} (Season ${lastSeason})`);
+        log("info", `Calculated episode offset for IP ${clientIp}: Query E${lastSearch.episode}, Selected ${episodeTitle} -> Offset ${offset} (Season ${lastSeason})`);
       }
     }
 
@@ -1462,7 +1462,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp) {
   if (animeTitle && episodeTitle && globals.danmuOffset) {
     let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
     season ||= 1;
-    episode ||= findIndexById(id) + 1;
+    episode ||= findIndexById(commentId) + 1;
     const seasonStr = `S${season.toString().padStart(2, '0')}`;
     const episodeStr = `E${episode.toString().padStart(2, '0')}`;
     const offset = getOffset(baseTitle, seasonStr, episodeStr);
