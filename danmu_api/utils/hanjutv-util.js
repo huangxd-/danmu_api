@@ -1,5 +1,9 @@
 import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows } from "./codec-util.js";
 
+// =====================
+// 韩剧tv工具
+// =====================
+
 // 移动端参数
 const HANJUTV_VERSION = "6.5.3";
 const HANJUTV_VC = "a_7980";

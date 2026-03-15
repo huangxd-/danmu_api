@@ -71,6 +71,31 @@ LogVar弹幕API服务器
 -本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可)
 - **部署支持**：支持本地运行、Docker容器化、韦塞尔一键部署、Netlify一键部署、埃奇通一键部署、CloudFlare一键部署、Claw部署和Docker一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime【实验性】。
+## 功能
+- **API 接口**：
+  - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
+  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
+  - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
+  - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
+  - `GET /api/v2/comment/:commentId?format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
+  - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
+  - `POST /api/v2/segmentcomment?format=json`：通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据。
+  - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
+- **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
+  - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml`（默认：json）
+  - 查询参数：`?format=xml` 或 `?format=json`（优先级最高）
+  - 优先级：查询参数 > 环境变量 > 默认值
+  - 示例：`GET /api/v2/comment/10001?format=xml` 返回 XML 格式弹幕
+  - **XML 格式说明**：完全遵循 Bilibili 标准格式，8字段标准弹幕属性
+- **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
+- **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。包括：
+  - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
+  - 弹幕缓存（可通过 `COMMENT_CACHE_MINUTES` 配置，默认5分钟）
+  - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
+  - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
+  - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
+- **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
+- **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
 -将顶部和底部弹幕转换为浮动弹幕（`convert_TOP_BOTTOM_TO_SCROLL`）
@@ -78,6 +103,7 @@ LogVar弹幕API服务器
 -解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
 -增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
+- **弹幕时间偏移功能**：支持通过环境变量 `DANMU_OFFSET` 配置弹幕时间偏移，解决弹幕与视频不同步的问题。格式为 `剧名:秒`（全剧偏移）、`剧名/季:秒`（整季偏移）、`剧名/季/集:秒`（单集偏移），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02:120, re-zero/S02/E03:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。
 - **弹幕分片请求**：
   - `/api/v2/comment`请求时支持定义`segmentflag=true`参数，用于请求弹幕分片列表
 -'/api/v2/segmentComment'通过评论接口返回体中的段类JSON数据获取单独一个分片的弹幕数据-`/api/v2/segmentComment`通过评论接口返回体中的段类JSON数据获取单独一个分片的弹幕数据
@@ -95,6 +121,22 @@ LogVar弹幕API服务器
 -Docker（可选，用于容器化部署）
 
 ##本地运行
+  - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
+  - `/api/v2/segmentcomment` 通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据
+- **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
+  - 配置预览
+  - 日志查看
+  - 接口调试/弹幕测试
+  - 推送弹幕
+  - 请求记录
+  - 系统管理
+
+## 前置条件
+- Node.js（v18.0.0 或更高版本；理论兼容更低版本，请自行测试）
+- npm
+- Docker（可选，用于容器化部署）
+
+## 本地运行
 1. **克隆仓库**：
    ```猛击
    git克隆<仓库地址>
@@ -323,6 +365,10 @@ Docker run-d-p9321:9321--名称danmu-api-v$(pwd)/config:/app/config--env-file.en
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
 4. 现已支持手动搜索标题输入爱优腾芒哔咪狐乐西播放链接获取弹幕。
 
+`uz`使用：
+1. 弹幕拓展 -> 豆儿弹幕
+2. 豆儿弹幕API -> 填入你的API
+
 ### XML 格式说明
 
 API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 `?format=xml` 指定。
@@ -393,12 +439,14 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
 | DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
+| DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02:120, re-zero/S02/E03:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。       |
 | PROXY_URL    | 【可选】代理/反代地址，目前只对巴哈姆特、TMDB API、bilibili生效，支持格式：<br> 正常代理：`http://127.0.0.1:7890` <br> 万能反代：`@http://127.0.0.1` <br> 特定反代：`源字段@http://127.0.0.1`，目前支持的字段有：`bahamut,tmdb,bilibili`（bilibili字段会启用阿b的港澳台番剧的搜索与获取）<br> 混合配置/示例：`http://你的代理地址:28233,bahamut@你的巴哈反代地址,tmdb@你的tmdb反代地址,@你的万能反代地址` <br> 优先级：特定反代 > 万能反代 > 正常代理，高优先级覆盖低优先级使用。 <br> （注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址或者反代（[Netlify反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |
 | TMDB_API_KEY    | 【可选】TMDB API Key地址，目前只对巴哈姆特生效，配置后并行从TMDB获取日语原名搜索巴哈（如果TMDB条目类型不是动画或制作地区不是jp则不会进行巴哈搜索）可以解决巴哈译名不同导致的搜索无结果问题，例如大陆常用译名`间谍过家家`在巴哈译名为`間諜家家酒`，正常搜索无法搜索到，配置后可以解决这一问题但会稍微影响请求速度，[TMDBAPI](https://www.themoviedb.org/settings/api)获取方法参考：[TMDB API Key申请 - 绿联NAS私有云](https://www.ugnas.com/tutorial-detail/id-226.html)       |
 | RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |
+| IP_BLACKLIST    | 【可选】IP 黑名单列表，命中则拒绝请求。支持逗号/分号/换行分隔，支持 `/regex/` 或 `/regex/i` 正则，支持 IPv4/IPv6 CIDR，例如：`192.168.1.10,10.0.0.0/24,2001:db8::/64,/^203\.0\.113\./`       |
 | LOG_LEVEL    | 【可选】日志级别，默认为`info`，可选值：`error`（仅错误）、`warn`（错误和警告）、`info`（所有日志），生产环境建议使用`warn`，调试时使用`info`       |
-| SEARCH_CACHE_MINUTES    | 【可选】搜索结果缓存时间（分钟），默认为`1`，避免短期内重复的不必要API请求，同时保证获取最新的结果列表，可根据需要调整：Vercel/Cloudflare建议`1-5`分钟，Docker可设置`5-30`分钟，设置为`0`表示不缓存       |
-| COMMENT_CACHE_MINUTES    | 【可选】弹幕缓存时间（分钟），默认为`1`，弹幕数据的缓存时间，独立于搜索结果缓存       |
+| SEARCH_CACHE_MINUTES    | 【可选】搜索结果缓存时间（分钟），默认为`3`，避免短期内重复的不必要API请求，同时保证获取最新的结果列表，可根据需要调整：Vercel/Cloudflare建议`1-5`分钟，Docker可设置`5-30`分钟，设置为`0`表示不缓存       |
+| COMMENT_CACHE_MINUTES    | 【可选】弹幕缓存时间（分钟），默认为`3`，弹幕数据的缓存时间，独立于搜索结果缓存，设置为`0`表示不缓存       |
 | REMEMBER_LAST_SELECT    | 【可选】是否记住手动选择结果，用于match自动匹配时优选上次的选择，默认为`true`，表示记住，请注意，该功能为实验性功能，会记住某个剧上次选择的结果作为下次自动匹配的优选，如不需要，请关闭       |
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo/claw上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
