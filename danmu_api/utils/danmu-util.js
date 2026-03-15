@@ -529,10 +529,12 @@ function parseOffset(env) {
 // 获取偏移量
 export function getOffset(anime, season, episode) {
   const map = parseOffset(globals.danmuOffset);
+  log("info", `getOffset params: ${anime}, ${season}, ${episode}`);
+  log("info", `getOffset map: ${JSON.stringify(map)}`);
   return (
     map.get(`${anime}/${season}/${episode}`) ??  // 集级
-    map.get(`${anime}/${season}`) ??              // 季级
-    map.get(anime) ??                             // 剧级（可扩展）
+    map.get(`${anime}/${season}`) ??             // 季级
+    map.get(anime) ??                            // 剧级
     0
   );
 }
