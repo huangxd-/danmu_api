@@ -305,3 +305,92 @@ export function validateType(value, expectedType) {
     throw new TypeError(`${value} 必须是 ${expectedType}，但传入的是 ${fieldName}`);
   }
 }
+
+// 从 animeTitle 中提取季数和纯剧名
+export function extractSeasonNumberFromAnimeTitle(animeTitle) {
+  if (!animeTitle) return { season: null, baseTitle: null };
+
+  const normalizedAnimeTitle = normalizeSpaces(animeTitle);
+  const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
+  const titleWithoutYear = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
+
+  // 1) 明确季数标识：第X季/期/部
+  const explicitSeasonMatch = titleWithoutYear.match(/第\s*([0-9一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)\s*[季期部]/);
+  if (explicitSeasonMatch) {
+    return {
+      season: convertChineseNumber(explicitSeasonMatch[1]),
+      baseTitle: titleWithoutYear.replace(explicitSeasonMatch[0], "").trim(),
+    };
+  }
+
+  // 2) S2/Season 2
+  const seasonMatch = titleWithoutYear.match(/(?:S(?:eason)?|Season)\s*(\d+)/i);
+  if (seasonMatch) {
+    return {
+      season: parseInt(seasonMatch[1], 10),
+      baseTitle: titleWithoutYear.replace(seasonMatch[0], "").trim(),
+    };
+  }
+
+  // 3) Part 2
+  const partMatch = titleWithoutYear.match(/Part\s*(\d+)/i);
+  if (partMatch) {
+    return {
+      season: parseInt(partMatch[1], 10),
+      baseTitle: titleWithoutYear.replace(partMatch[0], "").trim(),
+    };
+  }
+
+  // 4) 尾部阿拉伯数字（如"某某 2"）
+  const trailingNumber = titleWithoutYear.match(/(?:\s|^)(\d{1,2})$/);
+  if (trailingNumber) {
+    return {
+      season: parseInt(trailingNumber[1], 10),
+      baseTitle: titleWithoutYear.replace(trailingNumber[0], "").trim(),
+    };
+  }
+
+  // 5) 尾部中文数字（如"某某二"）
+  const trailingChinese = titleWithoutYear.match(/([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)$/);
+  if (trailingChinese) {
+    return {
+      season: convertChineseNumber(trailingChinese[1]),
+      baseTitle: titleWithoutYear.replace(trailingChinese[0], "").trim(),
+    };
+  }
+
+  return { season: null, baseTitle: titleWithoutYear };
+}
+
+// 从集标题中提取集数（支持多种格式：第1集、第01集、EP01、E01等）
+export function extractEpisodeNumberFromTitle(episodeTitle) {
+  if (!episodeTitle) return null;
+  
+  // 匹配格式：第1集、第01集、第10集等
+  const chineseMatch = episodeTitle.match(/第(\d+)集/);
+  if (chineseMatch) {
+    return parseInt(chineseMatch[1], 10);
+  }
+  
+  // 匹配格式：EP01、EP1、E01、E1等
+  const epMatch = episodeTitle.match(/[Ee][Pp]?(\d+)/);
+  if (epMatch) {
+    return parseInt(epMatch[1], 10);
+  }
+  
+  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
+  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
+  if (numberMatch) {
+    return parseInt(numberMatch[1], 10);
+  }
+  
+  return null;
+}
+
+// 从标题中提取动漫名称、季数和集数
+export function extractAnimeInfo(animeTitle, episodeTitle) {
+  let {season, baseTitle} = extractSeasonNumberFromAnimeTitle(animeTitle);
+  let episode = extractEpisodeNumberFromTitle(episodeTitle);
+  
+  return { baseTitle, season, episode };
+}

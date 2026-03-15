@@ -525,6 +525,7 @@ export class Envs {
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
       'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
+      'DANMU_OFFSET': { category: 'danmu', type: 'text', description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，多条用逗号分隔，例如：overlord/S01:90,re-zero/S02:120,re-zero/S02/E03:10,re-zero/S02/E07:150' },
 
       // 缓存配置
       'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认1', min: 1, max: 120 },
@@ -543,7 +544,7 @@ export class Envs {
       'DEPLOY_PLATFROM_PROJECT': { category: 'system', type: 'text', description: '部署平台项目名称' },
       'DEPLOY_PLATFROM_TOKEN': { category: 'system', type: 'text', description: '部署平台访问令牌' },
       'NODE_TLS_REJECT_UNAUTHORIZED': { category: 'system', type: 'number', description: '在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1', min: 0, max: 1 },
-      'IP_BLACKLIST': { category: 'system', type: 'text', description: 'IP 黑名单列表，支持逗号/分号/换行分隔，支持 /regex/ 或 /regex/i 正则，支持 IPv4/IPv6 CIDR（如 10.0.0.0/24、2001:db8::/64）。命中则拒绝请求' },
+      'IP_BLACKLIST': { category: 'system', type: 'text', description: 'IP 黑名单列表，支持逗号/分号/换行分隔，支持 /regex/ 或 /regex/i 正则，支持 IPv4/IPv6 CIDR（如 10.0.0.0/4、2001:db8::/64）。命中则拒绝请求' },
     };
     
     return {
@@ -571,6 +572,7 @@ export class Envs {
       danmuSimplifiedTraditional: this.get('DANMU_SIMPLIFIED_TRADITIONAL', 'default', 'string'), // 弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
       likeSwitch: this.get('LIKE_SWITCH', true, 'boolean'), // 弹幕点赞数显示开关，默认开启
+      danmuOffset: this.get('DANMU_OFFSET', '', 'string'), // 弹幕时间偏移配置
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url
       redisToken: this.get('UPSTASH_REDIS_REST_TOKEN', '', 'string', true), // upstash redis url

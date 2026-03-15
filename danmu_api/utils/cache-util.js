@@ -149,6 +149,17 @@ export function findUrlById(id) {
     return null;
 }
 
+// 根据 ID 查找 episodeIds 数组下标
+export function findIndexById(id) {
+    const index = globals.episodeIds.findIndex(episode => episode.id === id);
+    if (index !== -1) {
+        log("info", `Found index for ID ${id}: ${index}`);
+        return index;
+    }
+    log("error", `No index found for ID: ${id}`);
+    return -1;
+}
+
 // 根据 ID 查找 TITLE
 export function findTitleById(id) {
     const episode = globals.episodeIds.find(episode => episode.id === id);

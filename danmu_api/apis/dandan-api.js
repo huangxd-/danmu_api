@@ -9,8 +9,11 @@ import {
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById
 } from "../utils/cache-util.js";
-import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
-import { extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, extractYear, titleMatches } from "../utils/common-util.js";
+import { formatDanmuResponse, convertToDanmakuJson, getOffset, applyDanmuOffset } from "../utils/danmu-util.js";
+import { 
+  extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, 
+  extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle
+} from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines } from "../utils/merge-util.js";
 import AIClient from '../utils/ai-util.js';
@@ -411,31 +414,6 @@ function filterSameEpisodeTitle(filteredTmpEpisodes) {
         });
     });
     return filteredEpisodes;
-}
-
-// 从集标题中提取集数（支持多种格式：第1集、第01集、EP01、E01等）
-function extractEpisodeNumberFromTitle(episodeTitle) {
-  if (!episodeTitle) return null;
-  
-  // 匹配格式：第1集、第01集、第10集等
-  const chineseMatch = episodeTitle.match(/第(\d+)集/);
-  if (chineseMatch) {
-    return parseInt(chineseMatch[1], 10);
-  }
-  
-  // 匹配格式：EP01、EP1、E01、E1等
-  const epMatch = episodeTitle.match(/[Ee][Pp]?(\d+)/);
-  if (epMatch) {
-    return parseInt(epMatch[1], 10);
-  }
-  
-  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
-  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
-  if (numberMatch) {
-    return parseInt(numberMatch[1], 10);
-  }
-  
-  return null;
 }
 
 /**
@@ -1477,6 +1455,20 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp) {
     }
     if (globals.localRedisValid && animeId) {
         setLocalRedisKey('lastSelectMap', globals.lastSelectMap);
+    }
+  }
+
+  // 应用弹幕时间偏移
+  if (animeTitle && episodeTitle && globals.danmuOffset) {
+    let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+    season ||= 1;
+    episode ||= findIndexById(id) + 1;
+    const seasonStr = `S${season.toString().padStart(2, '0')}`;
+    const episodeStr = `E${episode.toString().padStart(2, '0')}`;
+    const offset = getOffset(baseTitle, seasonStr, episodeStr);
+    if (offset !== 0) {
+      log("info", `Applying danmu offset: ${offset}s for ${baseTitle}/${seasonStr}/${episodeStr}`);
+      danmus = applyDanmuOffset(danmus, offset);
     }
   }
 
