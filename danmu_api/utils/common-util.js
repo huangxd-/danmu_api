@@ -192,14 +192,14 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 }
 
 /**
- * 规范化标题中的空格（移除所有空格以便进行空格无关的匹配）
+ * 规范化标题（移除空格并清理修饰性符号）
  * @param {string} str - 输入字符串
- * @returns {string} 规范化后的字符串（移除所有空格）
+ * @returns {string} 规范化后的字符串
  */
 export function normalizeSpaces(str) {
   if (!str) return '';
-  // 移除所有空格（包括多个连续空格、制表符等）
-  return String(str).trim().replace(/\s+/g, '');
+  // 移除所有空格与修饰性符号（包括多个连续空格、制表符等）
+  return String(str).trim().replace(/[\s【】\[\]《》<>「」!?！？.,，。~～]/g, '');
 }
 
 /**
@@ -265,7 +265,7 @@ export function titleMatches(title, query) {
   const querySeason = getExplicitSeasonNumber(query);
   if (querySeason !== null) {
     const titleSeason = getExplicitSeasonNumber(title);
-    
+
     if (querySeason > 1) {
       // 搜索指定续作(>1)时，标题必须明确包含该季度标识
       if ((titleSeason || 1) !== querySeason) return false;
@@ -280,7 +280,7 @@ export function titleMatches(title, query) {
   const qSet = new Set(q);
   const tSet = new Set(t);
   const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
-  
+
   return (matchCount / qSet.size) > 0.8;
 }
 
@@ -304,4 +304,93 @@ export function validateType(value, expectedType) {
   } else if (typeof value !== expectedType) {
     throw new TypeError(`${value} 必须是 ${expectedType}，但传入的是 ${fieldName}`);
   }
+}
+
+// 从 animeTitle 中提取季数和纯剧名
+export function extractSeasonNumberFromAnimeTitle(animeTitle) {
+  if (!animeTitle) return { season: null, baseTitle: null };
+
+  const normalizedAnimeTitle = normalizeSpaces(animeTitle);
+  const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
+  const titleWithoutYear = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
+
+  // 1) 明确季数标识：第X季/期/部
+  const explicitSeasonMatch = titleWithoutYear.match(/第\s*([0-9一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)\s*[季期部]/);
+  if (explicitSeasonMatch) {
+    return {
+      season: convertChineseNumber(explicitSeasonMatch[1]),
+      baseTitle: titleWithoutYear.replace(explicitSeasonMatch[0], "").trim(),
+    };
+  }
+
+  // 2) S2/Season 2
+  const seasonMatch = titleWithoutYear.match(/(?:S(?:eason)?|Season)\s*(\d+)/i);
+  if (seasonMatch) {
+    return {
+      season: parseInt(seasonMatch[1], 10),
+      baseTitle: titleWithoutYear.replace(seasonMatch[0], "").trim(),
+    };
+  }
+
+  // 3) Part 2
+  const partMatch = titleWithoutYear.match(/Part\s*(\d+)/i);
+  if (partMatch) {
+    return {
+      season: parseInt(partMatch[1], 10),
+      baseTitle: titleWithoutYear.replace(partMatch[0], "").trim(),
+    };
+  }
+
+  // 4) 尾部阿拉伯数字（如"某某 2" 或 "某某2"，但不超过2位）
+  const trailingNumber = titleWithoutYear.match(/(?:^|\s|[^\d])(\d{1,2})$/);
+  if (trailingNumber) {
+    return {
+      season: parseInt(trailingNumber[1], 10),
+      baseTitle: titleWithoutYear.slice(0, titleWithoutYear.lastIndexOf(trailingNumber[1])).trim(),
+    };
+  }
+
+  // 5) 尾部中文数字（如"某某二"）
+  const trailingChinese = titleWithoutYear.match(/([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)$/);
+  if (trailingChinese) {
+    return {
+      season: convertChineseNumber(trailingChinese[1]),
+      baseTitle: titleWithoutYear.replace(trailingChinese[0], "").trim(),
+    };
+  }
+
+  return { season: null, baseTitle: titleWithoutYear };
+}
+
+// 从集标题中提取集数（支持多种格式：第1集、第01集、EP01、E01等）
+export function extractEpisodeNumberFromTitle(episodeTitle) {
+  if (!episodeTitle) return null;
+  
+  // 匹配格式：第1集、第01集、第10集等
+  const chineseMatch = episodeTitle.match(/第(\d+)集/);
+  if (chineseMatch) {
+    return parseInt(chineseMatch[1], 10);
+  }
+  
+  // 匹配格式：EP01、EP1、E01、E1等
+  const epMatch = episodeTitle.match(/[Ee][Pp]?(\d+)/);
+  if (epMatch) {
+    return parseInt(epMatch[1], 10);
+  }
+  
+  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
+  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
+  if (numberMatch) {
+    return parseInt(numberMatch[1], 10);
+  }
+  
+  return null;
+}
+
+// 从标题中提取动漫名称、季数和集数
+export function extractAnimeInfo(animeTitle, episodeTitle) {
+  let {season, baseTitle} = extractSeasonNumberFromAnimeTitle(animeTitle);
+  let episode = extractEpisodeNumberFromTitle(episodeTitle);
+  
+  return { baseTitle, season, episode };
 }
