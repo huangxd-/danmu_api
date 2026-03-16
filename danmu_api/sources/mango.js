@@ -725,6 +725,7 @@ export default class MangoSource extends BaseSource {
       content.timepoint = item.time / 1000;
       content.content = item.content;
       content.uid = item.uid;
+      content.like = item.v2_up_count;
       return content;
     });
   }

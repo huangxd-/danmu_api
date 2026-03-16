@@ -392,7 +392,14 @@ function renderValueInput(item) {
 
     if (type === 'boolean') {
         // 布尔开关
-        const checked = value === 'true' || value === true;
+        // 对于LIKE_SWITCH变量，默认值设为true（开启状态）
+        let checked;
+        if (currentKey === 'LIKE_SWITCH' || currentKey === 'REMEMBER_LAST_SELECT') {
+            // 如果值为空或未定义，LIKE_SWITCH和REMEMBER_LAST_SELECT默认为true（开启）
+            checked = value === 'true' || value === true || (value === '' || value === undefined || value === null);
+        } else {
+            checked = value === 'true' || value === true;
+        }
         container.innerHTML = \`
             <label>值</label>
             <div class="switch-container">
@@ -558,8 +565,28 @@ function renderValueInput(item) {
         // 文本输入
         const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
+        const isAiApiKey = currentKey === 'AI_API_KEY';
         
-        if (isBilibiliCookie) {
+        if (isAiApiKey) {
+            // AI API Key 专用编辑界面
+            container.innerHTML = \`
+                <div class="ai-apikey-editor">
+                    <label>API Key 值</label>
+                    <textarea class="form-group" id="text-value" placeholder="请输入 AI API Key" rows="3">\${value}</textarea>
+                    <div class="form-help">支持 OpenAI 兼容的 API，需配合 AI_BASE_URL 和 AI_MODEL 配置使用</div>
+
+                    <div class="ai-apikey-status" id="ai-apikey-status">
+                        <span class="ai-status-icon">🔍</span>
+                        <span class="ai-status-text">点击下方按钮测试连通性</span>
+                    </div>
+                    <div class="ai-apikey-actions" style="margin-bottom: 15px;">
+                        <button type="button" class="btn btn-primary btn-sm" id="ai-verify-btn" onclick="verifyAiConnection()">
+                            🧪 测试连通性
+                        </button>
+                    </div>
+                </div>
+            \`;
+        } else if (isBilibiliCookie) {
             // Bilibili Cookie 专用编辑界面
             const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 8) : 3;
             container.innerHTML = \`
@@ -1802,5 +1829,59 @@ function showBilibiliCookieSaveHint(text) {
 
     const msg = text || '请点击保存按钮,Vercel等平台需重新部署后生效';
     statusEl.innerHTML = \`<span class="bili-status-icon">💾</span><span class="bili-status-text">\${msg}</span>\`;
+}
+
+/* ========================================
+   AI API Key 连通性测试功能
+   ======================================== */
+async function verifyAiConnection() {
+    const statusEl = document.getElementById('ai-apikey-status');
+    const btn = document.getElementById('ai-verify-btn');
+    const textInput = document.getElementById('text-value');
+    
+    if (!statusEl || !textInput) return;
+    
+    const apiKey = textInput.value.trim();
+    
+    // 如果输入框为空，提示未配置
+    if (!apiKey) {
+        statusEl.innerHTML = '<span class="ai-status-icon">⚠️</span><span class="ai-status-text">请先输入 API Key</span>';
+        return;
+    }
+    
+    // 设置按钮为加载状态
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading-spinner-small"></span>';
+    btn.disabled = true;
+    
+    statusEl.innerHTML = '<span class="ai-status-icon">🔍</span><span class="ai-status-text">正在测试连通性...</span>';
+    
+    // 检查是否为脱敏后的 *...* 
+    const isMasked = /^[*]+$/.test(apiKey);
+    
+    try {
+        const response = await fetch(buildApiUrl('/api/ai/verify', true), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(isMasked ? {} : { 'aiApiKey': apiKey })
+        });
+        
+        const result = await response.json();
+        
+        if (result.ok) {
+            statusEl.innerHTML = '<span class="ai-status-icon">✅</span><span class="ai-status-text">' + (result.message || 'AI 服务连通性测试成功') + '</span>';
+            statusEl.style.color = 'var(--success-color, #28a745)';
+        } else {
+            statusEl.innerHTML = '<span class="ai-status-icon">❌</span><span class="ai-status-text">' + (result.message || '连通性测试失败') + '</span>';
+            statusEl.style.color = 'var(--danger-color, #dc3545)';
+        }
+    } catch (error) {
+        statusEl.innerHTML = '<span class="ai-status-icon">⚠️</span><span class="ai-status-text">测试请求失败: ' + error.message + '</span>';
+        statusEl.style.color = 'var(--warning-color, #ffc107)';
+    } finally {
+        // 恢复按钮状态
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 `;

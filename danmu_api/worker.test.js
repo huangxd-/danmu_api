@@ -7,9 +7,11 @@ import assert from 'node:assert';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
+import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
+import AIClient from './utils/ai-util.js';
 import RenrenSource from "./sources/renren.js";
 import HanjutvSource from "./sources/hanjutv.js";
 import BahamutSource from "./sources/bahamut.js";
@@ -18,9 +20,11 @@ import IqiyiSource from "./sources/iqiyi.js";
 import MangoSource from "./sources/mango.js";
 import BilibiliSource from "./sources/bilibili.js";
 import YoukuSource from "./sources/youku.js";
+import MiguSource from "./sources/migu.js";
 import SohuSource from "./sources/sohu.js";
 import LeshiSource from "./sources/leshi.js";
 import XiguaSource from "./sources/xigua.js";
+import MaiduiduiSource from "./sources/maiduidui.js";
 import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
@@ -62,9 +66,11 @@ test('worker.js API endpoints', async (t) => {
   const mangoSource = new MangoSource();
   const bilibiliSource = new BilibiliSource();
   const youkuSource = new YoukuSource();
+  const miguSource = new MiguSource();
   const sohuSource = new SohuSource();
   const leshiSource = new LeshiSource();
   const xiguaSource = new XiguaSource();
+  const maiduiduiSource = new MaiduiduiSource();
   const animekoSource = new AnimekoSource();
   const otherSource = new OtherSource();
 
@@ -97,6 +103,25 @@ test('worker.js API endpoints', async (t) => {
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
   });
+
+  // await t.test('Test ai cilent', async () => {
+  //   const ai = new AIClient({
+  //     apiKey: 'xxxxxxxxxxxxxxxxxxxxx',
+  //     baseURL: 'https://open.bigmodel.cn/api/paas/v4', // 换成任意兼容 OpenAI 协议的地址
+  //     model: 'GLM-4.7-FlashX',
+  //     systemPrompt: '回答尽量简洁',
+  //   })
+
+  //   // const answer = await ai.ask('你好')
+  //   // console.log(answer);
+
+  //   const status = await ai.verify()
+  //   if (status.ok) {
+  //     console.log('连接正常:', status)
+  //   } else {
+  //     console.log('连接失败:', status.error)
+  //   }
+  // });
 
   // await t.test('GET tencent danmu', async () => {
   //   const res = await tencentSource.getComments("http://v.qq.com/x/cover/rjae621myqca41h/j0032ubhl9s.html", "qq");
@@ -211,6 +236,29 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
+  // await t.test('GET migu danmu', async () => {
+  //   const res = await miguSource.getComments("https://www.miguvideo.com/p/detail/725117610", "migu");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET migu danmu segments', async () => {
+  //   const res = await miguSource.getComments("https://www.miguvideo.com/p/detail/725117610", "migu", true);
+  //   console.log(res.segmentList);
+  //   assert(res.type === "migu", `Expected res.type === "migu", but got ${res.type === "migu"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET migu segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'migu',
+  //     segment_start: 0,
+  //     segment_end: 300,
+  //     url: 'https://webapi.miguvideo.com/gateway/live_barrage/videox/barrage/v2/list/760834922/760835542/0/30/020',
+  //   });
+  //   const res = await miguSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
   // await t.test('GET sohu danmu', async () => {
   //   const res = await sohuSource.getComments("https://film.sohu.com/album/8345543.html");
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
@@ -274,6 +322,29 @@ test('worker.js API endpoints', async (t) => {
   //     url: 'https://ib.snssdk.com/vapp/danmaku/list/v1/?item_id=6551333775341519368&start_time=1200000&end_time=1500000&format=json'
   //   });
   //   const res = await xiguaSource.getSegmentComments(segment);
+  //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui");
+  //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
+  // });
+
+  // await t.test('GET maiduidui danmu segments', async () => {
+  //   const res = await maiduiduiSource.getComments("https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0", "maiduidui", true);
+  //   console.log(res.segmentList);
+  //   assert(res.type === "maiduidui", `Expected res.type === "maiduidui", but got ${res.type === "maiduidui"}`);
+  //   assert(res.segmentList.length >= 0, `Expected res.segmentList.length >= 0, but got ${res.segmentList.length}`);
+  // });
+
+  // await t.test('GET maiduidui segment danmu', async () => {
+  //   const segment = Segment.fromJson({
+  //     type: 'maiduidui',
+  //     segment_start: 120,
+  //     segment_end: 180,
+  //     url: 'https://www.mddcloud.com.cn/video/ff8080817410d5a5017490f5f4d311de.html?num=2&uuid=ff8080817410d5a5017490f5f4d311e0'
+  //   });
+  //   const res = await maiduiduiSource.getSegmentComments(segment);
   //   assert(res.length >= 0, `Expected res.length >= 0, but got ${res.length}`);
   // });
 
@@ -713,3 +784,50 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
 });
+
+// // 测试本地 Redis 功能
+// test('local-redis functions', async (t) => {
+//   // 测试设置和获取本地 Redis 键值
+//   await t.test('setLocalRedisKey and getLocalRedisKey', async () => {
+//     try {
+//       const testKey = 'test_key_local_redis';
+//       const testValue = 'Hello Local Redis';
+
+//       // 设置键值
+//       const setResult = await setLocalRedisKey(testKey, testValue);
+//       // 验证设置结果
+//       assert.ok(setResult.result === 'OK' || setResult.result === 'ERROR', 
+//         `setLocalRedisKey returned valid result: ${JSON.stringify(setResult)}`);
+
+//       // 获取键值
+//       const getResult = await getLocalRedisKey(testKey);
+//       // 验证获取结果（如果 Redis 不可用，可能返回 null）
+//       if (getResult !== null) {
+//         // 如果返回了结果，验证它是否是我们设置的值（可能是序列化的）
+//         assert.ok(typeof getResult === 'string' || getResult === null, 
+//           `getLocalRedisKey returned expected type: ${typeof getResult}`);
+//       } else {
+//         // 如果返回 null，也是可以接受的（表示 Redis 不可用）
+//         assert.strictEqual(getResult, null, 'getLocalRedisKey returned null when Redis is not available');
+//       }
+//     } catch (error) {
+//       assert.ok(true, `setLocalRedisKey/getLocalRedisKey handled error gracefully: ${error.message}`);
+//     }
+//   });
+
+//   // 测试设置带过期时间的本地 Redis 键值
+//   await t.test('setLocalRedisKeyWithExpiry', async () => {
+//     try {
+//       const testKey = 'test_expiry_key_local_redis';
+//       const testValue = 'Temporary Value';
+//       const expirySeconds = 2; // 2秒过期
+
+//       const setResult = await setLocalRedisKeyWithExpiry(testKey, testValue, expirySeconds);
+//       // 验证设置结果
+//       assert.ok(setResult.result === 'OK' || setResult.result === 'ERROR', 
+//         `setLocalRedisKeyWithExpiry returned valid result: ${JSON.stringify(setResult)}`);
+//     } catch (error) {
+//       assert.ok(true, `setLocalRedisKeyWithExpiry handled error gracefully: ${error.message}`);
+//     }
+//   });
+// });

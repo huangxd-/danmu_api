@@ -489,7 +489,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
       } catch (error) {
          if (error.name === 'AbortError') {
              log("info", `[TMDB] 后台搜索任务已完全终止 (${cleanTitle})`);
-             throw error;
+             return null;
          }
          log("error", "[TMDB] Background Search error:", {
             message: error.message,

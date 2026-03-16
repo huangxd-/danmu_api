@@ -6,12 +6,13 @@ import { getDoubanDetail, searchDoubanTitles } from "../utils/douban-util.js";
 // 获取豆瓣源播放链接
 // =====================
 export default class DoubanSource extends BaseSource {
-  constructor(tencentSource, iqiyiSource, youkuSource, bilibiliSource) {
+  constructor(tencentSource, iqiyiSource, youkuSource, bilibiliSource, miguSource) {
     super('BaseSource');
     this.tencentSource = tencentSource;
     this.iqiyiSource = iqiyiSource;
     this.youkuSource = youkuSource;
     this.bilibiliSource = bilibiliSource;
+    this.miguSource = miguSource;
   }
 
   async search(keyword) {
@@ -140,6 +141,20 @@ export default class DoubanSource extends BaseSource {
                 tmpAnimes[0].provider = "bilibili";
                 tmpAnimes[0].mediaId = `ss${seasonId}`;
                 await this.bilibiliSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+              }
+              break;
+            }
+            case "miguvideo": {
+              let epId = null;
+              const decodeUrl = decodeURIComponent(vendor.uri);
+              const contentIdMatch = decodeUrl.match(/"contentID":"([^"]+)"/);
+              if (contentIdMatch && contentIdMatch[1]) {
+                epId = contentIdMatch[1];
+              }
+              if (epId) {
+                tmpAnimes[0].provider = "migu";
+                tmpAnimes[0].mediaId = `https://v3-sc.miguvideo.com/program/v4/cont/content-info/${epId}/1`;
+                await this.miguSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
               }
               break;
             }

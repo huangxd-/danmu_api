@@ -32,7 +32,7 @@ export default class CustomSource extends BaseSource {
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `customnSourceSearchresp: ${JSON.stringify(resp.data.animes)}`);
+      log("info", `[Custom] 搜索找到 ${resp.data.animes.length} 个有效结果`);
 
       return resp.data.animes;
     } catch (error) {
