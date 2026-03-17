@@ -81,6 +81,11 @@ function shouldIncludeVideoDuration(queryFormat, includeDuration = false) {
   return format === 'json';
 }
 
+function buildDanmuResponse(data, videoDuration = null) {
+  if (videoDuration === null) return data;
+  return { videoDuration, ...data };
+}
+
 function extractDurationFromSegments(segmentResult) {
   const explicitDuration = normalizeDurationValue(segmentResult?.duration || segmentResult?.videoDuration || 0);
   if (explicitDuration > 0) return explicitDuration;
@@ -1458,10 +1463,10 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   // 检查弹幕缓存
   const cachedComments = getCommentCache(url);
   if (cachedComments !== null) {
-    const responseData = { count: cachedComments.length, comments: cachedComments };
-    if (shouldAttachDuration) {
-      responseData.videoDuration = await resolveMergedDuration(url);
-    }
+    const responseData = buildDanmuResponse(
+      { count: cachedComments.length, comments: cachedComments },
+      shouldAttachDuration ? await resolveMergedDuration(url) : null
+    );
     return formatDanmuResponse(responseData, queryFormat);
   }
 
@@ -1579,10 +1584,10 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     }
   }
 
-  const responseData = { count: danmus.length, comments: danmus };
-  if (durationPromise) {
-    responseData.videoDuration = await durationPromise;
-  }
+  const responseData = buildDanmuResponse(
+    { count: danmus.length, comments: danmus },
+    durationPromise ? await durationPromise : null
+  );
   return formatDanmuResponse(responseData, queryFormat);
 }
 
@@ -1616,16 +1621,13 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     // 检查弹幕缓存
     const cachedComments = getCommentCache(url);
     if (cachedComments !== null) {
-      const responseData = {
+      const responseData = buildDanmuResponse({
         errorCode: 0,
         success: true,
         errorMessage: "",
         count: cachedComments.length,
         comments: cachedComments
-      };
-      if (shouldAttachDuration) {
-        responseData.videoDuration = await resolveMergedDuration(url);
-      }
+      }, shouldAttachDuration ? await resolveMergedDuration(url) : null);
       return formatDanmuResponse(responseData, queryFormat);
     }
 
@@ -1673,16 +1675,13 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
       setCommentCache(url, danmus);
     }
 
-    const responseData = {
+    const responseData = buildDanmuResponse({
       errorCode: 0,
       success: true,
       errorMessage: "",
       count: danmus.length,
       comments: danmus
-    };
-    if (durationPromise) {
-      responseData.videoDuration = await durationPromise;
-    }
+    }, durationPromise ? await durationPromise : null);
     return formatDanmuResponse(responseData, queryFormat);
   } catch (error) {
     // 处理异常

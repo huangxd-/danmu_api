@@ -107,6 +107,31 @@ function attachEnterEventToParams() {
     }, 100);
 }
 
+function updateCommentDurationFieldVisibility() {
+    const apiSelect = document.getElementById('api-select');
+    const durationGroup = document.querySelector('#params-form [data-param-name="duration"]');
+    const durationInput = document.getElementById('param-duration');
+    const formatInput = document.getElementById('param-format');
+
+    if (!durationGroup) return;
+
+    const isCommentApi = apiSelect && apiSelect.value === 'getComment';
+    const formatValue = formatInput ? formatInput.value.toLowerCase() : '';
+    const shouldShowDuration = isCommentApi && (formatValue === '' || formatValue === 'json');
+
+    durationGroup.style.display = shouldShowDuration ? '' : 'none';
+    if (!shouldShowDuration && durationInput) {
+        durationInput.value = '';
+    }
+}
+
+function bindCommentDurationFieldVisibility() {
+    const formatInput = document.getElementById('param-format');
+    if (!formatInput) return;
+    formatInput.addEventListener('change', updateCommentDurationFieldVisibility);
+    updateCommentDurationFieldVisibility();
+}
+
 // 处理参数输入框的回车事件
 function handleParamInputEnter(event) {
     if (event.key === 'Enter') {
@@ -147,7 +172,7 @@ function loadApiParams() {
                     optionsHtml += param.options.map(opt => \`<option value="\${opt}">\${opt}</option>\`).join('');
                 }
                 return \`
-                    <div class="form-group">
+                    <div class="form-group" data-param-name="\${param.name}">
                         <label>\${param.label}\${param.required ? ' *' : ''}</label>
                         <select id="param-\${param.name}">
                             \${optionsHtml}
@@ -159,7 +184,7 @@ function loadApiParams() {
             // 使用placeholder属性显示示例参数
             const placeholder = param.placeholder ? param.placeholder : "请输入" + param.label;
             return \`
-                <div class="form-group">
+                <div class="form-group" data-param-name="\${param.name}">
                     <label>\${param.label}\${param.required ? ' *' : ''}</label>
                     <input type="\${param.type}" id="param-\${param.name}" placeholder="\${placeholder}" \${param.required ? 'required' : ''}>
                 </div>
@@ -188,6 +213,7 @@ function loadApiParams() {
     
     // 为参数输入框添加回车事件监听
     attachEnterEventToParams();
+    bindCommentDurationFieldVisibility();
 }
 
 function testApi() {
