@@ -65,7 +65,8 @@ let danmuTestState = {
     displayedCount: 0,
     pageSize: 100,
     currentEpisodeId: null,
-    currentTitle: ''
+    currentTitle: '',
+    currentDuration: 0
 };
 
 // 初始化接口调试界面
@@ -429,12 +430,99 @@ function formatDuration(seconds) {
     return m + ':' + String(sec).padStart(2,'0');
 }
 
-// 用P99分位数计算有效时长，剔除异常时间点
-function getEffectiveDuration(comments) {
-    const times = comments.map(c => c.t !== undefined ? c.t : parseDanmuTime(c.p)).sort((a, b) => a - b);
-    if (times.length === 0) return 0;
-    const idx = Math.floor(times.length * 0.99);
-    return times[Math.min(idx, times.length - 1)];
+function fetchDanmuDuration(episodeId) {
+    return fetch(buildApiUrl('/api/v2/comment/' + episodeId + '/duration'))
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+            const seconds = Number((data && data.videoDuration) || 0);
+            return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+        })
+        .catch(() => 0);
+}
+
+function getValidDanmuTimes(comments) {
+    return comments
+        .map(c => c.t !== undefined ? Number(c.t) : parseDanmuTime(c.p))
+        .filter(time => Number.isFinite(time) && time >= 0)
+        .sort((a, b) => a - b);
+}
+
+function getPercentileValue(sortedValues, percentile) {
+    if (!sortedValues.length) return 0;
+    const safePercentile = Math.min(Math.max(percentile, 0), 1);
+    const index = Math.floor((sortedValues.length - 1) * safePercentile);
+    return sortedValues[index] || 0;
+}
+
+function getMedian(values) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function buildTailGapThreshold(sortedValues) {
+    if (sortedValues.length < 2) return 45;
+
+    const gaps = [];
+    const startIndex = Math.max(1, sortedValues.length - 80);
+    for (let i = startIndex; i < sortedValues.length; i++) {
+        const gap = sortedValues[i] - sortedValues[i - 1];
+        if (gap > 0) {
+            gaps.push(gap);
+        }
+    }
+
+    if (!gaps.length) return 45;
+
+    const sortedGaps = [...gaps].sort((a, b) => a - b);
+    const medianGap = getMedian(sortedGaps);
+    const p90Gap = getPercentileValue(sortedGaps, 0.9);
+    return Math.min(240, Math.max(45, medianGap * 12, p90Gap * 3));
+}
+
+function estimateVideoDurationFromComments(comments) {
+    const validTimes = getValidDanmuTimes(comments);
+    if (!validTimes.length) return 0;
+    if (validTimes.length < 200) return validTimes[validTimes.length - 1];
+
+    const p995Time = getPercentileValue(validTimes, 0.995);
+    const p998Time = getPercentileValue(validTimes, 0.998);
+    const gapThreshold = buildTailGapThreshold(validTimes);
+    const trimBaseline = p998Time + Math.max(90, gapThreshold * 2);
+    let endIndex = validTimes.length - 1;
+
+    while (endIndex > 0) {
+        let tailStartIndex = endIndex;
+        while (tailStartIndex > 0) {
+            const gap = validTimes[tailStartIndex] - validTimes[tailStartIndex - 1];
+            if (gap > gapThreshold) break;
+            tailStartIndex--;
+        }
+
+        const tailClusterSize = endIndex - tailStartIndex + 1;
+        const tailClusterSpan = validTimes[endIndex] - validTimes[tailStartIndex];
+        const previousGap = tailStartIndex > 0 ? validTimes[tailStartIndex] - validTimes[tailStartIndex - 1] : 0;
+        const isIsolatedTail = tailStartIndex > 0
+            && tailClusterSize <= 2
+            && tailClusterSpan <= 15
+            && previousGap > gapThreshold;
+
+        if (!isIsolatedTail || validTimes[endIndex] <= trimBaseline) {
+            break;
+        }
+
+        endIndex = tailStartIndex - 1;
+    }
+
+    return Math.max(validTimes[Math.max(endIndex, 0)] || 0, p995Time);
+}
+
+function getEffectiveDuration(comments, explicitDuration) {
+    if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
+        return explicitDuration;
+    }
+    return estimateVideoDurationFromComments(comments);
 }
 
 function setBtnLoading(btn, loading) {
@@ -646,6 +734,7 @@ async function fetchDanmuForTest(episodeId, title, source) {
     addLog('获取弹幕: ' + episodeId + ' (' + title + ')', 'info');
     danmuTestState.currentEpisodeId = episodeId;
     danmuTestState.currentTitle = title;
+    danmuTestState.currentDuration = 0;
 
     // 隐藏上级面板
     if (source === 'manual') {
@@ -661,9 +750,13 @@ async function fetchDanmuForTest(episodeId, title, source) {
 
     const startTime = performance.now();
     try {
-        const resp = await fetch(buildApiUrl('/api/v2/comment/' + episodeId + "?format=json"));
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const data = await resp.json();
+        const commentRequest = fetch(buildApiUrl('/api/v2/comment/' + episodeId + "?format=json"))
+            .then(resp => {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.json();
+            });
+        const durationRequest = fetchDanmuDuration(episodeId);
+        const [data, durationSeconds] = await Promise.all([commentRequest, durationRequest]);
         const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
 
         if (!data.comments || data.comments.length === 0) {
@@ -679,6 +772,7 @@ async function fetchDanmuForTest(episodeId, title, source) {
         danmuTestState.allComments = data.comments;
         danmuTestState.currentFilter = 'all';
         danmuTestState.displayedCount = 0;
+        danmuTestState.currentDuration = durationSeconds;
 
         // 重建结果区内容：auto模式只有导出按钮，manual模式有返回+导出
         let toolbarHtml = '<div class="danmu-result-toolbar">';
@@ -706,8 +800,8 @@ async function fetchDanmuForTest(episodeId, title, source) {
             '</div>';
 
         applyDanmuFilter();
-        renderDanmuStats(data, elapsed, title);
-        renderDanmuHeatmap(data.comments);
+        renderDanmuStats(data, elapsed, title, durationSeconds);
+        renderDanmuHeatmap(data.comments, durationSeconds);
         renderDanmuList();
 
         setTimeout(() => resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
@@ -764,12 +858,11 @@ async function exportDanmu(format) {
 // =====================
 // 弹幕统计
 // =====================
-function renderDanmuStats(data, elapsed, title) {
+function renderDanmuStats(data, elapsed, title, durationSeconds) {
     const comments = data.comments;
     const count = comments.length;
 
-    // 用P99分位数作为有效时长
-    const maxTime = getEffectiveDuration(comments);
+    const maxTime = getEffectiveDuration(comments, durationSeconds);
 
     // 平均密度
     const durationMin = maxTime / 60;
@@ -817,9 +910,9 @@ function renderDanmuStats(data, elapsed, title) {
 // =====================
 // 弹幕热力图
 // =====================
-function renderDanmuHeatmap(comments) {
+function renderDanmuHeatmap(comments, durationSeconds) {
     const container = document.getElementById('danmu-heatmap');
-    const maxTime = getEffectiveDuration(comments);
+    const maxTime = getEffectiveDuration(comments, durationSeconds);
     if (maxTime === 0) { container.innerHTML = '<p style="color:#999;">无数据</p>'; return; }
 
     const barCount = Math.min(60, Math.max(20, Math.ceil(maxTime / 30)));

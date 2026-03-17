@@ -69,6 +69,106 @@ const tmdbSource = new TmdbSource(doubanSource);
 // 用于聚合请求的去重Map
 const PENDING_DANMAKU_REQUESTS = new Map();
 
+function normalizeDurationValue(rawValue) {
+  const duration = Number(rawValue || 0);
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  return duration > 6 * 60 * 60 ? duration / 1000 : duration;
+}
+
+function buildDurationResponse(videoDuration = 0) {
+  return { videoDuration };
+}
+
+function extractDurationFromSegments(segmentResult) {
+  const explicitDuration = normalizeDurationValue(segmentResult?.duration || segmentResult?.videoDuration || 0);
+  if (explicitDuration > 0) return explicitDuration;
+
+  const segmentList = Array.isArray(segmentResult?.segmentList) ? segmentResult.segmentList : [];
+  if (!segmentList.length) return 0;
+
+  let duration = 0;
+  segmentList.forEach((segment) => {
+    const normalized = normalizeDurationValue(segment?.segment_end || 0);
+    if (normalized <= 0) return;
+    if (normalized > duration) duration = normalized;
+  });
+
+  return duration > 0 ? duration : 0;
+}
+
+async function resolveUrlDuration(url) {
+  if (!/^https?:\/\//i.test(url)) return 0;
+
+  try {
+    let targetUrl = url;
+    let segmentResult = null;
+
+    if (targetUrl.includes('.qq.com')) {
+      segmentResult = await tencentSource.getComments(targetUrl, 'qq', true);
+    } else if (targetUrl.includes('.iqiyi.com')) {
+      segmentResult = await iqiyiSource.getComments(targetUrl, 'qiyi', true);
+    } else if (targetUrl.includes('.mgtv.com')) {
+      segmentResult = await mangoSource.getComments(targetUrl, 'imgo', true);
+    } else if (targetUrl.includes('.bilibili.com') || targetUrl.includes('b23.tv')) {
+      if (targetUrl.includes('b23.tv')) {
+        targetUrl = await bilibiliSource.resolveB23Link(targetUrl);
+      }
+      segmentResult = await bilibiliSource.getComments(targetUrl, 'bilibili1', true);
+    } else if (targetUrl.includes('.youku.com')) {
+      segmentResult = await youkuSource.getComments(targetUrl, 'youku', true);
+    } else if (targetUrl.includes('.miguvideo.com')) {
+      segmentResult = await miguSource.getComments(targetUrl, 'migu', true);
+    } else if (targetUrl.includes('.sohu.com')) {
+      segmentResult = await sohuSource.getComments(targetUrl, 'sohu', true);
+    } else if (targetUrl.includes('.le.com')) {
+      segmentResult = await leshiSource.getComments(targetUrl, 'leshi', true);
+    } else if (targetUrl.includes('.douyin.com') || targetUrl.includes('.ixigua.com')) {
+      segmentResult = await xiguaSource.getComments(targetUrl, 'xigua', true);
+    } else if (targetUrl.includes('.mddcloud.com.cn')) {
+      segmentResult = await maiduiduiSource.getComments(targetUrl, 'maiduidui', true);
+    }
+
+    return extractDurationFromSegments(segmentResult);
+  } catch (error) {
+    log('warn', `[Duration] 获取时长失败: ${error.message}`);
+    return 0;
+  }
+}
+
+function extractMergedUrls(url) {
+  return String(url || '')
+    .split(MERGE_DELIMITER)
+    .map((part) => {
+      const firstColonIndex = part.indexOf(':');
+      if (firstColonIndex === -1) return part.trim();
+      return part.slice(firstColonIndex + 1).trim();
+    })
+    .filter(Boolean);
+}
+
+export async function getCommentDuration(path) {
+  const parts = String(path || '').split('/');
+  const commentId = parseInt(parts[parts.length - 2], 10);
+  if (!Number.isFinite(commentId)) {
+    return jsonResponse(buildDurationResponse(), 400);
+  }
+
+  const url = findUrlById(commentId);
+  if (!url) {
+    return jsonResponse(buildDurationResponse(), 404);
+  }
+
+  try {
+    const targetUrls = url.includes(MERGE_DELIMITER) ? extractMergedUrls(url) : [url];
+    const durations = await Promise.all(targetUrls.map(resolveUrlDuration));
+    const videoDuration = durations.reduce((maxValue, currentValue) => Math.max(maxValue, currentValue || 0), 0);
+    return jsonResponse(buildDurationResponse(videoDuration));
+  } catch (error) {
+    log('warn', `[Duration] 获取时长失败: ${error.message}`);
+    return jsonResponse(buildDurationResponse());
+  }
+}
+
 // 匹配年份函数，优先于季匹配
 function matchYear(anime, queryYear) {
   if (!queryYear) {
