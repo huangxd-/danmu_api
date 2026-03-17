@@ -1079,12 +1079,375 @@ export const componentsCssContent = /* css */ `
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .record-method,
     .record-interface,
     .record-ip {
         width: 100%;
         box-sizing: border-box;
+    }
+}
+
+/* ===================== */
+/* 弹幕测试相关样式      */
+/* ===================== */
+
+/* 顶级标签页 */
+.api-top-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.api-top-tab {
+    padding: 10px 24px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.3s;
+    margin-bottom: -2px;
+}
+
+.api-top-tab:hover {
+    color: #667eea;
+}
+
+.api-top-tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: bold;
+}
+
+.api-tab-content {
+    display: none;
+}
+
+.api-tab-content.active {
+    display: block;
+}
+
+/* 弹幕测试子标签 */
+.danmu-test-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.danmu-test-tab {
+    padding: 8px 20px;
+    background: #f0f0f0;
+    border: 2px solid transparent;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s;
+    color: #555;
+}
+
+.danmu-test-tab:hover {
+    background: #e0e0e0;
+}
+
+.danmu-test-tab.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.danmu-test-panel {
+    display: none;
+}
+
+.danmu-test-panel.active {
+    display: block;
+}
+
+/* 弹幕统计卡片 */
+.danmu-stats {
+    margin-bottom: 15px;
+}
+
+.danmu-stats-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #667eea;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.danmu-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.danmu-stat-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    border: 1px solid #eee;
+    transition: transform 0.2s;
+}
+
+.danmu-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #999;
+}
+
+/* 弹幕热力图 */
+.danmu-heatmap-container {
+    margin-bottom: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+}
+
+.danmu-heatmap-container h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+
+.heatmap-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 100px;
+    padding: 0 2px;
+}
+
+.heatmap-bar {
+    flex: 1;
+    min-width: 3px;
+    border-radius: 2px 2px 0 0;
+    transition: opacity 0.2s;
+    cursor: pointer;
+}
+
+.heatmap-bar:hover {
+    opacity: 0.8;
+}
+
+.heatmap-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #999;
+}
+
+/* 弹幕过滤标签 */
+.danmu-filter-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.danmu-filter-tab {
+    padding: 6px 16px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 15px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+    color: #555;
+}
+
+.danmu-filter-tab:hover {
+    background: #e0e0e0;
+}
+
+.danmu-filter-tab.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* 弹幕列表 */
+.danmu-list-area {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+}
+
+.danmu-list-area h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+
+.danmu-list {
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background: white;
+}
+
+.danmu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+
+.danmu-item:last-child {
+    border-bottom: none;
+}
+
+.danmu-item:hover {
+    background: #f8f9ff;
+}
+
+.danmu-time {
+    color: #999;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    min-width: 50px;
+    flex-shrink: 0;
+}
+
+.danmu-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+.danmu-mode-tag {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    font-weight: 500;
+}
+
+.danmu-mode-scroll {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.danmu-mode-top {
+    background: #fce4ec;
+    color: #c62828;
+}
+
+.danmu-mode-bottom {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.danmu-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #333;
+}
+
+.danmu-load-more {
+    margin-top: 10px;
+}
+
+/* 返回按钮 */
+.btn-back {
+    padding: 8px 16px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #555;
+    transition: all 0.2s;
+    margin-bottom: 15px;
+    display: inline-block;
+}
+
+.btn-back:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+/* 弹幕加载动画 */
+.danmu-loading {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.danmu-loading .loading-spinner {
+    margin: 0 auto 15px;
+}
+
+.danmu-loading .loading-text {
+    color: #666;
+    font-size: 15px;
+}
+
+/* 弹幕结果工具栏（返回+导出同行） */
+.danmu-result-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.danmu-result-toolbar .btn-back {
+    margin-bottom: 0;
+}
+
+.danmu-export-btns {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* 弹幕测试移动端适配 */
+@media (max-width: 768px) {
+    .danmu-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .api-top-tab {
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+
+    .danmu-test-tabs {
+        flex-wrap: wrap;
+    }
+
+    .stat-value {
+        font-size: 16px;
+    }
+
+    .heatmap-bars {
+        height: 70px;
     }
 }
 `;

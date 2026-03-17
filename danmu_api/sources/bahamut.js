@@ -281,6 +281,11 @@ export default class BahamutSource extends BaseSource {
       return bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle);
     });
 
+    // 记录替换前的原始标题，作为别名传递给合并工具进行比对
+    filtered.forEach(item => {
+      item._originalTitleAlias = item.title ? simplized(item.title) : "";
+    });
+
     // 应用tmdb智能标题替换
     const cnAlias = filtered.length > 0 ? filtered[0]._tmdbCnAlias : null;
     smartTitleReplace(filtered, cnAlias);
@@ -317,6 +322,12 @@ export default class BahamutSource extends BaseSource {
           // 优先使用tmdb智能标题替换的标题，否则简转繁处理原标题
           const displayTitle = anime._displayTitle || simplized(anime.title);
 
+          // 提取原始标题作为别名
+          const aliases = [];
+          if (anime._originalTitleAlias && anime._originalTitleAlias !== displayTitle) {
+            aliases.push(anime._originalTitleAlias);
+          }
+
           // 解析剧集类型
           let itemType = "动漫"; // 默认类型
           // 从 epData 中获取完整标题 (优先使用 anime.title)
@@ -332,6 +343,7 @@ export default class BahamutSource extends BaseSource {
             animeId: anime.video_sn,
             bangumiId: String(anime.video_sn),
             animeTitle: `${displayTitle}(${(anime.info.match(/(\d{4})/) || [null])[0]})【${itemType}】from bahamut`,
+            aliases: aliases,
             type: "动漫",
             typeDescription: "动漫",
             imageUrl: anime.cover,
@@ -412,10 +424,10 @@ export default class BahamutSource extends BaseSource {
     const positionToMode = { 0: 1, 1: 5, 2: 4 };
     return comments.map(c => ({
       cid: Number(c.sn),
-      p: `${Math.round(c.time / 10).toFixed(2)},${positionToMode[c.position] || c.tp},${parseInt(c.color.slice(1), 16)},[bahamut]`,
+      p: `${(c.time / 10).toFixed(2)},${positionToMode[c.position] || c.tp},${parseInt(c.color.slice(1), 16)},[bahamut]`,
       // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
       m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.text) : c.text,
-      t: Math.round(c.time / 10)
+      t: c.time / 10
     }));
   }
 }

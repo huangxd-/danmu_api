@@ -12,6 +12,10 @@
 
 import { stringToUtf8Bytes, utf8BytesToString } from "./codec-util.js";
 
+// =====================
+// 咪咕解码工具
+// =====================
+
 // WASM binary embedded as base64 (from gateway-crypto.wasm)
 const WASM_BASE64 = `
 AGFzbQEAAAABWA5gAn9/AX9gA39/fwF/YAJ/fwBgA39/fwBgAX8Bf2ABfwBgBX9/f39/AX9gBX9/f39/AGAAAX9gBH9/f38AYAR/

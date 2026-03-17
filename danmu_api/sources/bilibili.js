@@ -434,13 +434,24 @@ export default class BilibiliSource extends BaseSource {
       return [];
     }
 
+    // 提取并备份原始标题与接口提取的 org_title 作为别名
+    sourceAnimes.forEach(anime => {
+      anime.aliases = anime.aliases || [];
+      if (anime.title && !anime.aliases.includes(anime.title)) {
+        anime.aliases.push(anime.title);
+      }
+      if (anime.org_title && !anime.aliases.includes(anime.org_title)) {
+        anime.aliases.push(anime.org_title);
+      }
+    });
+
     // 应用tmdb智能标题替换
     const cnAlias = sourceAnimes.length > 0 ? sourceAnimes[0]._tmdbCnAlias : null;
     smartTitleReplace(sourceAnimes, cnAlias);
 
     const processPromises = sourceAnimes
-      // 港澳台资源不做严格标题匹配，因为可能搜到的是日语/繁体标题
-      .filter(anime => anime.isOversea || titleMatches(anime.title, queryTitle)||(anime.org_title && titleMatches(anime.org_title, queryTitle)))
+      // 港澳台资源不做严格标题匹配，其他资源根据当前标题或别名池（已包含原标题和 org_title）验证查询匹配度
+      .filter(anime => anime.isOversea || titleMatches(anime.title, queryTitle) || (anime.aliases && anime.aliases.some(alias => titleMatches(alias, queryTitle))))
       .map(async (anime) => {
         try {
           let links = [];
@@ -523,6 +534,7 @@ export default class BilibiliSource extends BaseSource {
             rating: 0,
             isFavorited: true,
             source: "bilibili",
+            aliases: anime.aliases 
           };
 
           tmpAnimes.push(transformedAnime);
@@ -788,7 +800,7 @@ export default class BilibiliSource extends BaseSource {
     }
 
     // 计算视频的分片数量
-    const maxLen = (duration > 0) ? (Math.floor(duration / 360) + 1) : 36;
+    const maxLen = (duration > 0) ? Math.ceil(duration / 360) : 36;
     log("info", `maxLen: ${maxLen}`);
 
     const segmentList = [];
@@ -803,13 +815,14 @@ export default class BilibiliSource extends BaseSource {
       segmentList.push({
         "type": "bilibili1",
         "segment_start": i * 360,
-        "segment_end": (i + 1) * 360,
+        "segment_end": duration > 0 ? Math.min((i + 1) * 360, duration) : (i + 1) * 360,
         "url": danmakuUrl
       });
     }
 
     return new SegmentListResponse({
       "type": "bilibili1",
+      "duration": duration > 0 ? duration : 0,
       "segmentList": segmentList
     });
   }
@@ -893,13 +906,14 @@ export default class BilibiliSource extends BaseSource {
             const data = await this._fetchAppSearchWithStream(url, { "User-Agent": "Mozilla/5.0 Android", "X-From-Biliroaming": "1.0.0" }, label, signal);
             
             if (data && data.code === 0) {
-                // 兼容 items (影视/综艺) 和 result (番剧) 两种字段结构
+                // 兼容 items (影视/综艺) 和 result (番剧) 两种字段结构，提取返回的 org_title 字段
                 return (data.data?.items || data.data?.result || data.data || [])
                     .filter(i => i.goto !== 'recommend_tips' && i.area !== '漫游' && i.badge !== '公告')
                     .map(i => ({
                         provider: "bilibili",
                         mediaId: i.season_id ? `ss${i.season_id}` : (i.uri.match(/season\/(\d+)/)?.[1] ? `ss${i.uri.match(/season\/(\d+)/)[1]}` : ""),
                         title: (i.title||"").replace(/<[^>]+>/g,'').trim(),
+                        org_title: (i.org_title||"").replace(/<[^>]+>/g,'').trim(),
                         type: this._extractMediaType(i.season_type_name),
                         year: i.ptime ? new Date(i.ptime*1000).getFullYear() : null,
                         imageUrl: i.cover||i.pic||"",
@@ -938,8 +952,10 @@ export default class BilibiliSource extends BaseSource {
             return [];
         }
         if(data.data?.result) {
+            // 在 Web Fallback 提取并清洗 org_title 字段
             return data.data.result.filter(i => i.url?.includes("bilibili.com") && (!i.areas?.includes("漫游"))).map(i => ({
                 provider: "bilibili", mediaId: i.season_id?`ss${i.season_id}`:"", title: (i.title||"").replace(/<[^>]+>/g,'').trim(),
+                org_title: (i.org_title || "").replace(/<[^>]+>/g,'').replace(/&[^;]+;/g, match => { const entities = { '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#39;': "'" }; return entities[match] || match; }).trim(),
                 type: this._extractMediaType(i.season_type_name), year: i.pubtime?new Date(i.pubtime*1000).getFullYear():null, imageUrl: i.cover||null,
                 episodeCount: i.ep_size||0, _eps: i.eps, isOversea: true
             })).filter(i => i.mediaId);

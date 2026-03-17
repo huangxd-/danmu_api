@@ -1,9 +1,14 @@
 import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows } from "./codec-util.js";
 
 // 移动端参数
-const HANJUTV_VERSION = "6.5.3";
-const HANJUTV_VC = "a_7980";
-const HANJUTV_UA = "HanjuTV/6.5.3 (Pixel 2 XL; Android 11; Scale/2.00)";
+const HANJUTV_VERSION = "6.8.2";
+const HANJUTV_VC = "a_8280";
+const HANJUTV_CH = "xiaomi";
+const HANJUTV_MODEL = "Redmi Note 12";
+const HANJUTV_MAKER = "Xiaomi";
+const HANJUTV_OSV = "14";
+const HANJUTV_UA = `HanjuTV/${HANJUTV_VERSION} (${HANJUTV_MODEL}; Android ${HANJUTV_OSV}; Scale/2.00)`;
+const HANJUTV_INSTALL_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const HANJUTV_UK_KEY = "f349wghhe784tqwh";
 const HANJUTV_UK_IV = "d3w8hf94fidk38lk";
 const HANJUTV_RESPONSE_SECRET = "34F9Q53w/HJW8E6Q";
@@ -198,38 +203,9 @@ function randomInt(max) {
 }
 
 function buildSearchSignPayload(uid, timestamp) {
-  return JSON.stringify({
-    emu: 0,
-    ou: 0,
-    it: timestamp,
-    iit: timestamp,
-    bs: 0,
-    uid,
-    pc: 0,
-    tm: 0,
-    d8m: "0,0,0,0,0,0,0,0",
-    md: "Pixel 2 XL",
-    maker: "Google",
-    osv: "11",
-    br: 100,
-    rpc: 0,
-    scc: 0,
-    plc: 0,
-    toc: 1,
-    tsc: 0,
-    ts: timestamp,
-    pa: 1,
-    nw: 2,
-    px: "0",
-    isp: "",
-    ai: "ccffc2520864efdb",
-    oa: "",
-    dpc: 0,
-    dsc: 0,
-    qpc: 0,
-    apad: 0,
-    pk: "com.babycloud.hanju",
-  });
+  const ts = Number(timestamp);
+  const installTs = Math.max(0, ts - HANJUTV_INSTALL_AGE_MS);
+  return JSON.stringify({ emu: 0, ou: 0, it: installTs, iit: installTs, bs: 0, uid, pc: 0, tm: 81, d8m: "0,0,0,0,0,0,0,4", md: HANJUTV_MODEL, maker: HANJUTV_MAKER, osv: HANJUTV_OSV, br: 95, rpc: 0, scc: 2, plc: 6, toc: 19, tsc: 10, ts, pa: 1, crec: 0, nw: 2, px: "0", isp: "", ai: "", oa: "", dpc: 0, dsc: 0, qpc: 0, apad: 0, pk: "com.babycloud.hanju" });
 }
 
 export function createHanjutvUid(length = 20) {
@@ -254,14 +230,12 @@ export async function createHanjutvSearchHeaders(uid, timestamp = Date.now()) {
 
   return {
     app: "hj",
-    ch: "qq",
+    ch: HANJUTV_CH,
     uk,
-    "auth-uid": "",
     vn: HANJUTV_VERSION,
     sign,
     "User-Agent": HANJUTV_UA,
     vc: HANJUTV_VC,
-    "auth-token": "",
     "Accept-Encoding": "gzip",
     Connection: "Keep-Alive",
   };

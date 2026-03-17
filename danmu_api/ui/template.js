@@ -97,30 +97,68 @@ export const HTML_TEMPLATE = /* html */ `
             <!-- 接口调试 -->
             <div class="section" id="api-section">
                 <h2>接口调试</h2>
-                <div class="api-selector">
-                    <div class="form-group">
-                        <label>选择接口</label>
-                        <select id="api-select" onchange="loadApiParams()">
-                            <option value="">-- 请选择接口 --</option>
-                            <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
-                            <option value="searchEpisodes">搜索剧集 - /api/v2/search/episodes</option>
-                            <option value="matchAnime">匹配动漫 - /api/v2/match</option>
-                            <option value="getBangumi">获取番剧详情 - /api/v2/bangumi/:animeId</option>
-                            <option value="getComment">获取弹幕 - /api/v2/comment/:commentId</option>
-                            <option value="getSegmentComment">获取分片弹幕 - /api/v2/segmentcomment</option>
-                        </select>
+                <div class="api-top-tabs">
+                    <button class="api-top-tab active" onclick="switchApiTopTab('debug', event)">接口调试</button>
+                    <button class="api-top-tab" onclick="switchApiTopTab('danmu-test', event)">弹幕测试</button>
+                </div>
+
+                <div class="api-tab-content active" id="api-debug-content">
+                    <div class="api-selector">
+                        <div class="form-group">
+                            <label>选择接口</label>
+                            <select id="api-select" onchange="loadApiParams()">
+                                <option value="">-- 请选择接口 --</option>
+                                <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
+                                <option value="searchEpisodes">搜索剧集 - /api/v2/search/episodes</option>
+                                <option value="matchAnime">匹配动漫 - /api/v2/match</option>
+                                <option value="getBangumi">获取番剧详情 - /api/v2/bangumi/:animeId</option>
+                                <option value="getComment">获取弹幕 - /api/v2/comment/:commentId</option>
+                                <option value="getSegmentComment">获取分片弹幕 - /api/v2/segmentcomment</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="api-params" id="api-params" style="display: none;">
+                        <h3 style="margin-bottom: 15px;">接口参数</h3>
+                        <div id="params-form"></div>
+                        <button class="btn btn-success" onclick="testApi()">发送请求</button>
+                    </div>
+                    <div id="api-response-container" style="display: none;">
+                        <h3 style="margin: 20px 0 10px;">响应结果</h3>
+                        <div class="api-response" id="api-response"></div>
                     </div>
                 </div>
 
-                <div class="api-params" id="api-params" style="display: none;">
-                    <h3 style="margin-bottom: 15px;">接口参数</h3>
-                    <div id="params-form"></div>
-                    <button class="btn btn-success" onclick="testApi()">发送请求</button>
-                </div>
+                <div class="api-tab-content" id="danmu-test-content">
+                    <div class="danmu-test-tabs">
+                        <button class="danmu-test-tab active" onclick="switchDanmuTestTab('auto', event)">自动匹配测试</button>
+                        <button class="danmu-test-tab" onclick="switchDanmuTestTab('manual', event)">手动匹配测试</button>
+                    </div>
 
-                <div id="api-response-container" style="display: none;">
-                    <h3 style="margin: 20px 0 10px;">响应结果</h3>
-                    <div class="api-response" id="api-response"></div>
+                    <div class="danmu-test-panel active" id="auto-match-panel">
+                        <p style="color: #666; margin-bottom: 15px;">模拟播放器自动匹配流程：输入文件名 → 匹配剧集 → 获取弹幕</p>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>文件名</label>
+                            <div style="display:flex;gap:10px;margin-top:5px;">
+                                <input type="text" id="auto-match-filename" placeholder="示例: 生万物 S02E08, 无忧渡.S02E08.2160p.WEB-DL" style="flex:1;">
+                                <button class="btn btn-success" id="auto-match-btn" onclick="autoMatchTest()">开始匹配</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="danmu-test-panel" id="manual-match-panel">
+                        <p style="color: #666; margin-bottom: 15px;">模拟播放器手动搜索流程：搜索动漫 → 选择番剧 → 选择剧集 → 获取弹幕</p>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>搜索关键字</label>
+                            <div style="display:flex;gap:10px;margin-top:5px;">
+                                <input type="text" id="manual-search-keyword" placeholder="请输入动漫名称" style="flex:1;">
+                                <button class="btn btn-primary" id="manual-search-btn" onclick="manualSearchAnime()">搜索</button>
+                            </div>
+                        </div>
+                        <div id="manual-anime-list" style="display:none;"></div>
+                        <div id="manual-episode-list" style="display:none;"></div>
+                    </div>
+
+                    <div id="danmu-result-area" style="display:none;"></div>
                 </div>
             </div>
 

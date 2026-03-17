@@ -274,15 +274,16 @@ export class Bangumi {
 // 数据模型：SegmentListResponse
 // =====================
 export class SegmentListResponse {
-  constructor({ type = "", segmentList = [] } = {}) {
+  constructor({ type = "", segmentList = [], duration = 0 } = {}) {
     validateType(type, "string");
     validateType(segmentList, "array");
+    validateType(duration, "number");
 
     // 将 segmentList 转换为 Segment 实例数组
     this.segmentList = segmentList.map(segmentData => Segment.fromJson(segmentData));
 
     // 直接解构并赋值给 this
-    Object.assign(this, { type });
+    Object.assign(this, { type, duration });
   }
 
   // ---- 静态方法：从 JSON 创建 SegmentListResponse 对象 ----

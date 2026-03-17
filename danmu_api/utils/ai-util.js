@@ -1,5 +1,9 @@
 import { httpPost } from "./http-util.js";
 
+// =====================
+// AI客户端工具
+// =====================
+
 export default class AIClient {
   constructor({ apiKey, baseURL = 'https://api.openai.com/v1', model = 'gpt-4o', systemPrompt = '' }) {
     this.apiKey = apiKey
