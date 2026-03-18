@@ -567,6 +567,8 @@ function renderValueInput(item) {
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
+        const isDanmuOffset = currentKey === 'DANMU_OFFSET';
+        const offsetSources = item && item.sources ? item.sources : [];
 
         if (isColorPool) {
             // 自定义颜色池专用编辑界面
@@ -605,6 +607,55 @@ function renderValueInput(item) {
                 <textarea id="text-value" style="display: none;">\${value}</textarea>
             \`;
             setTimeout(initColorWheel, 0);
+        } else if (isDanmuOffset) {
+            // DANMU_OFFSET 专用编辑界面
+            const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 10) : 3;
+            container.innerHTML = \`
+                <label>变量值</label>
+                <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
+                <div style="margin-top: 8px;">
+                    <button type="button" class="btn btn-primary btn-sm" id="offset-rule-toggle" onclick="toggleOffsetRulePanel()">
+                        添加规则
+                    </button>
+                </div>
+                <div id="offset-rule-panel" class="offset-rule-panel">
+                    <div class="form-help" style="margin: 0 0 8px 0;">季和集不填则对所有季/集生效</div>
+                    <div class="offset-form-row">
+                        <div style="flex: 2; min-width: 100px;">
+                            <label class="offset-label">剧名 *</label>
+                            <input type="text" id="offset-anime" class="offset-input" placeholder="例如: overlord">
+                        </div>
+                        <div style="width: 65px;">
+                            <label class="offset-label">季</label>
+                            <input type="number" id="offset-season" class="offset-input" placeholder="" min="1" max="99">
+                        </div>
+                        <div style="width: 65px;">
+                            <label class="offset-label">集</label>
+                            <input type="number" id="offset-episode" class="offset-input" placeholder="" min="1" max="999">
+                        </div>
+                        <div style="width: 85px;">
+                            <label class="offset-label">偏移秒 *</label>
+                            <input type="number" id="offset-seconds" class="offset-input" placeholder="90">
+                        </div>
+                    </div>
+                    \${offsetSources.length > 0 ? \`
+                    <div style="margin-bottom: 10px;">
+                        <label class="offset-label">来源 (可选，不选则对所有来源生效)</label>
+                        <div id="offset-sources" class="offset-sources">
+                            \${offsetSources.map(src => \`
+                                <div class="offset-source-tag" data-value="\${src}" onclick="toggleOffsetSource(this)">
+                                    \${src}
+                                </div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                    \` : ''}
+                    <div class="offset-actions">
+                        <button type="button" class="btn btn-sm" onclick="toggleOffsetRulePanel()">取消</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="appendOffsetRule()">确认添加</button>
+                    </div>
+                </div>
+            \`;
         } else if (isAiApiKey) {
             // AI API Key 专用编辑界面
             container.innerHTML = \`
@@ -703,7 +754,8 @@ function renderColorItems(colors) {
 
 // HSL -> RGB -> 十进制
 function hslToDecimal(h, s, l) {
-    s /= 100; l /= 100;
+    s /= 100;
+    l /= 100;
     const k = n => (n + h / 30) % 12;
     const a = s * Math.min(l, 1 - l);
     const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
@@ -758,12 +810,25 @@ function initColorWheel() {
         updateWheelPreview();
     }
 
-    const onMove = e => { if (dragging) handleWheelEvent(e); };
-    const onTouchMove = e => { if (dragging) handleWheelEvent(e.touches[0]); };
-    const onUp = () => { dragging = false; };
+    const onMove = e => {
+        if (dragging) handleWheelEvent(e);
+    };
+    const onTouchMove = e => {
+        if (dragging) handleWheelEvent(e.touches[0]);
+    };
+    const onUp = () => {
+        dragging = false;
+    };
 
-    wheel.addEventListener('mousedown', e => { dragging = true; handleWheelEvent(e); });
-    wheel.addEventListener('touchstart', e => { dragging = true; handleWheelEvent(e.touches[0]); e.preventDefault(); }, { passive: false });
+    wheel.addEventListener('mousedown', e => {
+        dragging = true;
+        handleWheelEvent(e);
+    });
+    wheel.addEventListener('touchstart', e => {
+        dragging = true;
+        handleWheelEvent(e.touches[0]);
+        e.preventDefault();
+    }, { passive: false });
     document.addEventListener('mousemove', onMove);
     document.addEventListener('touchmove', onTouchMove, { passive: false });
     document.addEventListener('mouseup', onUp);
@@ -849,8 +914,9 @@ function showBatchColorDialog() {
         </div>
     \`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeBatchColorDialog(); });
-    // 实时预览
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) closeBatchColorDialog();
+    });
     const input = document.getElementById('batch-color-input');
     if (input) input.addEventListener('input', updateBatchColorPreview);
 }
@@ -868,8 +934,7 @@ function parseColorValue(raw) {
     if (s.startsWith('#')) {
         const hex = s.slice(1);
         if (/^[0-9a-fA-F]{3}$/.test(hex)) {
-            // 短格式 #fff -> #ffffff
-            const full = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            const full = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
             return parseInt(full, 16);
         }
         if (/^[0-9a-fA-F]{6}$/.test(hex)) {
@@ -912,6 +977,76 @@ function confirmBatchColor() {
     textarea.value = current ? current + ',' + newVal : newVal;
     syncColorPoolDisplay();
     closeBatchColorDialog();
+}
+
+// DANMU_OFFSET 快速配置 - 切换规则面板
+function toggleOffsetRulePanel() {
+    const panel = document.getElementById('offset-rule-panel');
+    if (panel) {
+        const isHidden = getComputedStyle(panel).display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        const btn = document.getElementById('offset-rule-toggle');
+        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+    }
+}
+
+// DANMU_OFFSET 快速配置 - 切换来源选中状态
+function toggleOffsetSource(el) {
+    el.classList.toggle('selected');
+}
+
+// DANMU_OFFSET 快速配置 - 确认添加规则
+function appendOffsetRule() {
+    const anime = document.getElementById('offset-anime').value.trim();
+    const season = document.getElementById('offset-season').value.trim();
+    const episode = document.getElementById('offset-episode').value.trim();
+    const seconds = document.getElementById('offset-seconds').value.trim();
+
+    if (!anime) {
+        customAlert('请输入剧名');
+        return;
+    }
+    if (!seconds) {
+        customAlert('请输入偏移秒数');
+        return;
+    }
+    if (episode && !season) {
+        customAlert('指定集时需要同时指定季');
+        return;
+    }
+
+    let path = anime;
+    if (season) {
+        path += '/S' + season.padStart(2, '0');
+        if (episode) {
+            path += '/E' + episode.padStart(2, '0');
+        }
+    }
+
+    const sourcesEl = document.getElementById('offset-sources');
+    if (sourcesEl) {
+        const selectedSources = Array.from(sourcesEl.querySelectorAll('.offset-source-tag.selected'))
+            .map(el => el.dataset.value);
+        if (selectedSources.length > 0) {
+            path += '@' + selectedSources.join('&');
+        }
+    }
+
+    const rule = path + ':' + seconds;
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+    textarea.value = current ? current + ',' + rule : rule;
+
+    document.getElementById('offset-anime').value = '';
+    document.getElementById('offset-season').value = '';
+    document.getElementById('offset-episode').value = '';
+    document.getElementById('offset-seconds').value = '';
+    if (sourcesEl) {
+        sourcesEl.querySelectorAll('.offset-source-tag.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+    }
+    toggleOffsetRulePanel();
 }
 
 // 调整数字

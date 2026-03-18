@@ -236,6 +236,7 @@ async function testNewFlow() {
       danmuOffset: '',
       convertTopBottomToScroll: 'false',
       convertColor: 'default',
+      colorPool: '16777215,16744319,16752762,16774799,9498256,8388564,8900346,14204888,16758465',
       likeSwitch: 'true',
       proxyUrl: '',
       tmdbApiKey: '',

@@ -2,6 +2,8 @@
  * 环境变量管理模块
  * 提供获取和设置环境变量的函数，支持 Cloudflare Workers 和 Node.js
  */
+import { parseOffsetRules } from '../utils/offset-util.js';
+
 export class Envs {
   static env;
 
@@ -526,7 +528,7 @@ export class Envs {
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
       'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
-      'DANMU_OFFSET': { category: 'danmu', type: 'text', description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，多条用逗号分隔，正数表示弹幕延后（向右），负数表示弹幕提前（向左），例如：overlord/S01:90,re-zero/S02:120,re-zero/S02/E03:10,re-zero/S02/E07:150' },
+      'DANMU_OFFSET': { category: 'danmu', type: 'text', sources: this.ALLOWED_SOURCES, description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒，多条用逗号分隔，正数表示弹幕延后（向右），负数表示弹幕提前（向左），例如：overlord/S01:90,re-zero/S02@bilibili:120,re-zero/S02/E03@dandan&bilibili:10' },
 
       // 缓存配置
       'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认1', min: 1, max: 120 },
@@ -574,6 +576,7 @@ export class Envs {
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
       likeSwitch: this.get('LIKE_SWITCH', true, 'boolean'), // 弹幕点赞数显示开关，默认开启
       danmuOffset: this.get('DANMU_OFFSET', '', 'string'), // 弹幕时间偏移配置
+      danmuOffsetRules: parseOffsetRules(this.get('DANMU_OFFSET', '', 'string')), // 解析后的偏移规则（缓存）
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url
       redisToken: this.get('UPSTASH_REDIS_REST_TOKEN', '', 'string', true), // upstash redis url
