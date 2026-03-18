@@ -93,6 +93,56 @@ function findCachedAnimeLinkByCommentId(commentId) {
     return null;
 }
 
+function matchesAnimeId(anime, targetId) {
+    if (!anime) {
+        return false;
+    }
+
+    return String(anime.bangumiId) === targetId || String(anime.animeId) === targetId;
+}
+
+export function findAnimeById(idParam, detailsMap = null) {
+    const targetId = String(idParam);
+
+    if (detailsMap instanceof Map) {
+        const directAnime = detailsMap.get(targetId);
+        if (directAnime) {
+            return directAnime;
+        }
+
+        for (const anime of detailsMap.values()) {
+            if (matchesAnimeId(anime, targetId)) {
+                return anime;
+            }
+        }
+    }
+
+    for (const anime of globals.animes) {
+        if (matchesAnimeId(anime, targetId)) {
+            return anime;
+        }
+    }
+
+    for (const [keyword] of globals.searchCache.entries()) {
+        if (!isSearchCacheValid(keyword)) {
+            continue;
+        }
+
+        const cached = globals.searchCache.get(keyword);
+        if (!cached || !Array.isArray(cached.details)) {
+            continue;
+        }
+
+        for (const anime of cached.details) {
+            if (matchesAnimeId(anime, targetId)) {
+                return anime;
+            }
+        }
+    }
+
+    return null;
+}
+
 // 检查搜索缓存是否有效（未过期）
 export function isSearchCacheValid(keyword) {
     if (!globals.searchCache.has(keyword)) {

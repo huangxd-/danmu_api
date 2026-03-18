@@ -7,7 +7,7 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
+    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById, findAnimeById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { resolveOffset, applyOffset } from "../utils/offset-util.js";
@@ -470,7 +470,10 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
         continue; // 跳过该动漫
       }
 
-      const animeData = globals.animes.find(a => a.animeId === anime.animeId);
+      const animeData =
+        currentRequestAnimeDetailsMap.get(String(anime.bangumiId)) ||
+        currentRequestAnimeDetailsMap.get(String(anime.animeId)) ||
+        findAnimeById(anime.animeId, currentRequestAnimeDetailsMap);
       if (animeData && animeData.links) {
         let episodesList = animeData.links.map((link, index) => ({
           episodeId: link.id,
@@ -1187,10 +1190,8 @@ export async function searchEpisodes(url) {
   // 遍历所有找到的动漫，获取它们的集数信息
   for (const animeItem of searchData.animes) {
     const detailAnime =
-      requestAnimeDetailsMap.get(String(animeItem.bangumiId)) ||
-      requestAnimeDetailsMap.get(String(animeItem.animeId)) ||
-      globals.animes.find(a => String(a.bangumiId) === String(animeItem.bangumiId)) ||
-      globals.animes.find(a => String(a.animeId) === String(animeItem.animeId));
+      findAnimeById(animeItem.bangumiId, requestAnimeDetailsMap) ||
+      findAnimeById(animeItem.animeId, requestAnimeDetailsMap);
 
     let bangumiData = null;
     if (detailAnime) {
@@ -1254,19 +1255,7 @@ export async function searchEpisodes(url) {
 // Extracted function for GET /api/v2/bangumi/:animeId
 export async function getBangumi(path) {
   const idParam = path.split("/").pop();
-  const animeId = parseInt(idParam);
-
-  // 尝试通过 animeId(数字) 或 bangumiId(字符串) 查找
-  let anime;
-  if (!isNaN(animeId)) {
-    // 如果是有效数字,先尝试通过 animeId 查找
-    anime = globals.animes.find((a) => a.animeId.toString() === animeId.toString());
-  }
-
-  // 如果通过 animeId 未找到,尝试通过 bangumiId 查找
-  if (!anime) {
-    anime = globals.animes.find((a) => a.bangumiId === idParam);
-  }
+  const anime = findAnimeById(idParam);
 
   if (!anime) {
     log("error", `Anime with ID ${idParam} not found`);
