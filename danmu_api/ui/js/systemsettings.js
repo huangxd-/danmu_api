@@ -566,8 +566,46 @@ function renderValueInput(item) {
         const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
-        
-        if (isAiApiKey) {
+        const isColorPool = currentKey === 'COLOR_POOL';
+
+        if (isColorPool) {
+            // 自定义颜色池专用编辑界面
+            const colors = parseColorPool(value);
+
+            container.innerHTML = \`
+                <label>颜色池配置 (CONVERT_COLOR 为 color 时生效)</label>
+                <div id="color-pool-display" class="color-pool-display">
+                    \${renderColorItems(colors)}
+                </div>
+                <div class="color-pool-picker">
+                    <div class="color-pool-picker-inner">
+                        <div id="color-wheel" class="color-wheel">
+                            <div class="color-wheel-center"></div>
+                            <div id="wheel-dot" class="color-wheel-dot" style="top: 2px; left: 53px; background: hsl(0,100%,50%);"></div>
+                        </div>
+                        <div class="color-pool-preview">
+                            <div id="color-preview-swatch" class="color-pool-preview-swatch" style="background: #ff0000;"></div>
+                            <span id="color-preview-hex" class="color-pool-preview-hex">#ff0000</span>
+                        </div>
+                        <div class="color-pool-lightness">
+                            <span>亮度</span>
+                            <input type="range" id="color-lightness" min="10" max="100" value="50">
+                        </div>
+                        <div class="color-pool-actions">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="addColorToPool()">添加到颜色池</button>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="addRandomColorToPool()">随机添加</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="color-pool-actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showBatchColorDialog()">批量添加</button>
+                    <div class="spacer"></div>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="resetColorPool()">恢复默认</button>
+                </div>
+                <textarea id="text-value" style="display: none;">\${value}</textarea>
+            \`;
+            setTimeout(initColorWheel, 0);
+        } else if (isAiApiKey) {
             // AI API Key 专用编辑界面
             container.innerHTML = \`
                 <div class="ai-apikey-editor">
@@ -636,6 +674,244 @@ function renderValueInput(item) {
             \`; 
         }
     }
+}
+
+// ===== 颜色池操作函数 =====
+
+// 色轮状态
+let wheelHue = 0;
+let wheelLightness = 50;
+let wheelCleanup = null;
+
+// 解析颜色池字符串为十进制数组
+function parseColorPool(str) {
+    if (!str) return [];
+    return str.split(',').map(c => parseInt(c.trim(), 10)).filter(c => !isNaN(c) && c >= 0 && c <= 16777215);
+}
+
+// 渲染颜色池色块 HTML
+function renderColorItems(colors) {
+    if (colors.length === 0) return '<span class="color-pool-empty">未配置，将使用默认颜色池</span>';
+    return colors.map((c, i) => \`
+        <div class="color-pool-item">
+            <span class="color-pool-swatch" style="background: #\${c.toString(16).padStart(6, '0')};"></span>
+            <span class="color-pool-value">\${c}</span>
+            <button type="button" class="color-pool-remove" onclick="removeColorFromPool(\${i})">&times;</button>
+        </div>
+    \`).join('');
+}
+
+// HSL -> RGB -> 十进制
+function hslToDecimal(h, s, l) {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+    const r = Math.round(f(0) * 255);
+    const g = Math.round(f(8) * 255);
+    const b = Math.round(f(4) * 255);
+    return (r << 16) | (g << 8) | b;
+}
+
+// 更新色轮预览
+function updateWheelPreview() {
+    const dec = hslToDecimal(wheelHue, 100, wheelLightness);
+    const hex = '#' + dec.toString(16).padStart(6, '0');
+    const swatch = document.getElementById('color-preview-swatch');
+    const hexLabel = document.getElementById('color-preview-hex');
+    const dot = document.getElementById('wheel-dot');
+    if (swatch) swatch.style.background = hex;
+    if (hexLabel) hexLabel.textContent = hex;
+    if (dot) dot.style.background = hex;
+}
+
+// 初始化色轮交互
+function initColorWheel() {
+    if (wheelCleanup) wheelCleanup();
+
+    const wheel = document.getElementById('color-wheel');
+    const slider = document.getElementById('color-lightness');
+    if (!wheel) return;
+
+    let dragging = false;
+
+    function handleWheelEvent(e) {
+        const rect = wheel.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        const x = e.clientX - rect.left - cx;
+        const y = e.clientY - rect.top - cy;
+        const dist = Math.sqrt(x * x + y * y);
+        const outerR = rect.width / 2;
+        const innerR = outerR * 0.22;
+        if (dist < innerR || dist > outerR) return;
+        let angle = Math.atan2(y, x) * 180 / Math.PI + 90;
+        if (angle < 0) angle += 360;
+        wheelHue = Math.round(angle % 360);
+        const dot = document.getElementById('wheel-dot');
+        if (dot) {
+            const r = (innerR + outerR) / 2;
+            const rad = (wheelHue - 90) * Math.PI / 180;
+            dot.style.left = (cx + r * Math.cos(rad) - 7) + 'px';
+            dot.style.top = (cy + r * Math.sin(rad) - 7) + 'px';
+        }
+        updateWheelPreview();
+    }
+
+    const onMove = e => { if (dragging) handleWheelEvent(e); };
+    const onTouchMove = e => { if (dragging) handleWheelEvent(e.touches[0]); };
+    const onUp = () => { dragging = false; };
+
+    wheel.addEventListener('mousedown', e => { dragging = true; handleWheelEvent(e); });
+    wheel.addEventListener('touchstart', e => { dragging = true; handleWheelEvent(e.touches[0]); e.preventDefault(); }, { passive: false });
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchend', onUp);
+
+    if (slider) {
+        slider.addEventListener('input', function() {
+            wheelLightness = parseInt(this.value, 10);
+            updateWheelPreview();
+        });
+    }
+
+    wheelCleanup = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchend', onUp);
+        wheelCleanup = null;
+    };
+
+    updateWheelPreview();
+}
+
+// 颜色池 - 追加颜色值
+function appendColorToPool(decimal) {
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+    textarea.value = current ? current + ',' + decimal : String(decimal);
+    syncColorPoolDisplay();
+}
+
+// 颜色池 - 从色轮添加
+function addColorToPool() {
+    appendColorToPool(hslToDecimal(wheelHue, 100, wheelLightness));
+}
+
+// 颜色池 - 随机添加（crypto 真随机）
+function addRandomColorToPool() {
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    appendColorToPool(arr[0] % 16777216);
+}
+
+// 颜色池 - 删除指定颜色
+function removeColorFromPool(index) {
+    const textarea = document.getElementById('text-value');
+    const colors = textarea.value.split(',').map(c => c.trim()).filter(c => c);
+    colors.splice(index, 1);
+    textarea.value = colors.join(',');
+    syncColorPoolDisplay();
+}
+
+// 颜色池 - 恢复默认（清空值，后端默认值自动生效）
+function resetColorPool() {
+    const textarea = document.getElementById('text-value');
+    textarea.value = '';
+    syncColorPoolDisplay();
+}
+
+// 颜色池 - 同步色块展示
+function syncColorPoolDisplay() {
+    const textarea = document.getElementById('text-value');
+    const display = document.getElementById('color-pool-display');
+    if (!textarea || !display) return;
+    display.innerHTML = renderColorItems(parseColorPool(textarea.value));
+}
+
+// 颜色池 - 批量添加弹窗
+function showBatchColorDialog() {
+    const overlay = document.createElement('div');
+    overlay.id = 'batch-color-overlay';
+    overlay.className = 'batch-color-overlay';
+    overlay.innerHTML = \`
+        <div class="batch-color-dialog">
+            <div style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">批量添加颜色</div>
+            <div class="form-help" style="margin: 0 0 10px 0;">支持十进制（如 16777215）和十六进制（如 #ffffff），逗号分隔</div>
+            <textarea id="batch-color-input" class="batch-color-input" placeholder="例如: #ff0000, 65280, #0000ff, 16776960" rows="4"></textarea>
+            <div id="batch-color-preview" class="batch-color-preview"></div>
+            <div class="batch-color-actions">
+                <button type="button" class="btn btn-sm" onclick="closeBatchColorDialog()">取消</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="confirmBatchColor()">确认添加</button>
+            </div>
+        </div>
+    \`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeBatchColorDialog(); });
+    // 实时预览
+    const input = document.getElementById('batch-color-input');
+    if (input) input.addEventListener('input', updateBatchColorPreview);
+}
+
+// 颜色池 - 关闭批量弹窗
+function closeBatchColorDialog() {
+    const overlay = document.getElementById('batch-color-overlay');
+    if (overlay) overlay.remove();
+}
+
+// 颜色池 - 解析单个颜色值（支持十进制和 #hex）
+function parseColorValue(raw) {
+    const s = raw.trim();
+    if (!s) return NaN;
+    if (s.startsWith('#')) {
+        const hex = s.slice(1);
+        if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+            // 短格式 #fff -> #ffffff
+            const full = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            return parseInt(full, 16);
+        }
+        if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+            return parseInt(hex, 16);
+        }
+        return NaN;
+    }
+    const n = parseInt(s, 10);
+    if (isNaN(n) || n < 0 || n > 16777215) return NaN;
+    return n;
+}
+
+// 颜色池 - 批量预览
+function updateBatchColorPreview() {
+    const input = document.getElementById('batch-color-input');
+    const preview = document.getElementById('batch-color-preview');
+    if (!input || !preview) return;
+    const parts = input.value.split(',');
+    const html = parts.map(raw => {
+        const c = parseColorValue(raw);
+        if (isNaN(c)) return '';
+        return \`<span class="batch-color-preview-swatch" style="background: #\${c.toString(16).padStart(6, '0')};"></span>\`;
+    }).filter(Boolean).join('');
+    preview.innerHTML = html || '<span class="color-pool-empty">输入颜色后预览</span>';
+}
+
+// 颜色池 - 确认批量添加
+function confirmBatchColor() {
+    const input = document.getElementById('batch-color-input');
+    if (!input) return;
+    const parts = input.value.split(',');
+    const valid = parts.map(raw => parseColorValue(raw)).filter(c => !isNaN(c));
+    if (valid.length === 0) {
+        customAlert('未识别到有效颜色值');
+        return;
+    }
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+    const newVal = valid.map(String).join(',');
+    textarea.value = current ? current + ',' + newVal : newVal;
+    syncColorPoolDisplay();
+    closeBatchColorDialog();
 }
 
 // 调整数字

@@ -345,8 +345,7 @@ export function convertToDanmakuJson(contents, platform) {
         modified = true;
       }
       // 2.2 将白色弹幕转换为随机颜色，白、红、橙、黄、绿、青、蓝、紫、粉（模拟真实情况，增加白色出现概率）
-      let colors = [16777215, 16777215, 16777215, 16777215, 16777215, 16777215, 16777215, 16777215, 
-                    16744319, 16752762, 16774799, 9498256, 8388564, 8900346, 14204888, 16758465];
+      let colors = globals.colorPool.split(',').map(c => parseInt(c.trim(), 10)).filter(c => !isNaN(c) && c >= 0 && c <= 16777215);
       let randomColor = colors[Math.floor(Math.random() * colors.length)];
       if (globals.convertColor === 'color' && color === 16777215 && color !== randomColor) {
         colorCount++;
