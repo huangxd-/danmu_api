@@ -48,18 +48,34 @@ export function isSearchCacheValid(keyword) {
 }
 
 // 获取搜索缓存
-export function getSearchCache(keyword) {
+export function getSearchCache(keyword, detailsMap = null) {
     if (isSearchCacheValid(keyword)) {
         log("info", `Using search cache for "${keyword}"`);
-        return globals.searchCache.get(keyword).results;
+        const cached = globals.searchCache.get(keyword);
+
+        if (detailsMap instanceof Map && Array.isArray(cached.details)) {
+            cached.details.forEach(anime => {
+                detailsMap.set(String(anime.bangumiId), anime);
+                detailsMap.set(String(anime.animeId), anime);
+            });
+        }
+
+        return cached.results;
     }
     return null;
 }
 
 // 设置搜索缓存
-export function setSearchCache(keyword, results) {
+export function setSearchCache(keyword, results, detailsMap = null) {
+    const details = detailsMap instanceof Map
+        ? Array.from(new Map(
+            Array.from(detailsMap.values()).map(anime => [String(anime.bangumiId || anime.animeId), anime])
+          ).values())
+        : [];
+
     globals.searchCache.set(keyword, {
         results: results,
+        details: details,
         timestamp: Date.now()
     });
 
@@ -212,6 +228,12 @@ export function addAnime(anime) {
 
         // 创建新的 anime 副本
         const animeCopy = Anime.fromJson({ ...anime, links: newLinks });
+
+        // 当前请求内额外保留一份详情，避免被全局数量上限裁剪后丢失
+        if (globals.requestAnimeDetailsMap instanceof Map) {
+            globals.requestAnimeDetailsMap.set(String(animeCopy.bangumiId), animeCopy);
+            globals.requestAnimeDetailsMap.set(String(animeCopy.animeId), animeCopy);
+        }
 
         // 检查是否已存在相同 animeId 的 anime
         const existingAnimeIndex = globals.animes.findIndex(a => a.animeId === anime.animeId);

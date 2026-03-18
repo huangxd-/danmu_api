@@ -231,18 +231,28 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     queryTitle = simplifiedTitle;
   }
 
-  // 检查搜索缓存
-  const cachedResults = getSearchCache(queryTitle);
-  if (cachedResults !== null) {
-    return jsonResponse({
-      errorCode: 0,
-      success: true,
-      errorMessage: "",
-      animes: cachedResults,
-    });
+  const previousRequestAnimeDetailsMap = globals.requestAnimeDetailsMap;
+  const requestAnimeDetailsMap = previousRequestAnimeDetailsMap instanceof Map
+    ? previousRequestAnimeDetailsMap
+    : new Map();
+
+  if (!(previousRequestAnimeDetailsMap instanceof Map)) {
+    globals.requestAnimeDetailsMap = requestAnimeDetailsMap;
   }
 
-  const curAnimes = [];
+  try {
+    // 检查搜索缓存
+    const cachedResults = getSearchCache(queryTitle, requestAnimeDetailsMap);
+    if (cachedResults !== null) {
+      return jsonResponse({
+        errorCode: 0,
+        success: true,
+        errorMessage: "",
+        animes: cachedResults,
+      });
+    }
+
+    const curAnimes = [];
 
   // 链接弹幕解析
   const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}(:\d+)?(\/[^\s]*)?$/;
@@ -478,29 +488,34 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     curAnimes.push(...validAnimes);
   }
 
-  // 如果有新的anime获取到，则更新本地缓存
-  if (globals.localCacheValid && curAnimes.length !== 0) {
-    await updateLocalCaches();
-  }
-  // 如果有新的anime获取到，则更新redis
-  if (globals.redisValid && curAnimes.length !== 0) {
-    await updateRedisCaches();
-  }
-  if (globals.localRedisValid && curAnimes.length !== 0) {
-    await updateLocalRedisCaches();
-  }
+    // 如果有新的anime获取到，则更新本地缓存
+    if (globals.localCacheValid && curAnimes.length !== 0) {
+      await updateLocalCaches();
+    }
+    // 如果有新的anime获取到，则更新redis
+    if (globals.redisValid && curAnimes.length !== 0) {
+      await updateRedisCaches();
+    }
+    if (globals.localRedisValid && curAnimes.length !== 0) {
+      await updateLocalRedisCaches();
+    }
 
-  // 缓存搜索结果
-  if (curAnimes.length > 0) {
-    setSearchCache(queryTitle, curAnimes);
-  }
+    // 缓存搜索结果
+    if (curAnimes.length > 0) {
+      setSearchCache(queryTitle, curAnimes, requestAnimeDetailsMap);
+    }
 
-  return jsonResponse({
-    errorCode: 0,
-    success: true,
-    errorMessage: "",
-    animes: curAnimes,
-  });
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: curAnimes,
+    });
+  } finally {
+    if (!(previousRequestAnimeDetailsMap instanceof Map)) {
+      globals.requestAnimeDetailsMap = previousRequestAnimeDetailsMap;
+    }
+  }
 }
 
 function filterSameEpisodeTitle(filteredTmpEpisodes) {
@@ -1144,8 +1159,17 @@ export async function searchEpisodes(url) {
 
   // 先搜索动漫
   let searchUrl = new URL(`/search/anime?keyword=${anime}`, url.origin);
-  const searchRes = await searchAnime(searchUrl);
-  const searchData = await searchRes.json();
+  const previousRequestAnimeDetailsMap = globals.requestAnimeDetailsMap;
+  const requestAnimeDetailsMap = new Map();
+  globals.requestAnimeDetailsMap = requestAnimeDetailsMap;
+
+  let searchData;
+  try {
+    const searchRes = await searchAnime(searchUrl);
+    searchData = await searchRes.json();
+  } finally {
+    globals.requestAnimeDetailsMap = previousRequestAnimeDetailsMap;
+  }
 
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
     log("info", "No anime found for the given title");
@@ -1162,9 +1186,20 @@ export async function searchEpisodes(url) {
 
   // 遍历所有找到的动漫，获取它们的集数信息
   for (const animeItem of searchData.animes) {
-    const bangumiUrl = new URL(`/bangumi/${animeItem.bangumiId}`, url.origin);
-    const bangumiRes = await getBangumi(bangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
+    const detailAnime =
+      requestAnimeDetailsMap.get(String(animeItem.bangumiId)) ||
+      requestAnimeDetailsMap.get(String(animeItem.animeId)) ||
+      globals.animes.find(a => String(a.bangumiId) === String(animeItem.bangumiId)) ||
+      globals.animes.find(a => String(a.animeId) === String(animeItem.animeId));
+
+    let bangumiData = null;
+    if (detailAnime) {
+      bangumiData = buildBangumiData(detailAnime, animeItem.bangumiId);
+    } else {
+      const bangumiUrl = new URL(`/bangumi/${animeItem.bangumiId}`, url.origin);
+      const bangumiRes = await getBangumi(bangumiUrl.pathname);
+      bangumiData = await bangumiRes.json();
+    }
 
     if (bangumiData.success && bangumiData.bangumi && bangumiData.bangumi.episodes) {
       let filteredEpisodes = bangumiData.bangumi.episodes;
@@ -1240,7 +1275,11 @@ export async function getBangumi(path) {
       404
     );
   }
-  log("info", `Fetched details for anime ID: ${idParam}`);
+  return jsonResponse(buildBangumiData(anime, idParam));
+}
+
+function buildBangumiData(anime, idParam = "") {
+  log("info", `Fetched details for anime ID: ${idParam || anime.bangumiId}`);
 
   // 构建 episodes 列表
   let episodesList = [];
@@ -1264,11 +1303,13 @@ export async function getBangumi(path) {
 
     // 如果过滤后没有有效剧集，返回错误
     if (episodesList.length === 0) {
-      log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam}`);
-      return jsonResponse(
-        { errorCode: 404, success: false, errorMessage: "No valid episodes after filtering", bangumi: null },
-        404
-      );
+      log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam || anime.bangumiId}`);
+      return {
+        errorCode: 404,
+        success: false,
+        errorMessage: "No valid episodes after filtering",
+        bangumi: null
+      };
     }
 
     // 重新排序episodeNumber
@@ -1300,12 +1341,12 @@ export async function getBangumi(path) {
     episodes: episodesList,
   });
 
-  return jsonResponse({
+  return {
     errorCode: 0,
     success: true,
     errorMessage: "",
     bangumi: bangumi
-  });
+  };
 }
 
 /**
