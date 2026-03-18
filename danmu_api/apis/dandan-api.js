@@ -9,7 +9,8 @@ import {
     getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
-import { formatDanmuResponse, convertToDanmakuJson, getOffset, applyDanmuOffset } from "../utils/danmu-util.js";
+import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
+import { resolveOffset, applyOffset } from "../utils/offset-util.js";
 import { 
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, 
   extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle
@@ -1353,7 +1354,7 @@ function buildBangumiData(anime, idParam = "") {
  * @param {string} url 聚合URL
  * @returns {Promise<Array>} 合并后的弹幕列表
  */
-async function fetchMergedComments(url) {
+async function fetchMergedComments(url, animeTitle, commentId) {
   const parts = url.split(MERGE_DELIMITER);
   const sourceNames = parts.map(part => part.split(':')[0]).filter(Boolean);
   const sourceTag = sourceNames.join('＆');
@@ -1469,7 +1470,29 @@ async function fetchMergedComments(url) {
     // 执行对齐函数
     alignSourceTimelines(results, sourceNames, realIds, dandanShifts);
   }
-  
+
+  // 按来源分别应用弹幕时间偏移（对齐后、合并前）
+  if (globals.danmuOffsetRules?.length > 0 && animeTitle && commentId) {
+    const [, , episodeTitle] = findAnimeIdByCommentId(commentId);
+    if (episodeTitle) {
+      let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+      season ||= 1;
+      episode ||= findIndexById(commentId) + 1;
+      const seasonStr = `S${season.toString().padStart(2, '0')}`;
+      const episodeStr = `E${episode.toString().padStart(2, '0')}`;
+
+      results.forEach((list, idx) => {
+        const offset = resolveOffset(globals.danmuOffsetRules, {
+          anime: baseTitle, season: seasonStr, episode: episodeStr, source: sourceNames[idx]
+        });
+        if (offset !== 0 && Array.isArray(list)) {
+          log("info", `[Merge] 应用偏移 ${offset}s -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})`);
+          results[idx] = applyOffset(list, offset);
+        }
+      });
+    }
+  }
+
   // 3. 合并数据
   let mergedList = [];
   results.forEach(list => {
@@ -1515,7 +1538,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   const durationPromise = shouldAttachDuration ? resolveMergedDuration(url) : null;
 
   if (url && url.includes(MERGE_DELIMITER)) {
-    danmus = await fetchMergedComments(url);
+    danmus = await fetchMergedComments(url, animeTitle, commentId);
   } else {
     if (url.includes('.qq.com')) {
       danmus = await tencentSource.getComments(url, plat, segmentFlag);
@@ -1601,17 +1624,19 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     }
   }
 
-  // 应用弹幕时间偏移
-  if (animeTitle && episodeTitle && globals.danmuOffset) {
+  // 应用弹幕时间偏移（合并源已在 fetchMergedComments 中按来源分别应用）
+  if (animeTitle && episodeTitle && globals.danmuOffsetRules?.length > 0 && !(url && url.includes(MERGE_DELIMITER))) {
     let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
     season ||= 1;
     episode ||= findIndexById(commentId) + 1;
     const seasonStr = `S${season.toString().padStart(2, '0')}`;
     const episodeStr = `E${episode.toString().padStart(2, '0')}`;
-    const offset = getOffset(baseTitle, seasonStr, episodeStr);
+    const offset = resolveOffset(globals.danmuOffsetRules, {
+      anime: baseTitle, season: seasonStr, episode: episodeStr, source
+    });
     if (offset !== 0) {
       log("info", `Applying danmu offset: ${offset}s for ${baseTitle}/${seasonStr}/${episodeStr}`);
-      danmus = applyDanmuOffset(danmus, offset);
+      danmus = applyOffset(danmus, offset);
     }
   }
 
