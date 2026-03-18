@@ -24,7 +24,7 @@ export const Globals = {
   episodeNum: 10001, // 全局变量，用于自增 ID
   logBuffer: [],
   requestHistory: new Map(), // 记录每个 IP 地址的请求历史
-  requestAnimeDetailsMap: null, // 当前请求内的详情缓存，避免搜索结果被全局上限裁剪后丢失
+  requestAnimeDetailsMaps: new Set(), // 当前活跃请求的详情收集器
   localCacheValid: false, // 本地缓存是否生效
   localCacheInitialized: false, // 本地缓存是否已初始化
   redisValid: false, // redis是否生效
@@ -42,7 +42,7 @@ export const Globals = {
     reqRecords: null,
     todayReqNum: null
   },
-  searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
+  searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, details, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
   deployPlatform: '', // 部署平台配置
   currentToken: '', // 标识当前可用token

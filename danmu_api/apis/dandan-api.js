@@ -210,7 +210,7 @@ export function matchSeason(anime, queryTitle, season) {
 }
 
 // Extracted function for GET /api/v2/search/anime
-export async function searchAnime(url, preferAnimeId = null, preferSource = null) {
+export async function searchAnime(url, preferAnimeId = null, preferSource = null, requestAnimeDetailsMap = null) {
   let queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
@@ -231,18 +231,25 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     queryTitle = simplifiedTitle;
   }
 
-  const previousRequestAnimeDetailsMap = globals.requestAnimeDetailsMap;
-  const requestAnimeDetailsMap = previousRequestAnimeDetailsMap instanceof Map
-    ? previousRequestAnimeDetailsMap
+  const activeRequestAnimeDetailsMaps = globals.requestAnimeDetailsMaps instanceof Set
+    ? globals.requestAnimeDetailsMaps
+    : new Set();
+  const currentRequestAnimeDetailsMap = requestAnimeDetailsMap instanceof Map
+    ? requestAnimeDetailsMap
     : new Map();
+  const shouldCleanupCollector = !activeRequestAnimeDetailsMaps.has(currentRequestAnimeDetailsMap);
 
-  if (!(previousRequestAnimeDetailsMap instanceof Map)) {
-    globals.requestAnimeDetailsMap = requestAnimeDetailsMap;
+  if (!(globals.requestAnimeDetailsMaps instanceof Set)) {
+    globals.requestAnimeDetailsMaps = activeRequestAnimeDetailsMaps;
+  }
+
+  if (shouldCleanupCollector) {
+    activeRequestAnimeDetailsMaps.add(currentRequestAnimeDetailsMap);
   }
 
   try {
     // 检查搜索缓存
-    const cachedResults = getSearchCache(queryTitle, requestAnimeDetailsMap);
+    const cachedResults = getSearchCache(queryTitle, currentRequestAnimeDetailsMap);
     if (cachedResults !== null) {
       return jsonResponse({
         errorCode: 0,
@@ -502,7 +509,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
 
     // 缓存搜索结果
     if (curAnimes.length > 0) {
-      setSearchCache(queryTitle, curAnimes, requestAnimeDetailsMap);
+      setSearchCache(queryTitle, curAnimes, currentRequestAnimeDetailsMap);
     }
 
     return jsonResponse({
@@ -512,8 +519,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       animes: curAnimes,
     });
   } finally {
-    if (!(previousRequestAnimeDetailsMap instanceof Map)) {
-      globals.requestAnimeDetailsMap = previousRequestAnimeDetailsMap;
+    if (shouldCleanupCollector) {
+      activeRequestAnimeDetailsMaps.delete(currentRequestAnimeDetailsMap);
     }
   }
 }
@@ -1159,17 +1166,9 @@ export async function searchEpisodes(url) {
 
   // 先搜索动漫
   let searchUrl = new URL(`/search/anime?keyword=${anime}`, url.origin);
-  const previousRequestAnimeDetailsMap = globals.requestAnimeDetailsMap;
   const requestAnimeDetailsMap = new Map();
-  globals.requestAnimeDetailsMap = requestAnimeDetailsMap;
-
-  let searchData;
-  try {
-    const searchRes = await searchAnime(searchUrl);
-    searchData = await searchRes.json();
-  } finally {
-    globals.requestAnimeDetailsMap = previousRequestAnimeDetailsMap;
-  }
+  const searchRes = await searchAnime(searchUrl, null, null, requestAnimeDetailsMap);
+  const searchData = await searchRes.json();
 
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
     log("info", "No anime found for the given title");
