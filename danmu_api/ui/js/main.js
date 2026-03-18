@@ -204,7 +204,8 @@ function loadEnvVariables() {
                     type: varConfig.type || 'text',
                     min: varConfig.min,
                     max: varConfig.max,
-                    options: varConfig.options || [] // 仅对 select 和 multi-select 类型有效
+                    options: varConfig.options || [], // 仅对 select 和 multi-select 类型有效
+                    sources: varConfig.sources || null // 仅对 DANMU_OFFSET 等需要来源配置的有效
                 });
             });
             

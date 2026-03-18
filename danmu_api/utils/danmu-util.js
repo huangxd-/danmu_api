@@ -505,38 +505,74 @@ export function formatDanmuResponse(danmuData, queryFormat) {
   return jsonResponse(danmuData);
 }
 
-// 解析偏移量配置
+// 解析偏移量配置（支持 @来源 语法）
 function parseOffset(env) {
   const map = new Map();
   if (!env) return map;
   for (const entry of env.split(',')) {
-    const [path, sec] = entry.trim().split(':');
-    if (path && sec !== undefined) {
-      const normalizedPath = path.trim().split('/').map((segment, index) => {
-        if (index === 0) return segment; // 剧名不处理
-        const seasonMatch = segment.match(/^S(\d+)$/i);
-        if (seasonMatch) return `S${String(parseInt(seasonMatch[1])).padStart(2, '0')}`;
-        const episodeMatch = segment.match(/^E(\d+)$/i);
-        if (episodeMatch) return `E${String(parseInt(episodeMatch[1])).padStart(2, '0')}`;
-        return segment;
-      }).join('/');
-      map.set(normalizedPath, parseInt(sec));
+    const colonIdx = entry.trim().lastIndexOf(':');
+    if (colonIdx === -1) continue;
+    const rawPath = entry.trim().substring(0, colonIdx);
+    const sec = entry.trim().substring(colonIdx + 1);
+    if (!rawPath || sec === undefined) continue;
+
+    // 分离 @来源 部分
+    const atIdx = rawPath.lastIndexOf('@');
+    let pathPart, sources;
+    if (atIdx !== -1) {
+      pathPart = rawPath.substring(0, atIdx);
+      sources = rawPath.substring(atIdx + 1).split('&').map(s => s.trim()).filter(s => s);
+    } else {
+      pathPart = rawPath;
+      sources = null; // 无来源限定
+    }
+
+    const normalizedPath = pathPart.trim().split('/').map((segment, index) => {
+      if (index === 0) return segment; // 剧名不处理
+      const seasonMatch = segment.match(/^S(\d+)$/i);
+      if (seasonMatch) return `S${String(parseInt(seasonMatch[1])).padStart(2, '0')}`;
+      const episodeMatch = segment.match(/^E(\d+)$/i);
+      if (episodeMatch) return `E${String(parseInt(episodeMatch[1])).padStart(2, '0')}`;
+      return segment;
+    }).join('/');
+
+    const offsetVal = parseInt(sec);
+    if (sources) {
+      // 为每个来源创建独立条目
+      for (const src of sources) {
+        map.set(`${normalizedPath}@${src}`, offsetVal);
+      }
+    } else {
+      map.set(normalizedPath, offsetVal);
     }
   }
   return map;
 }
 
-// 获取偏移量
-export function getOffset(anime, season, episode) {
+// 获取偏移量（支持按来源匹配，优先匹配带来源的规则，再 fallback 到通用规则）
+export function getOffset(anime, season, episode, source) {
   const map = parseOffset(globals.danmuOffset);
-  log("info", `getOffset params: ${anime}, ${season}, ${episode}`);
+  log("info", `getOffset params: ${anime}, ${season}, ${episode}, source=${source || 'none'}`);
   log("info", `getOffset map: ${JSON.stringify([...map])}`);
-  return (
-    map.get(`${anime}/${season}/${episode}`) ??  // 集级
-    map.get(`${anime}/${season}`) ??             // 季级
-    map.get(anime) ??                            // 剧级
-    0
-  );
+
+  // 来源可能是合并来源如 dandan&bilibili1&animeko，拆分后逐个匹配
+  const sources = source ? source.split('&').map(s => s.trim()).filter(s => s) : [];
+
+  const paths = [
+    `${anime}/${season}/${episode}`,  // 集级
+    `${anime}/${season}`,             // 季级
+    anime                             // 剧级
+  ];
+
+  for (const p of paths) {
+    // 优先匹配带来源的规则
+    for (const src of sources) {
+      if (map.has(`${p}@${src}`)) return map.get(`${p}@${src}`);
+    }
+    // 再 fallback 到通用规则
+    if (map.has(p)) return map.get(p);
+  }
+  return 0;
 }
 
 // 应用弹幕时间偏移

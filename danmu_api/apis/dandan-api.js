@@ -1568,7 +1568,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     episode ||= findIndexById(commentId) + 1;
     const seasonStr = `S${season.toString().padStart(2, '0')}`;
     const episodeStr = `E${episode.toString().padStart(2, '0')}`;
-    const offset = getOffset(baseTitle, seasonStr, episodeStr);
+    const offset = getOffset(baseTitle, seasonStr, episodeStr, source);
     if (offset !== 0) {
       log("info", `Applying danmu offset: ${offset}s for ${baseTitle}/${seasonStr}/${episodeStr}`);
       danmus = applyDanmuOffset(danmus, offset);

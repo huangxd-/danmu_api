@@ -374,6 +374,8 @@ export const componentsCssContent = /* css */ `
     border-radius: 12px;
     max-width: 600px;
     width: 100%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0,0,0,0.3);
     position: relative;
     top: 0;

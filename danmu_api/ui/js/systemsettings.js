@@ -566,8 +566,60 @@ function renderValueInput(item) {
         const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
-        
-        if (isAiApiKey) {
+        const isDanmuOffset = currentKey === 'DANMU_OFFSET';
+        const offsetSources = item && item.sources ? item.sources : [];
+
+        if (isDanmuOffset) {
+            // DANMU_OFFSET 专用编辑界面
+            const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 10) : 3;
+            container.innerHTML = \`
+                <label>变量值</label>
+                <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
+                <div style="margin-top: 8px;">
+                    <button type="button" class="btn btn-primary btn-sm" id="offset-rule-toggle" onclick="toggleOffsetRulePanel()">
+                        添加规则
+                    </button>
+                </div>
+                <div id="offset-rule-panel" style="display: none; margin-top: 10px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; background: #f9f9f9;">
+                    <div class="form-help" style="margin: 0 0 8px 0; font-size: 12px; color: #999;">季和集不填则对所有季/集生效</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+                        <div style="flex: 2; min-width: 100px;">
+                            <label style="font-size: 12px; color: #666;">剧名 *</label>
+                            <input type="text" id="offset-anime" placeholder="例如: overlord" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                        </div>
+                        <div style="width: 65px;">
+                            <label style="font-size: 12px; color: #666;">季</label>
+                            <input type="number" id="offset-season" placeholder="" min="1" max="99" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                        </div>
+                        <div style="width: 65px;">
+                            <label style="font-size: 12px; color: #666;">集</label>
+                            <input type="number" id="offset-episode" placeholder="" min="1" max="999" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                        </div>
+                        <div style="width: 85px;">
+                            <label style="font-size: 12px; color: #666;">偏移秒 *</label>
+                            <input type="number" id="offset-seconds" placeholder="90" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    \${offsetSources.length > 0 ? \`
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px; color: #666;">来源 (可选，不选则对所有来源生效)</label>
+                        <div id="offset-sources" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px;">
+                            \${offsetSources.map(src => \`
+                                <div class="offset-source-tag" data-value="\${src}" onclick="toggleOffsetSource(this)"
+                                     style="padding: 3px 10px; border: 1px solid #ddd; border-radius: 12px; font-size: 12px; cursor: pointer; user-select: none; background: #fff; color: #666; transition: all 0.15s;">
+                                    \${src}
+                                </div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                    \` : ''}
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" class="btn btn-sm" onclick="toggleOffsetRulePanel()" style="padding: 4px 12px;">取消</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="appendOffsetRule()" style="padding: 4px 12px;">确认添加</button>
+                    </div>
+                </div>
+            \`;
+        } else if (isAiApiKey) {
             // AI API Key 专用编辑界面
             container.innerHTML = \`
                 <div class="ai-apikey-editor">
@@ -636,6 +688,80 @@ function renderValueInput(item) {
             \`; 
         }
     }
+}
+
+// DANMU_OFFSET 快速配置 - 切换规则面板
+function toggleOffsetRulePanel() {
+    const panel = document.getElementById('offset-rule-panel');
+    if (panel) {
+        const isHidden = panel.style.display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        const btn = document.getElementById('offset-rule-toggle');
+        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+    }
+}
+
+// DANMU_OFFSET 快速配置 - 切换来源选中状态
+function toggleOffsetSource(el) {
+    el.classList.toggle('selected');
+    if (el.classList.contains('selected')) {
+        el.style.background = '#1a73e8';
+        el.style.color = '#fff';
+        el.style.borderColor = '#1a73e8';
+    } else {
+        el.style.background = '#fff';
+        el.style.color = '#666';
+        el.style.borderColor = '#ddd';
+    }
+}
+
+// DANMU_OFFSET 快速配置 - 确认添加规则
+function appendOffsetRule() {
+    const anime = document.getElementById('offset-anime').value.trim();
+    const season = document.getElementById('offset-season').value.trim();
+    const episode = document.getElementById('offset-episode').value.trim();
+    const seconds = document.getElementById('offset-seconds').value.trim();
+
+    if (!anime) { customAlert('请输入剧名'); return; }
+    if (!seconds) { customAlert('请输入偏移秒数'); return; }
+    if (episode && !season) { customAlert('指定集时需要同时指定季'); return; }
+
+    let path = anime;
+    if (season) {
+        path += '/S' + season.padStart(2, '0');
+        if (episode) {
+            path += '/E' + episode.padStart(2, '0');
+        }
+    }
+
+    const sourcesEl = document.getElementById('offset-sources');
+    if (sourcesEl) {
+        const selectedSources = Array.from(sourcesEl.querySelectorAll('.offset-source-tag.selected'))
+            .map(el => el.dataset.value);
+        if (selectedSources.length > 0) {
+            path += '@' + selectedSources.join('&');
+        }
+    }
+
+    const rule = path + ':' + seconds;
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+    textarea.value = current ? current + ',' + rule : rule;
+
+    // 重置表单
+    document.getElementById('offset-anime').value = '';
+    document.getElementById('offset-season').value = '';
+    document.getElementById('offset-episode').value = '';
+    document.getElementById('offset-seconds').value = '';
+    if (sourcesEl) {
+        sourcesEl.querySelectorAll('.offset-source-tag.selected').forEach(el => {
+            el.classList.remove('selected');
+            el.style.background = '#fff';
+            el.style.color = '#666';
+            el.style.borderColor = '#ddd';
+        });
+    }
+    toggleOffsetRulePanel();
 }
 
 // 调整数字
