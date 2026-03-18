@@ -52,7 +52,7 @@ LogVar 弹幕 API 服务器
   - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
-  - `GET /api/v2/comment/:commentId?format=json`：获取指定弹幕评论，支持返回相关评论和字符转换。
+  - `GET /api/v2/comment/:commentId?format=json&duration=true`：获取指定弹幕评论；当 `duration=true` 且返回 JSON 时，会额外附带 `videoDuration` 字段，优先返回源站时长，拿不到时返回 `0`。
   - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
   - `POST /api/v2/segmentcomment?format=json`：通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
@@ -81,6 +81,7 @@ LogVar 弹幕 API 服务器
 - **弹幕时间偏移功能**：支持通过环境变量 `DANMU_OFFSET` 配置弹幕时间偏移，解决弹幕与视频不同步的问题。格式为 `剧名:秒`（全剧偏移）、`剧名/季:秒`（整季偏移）、`剧名/季/集:秒`（单集偏移），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02:120, re-zero/S02/E03:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。
 - **弹幕分片请求**：
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
+  - `/api/v2/comment/:commentId?format=json&duration=true` 可在 JSON 返回体中附带 `videoDuration`
   - `/api/v2/segmentcomment` 通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据
 - **UI界面-后台配置管理系统**：支持通过UI执行一些操作（详细见 [UI 系统使用说明](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md) ），包括：
   - 配置预览
@@ -142,6 +143,7 @@ LogVar 弹幕 API 服务器
    - `GET http://{ip}:9321/87654321/api/v2/search/episodes?anime=生万物`
    - `GET http://{ip}:9321/87654321/api/v2/bangumi/1`
    - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json`
+   - `GET http://{ip}:9321/87654321/api/v2/comment/1?format=json&duration=true`
    - `GET http://{ip}:9321/87654321/api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
    - `POST http://{ip}:9321/87654321/api/v2/segmentcomment?format=json` (请求体包含segment类JSON数据，示例 `{"type": "qq","segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}` )
    - `GET http://{ip}:9321/87654321/api/logs`
@@ -355,6 +357,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 **使用示例**：
 - 获取 JSON 格式：`GET /api/v2/comment/10001`
 - 获取 XML 格式：`GET /api/v2/comment/10001?format=xml`
+- 获取 JSON 并附带视频时长：`GET /api/v2/comment/10001?format=json&duration=true`
 - 通过 URL 获取弹幕：`GET /api/v2/comment?url=https://v.qq.com/x/cover/xxx.html&format=json`
 
 > 注意：

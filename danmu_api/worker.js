@@ -305,7 +305,9 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     const queryFormat = url.searchParams.get('format');
     const videoUrl = url.searchParams.get('url');
     const segmentFlagParam = url.searchParams.get('segmentflag');
+    const durationParam = url.searchParams.get('duration');
     const segmentFlag = segmentFlagParam === 'true' || segmentFlagParam === '1';
+    const includeDuration = durationParam === 'true' || durationParam === '1';
 
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
@@ -318,8 +320,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(videoUrl);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
       }
 
       // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
@@ -354,7 +355,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       }
 
       // 通过URL获取弹幕
-      return getCommentByUrl(videoUrl, queryFormat, segmentFlag);
+      return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
     }
 
     // 否则通过commentId获取弹幕
@@ -374,8 +375,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(urlForComment);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
       }
     }
 
@@ -414,7 +414,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
-    return getComment(path, queryFormat, segmentFlag, clientIp);
+    return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
   }
 
   // POST /api/v2/segmentcomment - 接收segment类的JSON请求体

@@ -347,7 +347,7 @@ WidgetMetadata = {
     },
     {
       name: "danmuOffset",
-      title: "弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，多条用逗号分隔，示例：overlord/S01:90,re-zero/S02:120,re-zero/S02/E03:10",
+      title: "弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，正数表示弹幕延后（向右），负数表示弹幕提前（向左），多条用逗号分隔，示例：overlord/S01:90,re-zero/S02:120,re-zero/S02/E03:10",
       type: "input",
       placeholders: [
         {

@@ -24,7 +24,7 @@ export default class HanjutvSource extends BaseSource {
     this.oldDanmuHost = "https://hxqapi.zmdcq.com";
     this.defaultRefer = "2JGztvGjRVpkxcr0T4ZWG2k+tOlnHmDGUNMwAGSeq548YV2FMbs0h0bXNi6DJ00L";
     this.webUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-    this.appUserAgent = "HanjuTV/6.8 (23127PN0CC; Android 16; Scale/2.00)";
+    this.appUserAgent = "HanjuTV/6.8.2 (Redmi Note 12; Android 14; Scale/2.00)";
   }
 
   getWebHeaders() {
@@ -36,8 +36,8 @@ export default class HanjutvSource extends BaseSource {
 
   getAppHeaders() {
     return {
-      vc: "a_8260",
-      vn: "6.8",
+      vc: "a_8280",
+      vn: "6.8.2",
       ch: "xiaomi",
       app: "hj",
       "User-Agent": this.appUserAgent,
