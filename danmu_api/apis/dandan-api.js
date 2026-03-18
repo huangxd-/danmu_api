@@ -211,7 +211,7 @@ export function matchSeason(anime, queryTitle, season) {
 }
 
 // Extracted function for GET /api/v2/search/anime
-export async function searchAnime(url, preferAnimeId = null, preferSource = null, requestAnimeDetailsMap = null) {
+export async function searchAnime(url, preferAnimeId = null, preferSource = null) {
   let queryTitle = url.searchParams.get("keyword");
   log("info", `Search anime with keyword: ${queryTitle}`);
 
@@ -232,25 +232,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     queryTitle = simplifiedTitle;
   }
 
-  const activeRequestAnimeDetailsMaps = globals.requestAnimeDetailsMaps instanceof Set
-    ? globals.requestAnimeDetailsMaps
-    : new Set();
-  const currentRequestAnimeDetailsMap = requestAnimeDetailsMap instanceof Map
-    ? requestAnimeDetailsMap
-    : new Map();
-  const shouldCleanupCollector = !activeRequestAnimeDetailsMaps.has(currentRequestAnimeDetailsMap);
-
-  if (!(globals.requestAnimeDetailsMaps instanceof Set)) {
-    globals.requestAnimeDetailsMaps = activeRequestAnimeDetailsMaps;
-  }
-
-  if (shouldCleanupCollector) {
-    activeRequestAnimeDetailsMaps.add(currentRequestAnimeDetailsMap);
-  }
-
-  try {
-    // 检查搜索缓存
-    const cachedResults = getSearchCache(queryTitle, currentRequestAnimeDetailsMap);
+  // 检查搜索缓存
+  const cachedResults = getSearchCache(queryTitle);
     if (cachedResults !== null) {
       return jsonResponse({
         errorCode: 0,
@@ -470,10 +453,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
         continue; // 跳过该动漫
       }
 
-      const animeData =
-        currentRequestAnimeDetailsMap.get(String(anime.bangumiId)) ||
-        currentRequestAnimeDetailsMap.get(String(anime.animeId)) ||
-        findAnimeById(anime.animeId, currentRequestAnimeDetailsMap);
+      const animeData = findAnimeById(anime.animeId) || findAnimeById(anime.bangumiId);
       if (animeData && animeData.links) {
         let episodesList = animeData.links.map((link, index) => ({
           episodeId: link.id,
@@ -513,7 +493,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
 
     // 缓存搜索结果
     if (curAnimes.length > 0) {
-      setSearchCache(queryTitle, curAnimes, currentRequestAnimeDetailsMap);
+      setSearchCache(queryTitle, curAnimes);
     }
 
     return jsonResponse({
@@ -522,11 +502,6 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       errorMessage: "",
       animes: curAnimes,
     });
-  } finally {
-    if (shouldCleanupCollector) {
-      activeRequestAnimeDetailsMaps.delete(currentRequestAnimeDetailsMap);
-    }
-  }
 }
 
 function filterSameEpisodeTitle(filteredTmpEpisodes) {
@@ -1170,8 +1145,7 @@ export async function searchEpisodes(url) {
 
   // 先搜索动漫
   let searchUrl = new URL(`/search/anime?keyword=${anime}`, url.origin);
-  const requestAnimeDetailsMap = new Map();
-  const searchRes = await searchAnime(searchUrl, null, null, requestAnimeDetailsMap);
+  const searchRes = await searchAnime(searchUrl);
   const searchData = await searchRes.json();
 
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
@@ -1190,8 +1164,8 @@ export async function searchEpisodes(url) {
   // 遍历所有找到的动漫，获取它们的集数信息
   for (const animeItem of searchData.animes) {
     const detailAnime =
-      findAnimeById(animeItem.bangumiId, requestAnimeDetailsMap) ||
-      findAnimeById(animeItem.animeId, requestAnimeDetailsMap);
+      findAnimeById(animeItem.bangumiId) ||
+      findAnimeById(animeItem.animeId);
 
     let bangumiData = null;
     if (detailAnime) {
@@ -1264,7 +1238,11 @@ export async function getBangumi(path) {
       404
     );
   }
-  return jsonResponse(buildBangumiData(anime, idParam));
+  const bangumiData = buildBangumiData(anime, idParam);
+  if (!bangumiData.success && bangumiData.errorCode === 404) {
+    return jsonResponse(bangumiData, 404);
+  }
+  return jsonResponse(bangumiData);
 }
 
 function buildBangumiData(anime, idParam = "") {

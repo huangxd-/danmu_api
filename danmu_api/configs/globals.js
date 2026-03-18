@@ -24,7 +24,8 @@ export const Globals = {
   episodeNum: 10001, // 全局变量，用于自增 ID
   logBuffer: [],
   requestHistory: new Map(), // 记录每个 IP 地址的请求历史
-  requestAnimeDetailsMaps: new Set(), // 当前活跃请求的详情收集器
+  animeDetailsCache: new Map(), // 番剧详情索引缓存，按 animeId 和 bangumiId 查找
+  episodeDetailsCache: new Map(), // 剧集详情索引缓存，按 commentId 查找
   localCacheValid: false, // 本地缓存是否生效
   localCacheInitialized: false, // 本地缓存是否已初始化
   redisValid: false, // redis是否生效
