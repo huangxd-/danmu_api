@@ -374,6 +374,8 @@ export const componentsCssContent = /* css */ `
     border-radius: 12px;
     max-width: 600px;
     width: 100%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0,0,0,0.3);
     position: relative;
     top: 0;
@@ -1449,5 +1451,67 @@ export const componentsCssContent = /* css */ `
     .heatmap-bars {
         height: 70px;
     }
+}
+
+/* 偏移规则快速配置 */
+.offset-rule-panel {
+    display: none;
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+
+.offset-form-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.offset-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.offset-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.offset-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.offset-source-tag {
+    padding: 3px 10px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    background: #fff;
+    color: #666;
+    transition: all 0.15s;
+}
+
+.offset-source-tag.selected {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1a73e8;
+}
+
+.offset-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
 }
 `;

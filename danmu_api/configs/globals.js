@@ -13,7 +13,7 @@ export const Globals = {
   accessedEnvVars: {},
 
   // 静态常量
-  VERSION: '1.17.1',
+  VERSION: '1.17.2',
   MAX_LOGS: 1000, // 日志存储，最多保存 1000 行
   MAX_ANIMES: 100,
   MAX_RECORDS: 100, // 请求记录最大数量
@@ -24,6 +24,7 @@ export const Globals = {
   episodeNum: 10001, // 全局变量，用于自增 ID
   logBuffer: [],
   requestHistory: new Map(), // 记录每个 IP 地址的请求历史
+  requestAnimeDetailsMap: null, // 当前请求内的详情缓存，避免搜索结果被全局上限裁剪后丢失
   localCacheValid: false, // 本地缓存是否生效
   localCacheInitialized: false, // 本地缓存是否已初始化
   redisValid: false, // redis是否生效
