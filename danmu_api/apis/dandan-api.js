@@ -6,7 +6,7 @@ import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
-    getSearchCache, removeEarliestAnime, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
+    getSearchCache, removeEarliestAnime, resolveAnimeById, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
@@ -1190,8 +1190,8 @@ export async function searchEpisodes(url) {
     const detailAnime =
       requestAnimeDetailsMap.get(String(animeItem.bangumiId)) ||
       requestAnimeDetailsMap.get(String(animeItem.animeId)) ||
-      globals.animes.find(a => String(a.bangumiId) === String(animeItem.bangumiId)) ||
-      globals.animes.find(a => String(a.animeId) === String(animeItem.animeId));
+      resolveAnimeById(animeItem.bangumiId) ||
+      resolveAnimeById(animeItem.animeId);
 
     let bangumiData = null;
     if (detailAnime) {
@@ -1255,19 +1255,7 @@ export async function searchEpisodes(url) {
 // Extracted function for GET /api/v2/bangumi/:animeId
 export async function getBangumi(path) {
   const idParam = path.split("/").pop();
-  const animeId = parseInt(idParam);
-
-  // 尝试通过 animeId(数字) 或 bangumiId(字符串) 查找
-  let anime;
-  if (!isNaN(animeId)) {
-    // 如果是有效数字,先尝试通过 animeId 查找
-    anime = globals.animes.find((a) => a.animeId.toString() === animeId.toString());
-  }
-
-  // 如果通过 animeId 未找到,尝试通过 bangumiId 查找
-  if (!anime) {
-    anime = globals.animes.find((a) => a.bangumiId === idParam);
-  }
+  const anime = resolveAnimeById(idParam);
 
   if (!anime) {
     log("error", `Anime with ID ${idParam} not found`);

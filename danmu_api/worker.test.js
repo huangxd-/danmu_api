@@ -279,6 +279,144 @@ test('worker.js API endpoints', async (t) => {
     }
   });
 
+  await t.test('GET /api/v2/bangumi/:id should resolve details from search cache after global eviction', async () => {
+    Globals.init({});
+    Globals.animes = [];
+    Globals.episodeIds = [];
+    Globals.episodeNum = 10001;
+    Globals.searchCache = new Map();
+    Globals.requestHistory = new Map();
+    Globals.envs.rateLimitMaxRequests = 0;
+    Globals.requestAnimeDetailsMap = null;
+
+    const cachedAnime = {
+      animeId: 500001,
+      bangumiId: '500001',
+      animeTitle: '缓存详情番剧',
+      type: 'tvseries',
+      typeDescription: 'TV',
+      imageUrl: 'https://example.com/poster.jpg',
+      startDate: '2024-01-01T00:00:00.000Z',
+      episodeCount: 2,
+      rating: 0,
+      isFavorited: true,
+      source: 'tencent',
+      links: [
+        { id: 30001, url: 'https://v.qq.com/x/cover/cache/ep1.html', title: '【qq】 第1集' },
+        { id: 30002, url: 'https://v.qq.com/x/cover/cache/ep2.html', title: '【qq】 第2集' }
+      ]
+    };
+
+    Globals.searchCache.set('缓存详情番剧', {
+      results: [
+        {
+          animeId: cachedAnime.animeId,
+          bangumiId: cachedAnime.bangumiId,
+          animeTitle: cachedAnime.animeTitle,
+          type: cachedAnime.type,
+          typeDescription: cachedAnime.typeDescription,
+          imageUrl: cachedAnime.imageUrl,
+          startDate: cachedAnime.startDate,
+          episodeCount: cachedAnime.episodeCount,
+          rating: cachedAnime.rating,
+          isFavorited: cachedAnime.isFavorited,
+          source: cachedAnime.source
+        }
+      ],
+      details: [cachedAnime],
+      timestamp: Date.now()
+    });
+
+    const req = new MockRequest(urlPrefix + '/api/v2/bangumi/' + cachedAnime.animeId, { method: 'GET' });
+    const res = await handleRequest(req);
+    const body = await parseResponse(res);
+
+    assert.equal(res.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.bangumi.animeTitle, cachedAnime.animeTitle);
+    assert.equal(body.bangumi.episodes.length, 2);
+    assert.equal(body.bangumi.episodes[0].episodeId, 30001);
+    assert.equal(Globals.animes.length, 0);
+    assert.equal(Globals.episodeIds.length, 0);
+  });
+
+  await t.test('GET /api/v2/comment/:id should resolve cached episode context after global eviction', async () => {
+    Globals.init({});
+    Globals.animes = [];
+    Globals.episodeIds = [];
+    Globals.episodeNum = 10001;
+    Globals.searchCache = new Map();
+    Globals.commentCache = new Map();
+    Globals.requestHistory = new Map();
+    Globals.envs.rateLimitMaxRequests = 0;
+    Globals.requestAnimeDetailsMap = null;
+
+    const cachedAnime = {
+      animeId: 500002,
+      bangumiId: '500002',
+      animeTitle: '缓存弹幕番剧',
+      type: 'tvseries',
+      typeDescription: 'TV',
+      imageUrl: 'https://example.com/poster2.jpg',
+      startDate: '2024-01-01T00:00:00.000Z',
+      episodeCount: 1,
+      rating: 0,
+      isFavorited: true,
+      source: 'tencent',
+      links: [
+        { id: 31001, url: 'https://v.qq.com/x/cover/cache/comment-ep1.html', title: '【qq】 第1集' }
+      ]
+    };
+
+    Globals.searchCache.set('缓存弹幕番剧', {
+      results: [
+        {
+          animeId: cachedAnime.animeId,
+          bangumiId: cachedAnime.bangumiId,
+          animeTitle: cachedAnime.animeTitle,
+          type: cachedAnime.type,
+          typeDescription: cachedAnime.typeDescription,
+          imageUrl: cachedAnime.imageUrl,
+          startDate: cachedAnime.startDate,
+          episodeCount: cachedAnime.episodeCount,
+          rating: cachedAnime.rating,
+          isFavorited: cachedAnime.isFavorited,
+          source: cachedAnime.source
+        }
+      ],
+      details: [cachedAnime],
+      timestamp: Date.now()
+    });
+
+    const originalTencentGetComments = TencentSource.prototype.getComments;
+    let requestCount = 0;
+
+    TencentSource.prototype.getComments = async function(url, plat, segmentFlag) {
+      requestCount++;
+      assert.equal(url, cachedAnime.links[0].url);
+      assert.equal(plat, 'qq');
+      assert.equal(segmentFlag, false);
+      return [
+        { p: '12.3,1,16777215,qq', m: '缓存弹幕命中' }
+      ];
+    };
+
+    try {
+      const req = new MockRequest(urlPrefix + '/api/v2/comment/' + cachedAnime.links[0].id + '?format=json', { method: 'GET' });
+      const res = await handleRequest(req);
+      const body = await parseResponse(res);
+
+      assert.equal(res.status, 200);
+      assert.equal(body.count, 1);
+      assert.equal(body.comments[0].m, '缓存弹幕命中');
+      assert.equal(requestCount, 1);
+      assert.equal(Globals.animes.length, 0);
+      assert.equal(Globals.episodeIds.length, 0);
+    } finally {
+      TencentSource.prototype.getComments = originalTencentGetComments;
+      Globals.commentCache = new Map();
+    }
+  });
   // await t.test('Test ai cilent', async () => {
   //   const ai = new AIClient({
   //     apiKey: 'xxxxxxxxxxxxxxxxxxxxx',
