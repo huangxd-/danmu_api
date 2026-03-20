@@ -34,10 +34,10 @@ const MergeWeights = Object.freeze({
     TITLE_STRUCTURE_CONFLICT: -0.30, // 标题结构冲突（如父子集关系）
     LANG_MATCH_CN: 0.15,             // 双端均为中文时的奖励
     LANG_MISMATCH: -0.20,            // 语言不一致时的惩罚
-    
+
     // 日期
     DATE_MATCH: 0.0,                 // 基础日期匹配（动态计算，此处为占位）
-    
+
     // 集数对齐 (Alignment)
     EP_ALIGN: {
         MOVIE_TYPE_MISMATCH: -5.0,   // 电影/TV 类型不符
@@ -217,6 +217,84 @@ const SEASON_PATTERNS = [
 ];
 
 // ==========================================
+// 扩展配置: 特殊番剧特征规则库 (Special Series Registry)
+// ==========================================
+const SpecialSeriesRegistry = [
+    {
+        // 案例 1：经典的带副标题映射（美少女战士）
+        seriesKeywords: ["美少女战士"], 
+        mappings: [
+            // 忽略大小写，填入 "R" 即可自动匹配 "r"
+            { markers: ["R"], targetStandard: "第二季" },
+            { markers: ["S"], targetStandard: "第三季" },
+            { markers: ["SuperS", "Super S"], targetStandard: "第四季" },
+            { markers: ["Sailor Stars", "最后的星光"], targetStandard: "第五季" }
+        ]
+    },
+    {
+        seriesKeywords: ["小林家的龙女仆"], 
+        mappings: [
+            { markers: ["S"], targetStandard: "第二季" },
+        ]
+    },
+    {
+        // 案例 2：可能携带副标题的（我们不可能成为恋人）
+        seriesKeywords: ["可能成为恋人", "不行"], 
+        mappings: [
+            { markers: ["NEXT SHINE", "再次闪耀"], targetStandard: "续篇" }
+        ]
+    },
+    {
+        // 案例 3：没有任何副标题，主标题本身就是特殊类型
+        seriesKeywords: ["红猪", "千与千寻", "龙猫"],
+        // 当没有匹配到任何 mappings（或根本没写 mappings）时，直接给这个条目打上默认标签
+        defaultStandard: "剧场版" 
+    }
+];
+
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 引擎级标题语义转换器 (Semantic Normalizer)
+ */
+function normalizeTitleForEngine(title) {
+    if (!title) return '';
+    let normTitle = title;
+    const upperTitle = normTitle.toUpperCase();
+
+    for (const rule of SpecialSeriesRegistry) {
+        // 判断是否命中了设定的系列
+        const isTargetSeries = rule.seriesKeywords.every(kw => upperTitle.includes(kw.toUpperCase()));
+
+        if (isTargetSeries) {
+            let hasMapped = false;
+
+            // 1. 尝试匹配并替换副标题
+            if (rule.mappings) {
+                for (const mapping of rule.mappings) {
+                    mapping.markers.forEach(marker => {
+                        // 'gi' 保证了全局且忽略大小写的替换
+                        const reg = new RegExp(escapeRegExp(marker), 'gi');
+                        if (reg.test(normTitle)) {
+                            normTitle = normTitle.replace(reg, ` ${mapping.targetStandard} `);
+                            hasMapped = true;
+                        }
+                    });
+                }
+            }
+
+            // 如果没有任何副标题被替换，且配置了 defaultStandard，则强行追加标准类型
+            if (!hasMapped && rule.defaultStandard) {
+                normTitle += ` ${rule.defaultStandard} `;
+            }
+        }
+    }
+    return normTitle;
+}
+
+// ==========================================
 // 3. 基础文本处理工具 (Utilities)
 // ==========================================
 
@@ -243,13 +321,13 @@ function getLanguageType(text) {
 function cleanText(text) {
   if (!text) return '';
   let clean = simplized(text);
-  
+
   clean = clean.replace(RegexStore.Clean.NA_TAG, '');
   clean = clean.replace(RegexStore.Season.PART_NORM, 'part $1');
   clean = clean.replace(RegexStore.Season.PART_NORM_2, 'part $1');
   clean = clean.replace(RegexStore.Season.FINAL, '最终季');
   clean = clean.replace(RegexStore.Season.NORM, '第$1季');
-  
+
   const cnNums = {'一':'1', '二':'2', '三':'3', '四':'4', '五':'5', '六':'6', '七':'7', '八':'8', '九':'9', '十':'10'};
   clean = clean.replace(RegexStore.Season.CN, (m, num) => `第${cnNums[num]}季`);
   clean = clean.replace(RegexStore.Season.ROMAN, (match, p1, roman, p2) => {
@@ -264,19 +342,20 @@ function cleanText(text) {
   clean = clean.replace(/(\d+)\.(\d+)/g, '$1{{DOT}}$2');
   clean = clean.replace(RegexStore.Clean.PUNCTUATION, ' ');
   clean = clean.replace(/{{DOT}}/g, '.');
-  
+
   return clean.replace(RegexStore.Clean.WHITESPACE, ' ').toLowerCase().trim();
 }
 
 /**
  * 相似度计算专用极简清洗
- * 强力移除所有季数、Part、括号内容、语言标识，只保留核心标题
+ * 强力移除所有季数、Part、括号内容、语言标识、维数标识等，只保留核心标题
  * @param {string} text - 原始标题
  * @returns {string} - 用于相似度计算的极简标题
  */
 function cleanTitleForSimilarity(text) {
     if (!text) return '';
-    let clean = simplized(text);
+    let clean = normalizeTitleForEngine(text);
+    clean = simplized(clean);
     // 标题保护逻辑：如果标题被包裹在【】或[]中且位于开头，尝试提取内容
     const startBracketMatch = clean.match(/^(?:【|\[)(.+?)(?:】|\])/);
     if (startBracketMatch) {
@@ -432,12 +511,12 @@ function calculateSimilarity(str1, str2) {
   if (s1 === s2) return 1.0;
   const len1 = s1.length, len2 = s2.length;
   const maxLen = Math.max(len1, len2), minLen = Math.min(len1, len2);
-  
+
   if (s1.includes(s2) || s2.includes(s1)) {
     const lenRatio = minLen / maxLen;
     if (lenRatio > 0.5) return 0.8 + (lenRatio * 0.2); 
   }
-  
+
   const distance = editDistance(s1, s2);
   const editScore = maxLen === 0 ? 1.0 : 1.0 - (distance / maxLen);
   const set1 = new Set(s1.replace(RegexStore.Clean.WHITESPACE, ''));
@@ -521,6 +600,7 @@ function checkTitleSubtitleConflict(titleA, titleB, isDateValid = true) {
  * @returns {Set<string>}
  */
 function extractSeasonMarkers(title, typeDesc = '') {
+    title = normalizeTitleForEngine(title);
   const markers = new Set();
   const t = cleanText(title); 
   const type = cleanText(typeDesc || '');
@@ -583,6 +663,7 @@ function extractSeasonMarkers(title, typeDesc = '') {
  * @returns {number|null}
  */
 function getSeasonNumber(title, typeDesc = '') {
+    title = normalizeTitleForEngine(title);
     const markers = extractSeasonMarkers(title, typeDesc);
     let maxSeason = null;
     for (const m of markers) {
@@ -657,13 +738,38 @@ function checkTheatricalExemption(titleA, titleB, typeDescA, typeDescB) {
 }
 
 /**
- * 校验媒体类型是否冲突 (真人 vs 动漫, TV vs Movie)
+ * 校验媒体类型是否冲突 (真人 vs 动漫, TV vs Movie, 3D vs 2D)
  * @returns {boolean} true=冲突, false=兼容
  */
 function checkMediaTypeMismatch(titleA, titleB, typeDescA, typeDescB, countA, countB, sourceA = '', sourceB = '') {
     const catA = getContentCategory(titleA, typeDescA, sourceA);
     const catB = getContentCategory(titleB, typeDescB, sourceB);
     if ((catA === 'REAL' && catB === 'ANIME') || (catA === 'ANIME' && catB === 'REAL')) return true;
+
+    // 提取明确的维数属性
+    let is3DA = (typeDescA || '').includes('3D');
+    let is3DB = (typeDescB || '').includes('3D');
+    let is2DA = (typeDescA || '').includes('2D');
+    let is2DB = (typeDescB || '').includes('2D');
+
+    // 维数动态探测逻辑 (Dynamic Dimension Detection):
+    // 如果有一方在类型中明确是 3D，则被授权从另一方的标题中主动探测 3D 关键词
+    if (is3DA && !is3DB) {
+        if (/3[dD]/.test(titleB)) is3DB = true;
+    } else if (is3DB && !is3DA) {
+        if (/3[dD]/.test(titleA)) is3DA = true;
+    }
+
+    // 同样适用 2D 的动态探测：明确有 2D 标签时，才去对方标题里找 2D
+    if (is2DA && !is2DB) {
+        if (/2[dD]/.test(titleB)) is2DB = true;
+    } else if (is2DB && !is2DA) {
+        if (/2[dD]/.test(titleA)) is2DA = true;
+    }
+
+    // 检测 3D 与 2D 的维数属性冲突：任意一方带 3D 且另一方不带 3D（即视为 2D）则判定为冲突
+    if (is3DA !== is3DB) return true;
+
     const mediaA = getStrictMediaType(titleA, typeDescA);
     const mediaB = getStrictMediaType(titleB, typeDescB);
     if (!mediaA || !mediaB || mediaA === mediaB) return false;
@@ -912,7 +1018,7 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
     const isSecDub = !!(secTitleForSim.match(RegexStore.Lang.CN_DUB_VER)) || RegexStore.Lang.CN.test(secTitleForSim);
     const isDubRelation = isPrimaryDub || isSecDub;
     const secCount = secAnime.episodeCount || (secAnime.links ? secAnime.links.length : 0);
-    
+
     // 之字结构强阻断
     if (secTitleForSim.includes('之')) {
         const parts = secTitleForSim.split('之');
@@ -926,7 +1032,7 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
     if (checkMediaTypeMismatch(rawPrimaryTitle, rawSecTitle, primaryAnime.typeDescription, secAnime.typeDescription, primaryCount, secCount, primaryAnime.source, secAnime.source)) {
         const pType = getContentCategory(rawPrimaryTitle, primaryAnime.typeDescription, primaryAnime.source);
         const sType = getContentCategory(rawSecTitle, secAnime.typeDescription, secAnime.source);
-        logReason(rawSecTitle, `媒体类型不匹配 (P:${pType}/${getStrictMediaType(rawPrimaryTitle, primaryAnime.typeDescription)} vs S:${sType}/${getStrictMediaType(rawSecTitle, secAnime.typeDescription)})`);
+        logReason(rawSecTitle, `媒体类型或维数不匹配 (P:${pType}/${getStrictMediaType(rawPrimaryTitle, primaryAnime.typeDescription)} [${primaryAnime.typeDescription}] vs S:${sType}/${getStrictMediaType(rawSecTitle, secAnime.typeDescription)} [${secAnime.typeDescription}])`);
         continue;
     }
 
@@ -945,7 +1051,7 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
              }
         }
     }
-    
+
     if (isPrimaryContextSequel) {
          if (cleanTitleForSimilarity(secTitleForSim) === cleanTitleForSimilarity(primaryBaseTitleFromContext)) {
              logReason(rawSecTitle, `上下文阻断: 主源(S2/Sequel) vs 副源(Base/S1) (Base: "${primaryBaseTitleFromContext}")`);
@@ -1141,7 +1247,7 @@ function extractEpisodeInfo(title, sourceName = '') {
  */
 function filterEpisodes(links, filterRegex, sourceName = '') {
   if (!links) return [];
-  
+
   // 特定源白名单：这些源的集标题通常比较规范，免除正则过滤拦截
   const skipFilterSources = ['animeko', 'bilibili', 'bilibili1', 'bahamut', 'dandan'];
   const shouldSkipFilter = skipFilterSources.includes(sourceName);
@@ -1149,7 +1255,7 @@ function filterEpisodes(links, filterRegex, sourceName = '') {
   if (!filterRegex || shouldSkipFilter) {
     return links.map((link, index) => ({ link, originalIndex: index }));
   }
-  
+
   const validLinks = [];
   const droppedTitles = [];
 
@@ -1330,7 +1436,7 @@ function findBestAlignmentOffset(primaryLinks, secondaryLinks, seriesLangA = 'Un
                 else sim = MergeWeights.EP_ALIGN.CN_STRICT_MISMATCH;
             } else sim = calculateSimilarity(dataA.cleanEpText, dataB.cleanEpText);
         } else sim = calculateSimilarity(dataA.cleanEpText, dataB.cleanEpText);
-        
+
         pairScore += sim;
         rawTextScoreSum += sim;
         if (infoA.num !== null && infoB.num !== null && infoA.num === infoB.num) pairScore += MergeWeights.EP_ALIGN.NUMERIC_MATCH; 
@@ -1348,7 +1454,7 @@ function findBestAlignmentOffset(primaryLinks, secondaryLinks, seriesLangA = 'Un
       let finalScore = totalTextScore / matchCount;
       let maxFrequency = 0;
       for (const count of numericDiffs.values()) maxFrequency = Math.max(maxFrequency, count);
-      
+
       const consistencyRatio = maxFrequency / matchCount;
       const avgRawTextScore = rawTextScoreSum / matchCount;
 
@@ -1431,7 +1537,7 @@ function stitchUnmatchedEpisodes(derivedAnime, orphans, sourceName) {
             break;
         }
     }
-    
+
     for (const item of orphans) {
         const relativeIdx = item.relativeIndex;
         const isStrictSpecial = item.info && item.info.isStrictSpecial;
@@ -1540,7 +1646,7 @@ function buildSeasonLengthMap(allGroupAnimes, epFilter, collectionAnimeIds) {
         }
 
         const realAnime = globals.animes.find(a => String(a.animeId) === String(anime.animeId)) || anime;
-        
+
         // 2. 类型过滤：严格剔除电影和真人剧
         // 地图构建是为了给 TV 动画切片，电影(1集)和真人剧(集数不同)会严重干扰统计
         const category = getContentCategory(realAnime.animeTitle, realAnime.typeDescription, realAnime.source);
@@ -1548,7 +1654,7 @@ function buildSeasonLengthMap(allGroupAnimes, epFilter, collectionAnimeIds) {
             debugLogs.push(`   [剔除] [${realAnime.source}] ${realAnime.animeTitle} (类型: 真人剧/REAL)`);
             continue;
         }
-        
+
         const mediaType = getStrictMediaType(realAnime.animeTitle, realAnime.typeDescription);
         if (mediaType === 'MOVIE') {
             debugLogs.push(`   [剔除] [${realAnime.source}] ${realAnime.animeTitle} (类型: 电影/MOVIE)`);
@@ -1561,7 +1667,7 @@ function buildSeasonLengthMap(allGroupAnimes, epFilter, collectionAnimeIds) {
                 const title = item.link.title || item.link.name || "";
                 const cleanT = cleanText(title);
                 const rawTemp = cleanT.replace(RegexStore.Clean.SOURCE_TAG, '').replace(RegexStore.Clean.FROM_SUFFIX, '').trim();
-                
+
                 // 特定源的番外过滤逻辑
                 if (/^(dandan|animeko)$/i.test(realAnime.source)) {
                      if (RegexStore.Episode.SPECIAL_CHECK.test(rawTemp) || RegexStore.Episode.DANDAN_IGNORE.test(rawTemp)) return false;
@@ -1574,10 +1680,10 @@ function buildSeasonLengthMap(allGroupAnimes, epFilter, collectionAnimeIds) {
             if (count > 0) {
                 if (!seasonStats.has(seasonNum)) seasonStats.set(seasonNum, new Map());
                 const freqMap = seasonStats.get(seasonNum);
-                
+
                 if (!freqMap.has(count)) freqMap.set(count, []);
                 freqMap.get(count).push(realAnime.source);
-                
+
                 debugLogs.push(`   [采纳] [${realAnime.source}] S${seasonNum} = ${count}集 ("${realAnime.animeTitle}")`);
             } else {
                 debugLogs.push(`   [忽略] [${realAnime.source}] S${seasonNum} (有效集数为 0)`);
@@ -1615,9 +1721,9 @@ function buildSeasonLengthMap(allGroupAnimes, epFilter, collectionAnimeIds) {
                 }
             }
         }
-        
+
         seasonMap.set(sNum, modeCount);
-        
+
         // 构建详细的统计日志字符串
         const statDetails = Array.from(freqMap.entries())
             .map(([cnt, srcs]) => `${cnt}集(x${srcs.length})[${srcs.join(',')}]`)
@@ -1654,7 +1760,7 @@ function fastCloneAnime(anime) {
 
 /**
  * 执行单个主源的合并任务
- * 包含：寻找匹配、ID生成、链接映射、集数补全
+ * 包含：寻找匹配、ID生成、链接映射、集数补全、跨源合集时序接管
  * @param {Object} params - 任务参数对象
  * @returns {Promise<Anime|null>} 合并后的新对象或 null
  */
@@ -1679,14 +1785,14 @@ async function processMergeTask(params) {
 
     const logTitleA = pAnime.animeTitle.replace(RegexStore.Clean.FROM_SUFFIX, '');
     let derivedAnime = fastCloneAnime(cachedPAnime);
-    
+
     const actualMergedSources = []; 
     const contentSignatureParts = [pAnime.animeId];
     let hasMergedAny = false;
 
     const seriesLangA = getLanguageType(pAnime.animeTitle);
     const redundantP = identifyRedundantTitle(derivedAnime.links, pAnime.animeTitle, currentPrimarySource);
-    
+
     const getTempTitle = (rawTitle, redundantStr) => {
         if (!rawTitle) return "";
         if (redundantStr && rawTitle.includes(redundantStr)) return rawTitle.replace(redundantStr, ''); 
@@ -1697,7 +1803,7 @@ async function processMergeTask(params) {
     const pCleanTitle = cleanTitleForSimilarity(pAnime.animeTitle);
     const peerAnimes = curAnimes.filter(a => cleanTitleForSimilarity(a.animeTitle) === pCleanTitle);
     const seasonLengthMap = buildSeasonLengthMap(peerAnimes, epFilter, collectionAnimeIds);
-    
+
     if (seasonLengthMap.size > 0) {
         const mapDesc = Array.from(seasonLengthMap.entries()).map(([k,v]) => `S${k}=${v}`).join(', ');
         if (isPrimaryCollection || availableSecondaries.some(s => curAnimes.some(a => a.source === s && collectionAnimeIds.has(a.animeId)))) {
@@ -1705,10 +1811,13 @@ async function processMergeTask(params) {
         }
     }
 
+    // 隔离检索，汇总排序池：避免不同源之间因微小相似度差异在 findSecondaryMatches 中发生内卷排挤
+    let allMatches = [];
+
     for (const secSource of availableSecondaries) {
         let secondaryItems = curAnimes.filter(a => {
             if (a.source !== secSource) return false;
-            
+
             // 合集主源特权：当主源为合集时，允许无视当前组的消耗状态，复用已被消耗的副源以拼凑完整季度
             if (isPrimaryCollection) return true;
 
@@ -1717,7 +1826,7 @@ async function processMergeTask(params) {
             if (isConsumed && !isAllowedReuse) return false;
             return true;
         });
-        
+
         if (limitSecondaryLang) secondaryItems = secondaryItems.filter(a => getLanguageType(a.animeTitle) === limitSecondaryLang);
 
         if (secondaryItems.length > 1) {
@@ -1730,9 +1839,31 @@ async function processMergeTask(params) {
         }
         if (secondaryItems.length === 0) continue;
 
-        const matches = findSecondaryMatches(pAnime, secondaryItems, collectionAnimeIds);
-        
-        for (const match of matches) {
+        // 逐源查找匹配，确保每个源的候选者在自身赛道内出线
+        const matchesForSource = findSecondaryMatches(pAnime, secondaryItems, collectionAnimeIds);
+        allMatches.push(...matchesForSource);
+    }
+
+    if (allMatches.length > 0) {
+        // 跨源合集时序接管：汇集所有有效匹配后，强制按季数升序排列全局匹配队列
+        if (allMatches.length > 1 && (isPrimaryCollection || allMatches.some(m => collectionAnimeIds.has(m.animeId)))) {
+            allMatches.sort((a, b) => {
+                const sA = getSeasonNumber(a.animeTitle, a.typeDescription) || 1;
+                const sB = getSeasonNumber(b.animeTitle, b.typeDescription) || 1;
+                if (sA !== sB) return sA - sB; // 季数优先
+
+                // 季数相同时，遵循用户配置的源优先级
+                const idxA = availableSecondaries.indexOf(a.source);
+                const idxB = availableSecondaries.indexOf(b.source);
+                return idxA - idxB;
+            });
+            const seqLogs = allMatches.map(m => `[${m.source}]S${getSeasonNumber(m.animeTitle, m.typeDescription) || 1}`);
+            log("info", `${logPrefix} [合集时序] 已将跨源匹配队列按季数升序排列，保障切片推断严格自举: ${seqLogs.join(' -> ')}`);
+        }
+
+        for (const match of allMatches) {
+            const secSource = match.source; 
+
             // 合集主源特权：如果是合集主源，直接跳过此处的二次消耗校验
             if (!isPrimaryCollection) {
                 const isReuse = allowReuseIds && allowReuseIds.has(match.animeId);
@@ -1750,9 +1881,9 @@ async function processMergeTask(params) {
             const decimalsS = getDecimalEpisodes(derivedMatch.links, secSource);
             const toSinkS = new Set([...decimalsS].filter(x => !decimalsP.has(x)));
             const toSinkP = new Set([...decimalsP].filter(x => !decimalsS.has(x)));
-            
+
             if (toSinkP.size > 0) sinkDecimalEpisodes(derivedAnime.links, toSinkP, currentPrimarySource, `主源:${currentPrimarySource}`);
-            
+
             if (toSinkS.size > 0) {
                 sinkDecimalEpisodes(derivedMatch.links, toSinkS, secSource, `副源:${secSource}`);
             }
@@ -1765,14 +1896,15 @@ async function processMergeTask(params) {
             let activePLinks = filteredPLinksWithIndex, activeMLinks = filteredMLinksWithIndex;
             let sliceStartP = 0, sliceStartS = 0;
             const isSecondaryCollection = collectionAnimeIds.has(match.animeId);
-            
+
             const performSlicing = (isPrimarySide, collectionLinks, seasonNum) => {
                 let sliceStart = 0, slicedList = collectionLinks;
                 if (seasonNum && seasonNum > 1) {
                      // 1. 优先尝试历史推断
                      let historyFound = false;
-                     if (!isPrimarySide && collectionProgress && collectionProgress.has(match.animeId)) {
-                        const progress = collectionProgress.get(match.animeId);
+                     const collectionIdToCheck = isPrimarySide ? pAnime.animeId : match.animeId;
+                     if (collectionProgress && collectionProgress.has(collectionIdToCheck)) {
+                        const progress = collectionProgress.get(collectionIdToCheck);
                         const prevSeason = seasonNum - 1;
                         if (progress[`S${prevSeason}`] !== undefined) {
                             const inferredStart = progress[`S${prevSeason}`] + 1;
@@ -1789,7 +1921,7 @@ async function processMergeTask(params) {
                      if (!historyFound) {
                         let accumulatedCount = 0;
                         for (let s = 1; s < seasonNum; s++) accumulatedCount += (seasonLengthMap.get(s) || 0);
-                        
+
                         // 移除 -2 缓冲。既然使用 Mode 策略得到了较准确的长度，直接信任该长度。
                         // 这样可以避免 S2 的第 1 集错误地回溯匹配到 S1 的最后几集。
                         let safeAccumulated = accumulatedCount;
@@ -1850,18 +1982,18 @@ async function processMergeTask(params) {
               const orphanItem = { link: sourceLink, originalIndex: sourceLinkItem.originalIndex, relativeIndex: pIndex, info: null };
               const cleanTitleS = getTempTitle(sourceLink.title, redundantS);
               orphanItem.info = extractEpisodeInfo(cleanTitleS, secSource);
-              
+
               if (pIndex >= 0 && pIndex < filteredPLinksWithIndex.length) {
                 const originalPIndex = filteredPLinksWithIndex[pIndex].originalIndex;
                 const targetLink = derivedAnime.links[originalPIndex];
                 const pTitleShort = targetLink.name || targetLink.title || `Index ${originalPIndex}`;
-                
+
                 const cleanTitleP = getTempTitle(targetLink.title, redundantP);
                 const specialP = getSpecialEpisodeType(cleanTitleP);
                 const specialS = getSpecialEpisodeType(cleanTitleS);
                 const infoP = extractEpisodeInfo(cleanTitleP, currentPrimarySource);
                 const infoS = orphanItem.info;
-                
+
                 if (infoS.isPV && !specialP) {
                      mappingEntries.push({ idx: pIndex, text: `   [略过] ${pTitleShort} =/= ${sTitleShort} (PV不匹配正片)` });
                      orphanedEpisodes.push(orphanItem); 
@@ -1877,7 +2009,7 @@ async function processMergeTask(params) {
                     orphanedEpisodes.push(orphanItem); 
                     continue;
                 }
-                
+
                 const idB = sanitizeUrl(sourceLink.url);
                 let currentUrl = targetLink.url;
                 const secPart = `${secSource}:${idB}`;
@@ -1885,7 +2017,7 @@ async function processMergeTask(params) {
                     if (!currentUrl.startsWith(currentPrimarySource + ':')) currentUrl = `${currentPrimarySource}:${currentUrl}`;
                 }
                 const newMergedUrl = `${currentUrl}${MERGE_DELIMITER}${secPart}`;
-                
+
                 let newMergedTitle = targetLink.title;
                 if (newMergedTitle) {
                     let sLabel = secSource;
@@ -1905,7 +2037,7 @@ async function processMergeTask(params) {
                   orphanedEpisodes.push(orphanItem); 
               }
             }
-            
+
             for (let j = 0; j < filteredPLinksWithIndex.length; j++) {
                 if (!matchedPIndices.has(j)) {
                     const originalPIndex = filteredPLinksWithIndex[j].originalIndex;
@@ -1928,33 +2060,52 @@ async function processMergeTask(params) {
                       mappingEntries.sort((a, b) => a.idx - b.idx);
                       log("info", `${logPrefix} [${secSource}] 映射详情:\n${mappingEntries.map(e => e.text).join('\n')}`);
                   }
-                  
-                  // [进度自举] 成功合并后，更新历史进度
-                  if (collectionProgress && isSecondaryCollection) {
+
+                  // 支持双向进度写入：主源为合集与副源为合集的情况都被覆盖，为链式关联铺路
+                  if (collectionProgress && (isSecondaryCollection || isPrimaryCollection)) {
                       let maxUsedIndex = -1;
-                      for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
-                           const pIndex = k + offset;
-                           if (matchedPIndices.has(pIndex)) {
-                               const item = filteredMLinksWithIndex[k];
-                               if (item.originalIndex > maxUsedIndex) maxUsedIndex = item.originalIndex;
-                           }
-                      }
-                      
-                      if (maxUsedIndex !== -1) {
-                          const pSeason = getSeasonNumber(pAnime.animeTitle, pAnime.typeDescription) || 1;
-                          if (!collectionProgress.has(match.animeId)) collectionProgress.set(match.animeId, {});
-                          const progress = collectionProgress.get(match.animeId);
-                          // 只要有合并成功，就记录下来，为后续季度的关联提供基准
-                          if (mergedCount >= 3) { 
-                             progress[`S${pSeason}`] = maxUsedIndex;
-                             // log("info", `[Merge-Check] 更新合集进度 [${match.animeId}]: S${pSeason} -> MaxIndex ${maxUsedIndex}`);
+
+                      if (isPrimaryCollection && !isSecondaryCollection) {
+                          // 主源是合集，在主源索引中找最大落点
+                          for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
+                               const pIndex = k + offset;
+                               if (matchedPIndices.has(pIndex)) {
+                                   const originalPIndex = filteredPLinksWithIndex[pIndex].originalIndex;
+                                   if (originalPIndex > maxUsedIndex) maxUsedIndex = originalPIndex;
+                               }
+                          }
+                          if (maxUsedIndex !== -1) {
+                              const sSeason = getSeasonNumber(derivedMatch.animeTitle, derivedMatch.typeDescription) || 1;
+                              if (!collectionProgress.has(pAnime.animeId)) collectionProgress.set(pAnime.animeId, {});
+                              const progress = collectionProgress.get(pAnime.animeId);
+                              if (mergedCount >= 3) { 
+                                 progress[`S${sSeason}`] = maxUsedIndex;
+                              }
+                          }
+                      } else if (!isPrimaryCollection && isSecondaryCollection) {
+                          // 副源是合集，在副源索引中找最大落点
+                          for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
+                               const pIndex = k + offset;
+                               if (matchedPIndices.has(pIndex)) {
+                                   const item = filteredMLinksWithIndex[k];
+                                   if (item.originalIndex > maxUsedIndex) maxUsedIndex = item.originalIndex;
+                               }
+                          }
+                          if (maxUsedIndex !== -1) {
+                              const pSeason = getSeasonNumber(pAnime.animeTitle, pAnime.typeDescription) || 1;
+                              if (!collectionProgress.has(match.animeId)) collectionProgress.set(match.animeId, {});
+                              const progress = collectionProgress.get(match.animeId);
+                              if (mergedCount >= 3) { 
+                                 progress[`S${pSeason}`] = maxUsedIndex;
+                              log("info", `[Merge-Check] 更新合集进度 [${match.animeId}]: S${pSeason} -> MaxIndex ${maxUsedIndex}`);
+                              }
                           }
                       }
                   }
 
                   if (collectionAnimeIds.has(match.animeId)) log("info", `${logPrefix} [智能补全] 跳过: 副源 [${secSource}] 为合集，为避免混入其他季度集数，不执行补全。`);
                   else stitchUnmatchedEpisodes(derivedAnime, orphanedEpisodes, secSource);
-                  
+
                   const normals = [], sinkers = [];
                   derivedAnime.links.forEach(link => {
                       const rawContent = link.title.replace(RegexStore.Clean.SOURCE_TAG, '').trim();
@@ -1980,7 +2131,7 @@ async function processMergeTask(params) {
              return null;
         }
         generatedSignatures.add(signature);
-        
+
         for (let i = 1; i < contentSignatureParts.length; i++) {
             const secId = contentSignatureParts[i];
             if (!collectionAnimeIds.has(secId)) {
@@ -2035,7 +2186,7 @@ function detectCollectionCandidates(curAnimes) {
             .replace(RegexStore.Clean.YEAR_TAG, '')
             .replace(RegexStore.Clean.META_SUFFIX, '')
             .replace(RegexStore.Lang.KEYWORDS_STRONG, '');
-        
+
         SUFFIX_SPECIFIC_MAP.forEach(m => clean = clean.replace(m.regex, ''));
 
         clean = clean.replace(RegexStore.Season.SUFFIX_AMBIGUOUS, '')
@@ -2065,7 +2216,7 @@ function detectCollectionCandidates(curAnimes) {
         list.forEach(anime => {
             const realAnime = globals.animes.find(a => String(a.animeId) === String(anime.animeId)) || anime;
             const markers = extractSeasonMarkers(realAnime.animeTitle, realAnime.typeDescription);
-            
+
             let seasonNum = 1; 
             for (const m of markers) {
                 if (m.startsWith('S')) {
@@ -2095,7 +2246,6 @@ function detectCollectionCandidates(curAnimes) {
                         const t = cleanText(rawTitle);
                         if (RegexStore.Episode.SPECIAL_CHECK.test(t) || RegexStore.Episode.DANDAN_IGNORE.test(t)) return false;
                         if (RegexStore.Episode.MAP_EXCLUDE_KEYWORDS.test(rawContent) || RegexStore.Episode.MAP_EXCLUDE_KEYWORDS.test(rawTitle)) return false;
-                        log("info", `[Merge-Check] [Detail-Ep] [${realAnime.source}] 保留: "${rawTitle}"`);
                         return true;
                     }).length;
                 } else validCount = realAnime.links.length;
@@ -2103,9 +2253,12 @@ function detectCollectionCandidates(curAnimes) {
 
             if (!sourceStats.has(realAnime.source)) sourceStats.set(realAnime.source, { seasonCounts: {}, maxSeason: 0, s1Candidates: [] });
             const stat = sourceStats.get(realAnime.source);
-            
+
             if (!stat.seasonCounts[seasonNum]) stat.seasonCounts[seasonNum] = 0;
-            stat.seasonCounts[seasonNum] += validCount;
+
+            // 取单季度的最大集数，避免多语言版本或相同季度的重复条目累加导致集数虚高
+            stat.seasonCounts[seasonNum] = Math.max(stat.seasonCounts[seasonNum], validCount);
+
             if (seasonNum > stat.maxSeason) stat.maxSeason = seasonNum;
             if (seasonNum === 1) stat.s1Candidates.push({ anime: realAnime, originalCount: validCount });
         });
@@ -2131,28 +2284,22 @@ function detectCollectionCandidates(curAnimes) {
 
             if (!hasOtherSources) continue;
 
-            const currentS1Total = stat.seasonCounts[1];
             const threshold = maxOtherS1 + Thresholds.COLLECTION_DIFF;
-            const ratio = maxOtherS1 > 0 ? (currentS1Total / maxOtherS1) : 0;
 
-            if (currentS1Total > threshold) {
-                if (ratio > Thresholds.COLLECTION_RATIO) {
-                     log("info", `[Merge-Check] [合集探测] 拒绝: [${source}] ${baseTitle} (Ratio too high: ${ratio.toFixed(2)} > ${Thresholds.COLLECTION_RATIO})`);
-                     continue;
-                }
-                const giants = stat.s1Candidates.filter(c => c.originalCount > threshold);
-                if (giants.length > 0) {
-                    giants.forEach(cand => {
-                        collectionIds.add(cand.anime.animeId);
-                        log("info", `[Merge-Check] [合集探测] 发现疑似合集(单体): [${source}] ${cand.anime.animeTitle} (Count:${cand.originalCount} > Thr:${threshold}, Ratio:${ratio.toFixed(2)}) -> 标记为合集`);
-                    });
+            // 独立评估每个候选条目，确认为大体积合集才进行标记，杜绝聚合误判
+            stat.s1Candidates.forEach(cand => {
+                const ratio = maxOtherS1 > 0 ? (cand.originalCount / maxOtherS1) : 0;
+                if (cand.originalCount > threshold) {
+                    if (ratio > Thresholds.COLLECTION_RATIO) {
+                         log("info", `[Merge-Check] [合集探测] 拒绝: [${source}] ${cand.anime.animeTitle} (Ratio too high: ${ratio.toFixed(2)} > ${Thresholds.COLLECTION_RATIO})`);
+                         return;
+                    }
+                    collectionIds.add(cand.anime.animeId);
+                    log("info", `[Merge-Check] [合集探测] 发现疑似合集(单体): [${source}] ${cand.anime.animeTitle} (Count:${cand.originalCount} > Thr:${threshold}, Ratio:${ratio.toFixed(2)}) -> 标记为合集`);
                 } else {
-                    stat.s1Candidates.forEach(cand => {
-                        collectionIds.add(cand.anime.animeId);
-                        log("info", `[Merge-Check] [合集探测] 发现疑似合集(聚合): [${source}] ${cand.anime.animeTitle} (TotalS1:${currentS1Total} > Thr:${threshold}, Ratio:${ratio.toFixed(2)}) -> 标记为合集`);
-                    });
+                    log("info", `[Merge-Check] [合集探测] 未命中: [${source}] ${cand.anime.animeTitle} (Count:${cand.originalCount} <= Threshold:${threshold})`);
                 }
-            } else log("info", `[Merge-Check] [合集探测] 未命中: [${source}] ${baseTitle} (TotalS1:${currentS1Total} <= Threshold:${threshold})`);
+            });
         }
     }
     return collectionIds;
@@ -2188,7 +2335,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
 
   // 1. 合集探测 (前置计算)
   const collectionAnimeIds = detectCollectionCandidates(curAnimes);
-  
+
   // 用于记录合集的使用进度，辅助切片推理 (Map<animeId, { S1: 10, S2: 24 }>)
   // 此进度对象在所有 Phase 间共享，确保 Phase 1 产生的进度能被 Phase 2 利用
   const collectionProgress = new Map();
@@ -2201,20 +2348,20 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
 
   for (const group of groups) {
     if (group.secondaries.length === 0) continue;
-    
+
     // 构建全局优先级地图，用于排序 (Primary=0, Sec1=1, Sec2=2...)
     // 优先级数值越小，代表在配置文件中越靠前，优先级越高
     const sourcePriorityMap = new Map();
     const fullPriorityList = [group.primary, ...group.secondaries];
     fullPriorityList.forEach((src, idx) => sourcePriorityMap.set(src, idx));
-    
+
     const groupFingerprint = fullPriorityList.join('&');
     const groupConsumedIds = new Set();
 
     // 通用排序函数：源优先级 ASC > 媒体类型 (TV>Movie) > 季度编号 ASC (S1->S2)
     const sortCandidates = (list, phaseName) => {
         if (!list || list.length < 2) return list;
-        
+
         log("info", `[Merge-Check] [Sort] ${phaseName} 排序前首个元素: ${list[0].animeTitle}`);
 
         list.sort((a, b) => {
@@ -2230,11 +2377,11 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                 const markers = extractSeasonMarkers(anime.animeTitle, anime.typeDescription);
                 if (markers.has('MOVIE')) return 2;
                 if (markers.has('OVA') || markers.has('SP')) return 2;
-                
+
                 // 补充检查：防止 extractSeasonMarkers 漏网，使用严格类型判断
                 const strictType = getStrictMediaType(anime.animeTitle, anime.typeDescription);
                 if (strictType === 'MOVIE') return 2;
-                
+
                 return 1; // 默认为 TV 正片季度
             };
 
@@ -2253,7 +2400,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
             const sNum = getSeasonNumber(a.animeTitle, a.typeDescription) || 1;
             const typeLabel = (extractSeasonMarkers(a.animeTitle, a.typeDescription).has('MOVIE') || getStrictMediaType(a.animeTitle, a.typeDescription) === 'MOVIE') ? 'Movie' : `S${sNum}`;
             const pLevel = sourcePriorityMap.get(a.source) ?? '?';
-            
+
             return `[P${pLevel}] [${typeLabel}] [${a.source}] ${a.animeTitle}`;
         });
         log("info", `[Merge-Check] [Sort] ${phaseName} 执行顺序:\n   ${debugOrder.join('\n   ')}`);
@@ -2322,7 +2469,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
 
              const currentPriorityIdx = sourcePriorityMap.get(tAnime.source);
              const availableSecondaries = fullPriorityList.slice(currentPriorityIdx + 1);
-             
+
              if (availableSecondaries.length === 0) continue;
 
              const resultAnime = await processMergeTask({
@@ -2401,13 +2548,13 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
           if (globalConsumedIds.has(anime.animeId) && keepSources.has(anime.source)) globalConsumedIds.delete(anime.animeId);
       }
   }
-  
+
   // 最终清理：移除已被任意一组所消费的单源原始资源
   for (let i = curAnimes.length - 1; i >= 0; i--) {
     const item = curAnimes[i];
     if (item._isMerged || globalConsumedIds.has(item.animeId)) curAnimes.splice(i, 1);
   }
-  
+
   log("info", `[Merge] 合并执行完毕，最终列表数量: ${curAnimes.length}`);
 }
 
@@ -2456,13 +2603,13 @@ export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts
     }
     return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
   };
-  
+
   // 遍历其他来源进行对齐
   for (let idx = 0; idx < results.length; idx++) {
     const sourceName = sourceNames[idx];
     const realId = realIds[idx];
     const list = results[idx];
-    
+
     if (sourceName === 'dandan' || !Array.isArray(list) || list.length === 0) {
       continue;
     }
@@ -2486,13 +2633,13 @@ export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts
     // 仅根据 dandan related 接口提供的精确偏移量进行对齐，未命中则跳过
     if (appliedShift !== undefined) {
       log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用 dandan API 精确偏移量 ${appliedShift}s`);
-      
+
       for (let i = 0; i < list.length; i++) {
         const danmu = list[i];
         const time = getDanmuTime(danmu);
         // 原本 time 是基准，shift表示加上该偏差到达 Dandan 时间轴
         const targetTime = Math.max(0, time + appliedShift);
-        
+
         // 替换位移
         if (danmu.p && typeof danmu.p === 'string') {
           const firstComma = danmu.p.indexOf(',');
@@ -2511,7 +2658,7 @@ export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts
       log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 未找到相关 API 偏移量数据，跳过时间轴对齐`);
     }
   }
-  
+
   // 直接返回修改后的原始数组，不再产生深拷贝开销
   return results;
 }
