@@ -7,7 +7,7 @@
       "destination": "/node-functions/index.js"
     },
     {
-      "source": "/*",
+      "source": "/**",
       "destination": "/node-functions/[[...path]].js"
     }
   ]
