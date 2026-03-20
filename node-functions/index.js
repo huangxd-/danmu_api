@@ -6,6 +6,11 @@ export const onRequest = async (context) => {
   // 获取协议和主机名，使用属性访问而非 get 方法
   const baseUrl = `https://localhost`;
 
+  let bodyInit = null;
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    bodyInit = await request.arrayBuffer(); // 保留原始字节，不破坏格式
+  }
+
   // 调试：打印 headers 和原始 URL
   console.log('Request URL:', request.url);
   console.log('Request Headers:', request.headers);
@@ -31,7 +36,7 @@ export const onRequest = async (context) => {
   const modifiedRequest = new Request(fullUrl, {
     method: request.method,
     headers: request.headers,
-    body: request.body,
+    body: bodyInit,
     redirect: request.redirect,
     credentials: request.credentials,
     cache: request.cache,
