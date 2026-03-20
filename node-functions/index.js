@@ -31,7 +31,7 @@ export const onRequest = async (context) => {
   const modifiedRequest = new Request(fullUrl, {
     method: request.method,
     headers: request.headers,
-    body: JSON.stringify(request.body),
+    body: request.body,
     redirect: request.redirect,
     credentials: request.credentials,
     cache: request.cache,
