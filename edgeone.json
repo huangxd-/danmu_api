@@ -1,4 +1,14 @@
 {
   "name": "danmu-api",
-  "outputDirectory": "./"
+  "outputDirectory": "./",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/node-functions/index.js"
+    },
+    {
+      "source": "/*",
+      "destination": "/node-functions/[[...path]].js"
+    }
+  ]
 }
