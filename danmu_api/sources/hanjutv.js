@@ -396,7 +396,7 @@ export default class HanjutvSource extends BaseSource {
 
   // ── 番剧处理 ─────────────────────────────────────────────────
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     if (!Array.isArray(sourceAnimes)) {
       log("error", "[Hanjutv] sourceAnimes is not a valid array");
       return [];
@@ -440,7 +440,7 @@ export default class HanjutvSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({ ...transformedAnime, links });
+            addAnime({ ...transformedAnime, links }, detailStore);
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           } catch (error) {
             log("error", `[Hanjutv] Error processing anime: ${error.message}`);

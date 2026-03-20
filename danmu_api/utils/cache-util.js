@@ -32,24 +32,39 @@ function getAnimeIdentityKey(anime) {
         return "";
     }
 
+    const sourcePrefix = anime.source ? String(anime.source) + ":" : "";
+
     if (anime.bangumiId !== undefined && anime.bangumiId !== null && String(anime.bangumiId) !== "") {
-        return `bangumi:${String(anime.bangumiId)}`;
+        return "bangumi:" + sourcePrefix + String(anime.bangumiId);
     }
 
     if (anime.animeId !== undefined && anime.animeId !== null && String(anime.animeId) !== "") {
-        return `anime:${String(anime.animeId)}`;
+        return "anime:" + sourcePrefix + String(anime.animeId);
     }
 
     return "";
 }
 
-function* iterateRequestAnimeDetails() {
-    if (!(globals.requestAnimeDetailsMap instanceof Map)) {
+function storeAnimeDetail(detailStore, anime) {
+    if (!(detailStore instanceof Map) || !anime) {
+        return;
+    }
+
+    const identityKey = getAnimeIdentityKey(anime);
+    if (!identityKey) {
+        return;
+    }
+
+    detailStore.set(identityKey, anime);
+}
+
+function* iterateDetailStore(detailStore) {
+    if (!(detailStore instanceof Map)) {
         return;
     }
 
     const seen = new Set();
-    for (const anime of globals.requestAnimeDetailsMap.values()) {
+    for (const anime of detailStore.values()) {
         const identityKey = getAnimeIdentityKey(anime);
         if (identityKey && seen.has(identityKey)) {
             continue;
@@ -61,8 +76,17 @@ function* iterateRequestAnimeDetails() {
     }
 }
 
-function* iterateSearchCacheDetails() {
+function collectUniqueAnimeDetails(detailStore) {
+    const details = [];
+    for (const anime of iterateDetailStore(detailStore)) {
+        details.push(anime);
+    }
+    return details;
+}
+
+function getActiveSearchCacheEntries() {
     const now = Date.now();
+    const activeEntries = [];
 
     for (const [keyword, cached] of globals.searchCache.entries()) {
         const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
@@ -73,43 +97,75 @@ function* iterateSearchCacheDetails() {
             continue;
         }
 
+        activeEntries.push(cached);
+    }
+
+    activeEntries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return activeEntries;
+}
+
+function matchesAnimeId(anime, idStr) {
+    return String(anime?.animeId) === idStr || String(anime?.bangumiId) === idStr;
+}
+
+function findAnimeByIdInIterator(iterator, idStr, source = null) {
+    let fallback = null;
+
+    for (const anime of iterator) {
+        if (!matchesAnimeId(anime, idStr)) {
+            continue;
+        }
+
+        if (source && anime?.source === source) {
+            return anime;
+        }
+
+        if (!fallback) {
+            fallback = anime;
+        }
+    }
+
+    return fallback;
+}
+
+function* iterateSearchCacheDetails() {
+    const seen = new Set();
+
+    for (const cached of getActiveSearchCacheEntries()) {
         if (!Array.isArray(cached.details)) {
             continue;
         }
 
         for (const anime of cached.details) {
+            const identityKey = getAnimeIdentityKey(anime);
+            if (identityKey && seen.has(identityKey)) {
+                continue;
+            }
+            if (identityKey) {
+                seen.add(identityKey);
+            }
             yield anime;
         }
     }
 }
 
-export function resolveAnimeById(id) {
+export function resolveAnimeById(id, detailStore = null, source = null) {
     const idStr = String(id);
 
-    let anime = globals.animes.find(item =>
-        String(item.animeId) === idStr || String(item.bangumiId) === idStr
-    );
+    let anime = findAnimeByIdInIterator(globals.animes, idStr, source);
     if (anime) {
         return anime;
     }
 
-    if (globals.requestAnimeDetailsMap instanceof Map) {
-        anime = globals.requestAnimeDetailsMap.get(idStr);
-        if (anime) {
-            return anime;
-        }
+    anime = findAnimeByIdInIterator(iterateDetailStore(detailStore), idStr, source);
+    if (anime) {
+        return anime;
     }
 
-    for (const item of iterateSearchCacheDetails()) {
-        if (String(item?.animeId) === idStr || String(item?.bangumiId) === idStr) {
-            return item;
-        }
-    }
-
-    return null;
+    return findAnimeByIdInIterator(iterateSearchCacheDetails(), idStr, source);
 }
 
-export function resolveEpisodeContextById(id) {
+export function resolveEpisodeContextById(id, detailStore = null) {
     const commentId = Number(id);
     if (!Number.isFinite(commentId)) {
         return null;
@@ -139,7 +195,7 @@ export function resolveEpisodeContextById(id) {
         }
     }
 
-    for (const anime of iterateRequestAnimeDetails()) {
+    for (const anime of iterateDetailStore(detailStore)) {
         const result = matchEpisode(anime);
         if (result) {
             return result;
@@ -153,7 +209,7 @@ export function resolveEpisodeContextById(id) {
             seen.add(identityKey);
         }
     }
-    for (const anime of iterateRequestAnimeDetails()) {
+    for (const anime of iterateDetailStore(detailStore)) {
         const identityKey = getAnimeIdentityKey(anime);
         if (identityKey) {
             seen.add(identityKey);
@@ -177,7 +233,6 @@ export function resolveEpisodeContextById(id) {
 
     return null;
 }
-
 // 检查搜索缓存是否有效（未过期）
 export function isSearchCacheValid(keyword) {
     if (!globals.searchCache.has(keyword)) {
@@ -206,8 +261,7 @@ export function getSearchCache(keyword, detailsMap = null) {
 
         if (detailsMap instanceof Map && Array.isArray(cached.details)) {
             cached.details.forEach(anime => {
-                detailsMap.set(String(anime.bangumiId), anime);
-                detailsMap.set(String(anime.animeId), anime);
+                storeAnimeDetail(detailsMap, anime);
             });
         }
 
@@ -218,11 +272,7 @@ export function getSearchCache(keyword, detailsMap = null) {
 
 // 设置搜索缓存
 export function setSearchCache(keyword, results, detailsMap = null) {
-    const details = detailsMap instanceof Map
-        ? Array.from(new Map(
-            Array.from(detailsMap.values()).map(anime => [String(anime.bangumiId || anime.animeId), anime])
-          ).values())
-        : [];
+    const details = collectUniqueAnimeDetails(detailsMap);
 
     globals.searchCache.set(keyword, {
         results: results,
@@ -372,7 +422,7 @@ export function findAnimeTitleById(id) {
 }
 
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
-export function addAnime(anime) {
+export function addAnime(anime, detailStore = null) {
     anime = Anime.fromJson(anime);
     try {
         // 确保 anime 有 links 属性且是数组
@@ -398,10 +448,7 @@ export function addAnime(anime) {
         const animeCopy = Anime.fromJson({ ...anime, links: newLinks });
 
         // 当前请求内额外保留一份详情，避免被全局数量上限裁剪后丢失
-        if (globals.requestAnimeDetailsMap instanceof Map) {
-            globals.requestAnimeDetailsMap.set(String(animeCopy.bangumiId), animeCopy);
-            globals.requestAnimeDetailsMap.set(String(animeCopy.animeId), animeCopy);
-        }
+        storeAnimeDetail(detailStore, animeCopy);
 
         // 检查是否已存在相同 animeId 的 anime
         const existingAnimeIndex = globals.animes.findIndex(a => a.animeId === anime.animeId);
@@ -431,7 +478,7 @@ export function addAnime(anime) {
             bangumiId: anime.bangumiId,
             animeTitle: anime.animeTitle
           })),
-          (key, value) => key === 'links' ? value.length : value
+          (key, value) => key === "links" ? value.length : value
         )}`);
 
         return true;
@@ -440,7 +487,6 @@ export function addAnime(anime) {
         return false;
     }
 }
-
 // 删除最早添加的 anime，并从 episodeIds 删除其 links 中的 url
 export function removeEarliestAnime() {
     if (globals.animes.length === 0) {
