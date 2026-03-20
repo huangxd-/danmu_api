@@ -55,6 +55,32 @@ export default class TencentSource extends BaseSource {
       return null;
     }
 
+    let mediaType = contentType;
+
+    // 提取 3D 与 2D 属性标签并追加至媒体类型
+    let is3D = false;
+    let is2D = false;
+    if (videoInfo.coverDoc) {
+        if (videoInfo.coverDoc.richTags && Array.isArray(videoInfo.coverDoc.richTags)) {
+            videoInfo.coverDoc.richTags.forEach(tag => {
+                if (tag.text && tag.text.includes('3D')) is3D = true;
+                if (tag.text && tag.text.includes('2D')) is2D = true;
+            });
+        }
+        if (videoInfo.coverDoc.tags && Array.isArray(videoInfo.coverDoc.tags)) {
+            videoInfo.coverDoc.tags.forEach(tag => {
+                if (tag && tag.includes('3D')) is3D = true;
+                if (tag && tag.includes('2D')) is2D = true;
+            });
+        }
+    }
+    
+    if (is3D) {
+        mediaType = "3D" + mediaType;
+    } else if (is2D) {
+        mediaType = "2D" + mediaType;
+    }
+
     // 过滤非腾讯视频内容
     const allSites = (videoInfo.playSites || []).concat(videoInfo.episodeSites || []);
     if (allSites.length > 0 && !allSites.some(site => site.enName === 'qq')) {
@@ -75,7 +101,7 @@ export default class TencentSource extends BaseSource {
       provider: "tencent",
       mediaId: mediaId,
       title: title,
-      type: contentType,  // 使用中文类型,与360/vod保持一致
+      type: mediaType,  
       year: videoInfo.year,
       imageUrl: videoInfo.imgUrl,
       episodeCount: episodeCount
