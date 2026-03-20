@@ -391,6 +391,17 @@ WidgetMetadata = {
       ],
     },
     {
+      name: "colorPool",
+      title: "自定义颜色池（CONVERT_COLOR为color时生效），不配置使用默认颜色池，格式：十进制颜色值逗号分隔",
+      type: "input",
+      placeholders: [
+        {
+          title: "默认颜色池",
+          value: "",
+        },
+      ],
+    },
+    {
       name: "likeSwitch",
       title: "点赞功能开关，默认true",
       type: "input",
@@ -491,7 +502,7 @@ if (typeof window !== 'undefined') {
 let globals;
 async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                      platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch) {
+                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
   const env = {};
   
@@ -516,6 +527,7 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
   if (danmuOffset !== undefined) env.DANMU_OFFSET = danmuOffset;
   if (convertTopBottomToScroll !== undefined) env.CONVERT_TOP_BOTTOM_TO_SCROLL = convertTopBottomToScroll;
   if (convertColor !== undefined) env.CONVERT_COLOR = convertColor;
+  if (colorPool !== undefined) env.COLOR_POOL = colorPool;
   if (likeSwitch !== undefined) env.LIKE_SWITCH = likeSwitch;
   if (proxyUrl !== undefined) env.PROXY_URL = proxyUrl;
   if (tmdbApiKey !== undefined) env.TMDB_API_KEY = tmdbApiKey;
@@ -585,11 +597,11 @@ const PREFIX_URL = "http://localhost:9321"
 async function searchDanmu(params) {
   const { tmdbId, type, title, season, link, videoUrl, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
 
   let simplifiedTitle = title
   // 如果启用了搜索关键字繁转简，则进行转换
@@ -665,11 +677,11 @@ async function searchDanmu(params) {
 async function getDetailById(params) {
   const { animeId, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
 
   const response = await getBangumi(`${PREFIX_URL}/api/v2/bangumi/${animeId}`);
   const resJson = await response.json();
@@ -684,11 +696,11 @@ async function getDetailById(params) {
 async function getCommentsById(params) {
   const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
 
   if (commentId) {
     const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
@@ -705,7 +717,7 @@ async function getCommentsById(params) {
     if (lastCommentId === commentId && segmentList) {
         return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                                                platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                                               danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch })
+                                               danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch })
     } else {
       Widget.storage.remove(storeKey);
       Widget.storage.remove(commentIdKey);
@@ -731,11 +743,11 @@ async function getCommentsById(params) {
 async function getDanmuWithSegmentTime(params) {
   const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, 
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
 
   const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
   const segmentList = Widget.storage.get(storeKey);

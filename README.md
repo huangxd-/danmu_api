@@ -74,7 +74,7 @@ LogVar 弹幕 API 服务器
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
   - 将顶部和底部弹幕转换为浮动弹幕（`CONVERT_TOP_BOTTOM_TO_SCROLL`）
-  - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`）
+  - 转换弹幕颜色为白色或彩色（`CONVERT_COLOR`），支持自定义颜色池（`COLOR_POOL`）
   - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
   - 增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
@@ -310,7 +310,7 @@ LogVar 弹幕 API 服务器
 > cf部署可能不稳定，推荐用vercel/netlify部署。
 
 ## API食用指南
-支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer/peekpili 等支持弹幕API的播放器。
 
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 
@@ -398,6 +398,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | DANMU_LIMIT    | 【可选】等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000       |
 | CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
 | CONVERT_COLOR    | 【可选】弹幕转换颜色配置，默认为`default`（不转换），`white` 将所有非白色的弹幕颜色转换为纯白色，`color` 将所有白色弹幕转换为随机颜色（包含白色），可选值：`default`、`white`、`color`       |
+| COLOR_POOL    | 【可选】自定义颜色池（`CONVERT_COLOR`为`color`时生效），不配置使用默认颜色池（白、红、橙、黄、绿、青、蓝、紫、粉），格式：十进制颜色值逗号分隔，例如：`16711680,65280,255,16776960`       |
 | LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
 | DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
