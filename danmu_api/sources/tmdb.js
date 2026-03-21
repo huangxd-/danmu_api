@@ -118,8 +118,8 @@ export default class TmdbSource extends BaseSource {
 
   async getEpisodes(id) {}
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
-    return this.doubanSource.handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName);
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+    return this.doubanSource.handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore);
   }
 
   async getEpisodeDanmu(id) {}

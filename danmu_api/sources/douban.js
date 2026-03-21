@@ -45,7 +45,7 @@ export default class DoubanSource extends BaseSource {
 
   async getEpisodes(id) {}
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const doubanAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -113,7 +113,7 @@ export default class DoubanSource extends BaseSource {
               if (cid) {
                 tmpAnimes[0].provider = "tencent";
                 tmpAnimes[0].mediaId = cid;
-                await this.tencentSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+                await this.tencentSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes, detailStore)
               }
               break;
             }
@@ -122,7 +122,7 @@ export default class DoubanSource extends BaseSource {
               if (tvid) {
                 tmpAnimes[0].provider = "iqiyi";
                 tmpAnimes[0].mediaId = anime?.type_name === '电影' ? `movie_${tvid}` : tvid;
-                await this.iqiyiSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+                await this.iqiyiSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes, detailStore)
               }
               break;
             }
@@ -131,7 +131,7 @@ export default class DoubanSource extends BaseSource {
               if (showId) {
                 tmpAnimes[0].provider = "youku";
                 tmpAnimes[0].mediaId = showId;
-                await this.youkuSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+                await this.youkuSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes, detailStore)
               }
               break;
             }
@@ -140,7 +140,7 @@ export default class DoubanSource extends BaseSource {
               if (seasonId) {
                 tmpAnimes[0].provider = "bilibili";
                 tmpAnimes[0].mediaId = `ss${seasonId}`;
-                await this.bilibiliSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+                await this.bilibiliSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes, detailStore)
               }
               break;
             }
@@ -154,7 +154,7 @@ export default class DoubanSource extends BaseSource {
               if (epId) {
                 tmpAnimes[0].provider = "migu";
                 tmpAnimes[0].mediaId = `https://v3-sc.miguvideo.com/program/v4/cont/content-info/${epId}/1`;
-                await this.miguSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes)
+                await this.miguSource.handleAnimes(tmpAnimes, response.data?.title, doubanAnimes, detailStore)
               }
               break;
             }

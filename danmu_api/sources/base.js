@@ -22,7 +22,7 @@ export default class BaseSource {
   }
 
   // 处理animes结果，用数据模型Anime存储
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, vodName) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, extra = null, detailStore = null) {
     throw new Error("Method 'handleAnimes' must be implemented");
   }
 

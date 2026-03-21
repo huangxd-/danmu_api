@@ -199,7 +199,7 @@ export default class BahamutSource extends BaseSource {
     }
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     queryTitle = traditionalized(queryTitle);
@@ -356,7 +356,7 @@ export default class BahamutSource extends BaseSource {
 
           tmpAnimes.push(transformedAnime);
 
-          addAnime({...transformedAnime, links: links});
+          addAnime({...transformedAnime, links: links}, detailStore);
 
           if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
         }

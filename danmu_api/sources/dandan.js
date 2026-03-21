@@ -247,7 +247,7 @@ export default class DandanSource extends BaseSource {
   }
 
   // 处理并转换番剧信息
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -371,7 +371,7 @@ export default class DandanSource extends BaseSource {
             tmpAnimes.push(transformedAnime);
 
             // 添加到全局缓存
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             // 维护缓存大小
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
