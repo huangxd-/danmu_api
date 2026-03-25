@@ -454,8 +454,27 @@ export default class DandanSource extends BaseSource {
             const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
             return match ? (match[1] || match[0]) : targetStr;
           }
-          // 常规平台逻辑：统一剥离 http/https协议、www.前缀，并截断 ? 后面的所有查询参数
-          return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+
+          // 常规平台逻辑：统一剥离 http/https协议、www.前缀
+          let core = targetStr.replace(/^https?:\/\/(www\.)?/, '');
+
+          // 保留 B 站分 P 和合并分 P 关键参数供合并工具精确匹配
+          if (sName === 'bilibili' || sName === 'bilibili1') {
+            // 1. 如果路径包含 /combine，保留问号及后面所有的查询参数（剥离可能的 hash）
+            if (/\/combine\?/.test(core)) {
+              return core.replace(/#.*/, '');
+            }
+            // 2. 如果包含 p= 参数，精准提取 p 参数并拼接到纯净路径后
+            const pMatch = core.match(/\b(p=\d+)\b/);
+            core = core.replace(/\?.*/, ''); // 先截断常规查询参数
+            if (pMatch) {
+              core += `?${pMatch[1]}`;
+            }
+            return core;
+          }
+
+          // 常规平台：截断“?”后面的所有查询参数
+          return core.replace(/\?.*/, '');
         };
 
         for (const rel of relatedResp.data.relateds) {
