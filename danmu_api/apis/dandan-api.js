@@ -1021,10 +1021,6 @@ export async function matchAnime(url, req, clientIp) {
 
     let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
 
-    if (clientIp) {
-      setLastSearch(clientIp, { title, season, episode });
-    }
-
     // 使用剧名映射表转换剧名
     if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
       const mappedTitle = globals.titleMappingTable.get(title);
@@ -1095,6 +1091,9 @@ export async function matchAnime(url, req, clientIp) {
     };
 
     if (resEpisode) {
+      if (clientIp) {
+        setLastSearch(clientIp, { title, season, episode, episodeId: resEpisode.episodeId });
+      }
       resData["isMatched"] = true;
       resData["matches"] = [
         AnimeMatch.fromJson({
@@ -1566,7 +1565,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
 
     if (clientIp) {
       const lastSearch = getLastSearch(clientIp);
-      if (lastSearch && lastSearch.title && lastSearch.season && lastSearch.episode && episodeTitle) {
+      if (lastSearch && lastSearch.episodeId === commentId && lastSearch.title && lastSearch.season && lastSearch.episode && episodeTitle) {
         lastTitle = lastSearch.title;
         lastSeason = lastSearch.season;
         offset = `${lastSearch.episode}:${episodeTitle}`;
