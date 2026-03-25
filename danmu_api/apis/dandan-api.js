@@ -251,13 +251,13 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}(:\d+)?(\/[^\s]*)?$/;
   if (urlRegex.test(queryTitle)) {
     const tmpAnime = Anime.fromJson({
-      "animeId": 111,
-      "bangumiId": "string",
+      "animeId": 0,
+      "bangumiId": "0",
       "animeTitle": queryTitle,
-      "type": "type",
-      "typeDescription": "string",
-      "imageUrl": "string",
-      "startDate": "2025-08-08T13:25:11.189Z",
+      "type": "",
+      "typeDescription": "链接解析",
+      "imageUrl": "",
+      "startDate": "",
       "episodeCount": 1,
       "rating": 0,
       "isFavorited": true
