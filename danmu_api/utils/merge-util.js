@@ -2596,13 +2596,25 @@ export function alignSourceTimelines(results, sourceNames, realIds, dandanShifts
     return results;
   }
 
-  // 核心标识提取函数，保持与 dandan 源内部一致的去噪匹配逻辑
+  // 核心标识提取函数：滤除干扰因素，提取唯一特征以供比对
   const getCoreIdentifier = (targetStr, sName) => {
     if (sName === 'bahamut') {
       const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
       return match ? (match[1] || match[0]) : targetStr;
     }
-    return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+    let core = targetStr.replace(/^https?:\/\/(www\.)?/, '');
+    if (sName === 'bilibili' || sName === 'bilibili1') {
+      if (/\/combine\?/.test(core)) {
+        return core.replace(/#.*/, '');
+      }
+      const pMatch = core.match(/\b(p=\d+)\b/);
+      core = core.replace(/\?.*/, '');
+      if (pMatch) {
+        core += `?${pMatch[1]}`;
+      }
+      return core;
+    }
+    return core.replace(/\?.*/, '');
   };
 
   // 遍历其他来源进行对齐
