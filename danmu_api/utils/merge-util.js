@@ -739,6 +739,7 @@ function checkTheatricalExemption(titleA, titleB, typeDescA, typeDescB) {
 
 /**
  * 校验媒体类型是否冲突 (真人 vs 动漫, TV vs Movie, 3D vs 2D)
+ * 包含维数通配符逻辑：无明确 3D/2D 标识的条目视为通配符，允许进行任何关联
  * @returns {boolean} true=冲突, false=兼容
  */
 function checkMediaTypeMismatch(titleA, titleB, typeDescA, typeDescB, countA, countB, sourceA = '', sourceB = '') {
@@ -752,23 +753,23 @@ function checkMediaTypeMismatch(titleA, titleB, typeDescA, typeDescB, countA, co
     let is2DA = (typeDescA || '').includes('2D');
     let is2DB = (typeDescB || '').includes('2D');
 
-    // 维数动态探测逻辑 (Dynamic Dimension Detection):
-    // 如果有一方在类型中明确是 3D，则被授权从另一方的标题中主动探测 3D 关键词
-    if (is3DA && !is3DB) {
+    // 状态判定：检查是否为无维数标识的通配符状态
+    const isWildcardA = !is3DA && !is2DA;
+    const isWildcardB = !is3DB && !is2DB;
+
+    // 动态探测：仅当一方具备明确维数，另一方为通配符时，尝试从通配符方标题中提取维数
+    if (!isWildcardA && isWildcardB) {
         if (/3[dD]/.test(titleB)) is3DB = true;
-    } else if (is3DB && !is3DA) {
+        else if (/2[dD]/.test(titleB)) is2DB = true;
+    } else if (!isWildcardB && isWildcardA) {
         if (/3[dD]/.test(titleA)) is3DA = true;
+        else if (/2[dD]/.test(titleA)) is2DA = true;
     }
 
-    // 同样适用 2D 的动态探测：明确有 2D 标签时，才去对方标题里找 2D
-    if (is2DA && !is2DB) {
-        if (/2[dD]/.test(titleB)) is2DB = true;
-    } else if (is2DB && !is2DA) {
-        if (/2[dD]/.test(titleA)) is2DA = true;
-    }
-
-    // 检测 3D 与 2D 的维数属性冲突：任意一方带 3D 且另一方不带 3D（即视为 2D）则判定为冲突
-    if (is3DA !== is3DB) return true;
+    // 维数冲突校验：双方最终都具有确切维数时，才执行严格比对
+    const finalHasDimA = is3DA || is2DA;
+    const finalHasDimB = is3DB || is2DB;
+    if (finalHasDimA && finalHasDimB && is3DA !== is3DB) return true;
 
     const mediaA = getStrictMediaType(titleA, typeDescA);
     const mediaB = getStrictMediaType(titleB, typeDescB);

@@ -662,7 +662,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 ### 关联项目
 [喂饭教程1：danmu_api vercel 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
 
-[喂饭教程2：logvar弹幕搭建教程（docker/claw）](https://blog.tencentx.de/p/logvar%E5%BC%B9%E5%B9%95%E6%90%AD%E5%BB%BA%E6%95%99%E7%A8%8B%E5%96%82%E9%A5%AD%E7%89%88/)
+[喂饭教程2：Docker版弹幕danmu_api图文部署教程（面板安装版）](https://github.com/nekokit/danmu_api-docker-deployment-guide)
 
 [喂饭教程3：使用Netlify反向代理巴哈姆特api，实现danmu_api项目国内直连获取巴哈姆特弹幕](https://github.com/wan0ge/bahamut-api-proxy)
 
