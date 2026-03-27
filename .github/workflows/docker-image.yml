@@ -40,14 +40,17 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # ✅ BuildKit 镜像改从 GHCR 拉取，彻底绕开 Docker Hub 限速
+      # 登录后手动拉取，绕过匿名限速
+      - name: Pull BuildKit image
+        run: docker pull moby/buildkit:buildx-stable-1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=ghcr.io/moby/buildkit:buildx-stable-1
 
-      - name: Build and Push Docker image with version and latest tag
+      - name: Build and Push Docker image
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             docker buildx build --platform linux/amd64,linux/arm64 \
