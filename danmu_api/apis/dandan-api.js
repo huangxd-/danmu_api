@@ -6,7 +6,7 @@ import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-util.js";
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
-    getSearchCache, removeEarliestAnime, resolveAnimeById, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
+    getSearchCache, removeEarliestAnime, resolveAnimeById, resolveAnimeByIdFromDetailStore, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
@@ -455,7 +455,11 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
         continue; // 跳过该动漫
       }
 
-      const animeData = globals.animes.find(a => a.animeId === anime.animeId);
+      const animeData =
+        resolveAnimeByIdFromDetailStore(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
+        resolveAnimeByIdFromDetailStore(anime?.animeId, requestAnimeDetailsMap, anime?.source) ||
+        resolveAnimeById(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
+        resolveAnimeById(anime?.animeId, requestAnimeDetailsMap, anime?.source);
       if (animeData && animeData.links) {
         let episodesList = animeData.links.map((link, index) => ({
           episodeId: link.id,
@@ -607,7 +611,7 @@ function findEpisodeByNumber(filteredEpisodes, targetEpisode, platform = null) {
   return null;
 }
 
-async function matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId) {
+async function matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, detailStore = null) {
   const aiBaseUrl = globals.aiBaseUrl;
   const aiModel = globals.aiModel;
   const aiApiKey = globals.aiApiKey;
@@ -677,9 +681,10 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
       return { resEpisode: null, resAnime: null };
     }
 
-    let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${selectedAnime.animeId}`));
-    const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
+    const bangumiData = getBangumiDataForMatch(selectedAnime, detailStore);
+    if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
+      return { resEpisode: null, resAnime: null };
+    }
 
     let filteredEpisode = null;
     
@@ -708,6 +713,19 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
   }
 }
 
+function getBangumiDataForMatch(anime, detailStore = null) {
+  const detailAnime =
+    resolveAnimeByIdFromDetailStore(anime?.bangumiId, detailStore, anime?.source) ||
+    resolveAnimeByIdFromDetailStore(anime?.animeId, detailStore, anime?.source);
+
+  if (!detailAnime) {
+    log("warn", `[matchAnime] Missing request detail snapshot for anime ${anime?.animeId ?? anime?.bangumiId}`);
+    return null;
+  }
+
+  return buildBangumiData(detailAnime, anime?.bangumiId || anime?.animeId || "");
+}
+
 function computeTargetEpisode(offsets, season, episode, filteredEpisodes, targetEpisode) {
   const seasonKey = String(season);
   const match = offsets[seasonKey].match(/^([^:]+):(.+)$/);
@@ -725,7 +743,7 @@ function computeTargetEpisode(offsets, season, episode, filteredEpisodes, target
   return targetEpisode;
 }
 
-async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets) {
+async function matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets, detailStore = null) {
   // 定义最佳匹配结果容器
   let bestRes = {
     anime: null,
@@ -784,9 +802,10 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
     if (!isMatch) continue;
 
     // 2. 获取剧集详情 (无条件获取，确保数据完整性)
-    let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
-    const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
+    const bangumiData = getBangumiDataForMatch(anime, detailStore);
+    if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
+      continue;
+    }
     
     // 输出匹配分数及原始数据日志
     log("info", "判断剧集", `Anime: ${anime.animeTitle}`);
@@ -866,7 +885,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
   return { resEpisode: bestRes.episode, resAnime: bestRes.anime };
 }
 
-async function fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets) {
+async function fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets, detailStore = null) {
   for (const anime of searchData.animes) {
     // 年份匹配优先（如果提供了年份）
     if (year && !matchYear(anime, year)) {
@@ -874,9 +893,10 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, res
       continue;
     }
     
-    let originBangumiUrl = new URL(req.url.replace("/match", `bangumi/${anime.bangumiId}`));
-    const bangumiRes = await getBangumi(originBangumiUrl.pathname);
-    const bangumiData = await bangumiRes.json();
+    const bangumiData = getBangumiDataForMatch(anime, detailStore);
+    if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
+      continue;
+    }
     log("info", bangumiData);
     if (season && episode) {
       // 过滤集标题正则条件的 episode
@@ -1041,8 +1061,9 @@ export async function matchAnime(url, req, clientIp) {
     const [preferAnimeId, preferSource, offsets] = getPreferAnimeId(title, season);
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
+    const requestAnimeDetailsMap = new Map();
     let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));
-    const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource);
+    const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource, requestAnimeDetailsMap);
     const searchData = await searchRes.json();
     log("info", `searchData: ${searchData.animes}`);
 
@@ -1056,7 +1077,7 @@ export async function matchAnime(url, req, clientIp) {
     log("info", `Preferred platform: ${preferredPlatform || 'none'}`);
 
     // 尝试使用AI进行匹配
-    const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId);
+    const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, requestAnimeDetailsMap);
     if (aiMatchResult.resAnime) {
       resAnime = aiMatchResult.resAnime;
       resEpisode = aiMatchResult.resEpisode;
@@ -1064,7 +1085,7 @@ export async function matchAnime(url, req, clientIp) {
     } else {
       // AI匹配失败或未配置，使用传统匹配方式
       for (const platform of dynamicPlatformOrder) {
-        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets);
+        const __ret = await matchAniAndEp(season, episode, year, searchData, title, req, platform, preferAnimeId, offsets, requestAnimeDetailsMap);
         resEpisode = __ret.resEpisode;
         resAnime = __ret.resAnime;
 
@@ -1076,7 +1097,7 @@ export async function matchAnime(url, req, clientIp) {
 
       // 如果都没有找到则返回第一个满足剧集数的剧集
       if (!resAnime) {
-        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets);
+        const __ret = await fallbackMatchAniAndEp(searchData, req, season, episode, year, resEpisode, resAnime, offsets, requestAnimeDetailsMap);
         resEpisode = __ret.resEpisode;
         resAnime = __ret.resAnime;
       }
@@ -1231,9 +1252,11 @@ export async function searchEpisodes(url) {
 }
 
 // Extracted function for GET /api/v2/bangumi/:animeId
-export async function getBangumi(path) {
+export async function getBangumi(path, detailStore = null, source = null) {
   const idParam = path.split("/").pop();
-  const anime = resolveAnimeById(idParam);
+  const anime =
+    resolveAnimeByIdFromDetailStore(idParam, detailStore, source) ||
+    resolveAnimeById(idParam);
 
   if (!anime) {
     log("error", `Anime with ID ${idParam} not found`);

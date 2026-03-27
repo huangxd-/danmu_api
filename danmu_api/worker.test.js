@@ -5,7 +5,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, searchAnime } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
@@ -33,7 +33,7 @@ import { NetlifyHandler } from "./configs/handlers/netlify-handler.js";
 import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { Globals } from "./configs/globals.js";
-import { addEpisode } from "./utils/cache-util.js";
+import { addAnime, addEpisode } from "./utils/cache-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 
 // Mock Request class for testing
@@ -615,6 +615,152 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(body.animes[0].episodes[0].episodeTitle, cachedAnime.links[0].title);
     } finally {
       delete Globals.requestAnimeDetailsMap;
+    }
+  });
+
+  await t.test('POST /api/v2/match should ignore polluted global anime details and use current search snapshot', async () => {
+    resetSearchState();
+
+    const correctLinks = Array.from({ length: 50 }, (_, index) => ({
+      id: 35001 + index,
+      url: `https://www.iqiyi.com/v_match_correct_${index + 1}.html`,
+      title: `【qiyi】 太平年第${index + 1}集`
+    }));
+
+    const cachedAnime = {
+      animeId: 700002,
+      bangumiId: "700002",
+      animeTitle: "太平年(2024)【TV】from iqiyi",
+      type: "tvseries",
+      typeDescription: "TV",
+      imageUrl: "https://example.com/tp.jpg",
+      startDate: "2024-01-01T00:00:00.000Z",
+      episodeCount: 50,
+      rating: 0,
+      isFavorited: true,
+      source: "iqiyi",
+      links: correctLinks
+    };
+
+    const pollutedAnime = {
+      ...cachedAnime,
+      links: correctLinks.map(link => ({ ...link }))
+    };
+    pollutedAnime.links[41] = {
+      id: 35999,
+      url: "https://www.iqiyi.com/v_match_polluted_45.html",
+      title: "【qiyi】 太平年第45集 金陵落日"
+    };
+
+    Globals.searchCache.set("太平年", {
+      results: [createSearchResult(cachedAnime)],
+      details: [cachedAnime],
+      timestamp: Date.now()
+    });
+    Globals.animes = [pollutedAnime];
+
+    const req = {
+      url: urlPrefix + "/api/v2/match",
+      async json() {
+        return {
+          fileName: "太平年 S01E42"
+        };
+      }
+    };
+
+    const res = await matchAnime(new URL(req.url), req, "127.0.0.1");
+    const body = await parseResponse(res);
+
+    assert.equal(res.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.isMatched, true);
+    assert.equal(body.matches.length, 1);
+    assert.equal(body.matches[0].episodeId, cachedAnime.links[41].id);
+    assert.equal(body.matches[0].episodeTitle, cachedAnime.links[41].title);
+  });
+
+  await t.test('GET /api/v2/search/anime should filter by request snapshot instead of collided runtime animeId state', async () => {
+    resetSearchState();
+
+    const originalTencentSearch = TencentSource.prototype.search;
+    const originalTencentHandleAnimes = TencentSource.prototype.handleAnimes;
+    const originalIqiyiSearch = IqiyiSource.prototype.search;
+    const originalIqiyiHandleAnimes = IqiyiSource.prototype.handleAnimes;
+    const originalSourceOrderArr = Array.isArray(Globals.envs.sourceOrderArr) ? [...Globals.envs.sourceOrderArr] : Globals.envs.sourceOrderArr;
+    const originalEnableAnimeEpisodeFilter = Globals.envs.enableAnimeEpisodeFilter;
+    const originalEpisodeTitleFilter = Globals.envs.episodeTitleFilter;
+    const originalAnimeTitleFilter = Globals.envs.animeTitleFilter;
+
+    const sharedAnimeId = 880001;
+    const tencentAnime = {
+      animeId: sharedAnimeId,
+      bangumiId: "tx-880001",
+      animeTitle: "同ID跨源番剧",
+      type: "tvseries",
+      typeDescription: "TV",
+      imageUrl: "",
+      startDate: "2024-01-01T00:00:00.000Z",
+      episodeCount: 1,
+      rating: 0,
+      isFavorited: false,
+      source: "tencent",
+      links: [
+        { url: "https://v.qq.com/x/cover/collision/ep1.html", title: "【qq】 正片第1集" }
+      ]
+    };
+    const iqiyiAnime = {
+      animeId: sharedAnimeId,
+      bangumiId: "iqiyi-880001",
+      animeTitle: "同ID跨源番剧",
+      type: "tvseries",
+      typeDescription: "TV",
+      imageUrl: "",
+      startDate: "2024-01-01T00:00:00.000Z",
+      episodeCount: 1,
+      rating: 0,
+      isFavorited: false,
+      source: "iqiyi",
+      links: [
+        { url: "https://www.iqiyi.com/v_collision_extra.html", title: "【qiyi】 花絮" }
+      ]
+    };
+
+    Globals.envs.sourceOrderArr = ["tencent", "iqiyi"];
+    Globals.envs.enableAnimeEpisodeFilter = true;
+    Globals.envs.episodeTitleFilter = /花絮/;
+    Globals.envs.animeTitleFilter = null;
+
+    TencentSource.prototype.search = async () => [createSearchResult(tencentAnime)];
+    TencentSource.prototype.handleAnimes = async (_results, _queryTitle, curAnimes, detailStore) => {
+      curAnimes.push(createSearchResult(tencentAnime));
+      addAnime(tencentAnime, detailStore);
+    };
+    IqiyiSource.prototype.search = async () => [createSearchResult(iqiyiAnime)];
+    IqiyiSource.prototype.handleAnimes = async (_results, _queryTitle, curAnimes, detailStore) => {
+      curAnimes.push(createSearchResult(iqiyiAnime));
+      addAnime(iqiyiAnime, detailStore);
+    };
+
+    try {
+      const req = new MockRequest(urlPrefix + "/api/v2/search/anime?keyword=" + encodeURIComponent("同ID跨源番剧"), { method: "GET" });
+      const res = await searchAnime(new URL(req.url), null, null, new Map());
+      const body = await parseResponse(res);
+
+      assert.equal(res.status, 200);
+      assert.equal(body.success, true);
+      assert.equal(body.animes.length, 1);
+      assert.equal(body.animes[0].animeId, tencentAnime.animeId);
+      assert.equal(body.animes[0].source, tencentAnime.source);
+      assert.equal(body.animes[0].animeTitle, tencentAnime.animeTitle);
+    } finally {
+      TencentSource.prototype.search = originalTencentSearch;
+      TencentSource.prototype.handleAnimes = originalTencentHandleAnimes;
+      IqiyiSource.prototype.search = originalIqiyiSearch;
+      IqiyiSource.prototype.handleAnimes = originalIqiyiHandleAnimes;
+      Globals.envs.sourceOrderArr = Array.isArray(originalSourceOrderArr) ? [...originalSourceOrderArr] : originalSourceOrderArr;
+      Globals.envs.enableAnimeEpisodeFilter = originalEnableAnimeEpisodeFilter;
+      Globals.envs.episodeTitleFilter = originalEpisodeTitleFilter;
+      Globals.envs.animeTitleFilter = originalAnimeTitleFilter;
     }
   });
   // await t.test('Test ai cilent', async () => {

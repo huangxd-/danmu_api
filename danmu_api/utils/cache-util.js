@@ -165,6 +165,11 @@ export function resolveAnimeById(id, detailStore = null, source = null) {
     return findAnimeByIdInIterator(iterateSearchCacheDetails(), idStr, source);
 }
 
+export function resolveAnimeByIdFromDetailStore(id, detailStore = null, source = null) {
+    const idStr = String(id);
+    return findAnimeByIdInIterator(iterateDetailStore(detailStore), idStr, source);
+}
+
 export function resolveEpisodeContextById(id, detailStore = null) {
     const commentId = Number(id);
     if (!Number.isFinite(commentId)) {
