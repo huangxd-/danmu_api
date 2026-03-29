@@ -70,7 +70,6 @@ export default class AiyifanSource extends BaseSource {
     
     try {
       const urlWithParams = updateQueryString(this.SEARCH_API, params);
-      console.log(urlWithParams);
       const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
       
       if (response.status !== 200) {
@@ -382,11 +381,10 @@ export default class AiyifanSource extends BaseSource {
    * @param {Array} sourceAnimes - 源动漫数据
    * @param {string} queryTitle - 查询标题
    * @param {Array} curAnimes - 当前动漫列表
-   * @param {any} extra - 额外参数
    * @param {any} detailStore - 详情存储
    * @returns {Promise<Array>} 处理后的动漫列表
    */
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, extra = null, detailStore = null) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
@@ -414,8 +412,6 @@ export default class AiyifanSource extends BaseSource {
 
           if (links.length === 0) return;
 
-          console.log("anime: ", anime);
-
           // 计算动漫ID
           const numericAnimeId = convertToAsciiSum(anime.mediaId);
 
@@ -432,7 +428,6 @@ export default class AiyifanSource extends BaseSource {
             rating: 0,
             isFavorited: true,
             source: "aiyifan",
-            aliases: [anime.title]  // 添加别名
           };
 
           tmpAnimes.push(transformedAnime);
