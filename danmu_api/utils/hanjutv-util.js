@@ -1,5 +1,26 @@
-import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows, encodeBase64UrlText, decodeBase64UrlText } from "./codec-util.js";
-import { normalizePositiveTimestamp } from "./time-util.js";
+import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows } from "./codec-util.js";
+
+function normalizePositiveTimestamp(value, fallbackValue = Date.now()) {
+  const ts = Number(value);
+  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : Math.trunc(Number(fallbackValue) || Date.now());
+}
+
+function encodeBase64UrlText(text = "") {
+    return bytesToBase64(stringToUtf8Bytes(text))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+}
+
+function decodeBase64UrlText(text = "") {
+    const normalized = String(text || "").trim();
+    if (!normalized) return "";
+    const base64 = normalized
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return utf8BytesToString(base64ToBytes(base64));
+}
 
 // 移动端参数
 const HANJUTV_VERSION = "6.8.2";
