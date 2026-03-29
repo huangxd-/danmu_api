@@ -319,33 +319,115 @@ function normalizeHanjutvEpisodeIdText(rawId = "") {
   return idText.startsWith("hanjutv:") ? idText.slice("hanjutv:".length) : idText;
 }
 
+function encodeBase64UrlText(text = "") {
+  return bytesToBase64(utf8Encode(text))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeBase64UrlText(text = "") {
+  const normalized = String(text || "").trim();
+  if (!normalized) return "";
+
+  const base64 = normalized
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+
+  return utf8Decode(base64ToBytes(base64));
+}
+
+function buildHanjutvEpisodeRef(id = "", preferTv = false) {
+  const cleanId = String(id || "").trim();
+  if (!cleanId) return null;
+
+  return {
+    id: cleanId,
+    preferTv,
+    rawId: `${preferTv ? "tv" : "hxq"}:${cleanId}`,
+  };
+}
+
+function decodeMergedHanjutvEpisodeId(normalizedId = "") {
+  if (!normalizedId.startsWith("merge:")) return null;
+
+  try {
+    const payloadText = decodeBase64UrlText(normalizedId.slice("merge:".length));
+    const payload = JSON.parse(payloadText);
+    const hxqId = String(payload?.hxq || "").trim();
+    const tvId = String(payload?.tv || "").trim();
+
+    if (!hxqId || !tvId) return null;
+    return { hxqId, tvId };
+  } catch (_) {
+    return null;
+  }
+}
+
+export function encodeMergedHanjutvEpisodeDanmuId(hxqId = "", tvId = "") {
+  const cleanHxqId = String(hxqId || "").trim();
+  const cleanTvId = String(tvId || "").trim();
+  if (!cleanHxqId || !cleanTvId) return "";
+
+  return `merge:${encodeBase64UrlText(JSON.stringify({
+    hxq: cleanHxqId,
+    tv: cleanTvId,
+  }))}`;
+}
+
 export function parseHanjutvEpisodeDanmuId(rawId = "") {
   const normalizedId = normalizeHanjutvEpisodeIdText(rawId);
   if (!normalizedId) {
-    return { id: "", preferTv: false };
+    return { id: "", preferTv: false, rawId: "", refs: [] };
+  }
+
+  const mergedIds = decodeMergedHanjutvEpisodeId(normalizedId);
+  if (mergedIds) {
+    const refs = [
+      buildHanjutvEpisodeRef(mergedIds.hxqId, false),
+      buildHanjutvEpisodeRef(mergedIds.tvId, true),
+    ].filter(Boolean);
+
+    return {
+      id: refs[0]?.id || "",
+      preferTv: false,
+      rawId: normalizedId,
+      refs,
+    };
   }
 
   if (normalizedId.startsWith("tv:")) {
+    const ref = buildHanjutvEpisodeRef(normalizedId.slice(3), true);
     return {
-      id: normalizedId.slice(3),
+      id: ref?.id || "",
       preferTv: true,
+      rawId: ref?.rawId || "",
+      refs: ref ? [ref] : [],
     };
   }
 
   if (normalizedId.startsWith("hxq:")) {
+    const ref = buildHanjutvEpisodeRef(normalizedId.slice(4), false);
     return {
-      id: normalizedId.slice(4),
+      id: ref?.id || "",
       preferTv: false,
+      rawId: ref?.rawId || "",
+      refs: ref ? [ref] : [],
     };
   }
 
+  const ref = buildHanjutvEpisodeRef(normalizedId, false);
   return {
-    id: normalizedId,
+    id: ref?.id || "",
     preferTv: false,
+    rawId: ref?.rawId || "",
+    refs: ref ? [ref] : [],
   };
 }
 
 export function getHanjutvSourceLabel(rawId = "") {
   const normalizedId = normalizeHanjutvEpisodeIdText(rawId);
+  if (normalizedId.startsWith("merge:")) return "韩小圈＆极速版";
   return normalizedId.startsWith("tv:") ? "极速版" : "韩小圈";
 }

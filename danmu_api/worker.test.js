@@ -1619,10 +1619,10 @@ test('worker.js API endpoints', async (t) => {
     const source = new HanjutvSource();
     const hxqEpisodes = source.normalizeHxqEpisodes([{ id: 'shared-ep', serialNo: 1, title: '第一集' }]);
     const tvEpisodes = source.normalizeTvEpisodes([{ id: 'shared-ep', serialNo: 1, title: '第一集' }, { pid: 'tv-only-pid', serialNo: 2, title: '第二集' }]);
-    assert.deepEqual(source.mergeVariantEpisodes(hxqEpisodes, tvEpisodes).map(item => item.url), [
-      'hanjutv:hxq:shared-ep$$$hanjutv:tv:shared-ep',
-      'tv:tv-only-pid',
-    ]);
+    const mergedUrls = source.mergeVariantEpisodes(hxqEpisodes, tvEpisodes).map(item => item.url);
+    assert.match(mergedUrls[0], /^hanjutv:merge:[A-Za-z0-9_-]+$/);
+    assert.ok(!mergedUrls[0].includes('$$$'));
+    assert.deepEqual(mergedUrls.slice(1), ['tv:tv-only-pid']);
 
     const compositeAnimeId = convertToAsciiSum('hxq:hxq-sid-1|tv:tv-sid-1');
     const originalGetHxqDetail = source.getHxqDetail;
@@ -1659,7 +1659,12 @@ test('worker.js API endpoints', async (t) => {
     resetSearchState();
     Globals.episodeNum = 43010;
 
-    const episode = addEpisode('hanjutv:hxq:pid-1$$$hanjutv:tv:eid-1', '【hanjutv】 第1集');
+    const source = new HanjutvSource();
+    const mergedEpisode = source.buildEpisodeLink(
+      { pid: 'pid-1', serialNo: 1, title: '第一集' },
+      { eid: 'eid-1', serialNo: 1, title: '第一集' }
+    );
+    const episode = addEpisode(mergedEpisode.url, '【hanjutv】 第1集');
     Globals.animes.push({
       animeId: 930010,
       bangumiId: '930010',
@@ -1675,11 +1680,11 @@ test('worker.js API endpoints', async (t) => {
       links: [episode]
     });
 
-    const originalGetEpisodeDanmu = HanjutvSource.prototype.getEpisodeDanmu;
-    HanjutvSource.prototype.getEpisodeDanmu = async function(id) {
-      if (id === 'hxq:pid-1') return [{ did: 1, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
-      if (id === 'tv:eid-1') return [{ did: 2, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
-      throw new Error(`unexpected hanjutv id: ${id}`);
+    const originalFetchEpisodeDanmuByRef = HanjutvSource.prototype.fetchEpisodeDanmuByRef;
+    HanjutvSource.prototype.fetchEpisodeDanmuByRef = async function(ref) {
+      if (ref.rawId === 'hxq:pid-1') return [{ did: 1, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
+      if (ref.rawId === 'tv:eid-1') return [{ did: 2, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
+      throw new Error(`unexpected hanjutv ref: ${ref.rawId}`);
     };
 
     try {
@@ -1689,10 +1694,68 @@ test('worker.js API endpoints', async (t) => {
 
       assert.equal(res.status, 200);
       assert.equal(body.count, 1);
-      assert.match(body.comments[0].p, /^21\.00,1,16777215,\[韩小圈＆极速版\]$/);
+      const [time, mode, color, sourceLabel] = body.comments[0].p.split(',');
+      assert.equal(Number(time), 21);
+      assert.equal(mode, '1');
+      assert.equal(color, '16777215');
+      assert.equal(sourceLabel, '[韩小圈＆极速版]');
       assert.equal(body.comments[0].m, '双端同步');
     } finally {
-      HanjutvSource.prototype.getEpisodeDanmu = originalGetEpisodeDanmu;
+      HanjutvSource.prototype.fetchEpisodeDanmuByRef = originalFetchEpisodeDanmuByRef;
+      resetSearchState();
+    }
+  });
+
+  await t.test('GET /api/v2/comment/:id should keep hanjutv dual-variant comments inside outer source merge', async () => {
+    resetSearchState();
+    Globals.episodeNum = 43020;
+
+    const source = new HanjutvSource();
+    const hanjutvEpisode = source.buildEpisodeLink(
+      { pid: 'merge-hxq-1', serialNo: 1, title: '第一集' },
+      { eid: 'merge-tv-1', serialNo: 1, title: '第一集' }
+    );
+    const episode = addEpisode(`renren:rr-merge-1$$$${hanjutvEpisode.url}`, '【renren＆hanjutv】 第1集');
+    Globals.animes.push({
+      animeId: 930020,
+      bangumiId: '930020',
+      animeTitle: '外层合并评论测试(2024)【韩剧】from renren',
+      type: '韩剧',
+      typeDescription: '韩剧',
+      imageUrl: '',
+      startDate: '2024-01-01T00:00:00.000Z',
+      episodeCount: 1,
+      rating: 9.0,
+      isFavorited: true,
+      source: 'renren',
+      links: [episode]
+    });
+
+    const originalRenrenGetEpisodeDanmu = RenrenSource.prototype.getEpisodeDanmu;
+    const originalHanjutvFetchEpisodeDanmuByRef = HanjutvSource.prototype.fetchEpisodeDanmuByRef;
+    RenrenSource.prototype.getEpisodeDanmu = async function(id) {
+      if (id === 'rr-merge-1') return [{ d: 'renren-comment', p: '1.00,1,25,16777215,0,0,user,1' }];
+      throw new Error(`unexpected renren id: ${id}`);
+    };
+    HanjutvSource.prototype.fetchEpisodeDanmuByRef = async function(ref) {
+      if (ref.rawId === 'hxq:merge-hxq-1') return [{ did: 11, t: 1000, tp: 1, sc: 16777215, con: 'hxq-comment', lc: 0 }];
+      if (ref.rawId === 'tv:merge-tv-1') return [{ did: 12, t: 1000, tp: 1, sc: 16777215, con: 'tv-comment', lc: 0 }];
+      throw new Error(`unexpected hanjutv ref: ${ref.rawId}`);
+    };
+
+    try {
+      const req = new MockRequest(urlPrefix + `/api/v2/comment/${episode.id}`, { method: 'GET' });
+      const res = await handleRequest(req);
+      const body = await parseResponse(res);
+
+      assert.equal(res.status, 200);
+      assert.equal(body.count, 3);
+      assert.deepEqual(body.comments.map(item => item.m).sort(), ['hxq-comment', 'renren-comment', 'tv-comment']);
+      assert.equal(body.comments.filter(item => /\[韩小圈＆极速版\]$/.test(item.p)).length, 2);
+      assert.equal(body.comments.filter(item => /\[renren\]$/.test(item.p)).length, 1);
+    } finally {
+      RenrenSource.prototype.getEpisodeDanmu = originalRenrenGetEpisodeDanmu;
+      HanjutvSource.prototype.fetchEpisodeDanmuByRef = originalHanjutvFetchEpisodeDanmuByRef;
       resetSearchState();
     }
   });

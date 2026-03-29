@@ -11,6 +11,7 @@ import {
   buildHanjutvSearchHeaders,
   decodeHanjutvEncryptedPayload,
   buildLiteHeaders,
+  encodeMergedHanjutvEpisodeDanmuId,
   parseHanjutvEpisodeDanmuId,
   getHanjutvSourceLabel,
 } from "../utils/hanjutv-util.js";
@@ -549,7 +550,8 @@ export default class HanjutvSource extends BaseSource {
 
     let url = "";
     if (hxqEpisode?.pid && tvEpisode?.eid) {
-      url = `hanjutv:hxq:${hxqEpisode.pid}$$$hanjutv:tv:${tvEpisode.eid}`;
+      const mergedId = encodeMergedHanjutvEpisodeDanmuId(hxqEpisode.pid, tvEpisode.eid);
+      url = mergedId ? `hanjutv:${mergedId}` : "";
     } else if (hxqEpisode?.pid) {
       url = `hxq:${hxqEpisode.pid}`;
     } else if (tvEpisode?.eid) {
@@ -696,11 +698,10 @@ export default class HanjutvSource extends BaseSource {
 
   // ── 弹幕 ─────────────────────────────────────────────────────
 
-  async getEpisodeDanmu(id) {
-    const episodeRef = parseHanjutvEpisodeDanmuId(id);
-    if (!episodeRef.id) return [];
+  async fetchEpisodeDanmuByRef(episodeRef) {
+    const episodeId = String(episodeRef?.id || "").trim();
+    if (!episodeId) return [];
 
-    const episodeId = episodeRef.id;
     let allDanmus = [];
 
     if (!episodeRef.preferTv) {
@@ -788,7 +789,21 @@ export default class HanjutvSource extends BaseSource {
       }
     }
 
-    return this.attachDanmuSourceLabel(allDanmus, id);
+    return allDanmus;
+  }
+
+  async getEpisodeDanmu(id) {
+    const episodeRef = parseHanjutvEpisodeDanmuId(id);
+    const refs = Array.isArray(episodeRef?.refs) ? episodeRef.refs.filter(item => item?.id) : [];
+    if (refs.length === 0) return [];
+
+    if (refs.length === 1) {
+      const comments = await this.fetchEpisodeDanmuByRef(refs[0]);
+      return this.attachDanmuSourceLabel(comments, refs[0].rawId);
+    }
+
+    const results = await Promise.all(refs.map(ref => this.fetchEpisodeDanmuByRef(ref)));
+    return this.attachDanmuSourceLabel(results.flat(), episodeRef.rawId || id);
   }
 
   async getEpisodeDanmuSegments(id) {
