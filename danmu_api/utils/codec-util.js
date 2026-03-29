@@ -605,6 +605,25 @@ export function bytesToBase64(bytes) {
     return result;
 }
 
+export function encodeBase64UrlText(text = "") {
+    return bytesToBase64(stringToUtf8Bytes(text))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+}
+
+export function decodeBase64UrlText(text = "") {
+    const normalized = String(text || "").trim();
+    if (!normalized) return "";
+
+    const base64 = normalized
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+
+    return utf8BytesToString(base64ToBytes(base64));
+}
+
 // ===================== SHA256 算法 =====================
 // 纯 JS SHA256，返回字节数组
 function sha256(ascii) {

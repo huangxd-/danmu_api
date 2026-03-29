@@ -34,6 +34,8 @@ import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { Globals } from "./configs/globals.js";
 import { addAnime, addEpisode } from "./utils/cache-util.js";
+import { convertToAsciiSum } from "./utils/codec-util.js";
+import { handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 
 // Mock Request class for testing
@@ -53,6 +55,27 @@ async function parseResponse(response) {
     return JSON.parse(text);
   } catch {
     return text;
+  }
+}
+
+function mockJsonResponse(data, url) {
+  return {
+    ok: true,
+    status: 200,
+    url,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify(data),
+  };
+}
+
+async function withMockFetch(mockFetch, run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  try {
+    return await run();
+  } finally {
+    if (originalFetch === undefined) delete globalThis.fetch;
+    else globalThis.fetch = originalFetch;
   }
 }
 
@@ -1442,6 +1465,7 @@ test('worker.js API endpoints', async (t) => {
   //   const res = await handler.deploy();
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
+
 });
 
 // // 测试本地 Redis 功能

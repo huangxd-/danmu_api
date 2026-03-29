@@ -115,15 +115,22 @@ export function handleDanmusLike(groupedDanmus) {
   if (!globals.likeSwitch) {
     return groupedDanmus;
   }
+  const lowThresholdSources = new Set([
+    '[hanjutv]',
+    '[sohu]',
+    '[bilibili1]',
+    '[migu]',
+  ]);
   return groupedDanmus.map(item => {
     // 如果item没有like字段或者like值小于5，则不处理
     if (!item.like || item.like < 5) {
       return item;
     }
 
-    // 获取弹幕来源信息，判断是否为需要特殊处理的源（低阈值）
-    const lowThresholdSources = ['[hanjutv]', '[sohu]', '[bilibili1]', '[migu]'];
-    const isLowThresholdSource = lowThresholdSources.some(source => item.p.includes(source));
+    // 韩剧TV 双链路标签可能继续扩展，按来源标签内容判断更稳。
+    const sourceTag = item.p.match(/,(\[[^\]]+\])$/)?.[1] || '';
+    const isHanjutvVariantTag = sourceTag.includes('韩小圈') || sourceTag.includes('极速版');
+    const isLowThresholdSource = isHanjutvVariantTag || lowThresholdSources.has(sourceTag);
 
     // 确定阈值：特定源中>=100用🔥，其他>=1000用🔥
     const threshold = isLowThresholdSource ? 100 : 1000;

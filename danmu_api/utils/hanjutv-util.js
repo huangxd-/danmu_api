@@ -1,4 +1,5 @@
-import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows } from "./codec-util.js";
+import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows, encodeBase64UrlText, decodeBase64UrlText } from "./codec-util.js";
+import { normalizePositiveTimestamp } from "./time-util.js";
 
 // 移动端参数
 const HANJUTV_VERSION = "6.8.2";
@@ -9,15 +10,14 @@ const HANJUTV_MAKER = "Xiaomi";
 const HANJUTV_OSV = "14";
 const HANJUTV_UA = `HanjuTV/${HANJUTV_VERSION} (${HANJUTV_MODEL}; Android ${HANJUTV_OSV}; Scale/2.00)`;
 const HANJUTV_INSTALL_AGE_MS = 14 * 24 * 60 * 60 * 1000;
-const HANJUTV_UK_KEY = "f349wghhe784tqwh";
-const HANJUTV_UK_IV = "d3w8hf94fidk38lk";
-const HANJUTV_RESPONSE_SECRET = "34F9Q53w/HJW8E6Q";
 const UID_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-// TV版本参数
+// 共享加密参数
 const UK_KEY = "f349wghhe784tqwh";
 const UK_IV = "d3w8hf94fidk38lk";
 const RESPONSE_SECRET = "34F9Q53w/HJW8E6Q";
+
+// TV版本参数
 const SAID = "fb3597b87601d5a7";
 
 function utf8Encode(text) {
@@ -202,12 +202,6 @@ function randomInt(max) {
   return Math.floor(Math.random() * max);
 }
 
-function buildSearchSignPayload(uid, timestamp) {
-  const ts = Number(timestamp);
-  const installTs = Math.max(0, ts - HANJUTV_INSTALL_AGE_MS);
-  return JSON.stringify({ emu: 0, ou: 0, it: installTs, iit: installTs, bs: 0, uid, pc: 0, tm: 81, d8m: "0,0,0,0,0,0,0,4", md: HANJUTV_MODEL, maker: HANJUTV_MAKER, osv: HANJUTV_OSV, br: 95, rpc: 0, scc: 2, plc: 6, toc: 19, tsc: 10, ts, pa: 1, crec: 0, nw: 2, px: "0", isp: "", ai: "", oa: "", dpc: 0, dsc: 0, qpc: 0, apad: 0, pk: "com.babycloud.hanju" });
-}
-
 export function createHanjutvUid(length = 20) {
   let uid = "";
   for (let i = 0; i < length; i++) uid += UID_CHARSET[randomInt(UID_CHARSET.length)];
@@ -216,28 +210,49 @@ export function createHanjutvUid(length = 20) {
 
 function randomFrom(chars, len) {
   let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < len; i++) s += chars[randomInt(chars.length)];
   return s;
 }
 
-// 移动端headers
-export async function createHanjutvSearchHeaders(uid, timestamp = Date.now()) {
-  const ts = Number(timestamp);
-  const uidMd5 = md5(uid);
-  const signPayload = buildSearchSignPayload(uid, ts);
-  const sign = await aesCbcEncryptToBase64(signPayload, uidMd5.slice(0, 16), uidMd5.slice(16, 32));
-  const uk = await aesCbcEncryptToBase64(uid, HANJUTV_UK_KEY, HANJUTV_UK_IV);
-
+function createSearchContext(uid, sessionInitTs = Date.now()) {
+  const initTs = normalizePositiveTimestamp(sessionInitTs);
   return {
-    app: "hj",
-    ch: HANJUTV_CH,
-    uk,
-    vn: HANJUTV_VERSION,
-    sign,
-    "User-Agent": HANJUTV_UA,
-    vc: HANJUTV_VC,
-    "Accept-Encoding": "gzip",
-    Connection: "Keep-Alive",
+    uid: uid || createHanjutvUid(),
+    said: randomFrom("0123456789abcdef", 16),
+    oa: randomFrom("0123456789abcdef", 16),
+    installTs: Math.max(0, initTs - HANJUTV_INSTALL_AGE_MS),
+  };
+}
+
+function buildSearchSignPayload(context, timestamp) {
+  const ts = normalizePositiveTimestamp(timestamp, context.installTs + HANJUTV_INSTALL_AGE_MS);
+  return JSON.stringify({ emu: 0, ou: 0, it: context.installTs, iit: context.installTs, bs: 0, uid: context.uid, pc: 0, tm: 81, d8m: "0,0,0,0,0,0,0,4", md: HANJUTV_MODEL, maker: HANJUTV_MAKER, osv: HANJUTV_OSV, br: 95, rpc: 0, scc: 2, plc: 6, toc: 19, tsc: 10, ts, pa: 1, crec: 0, nw: 2, px: "0", isp: "", ai: context.said, oa: context.oa, dpc: 0, dsc: 0, qpc: 0, apad: 0, pk: "com.babycloud.hanju" });
+}
+
+export async function buildHanjutvSearchHeaders(sessionInitTs = Date.now(), uid = createHanjutvUid()) {
+  const searchContext = createSearchContext(uid, sessionInitTs);
+  const uidMd5 = md5(searchContext.uid);
+  const uk = await aesCbcEncryptToBase64(searchContext.uid, UK_KEY, UK_IV);
+
+  return async function makeHeaders(reqTs = Date.now()) {
+    const signPayload = buildSearchSignPayload(searchContext, reqTs);
+    const sign = await aesCbcEncryptToBase64(signPayload, uidMd5.slice(0, 16), uidMd5.slice(16, 32));
+
+    return {
+      uid: searchContext.uid,
+      headers: {
+        app: "hj",
+        ch: HANJUTV_CH,
+        said: searchContext.said,
+        uk,
+        vn: HANJUTV_VERSION,
+        sign,
+        "User-Agent": HANJUTV_UA,
+        vc: HANJUTV_VC,
+        "Accept-Encoding": "gzip",
+        Connection: "Keep-Alive",
+      },
+    };
   };
 }
 
@@ -287,10 +302,109 @@ export async function decodeHanjutvEncryptedPayload(payload, uid = "") {
   if (!key && uid && ts !== "") key = md5(`${uid}${ts}`);
   if (!key) throw new Error("缺少解密 key，且无法通过 uid+ts 推导");
 
-  const mix = md5(`${key}${HANJUTV_RESPONSE_SECRET}`);
+  const mix = md5(`${key}${RESPONSE_SECRET}`);
   const aesKey = mix.slice(0, 16);
   const iv = mix.slice(16, 32);
   const plainText = await aesCbcDecryptBase64NoPadding(payload.data, aesKey, iv);
   const cleanedText = stripControlChars(plainText).trim();
   return JSON.parse(cleanedText);
+}
+
+function normalizeHanjutvEpisodeIdText(rawId = "") {
+  const idText = String(rawId || "").trim();
+  return idText.startsWith("hanjutv:") ? idText.slice("hanjutv:".length) : idText;
+}
+
+function buildHanjutvEpisodeRef(id = "", preferTv = false) {
+  const cleanId = String(id || "").trim();
+  if (!cleanId) return null;
+
+  return {
+    id: cleanId,
+    preferTv,
+    rawId: `${preferTv ? "tv" : "hxq"}:${cleanId}`,
+  };
+}
+
+function decodeMergedHanjutvEpisodeId(normalizedId = "") {
+  if (!normalizedId.startsWith("merge:")) return null;
+
+  try {
+    const payloadText = decodeBase64UrlText(normalizedId.slice("merge:".length));
+    const payload = JSON.parse(payloadText);
+    const hxqId = String(payload?.hxq || "").trim();
+    const tvId = String(payload?.tv || "").trim();
+
+    if (!hxqId || !tvId) return null;
+    return { hxqId, tvId };
+  } catch (_) {
+    return null;
+  }
+}
+
+export function encodeMergedHanjutvEpisodeDanmuId(hxqId = "", tvId = "") {
+  const cleanHxqId = String(hxqId || "").trim();
+  const cleanTvId = String(tvId || "").trim();
+  if (!cleanHxqId || !cleanTvId) return "";
+
+  return `merge:${encodeBase64UrlText(JSON.stringify({
+    hxq: cleanHxqId,
+    tv: cleanTvId,
+  }))}`;
+}
+
+export function parseHanjutvEpisodeDanmuId(rawId = "") {
+  const normalizedId = normalizeHanjutvEpisodeIdText(rawId);
+  if (!normalizedId) {
+    return { id: "", preferTv: false, rawId: "", refs: [] };
+  }
+
+  const mergedIds = decodeMergedHanjutvEpisodeId(normalizedId);
+  if (mergedIds) {
+    const refs = [
+      buildHanjutvEpisodeRef(mergedIds.hxqId, false),
+      buildHanjutvEpisodeRef(mergedIds.tvId, true),
+    ].filter(Boolean);
+
+    return {
+      id: refs[0]?.id || "",
+      preferTv: false,
+      rawId: normalizedId,
+      refs,
+    };
+  }
+
+  if (normalizedId.startsWith("tv:")) {
+    const ref = buildHanjutvEpisodeRef(normalizedId.slice(3), true);
+    return {
+      id: ref?.id || "",
+      preferTv: true,
+      rawId: ref?.rawId || "",
+      refs: ref ? [ref] : [],
+    };
+  }
+
+  if (normalizedId.startsWith("hxq:")) {
+    const ref = buildHanjutvEpisodeRef(normalizedId.slice(4), false);
+    return {
+      id: ref?.id || "",
+      preferTv: false,
+      rawId: ref?.rawId || "",
+      refs: ref ? [ref] : [],
+    };
+  }
+
+  const ref = buildHanjutvEpisodeRef(normalizedId, false);
+  return {
+    id: ref?.id || "",
+    preferTv: false,
+    rawId: ref?.rawId || "",
+    refs: ref ? [ref] : [],
+  };
+}
+
+export function getHanjutvSourceLabel(rawId = "") {
+  const normalizedId = normalizeHanjutvEpisodeIdText(rawId);
+  if (normalizedId.startsWith("merge:")) return "韩小圈＆极速版";
+  return normalizedId.startsWith("tv:") ? "极速版" : "韩小圈";
 }

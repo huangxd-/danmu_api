@@ -13,6 +13,11 @@ export function generateValidStartDate(year) {
   return `${yearNum}-01-01T00:00:00Z`;
 }
 
+export function normalizePositiveTimestamp(value, fallbackValue = Date.now()) {
+  const ts = Number(value);
+  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : Math.trunc(Number(fallbackValue) || Date.now());
+}
+
 export function time_to_second(time) {
   const parts = time.split(":").map(Number);
   let seconds = 0;
