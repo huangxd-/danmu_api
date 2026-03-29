@@ -37,6 +37,7 @@ import SohuSource from "../sources/sohu.js";
 import LeshiSource from "../sources/leshi.js";
 import XiguaSource from "../sources/xigua.js";
 import MaiduiduiSource from "../sources/maiduidui.js";
+import AiyifanSource from "../sources/aiyifan.js";
 import AnimekoSource from "../sources/animeko.js";
 import OtherSource from "../sources/other.js";
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
@@ -62,6 +63,7 @@ const sohuSource = new SohuSource();
 const leshiSource = new LeshiSource();
 const xiguaSource = new XiguaSource();
 const maiduiduiSource = new MaiduiduiSource();
+const aiyifanSource = new AiyifanSource();
 const animekoSource = new AnimekoSource();
 const otherSource = new OtherSource();
 const doubanSource = new DoubanSource(tencentSource, iqiyiSource, youkuSource, bilibiliSource, miguSource);
@@ -134,6 +136,8 @@ async function resolveUrlDuration(url) {
       segmentResult = await xiguaSource.getComments(targetUrl, 'xigua', true);
     } else if (targetUrl.includes('.mddcloud.com.cn')) {
       segmentResult = await maiduiduiSource.getComments(targetUrl, 'maiduidui', true);
+    } else if (targetUrl.includes('.yfsp.tv')) {
+      segmentResult = await aiyifanSource.getComments(targetUrl, 'aiyifan', true);
     }
 
     return extractDurationFromSegments(segmentResult);
@@ -284,6 +288,8 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       platform = "xigua";
     } else if (queryTitle.includes('.mddcloud.com.cn')) {
       platform = "maiduidui";
+    } else if (queryTitle.includes('.yfsp.tv')) {
+      platform = "aiyifan";
     }
 
     const pageTitle = await getPageTitle(queryTitle);
@@ -340,6 +346,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       if (source === "leshi") return leshiSource.search(queryTitle);
       if (source === "xigua") return xiguaSource.search(queryTitle);
       if (source === "maiduidui") return maiduiduiSource.search(queryTitle);
+      if (source === "aiyifan") return aiyifanSource.search(queryTitle);
       if (source === "animeko") return animekoSource.search(queryTitle);
     });
 
@@ -360,7 +367,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       hanjutv: animesHanjutv, bahamut: animesBahamut, dandan: animesDandan, custom: animesCustom, 
       tencent: animesTencent, youku: animesYouku, iqiyi: animesIqiyi, imgo: animesImgo, bilibili: animesBilibili,
       migu: animesMigu, sohu: animesSohu, leshi: animesLeshi, xigua: animesXigua, maiduidui: animesMaiduidui, 
-      animeko: animesAnimeko
+      aiyifan: animesAiyifan, animeko: animesAnimeko
     } = resultData;
 
     // 按顺序处理每个来源的结果
@@ -428,6 +435,9 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       } else if (key === 'maiduidui') {
         // 等待处理Maiduidui来源
         await maiduiduiSource.handleAnimes(animesMaiduidui, queryTitle, curAnimes, requestAnimeDetailsMap);
+      } else if (key === 'aiyifan') {
+        // 等待处理Aiyifan来源
+        await aiyifanSource.handleAnimes(animesAiyifan, queryTitle, curAnimes, requestAnimeDetailsMap);
       } else if (key === 'animeko') {
         // 等待处理Animeko来源
         await animekoSource.handleAnimes(animesAnimeko, queryTitle, curAnimes, requestAnimeDetailsMap);
@@ -1402,6 +1412,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
         else if (sourceName === 'leshi') sourceInstance = leshiSource;
         else if (sourceName === 'xigua') sourceInstance = xiguaSource;
         else if (sourceName === 'maiduidui') sourceInstance = maiduiduiSource;
+        else if (sourceName === 'aiyifan') sourceInstance = aiyifanSource;
         else if (sourceName === 'animeko') sourceInstance = animekoSource;
         // 如有新增允许的源合并，在此处添加
 
@@ -1554,6 +1565,8 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
       danmus = await xiguaSource.getComments(url, plat, segmentFlag);
     } else if (url.includes('.mddcloud.com.cn')) {
       danmus = await maiduiduiSource.getComments(url, plat, segmentFlag);
+    } else if (url.includes('.yfsp.tv')) {
+      danmus = await aiyifanSource.getComments(url, plat, segmentFlag);
     }
 
     // 请求其他平台弹幕
@@ -1715,6 +1728,8 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
       danmus = await xiguaSource.getComments(url, "xigua", segmentFlag);
     } else if (url.includes('.mddcloud.com.cn')) {
       danmus = await maiduiduiSource.getComments(url, "maiduidui", segmentFlag);
+    } else if (url.includes('.yfsp.tv')) {
+      danmus = await aiyifanSource.getComments(url, "aiyifan", segmentFlag);
     } else {
       // 如果不是已知平台，尝试第三方弹幕服务器
       const urlPattern = /^(https?:\/\/)?([\w.-]+)\.([a-z]{2,})(\/.*)?$/i;
@@ -1804,6 +1819,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await xiguaSource.getSegmentComments(segment);
     } else if (platform === "maiduidui") {
       danmus = await maiduiduiSource.getSegmentComments(segment);
+    } else if (platform === "aiyifan") {
+      danmus = await aiyifanSource.getSegmentComments(segment);
     } else if (platform === "hanjutv") {
       danmus = await hanjutvSource.getSegmentComments(segment);
     } else if (platform === "bahamut") {
