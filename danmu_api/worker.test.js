@@ -34,6 +34,8 @@ import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { Globals } from "./configs/globals.js";
 import { addAnime, addEpisode } from "./utils/cache-util.js";
+import { convertToAsciiSum } from "./utils/codec-util.js";
+import { handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 
 // Mock Request class for testing
@@ -53,6 +55,27 @@ async function parseResponse(response) {
     return JSON.parse(text);
   } catch {
     return text;
+  }
+}
+
+function mockJsonResponse(data, url) {
+  return {
+    ok: true,
+    status: 200,
+    url,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify(data),
+  };
+}
+
+async function withMockFetch(mockFetch, run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  try {
+    return await run();
+  } finally {
+    if (originalFetch === undefined) delete globalThis.fetch;
+    else globalThis.fetch = originalFetch;
   }
 }
 
@@ -1442,6 +1465,274 @@ test('worker.js API endpoints', async (t) => {
   //   const res = await handler.deploy();
   //   assert(res, `Expected res is true, but got ${res}`);
   // });
+
+  await t.test('hanjutv danmu fetching should paginate correctly across variants and fallback hosts', async () => {
+    const source = new HanjutvSource();
+    const originalTvGet = source.tvGet;
+    const tvCalls = [];
+
+    source.tvGet = async (path) => {
+      tvCalls.push(path);
+      if (tvCalls.length === 1) return { bulletchats: [{ did: 1, t: 0, tp: 1, sc: 16777215, con: 'page-1', lc: 0 }], more: 1, nextAxis: 12002, lastId: 111 };
+      if (tvCalls.length === 2) return { bulletchats: [{ did: 2, t: 12002, tp: 1, sc: 16777215, con: 'page-2', lc: 0 }], more: 0, nextAxis: 60000, lastId: 222 };
+      if (tvCalls.length === 3) return { bulletchats: [{ did: 3, t: 61000, tp: 1, sc: 16777215, con: 'page-3', lc: 0 }], more: 0, nextAxis: 120000, lastId: 333 };
+      return { bulletchats: [], more: 0, nextAxis: 100000000, lastId: 333 };
+    };
+
+    try {
+      const danmus = await source.getEpisodeDanmu('tv:legacy-eid');
+      assert.equal(danmus.length, 3);
+      assert.deepEqual(tvCalls, [
+        '/api/v1/bulletchat/episode/get?eid=legacy-eid&prevId=0&fromAxis=0&toAxis=100000000&offset=0',
+        '/api/v1/bulletchat/episode/get?eid=legacy-eid&prevId=111&fromAxis=12002&toAxis=100000000&offset=0',
+        '/api/v1/bulletchat/episode/get?eid=legacy-eid&prevId=0&fromAxis=60000&toAxis=100000000&offset=0',
+        '/api/v1/bulletchat/episode/get?eid=legacy-eid&prevId=0&fromAxis=120000&toAxis=100000000&offset=0',
+      ]);
+    } finally {
+      source.tvGet = originalTvGet;
+    }
+
+    await withMockFetch(async (url, options = {}) => {
+      const targetUrl = String(url);
+      const headers = options?.headers || {};
+
+      if (targetUrl.includes('/api/danmu/playItem/list?')) {
+        assert.equal('uk' in headers, false);
+        assert.equal('sign' in headers, false);
+
+        if (targetUrl.includes('pid=play-1')) {
+          if (targetUrl.includes('fromAxis=0&toAxis=60000')) return mockJsonResponse({ danmus: [{ did: 11, t: 0, tp: 1, sc: 16777215, con: 'hxq-page-1', lc: 0 }], more: 1, nextAxis: 12345, lastId: 111 }, targetUrl);
+          if (targetUrl.includes('fromAxis=12345&toAxis=60000')) return mockJsonResponse({ danmus: [{ did: 12, t: 12345, tp: 1, sc: 16777215, con: 'hxq-page-2', lc: 0 }], more: 0, nextAxis: 60000, lastId: 222 }, targetUrl);
+          if (targetUrl.includes('fromAxis=60000&toAxis=120000')) return mockJsonResponse({ danmus: [{ did: 13, t: 61000, tp: 1, sc: 16777215, con: 'hxq-page-3', lc: 0 }], more: 0, nextAxis: 120000, lastId: 333 }, targetUrl);
+          return mockJsonResponse({ danmus: [], more: 0, nextAxis: 180000, lastId: 333 }, targetUrl);
+        }
+
+        if (targetUrl.startsWith('https://hxqapi.hiyun.tv/')) throw new Error('primary host down');
+        if (targetUrl === 'https://hxqapi.zmdcq.com/api/danmu/playItem/list?pid=play-2&prevId=0&fromAxis=0&toAxis=60000&offset=0') {
+          return mockJsonResponse({ danmus: [{ did: 21, t: 0, tp: 1, sc: 16777215, con: 'fallback-ok', lc: 0 }], more: 0, nextAxis: 60000, lastId: 21 }, targetUrl);
+        }
+        if (targetUrl === 'https://hxqapi.zmdcq.com/api/danmu/playItem/list?pid=play-2&prevId=21&fromAxis=60000&toAxis=120000&offset=0') {
+          return mockJsonResponse({ danmus: [], more: 0, nextAxis: 120000, lastId: 21 }, targetUrl);
+        }
+      }
+
+      throw new Error(`unexpected fetch: ${targetUrl}`);
+    }, async () => {
+      const hxqDanmus = await source.getEpisodeDanmu('hxq:play-1');
+      const fallbackDanmus = await source.getEpisodeDanmu('play-2');
+      const segments = await source.getComments('play-1', 'hanjutv', true);
+
+      assert.equal(hxqDanmus.length, 3);
+      assert.equal(fallbackDanmus.length, 1);
+      assert.equal(fallbackDanmus[0].con, 'fallback-ok');
+      assert.equal(segments.duration, 0);
+      assert.deepEqual(segments.segmentList, []);
+    });
+  });
+
+  await t.test('hanjutv search should reuse identities and merge matched variants while dropping noisy fallbacks', async () => {
+    const source = new HanjutvSource();
+    const originalNow = Date.now;
+    let now = 1700000000000;
+    const configRequests = [];
+    const searchRequests = [];
+
+    try {
+      Date.now = () => now;
+      await withMockFetch(async (url, options = {}) => {
+        const targetUrl = String(url);
+        if (targetUrl === 'https://hxqapi.hiyun.tv/api/common/configs') {
+          configRequests.push({
+            uk: options?.headers?.uk || '',
+            said: options?.headers?.said || '',
+            sign: options?.headers?.sign || '',
+          });
+          now += 1;
+          return mockJsonResponse({ ok: true }, targetUrl);
+        }
+        if (targetUrl.includes('/api/search/s5?')) {
+          searchRequests.push({
+            url: targetUrl,
+            uk: options?.headers?.uk || '',
+            said: options?.headers?.said || '',
+            sign: options?.headers?.sign || '',
+          });
+          return mockJsonResponse({ seriesList: [{ sid: 'hxq-sid-1', name: '信号 第2季', image: { thumb: 'https://img/a.jpg' } }] }, targetUrl);
+        }
+        throw new Error(`unexpected fetch: ${targetUrl}`);
+      }, async () => {
+        await source.searchWithS5Api('信号 第2季');
+        now += 1000;
+        await source.searchWithS5Api('秘密森林');
+      });
+
+      const firstTvHeaders = await source.buildTvHeaders();
+      now += 1000;
+      const secondTvHeaders = await source.buildTvHeaders();
+
+      assert.equal(searchRequests.length, 2);
+      assert.equal(configRequests.length, 2);
+      assert.equal(searchRequests[0].url, 'https://hxqapi.hiyun.tv/api/search/s5?k=%E4%BF%A1%E5%8F%B7%20%E7%AC%AC2%E5%AD%A3&srefer=search_input&type=0&page=1');
+      assert.equal(searchRequests[0].uk, searchRequests[1].uk);
+      assert.equal(searchRequests[0].said, searchRequests[1].said);
+      assert.notEqual(searchRequests[0].sign, searchRequests[1].sign);
+      assert.equal(configRequests[0].uk, searchRequests[0].uk);
+      assert.equal(configRequests[0].said, searchRequests[0].said);
+      assert.notEqual(configRequests[0].sign, searchRequests[0].sign);
+      assert.equal(firstTvHeaders.uid, secondTvHeaders.uid);
+      assert.notEqual(firstTvHeaders.headers.rp, secondTvHeaders.headers.rp);
+
+      const originalS5 = source.searchWithS5Api;
+      const originalTv = source.searchWithTvApi;
+
+      source.searchWithS5Api = async () => ([
+        { sid: 'hxq-sid-1', name: '信号 第2季', image: { thumb: 'https://img/a.jpg' } },
+        { sid: 'hxq-sid-2', name: '信号 特辑', image: { thumb: 'https://img/b.jpg' } },
+      ]);
+      source.searchWithTvApi = async () => ([
+        { sid: 'tv-sid-1', name: '信号 第2季', image: { thumb: 'https://img/c.jpg' } },
+      ]);
+
+      const mergedResult = await source.search('信号 第2季');
+      assert.equal(mergedResult.length, 2);
+      assert.equal(mergedResult[0]._variant, 'merged');
+      assert.equal(mergedResult[0].animeId, convertToAsciiSum('hxq:hxq-sid-1|tv:tv-sid-1'));
+      assert.equal(mergedResult[1]._variant, 'hxq');
+
+      source.searchWithS5Api = async () => ([
+        { sid: 'sid-1', name: '有点敏感也没关系' },
+        { sid: 'sid-2', name: '不是机器人啊' },
+      ]);
+      source.searchWithTvApi = async () => ([]);
+      assert.deepEqual(await source.search('不存在的关键字'), []);
+
+      source.searchWithS5Api = originalS5;
+      source.searchWithTvApi = originalTv;
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  await t.test('hanjutv merged payloads should keep source-specific episode ids and stable anime ids', async () => {
+    resetSearchState();
+
+    const source = new HanjutvSource();
+    const hxqEpisodes = source.normalizeHxqEpisodes([{ id: 'shared-ep', serialNo: 1, title: '第一集' }]);
+    const tvEpisodes = source.normalizeTvEpisodes([{ id: 'shared-ep', serialNo: 1, title: '第一集' }, { pid: 'tv-only-pid', serialNo: 2, title: '第二集' }]);
+    assert.deepEqual(source.mergeVariantEpisodes(hxqEpisodes, tvEpisodes).map(item => item.url), [
+      'hanjutv:hxq:shared-ep$$$hanjutv:tv:shared-ep',
+      'tv:tv-only-pid',
+    ]);
+
+    const compositeAnimeId = convertToAsciiSum('hxq:hxq-sid-1|tv:tv-sid-1');
+    const originalGetHxqDetail = source.getHxqDetail;
+    const originalGetHxqEpisodes = source.getHxqEpisodes;
+    const originalGetTvDetail = source.getTvDetail;
+    const originalGetTvEpisodes = source.getTvEpisodes;
+
+    source.getHxqDetail = async () => ({ category: 1, rank: 9.5 });
+    source.getHxqEpisodes = async () => ([{ pid: 'pid-1', serialNo: 1, title: '第一集' }, { pid: 'pid-2', serialNo: 2, title: '第二集' }]);
+    source.getTvDetail = async () => ({ category: 1, rank: 8.8 });
+    source.getTvEpisodes = async () => ([{ eid: 'eid-1', serialNo: 1, title: '第一集' }, { eid: 'eid-3', serialNo: 3, title: '第三集' }]);
+
+    try {
+      const firstBatch = [];
+      await source.handleAnimes([{ sid: 'hxq-sid-1', tvSid: 'tv-sid-1', animeId: compositeAnimeId, name: '稳定ID测试', image: { thumb: 'https://img/a.jpg' }, updateTime: '2024-01-01T00:00:00.000Z', _variant: 'merged' }], '稳定ID测试', firstBatch, new Map());
+      source.getTvEpisodes = async () => ([]);
+      const secondBatch = [];
+      await source.handleAnimes([{ sid: 'hxq-sid-1', tvSid: 'tv-sid-1', animeId: compositeAnimeId, name: '稳定ID测试', image: { thumb: 'https://img/a.jpg' }, _variant: 'merged' }], '稳定ID测试', secondBatch, new Map());
+
+      assert.equal(firstBatch[0].animeId, compositeAnimeId);
+      assert.equal(secondBatch[0].animeId, compositeAnimeId);
+      assert.equal(Globals.animes.length, 1);
+      assert.deepEqual(Globals.animes[0].links.map(item => item.url), ['hxq:pid-1', 'hxq:pid-2']);
+    } finally {
+      source.getHxqDetail = originalGetHxqDetail;
+      source.getHxqEpisodes = originalGetHxqEpisodes;
+      source.getTvDetail = originalGetTvDetail;
+      source.getTvEpisodes = originalGetTvEpisodes;
+      resetSearchState();
+    }
+  });
+
+  await t.test('GET /api/v2/comment/:id should apply hanjutv offsets before deduping', async () => {
+    resetSearchState();
+    Globals.episodeNum = 43010;
+
+    const episode = addEpisode('hanjutv:hxq:pid-1$$$hanjutv:tv:eid-1', '【hanjutv】 第1集');
+    Globals.animes.push({
+      animeId: 930010,
+      bangumiId: '930010',
+      animeTitle: '偏移测试(2024)【韩剧】from hanjutv',
+      type: '韩剧',
+      typeDescription: '韩剧',
+      imageUrl: '',
+      startDate: '2024-01-01T00:00:00.000Z',
+      episodeCount: 1,
+      rating: 9.5,
+      isFavorited: true,
+      source: 'hanjutv',
+      links: [episode]
+    });
+
+    const originalGetEpisodeDanmu = HanjutvSource.prototype.getEpisodeDanmu;
+    HanjutvSource.prototype.getEpisodeDanmu = async function(id) {
+      if (id === 'hxq:pid-1') return [{ did: 1, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
+      if (id === 'tv:eid-1') return [{ did: 2, t: 1000, tp: 1, sc: 16777215, con: '双端同步', lc: 0 }];
+      throw new Error(`unexpected hanjutv id: ${id}`);
+    };
+
+    try {
+      const req = new MockRequest(urlPrefix + `/api/v2/comment/${episode.id}`, { method: 'GET' });
+      const res = await handleRequest(req, { DANMU_OFFSET: '偏移测试@hanjutv:20' });
+      const body = await parseResponse(res);
+
+      assert.equal(res.status, 200);
+      assert.equal(body.count, 1);
+      assert.match(body.comments[0].p, /^21\.00,1,16777215,\[韩小圈＆极速版\]$/);
+      assert.equal(body.comments[0].m, '双端同步');
+    } finally {
+      HanjutvSource.prototype.getEpisodeDanmu = originalGetEpisodeDanmu;
+      resetSearchState();
+    }
+  });
+
+  await t.test('hanjutv source labels should keep low-threshold like behavior', async () => {
+    Globals.init({});
+    Globals.likeSwitch = true;
+
+    const likedDanmus = handleDanmusLike([
+      { p: '1.00,1,16777215,[hanjutv]', m: '旧标签', like: 150 },
+      { p: '1.00,1,16777215,[韩小圈]', m: '韩小圈标签', like: 150 },
+      { p: '1.00,1,16777215,[极速版]', m: '极速版标签', like: 150 },
+      { p: '1.00,1,16777215,[韩小圈＆极速版]', m: '双链路标签', like: 150 },
+    ]);
+
+    likedDanmus.forEach(item => assert.match(item.m, /🔥150$/));
+  });
+
+  await t.test('hanjutv single-source comments should expose precise source labels', async () => {
+    const source = new HanjutvSource();
+    const originalGetEpisodeDanmu = source.getEpisodeDanmu;
+
+    source.getEpisodeDanmu = async (id) => {
+      if (id === 'hxq:play-1') return [{ did: 1, t: 1000, tp: 1, sc: 16777215, con: 'hxq-comment', lc: 0, _sourceLabel: '韩小圈' }];
+      if (id === 'tv:play-2') return [{ did: 2, t: 1000, tp: 1, sc: 16777215, con: 'tv-comment', lc: 0, _sourceLabel: '极速版' }];
+      throw new Error(`unexpected id: ${id}`);
+    };
+
+    try {
+      const hxqComments = await source.getComments('hxq:play-1', 'hanjutv', false);
+      const tvComments = await source.getComments('tv:play-2', 'hanjutv', false);
+
+      assert.equal(hxqComments.length, 1);
+      assert.equal(tvComments.length, 1);
+      assert.match(hxqComments[0].p, /^\d+\.\d{2},1,16777215,\[韩小圈\]$/);
+      assert.match(tvComments[0].p, /^\d+\.\d{2},1,16777215,\[极速版\]$/);
+    } finally {
+      source.getEpisodeDanmu = originalGetEpisodeDanmu;
+    }
+  });
 });
 
 // // 测试本地 Redis 功能

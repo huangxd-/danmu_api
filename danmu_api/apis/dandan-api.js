@@ -17,6 +17,7 @@ import {
 } from "../utils/common-util.js";
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines } from "../utils/merge-util.js";
+import { getHanjutvSourceLabel } from "../utils/hanjutv-util.js";
 import AIClient from '../utils/ai-util.js';
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
@@ -1346,8 +1347,36 @@ function buildBangumiData(anime, idParam = "") {
  */
 async function fetchMergedComments(url, animeTitle, commentId) {
   const parts = url.split(MERGE_DELIMITER);
-  const sourceNames = parts.map(part => part.split(':')[0]).filter(Boolean);
-  const sourceTag = sourceNames.join('＆');
+  const partMetas = parts.map((part) => {
+    const firstColonIndex = part.indexOf(':');
+    if (firstColonIndex === -1) {
+      return {
+        realId: '',
+        logicalSource: '',
+        sourceLabel: '',
+      };
+    }
+
+    const sourceName = part.substring(0, firstColonIndex);
+    const realId = part.substring(firstColonIndex + 1);
+
+    if (sourceName !== 'hanjutv') {
+      return {
+        realId,
+        logicalSource: sourceName,
+        sourceLabel: sourceName,
+      };
+    }
+
+    return {
+      realId,
+      logicalSource: 'hanjutv',
+      sourceLabel: getHanjutvSourceLabel(realId),
+    };
+  });
+  const sourceNames = partMetas.map(meta => meta.logicalSource).filter(Boolean);
+  const realIds = partMetas.map(meta => meta.realId);
+  const sourceTag = partMetas.map(meta => meta.sourceLabel).filter(Boolean).join('＆');
 
   log("info", `[Merge] 开始获取 [${sourceTag}] 聚合弹幕...`);
 
@@ -1361,12 +1390,10 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   const stats = {};
   
   // 2. 并行获取所有源的弹幕
-  const tasks = parts.map(async (part) => {
-    const firstColonIndex = part.indexOf(':');
-    if (firstColonIndex === -1) return [];
-
-    const sourceName = part.substring(0, firstColonIndex);
-    const realId = part.substring(firstColonIndex + 1);
+  const tasks = partMetas.map(async (meta) => {
+    const sourceName = meta.logicalSource;
+    const sourceLabel = meta.sourceLabel || meta.logicalSource;
+    const realId = meta.realId;
 
     if (!sourceName || !realId) return [];
 
@@ -1413,7 +1440,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
             
 			// 给合并工具里的每一条弹幕打上独立的原始源标签
             if (formatted && Array.isArray(formatted)) {
-                formatted.forEach(item => item._sourceLabel = sourceName);
+                formatted.forEach(item => item._sourceLabel = sourceLabel);
             }
 			
             // 提取并挂载 dandan 源传出的精确偏移量
@@ -1421,11 +1448,11 @@ async function fetchMergedComments(url, animeTitle, commentId) {
               formatted.relatedShifts = raw.relatedShifts;
             }
 
-            stats[sourceName] = formatted.length;
+            stats[sourceLabel] = formatted.length;
             return formatted;
           } catch (e) {
-            log("error", `[Merge] 获取 ${sourceName} 失败: ${e.message}`);
-            stats[sourceName] = 0;
+            log("error", `[Merge] 获取 ${sourceLabel} 失败: ${e.message}`);
+            stats[sourceLabel] = 0;
             return [];
           }
         }
@@ -1448,11 +1475,6 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   
   // 跨源时间轴对齐（仅当存在 dandan 源时执行）
   if (sourceNames.includes('dandan')) {
-    const realIds = parts.map(part => {
-      const firstColonIndex = part.indexOf(':');
-      return firstColonIndex === -1 ? '' : part.substring(firstColonIndex + 1);
-    });
-
     // 提取精确偏移集合
     const dandanIndex = sourceNames.indexOf('dandan');
     const dandanShifts = (results[dandanIndex] && results[dandanIndex].relatedShifts) ? results[dandanIndex].relatedShifts : {};
