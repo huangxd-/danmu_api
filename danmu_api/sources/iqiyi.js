@@ -148,8 +148,29 @@ export default class IqiyiSource extends BaseSource {
       return null;
     }
 
+    // 提取 3D 与 2D 属性标签并追加至媒体类型
+    let is3D = false;
+    let is2D = false;
+    if (album.metaTags && Array.isArray(album.metaTags)) {
+        album.metaTags.forEach(tag => {
+            if (tag.name === '3D') is3D = true;
+            if (tag.name === '2D') is2D = true;
+        });
+    }
+    if (album.baseTags && Array.isArray(album.baseTags)) {
+        album.baseTags.forEach(tag => {
+            if (tag.value === '3D') is3D = true;
+            if (tag.value === '2D') is2D = true;
+        });
+    }
+    if (is3D) {
+        mediaType = "3D" + mediaType;
+    } else if (is2D) {
+        mediaType = "2D" + mediaType;
+    }
+
     // 电影类型：使用 qipuId 作为 mediaId
-    if (mediaType === "电影") {
+    if (mediaType.includes("电影")) {
       const qipuId = album.qipuId || album.playQipuId;
       if (!qipuId) {
         log("debug", `[iQiyi] 电影缺少 qipuId: ${album.title}`);
@@ -629,7 +650,7 @@ export default class IqiyiSource extends BaseSource {
    * @param {Array} curAnimes - 当前动漫列表
    * @returns {Promise<void>}
    */
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -672,7 +693,7 @@ export default class IqiyiSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) {
               removeEarliestAnime();

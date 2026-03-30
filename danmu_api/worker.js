@@ -99,14 +99,14 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     '/api/v2/comment',
     '/api/v2/segmentcomment'
   ];
-  
+
   // 只有当path包含指定接口关键字时才添加到请求记录数组
   if (targetPaths.some(targetPath => path.includes(targetPath))) {
     // 更新今日请求计数
     // 从 reqRecords 最后一个元素获取上一个请求的时间
     const lastRecord = globals.reqRecords.length > 0 ? globals.reqRecords[globals.reqRecords.length - 1] : null;
     const currentDate = new Date().toDateString();
-    
+
     if (lastRecord) {
       const lastDate = new Date(lastRecord.timestamp).toDateString();
       console.log("currentDate: ", currentDate);
@@ -242,39 +242,48 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     && !path.startsWith('/api/ai')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
-      
-      // 1. 清理：应对"用户填写/api/v2"+"客户端添加/api/v2"导致的重复前缀
+
+      // 清理：应对"用户填写/api/v2"+"客户端添加/api/v2"导致的重复前缀
+      path = path.replace(/\/+/g, '/');
       while (path.startsWith('/api/v2/api/v2/')) {
           log("info", `[Path Check] Found redundant /api/v2 prefix. Cleaning...`);
           // 从第二个 /api/v2 的位置开始截取，相当于移除第一个
           path = path.substring('/api/v2'.length);
       }
-      
+
       // 打印日志：只有在发生清理时才显示清理后的路径，否则显示"无需清理"
       if (path !== pathBeforeCleanup) {
           log("info", `[Path Check] Path after cleanup: "${path}"`);
       } else {
           log("info", `[Path Check] Path after cleanup: No cleanup needed.`);
       }
-      
-      // 2. 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime），则补全
+
+      // 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime 或 /v2/search/anime），则智能补全
       const pathBeforePrefixCheck = path;
       if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') 
         && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
         && !path.startsWith('/api/ai')) {
-          log("info", `[Path Check] Path is missing /api/v2 prefix. Adding...`);
-          path = '/api/v2' + path;
+          if (path.startsWith('/v2/') || path === '/v2') {
+              log("info", `[Path Check] Path is missing /api prefix. Adding /api...`);
+              path = '/api' + path;
+          } else if (path.startsWith('/api/') || path === '/api') {
+              log("info", `[Path Check] Path is missing /v2 prefix. Adding /v2...`);
+              path = '/api/v2' + path.substring(4);
+          } else {
+              log("info", `[Path Check] Path is missing /api/v2 prefix. Adding /api/v2...`);
+              path = '/api/v2' + (path.startsWith('/') ? path : '/' + path);
+          }
       }
-        
+
       // 打印日志：只有在发生添加前缀时才显示添加后的路径，否则显示"无需补全"
       if (path === pathBeforePrefixCheck) {
           log("info", `[Path Check] Prefix Check: No prefix addition needed.`);
       }
-      
+
       log("info", `[Path Check] Final normalized path: "${path}"`);
   }
-  
+
   // GET /
   if (path === "/" && method === "GET") {
     return handleUI();
@@ -305,7 +314,9 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     const queryFormat = url.searchParams.get('format');
     const videoUrl = url.searchParams.get('url');
     const segmentFlagParam = url.searchParams.get('segmentflag');
+    const durationParam = url.searchParams.get('duration');
     const segmentFlag = segmentFlagParam === 'true' || segmentFlagParam === '1';
+    const includeDuration = durationParam === 'true' || durationParam === '1';
 
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
@@ -318,8 +329,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(videoUrl);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
       }
 
       // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
@@ -354,7 +364,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       }
 
       // 通过URL获取弹幕
-      return getCommentByUrl(videoUrl, queryFormat, segmentFlag);
+      return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
     }
 
     // 否则通过commentId获取弹幕
@@ -374,8 +384,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(urlForComment);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
       }
     }
 
@@ -414,7 +423,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
-    return getComment(path, queryFormat, segmentFlag, clientIp);
+    return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
   }
 
   // POST /api/v2/segmentcomment - 接收segment类的JSON请求体
@@ -424,7 +433,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       // 从请求体获取segment数据
       const requestBody = await req.json();
       let segment;
-      
+
       // 尝试解析JSON
       try {
         segment = Segment.fromJson(requestBody);
@@ -483,7 +492,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
 
   // ========== Cookie 管理 API ==========
-  
+
   // GET /api/cookie/status - 获取Cookie状态
   if (path === "/api/cookie/status" && method === "GET") {
     return handleCookieStatus();

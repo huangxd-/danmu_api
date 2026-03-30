@@ -260,6 +260,18 @@ export default class AnimekoSource extends BaseSource {
         }
       }
 
+      // 识别 3D 与 2D 标签并追加至类型描述
+      let is3D = false;
+      let is2D = false;
+      if (item.tags && Array.isArray(item.tags)) {
+          item.tags.forEach(tag => {
+              if (tag.name === '3D') is3D = true;
+              if (tag.name === '2D') is2D = true;
+          });
+      }
+      if (is3D) typeDesc = "3D" + typeDesc;
+      else if (is2D) typeDesc = "2D" + typeDesc;
+
       const titleSuffix = item._relation_mark ? ` ${item._relation_mark}` : "";
 
       // 提取别名列表 (用于合并工具进行模糊匹配)
@@ -370,7 +382,7 @@ export default class AnimekoSource extends BaseSource {
    * @param {string} queryTitle 原始查询标题
    * @param {Array} curAnimes 当前缓存的番剧列表
    */
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
@@ -426,7 +438,7 @@ export default class AnimekoSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }

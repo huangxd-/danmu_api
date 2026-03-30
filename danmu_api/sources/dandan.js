@@ -21,11 +21,13 @@ const bilibiliSource = new BilibiliSource();
 const youkuSource = new YoukuSource();
 const bahamutSource = new BahamutSource();
 
+const DandanUserAgent = `LogVar Danmu API/${globals.version}`
+
 // =====================
 // 获取弹弹play弹幕
 // =====================
 export default class DandanSource extends BaseSource {
-  
+
   /**
    * 搜索动画条目
    * 包含常规搜索、TMDB 日语原名搜索，以及去除季度信息后的降级搜索策略
@@ -45,7 +47,7 @@ export default class DandanSource extends BaseSource {
           const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/anime?keyword=${keyword}`, {
             headers: {
               "Content-Type": "application/json",
-              "User-Agent": `LogVar Danmu API/${globals.version}`,
+              "User-Agent": DandanUserAgent,
             },
           });
 
@@ -100,7 +102,7 @@ export default class DandanSource extends BaseSource {
           const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/episodes?anime=${encodeURIComponent(tmdbTitle)}`, {
             headers: {
               "Content-Type": "application/json",
-              "User-Agent": `LogVar Danmu API/${globals.version}`,
+              "User-Agent": DandanUserAgent,
             },
             signal: tmdbAbortController.signal,
           });
@@ -118,7 +120,7 @@ export default class DandanSource extends BaseSource {
           }
 
           const animes = resp.data.animes;
-          
+
           // 标记 TMDB 来源，供后续处理环节识别以跳过常规标题匹配
           for (const anime of animes) {
             anime.isTmdbSource = true;
@@ -159,7 +161,7 @@ export default class DandanSource extends BaseSource {
       // 当搜索无结果且包含季度信息时，尝试剥离季度信息后重新搜索
       if (!isFallback) {
         const strippedKeyword = keyword.replace(/(?:第\s*[0-9一二三四五六七八九十百千万]+\s*[季期部])|(?:S(?:eason)?\s*\d+)|(?:Part\s*\d+)/gi, '').trim();
-        
+
         if (strippedKeyword && strippedKeyword !== keyword) {
           log("info", `[Dandan] 尝试去除季度信息进行降级搜索: ${strippedKeyword}`);
           return await this.search(strippedKeyword, true);
@@ -184,7 +186,7 @@ export default class DandanSource extends BaseSource {
       const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/bangumi/${id}`, {
         headers: {
           "Content-Type": "application/json",
-          "User-Agent": `LogVar Danmu API/${globals.version}`,
+          "User-Agent": DandanUserAgent,
         },
       });
 
@@ -201,10 +203,10 @@ export default class DandanSource extends BaseSource {
       }
 
       const bangumiData = resp.data.bangumi;
-      
+
       // 提取剧集列表，确保它是数组
       const episodes = Array.isArray(bangumiData.episodes) ? bangumiData.episodes : [];
-      
+
       // 提取标题别名列表
       // 数据源格式: [{"language":"主标题","title":"雨天遇见狸"}, ...]
       const titles = Array.isArray(bangumiData.titles) ? bangumiData.titles.map(t => t.title) : [];
@@ -214,7 +216,22 @@ export default class DandanSource extends BaseSource {
 
       // 提取番剧类型信息，用于相关作品无法从搜索接口获取该字段时的数据补全
       const type = bangumiData.type || null;
-      const typeDescription = bangumiData.typeDescription || null;
+      let typeDescription = bangumiData.typeDescription || null;
+
+      // 识别 3D 与 2D 标签并追加至类型描述
+      let is3D = false;
+      let is2D = false;
+      if (bangumiData.tags && Array.isArray(bangumiData.tags)) {
+          bangumiData.tags.forEach(tag => {
+              if (tag.name && tag.name.toUpperCase().includes('3D')) is3D = true;
+              if (tag.name && tag.name.toUpperCase().includes('2D')) is2D = true;
+          });
+      }
+      if (is3D) {
+          typeDescription = "3D" + (typeDescription || "");
+      } else if (is2D) {
+          typeDescription = "2D" + (typeDescription || "");
+      }
 
       // 提取封面图片 URL，用于 episodes 接口返回结果缺少 imageUrl 时的数据补全
       const imageUrl = bangumiData.imageUrl || null;
@@ -247,7 +264,7 @@ export default class DandanSource extends BaseSource {
   }
 
   // 处理并转换番剧信息
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -371,7 +388,7 @@ export default class DandanSource extends BaseSource {
             tmpAnimes.push(transformedAnime);
 
             // 添加到全局缓存
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             // 维护缓存大小
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
@@ -399,7 +416,7 @@ export default class DandanSource extends BaseSource {
       const dandanPromise = httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=%2Fv2%2Fcomment%2F${id}%3Ffrom%3D0%26withRelated%3Dtrue%26chConvert%3D0`, {
         headers: {
           "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          "User-Agent": DandanUserAgent,
         },
         retries: 1,
       }).catch(e => { log('error', `dandan base comments error: ${e.message}`); return null; });
@@ -411,7 +428,7 @@ export default class DandanSource extends BaseSource {
         relatedPromise = httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/related/${id}`, {
           headers: {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "User-Agent": DandanUserAgent,
           },
           retries: 1,
         }).catch(e => { log('error', `dandan related data error: ${e.message}`); return null; });
@@ -437,20 +454,39 @@ export default class DandanSource extends BaseSource {
             const match = targetStr.match(/sn=(\d+)/) || targetStr.match(/\d+$/);
             return match ? (match[1] || match[0]) : targetStr;
           }
-          // 常规平台逻辑：统一剥离 http/https协议、www.前缀，并截断 ? 后面的所有查询参数
-          return targetStr.replace(/^https?:\/\/(www\.)?/, '').split('?')[0];
+
+          // 常规平台逻辑：统一剥离 http/https协议、www.前缀
+          let core = targetStr.replace(/^https?:\/\/(www\.)?/, '');
+
+          // 保留 B 站分 P 和合并分 P 关键参数供合并工具精确匹配
+          if (sName === 'bilibili' || sName === 'bilibili1') {
+            // 1. 如果路径包含 /combine，保留问号及后面所有的查询参数（剥离可能的 hash）
+            if (/\/combine\?/.test(core)) {
+              return core.replace(/#.*/, '');
+            }
+            // 2. 如果包含 p= 参数，精准提取 p 参数并拼接到纯净路径后
+            const pMatch = core.match(/\b(p=\d+)\b/);
+            core = core.replace(/\?.*/, ''); // 先截断常规查询参数
+            if (pMatch) {
+              core += `?${pMatch[1]}`;
+            }
+            return core;
+          }
+
+          // 常规平台：截断“?”后面的所有查询参数
+          return core.replace(/\?.*/, '');
         };
 
         for (const rel of relatedResp.data.relateds) {
           const url = rel.url;
           const shift = rel.shift || 0;
           const sourceInfo = this.parseRelatedUrl(url);
-          
+
           if (!sourceInfo) continue;
 
           const { sourceName } = sourceInfo;
           const coreUrl = getCoreIdentifier(url, sourceName);
-          
+
           // 构建唯一键存储偏移量，包含平台与核心标识，防止同平台多链接导致数据覆盖
           relatedShifts[`${sourceName}:${coreUrl}`] = shift;
 
@@ -470,7 +506,7 @@ export default class DandanSource extends BaseSource {
             if (firstColonIndex === -1) return false;
             const mSource = part.substring(0, firstColonIndex);
             const mId = part.substring(firstColonIndex + 1);
-            
+
             // 来源标识必须一致
             if (mSource !== sourceName) return false;
 
@@ -503,7 +539,7 @@ export default class DandanSource extends BaseSource {
               allDanmus = allDanmus.concat(extra);
             }
           }
-          
+
           // 汇总日志：仅在产生实际拉取任务时，输出拉取总数与原生基础数据
           const totalCount = allDanmus.length;
           const dandanCount = stats['dandan'] || 0;
@@ -560,7 +596,7 @@ export default class DandanSource extends BaseSource {
       let comments = [];
       let sourceInstance = null;
       let platName = sourceName; // 映射标准平台名称用于去重工具
-      
+
       // 匹配对应的源实例，并处理标准平台名
       if (sourceName === 'tencent') { sourceInstance = tencentSource; platName = 'qq'; }
       else if (sourceName === 'iqiyi') { sourceInstance = iqiyiSource; platName = 'qiyi'; }
@@ -616,7 +652,7 @@ export default class DandanSource extends BaseSource {
         }
         return c;
       }
-      
+
       return {
         cid: c.cid,
         p: `${c.p.replace(/([A-Za-z]+)([0-9a-fA-F]{6})/, (_, platform, hexColor) => {

@@ -374,6 +374,8 @@ export const componentsCssContent = /* css */ `
     border-radius: 12px;
     max-width: 600px;
     width: 100%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0,0,0,0.3);
     position: relative;
     top: 0;
@@ -1449,5 +1451,279 @@ export const componentsCssContent = /* css */ `
     .heatmap-bars {
         height: 70px;
     }
+}
+
+/* 颜色池配置 */
+.color-pool-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    min-height: 36px;
+    padding: 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+
+.color-pool-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 12px;
+}
+
+.color-pool-swatch {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.color-pool-value {
+    color: #666;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.color-pool-remove {
+    border: none;
+    background: none;
+    color: #999;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.color-pool-empty {
+    color: #999;
+    font-size: 12px;
+    align-self: center;
+}
+
+.color-pool-picker {
+    padding: 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    margin-bottom: 12px;
+}
+
+.color-pool-picker-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.color-wheel {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: conic-gradient(hsl(0,100%,50%),hsl(60,100%,50%),hsl(120,100%,50%),hsl(180,100%,50%),hsl(240,100%,50%),hsl(300,100%,50%),hsl(360,100%,50%));
+    cursor: crosshair;
+    position: relative;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    flex-shrink: 0;
+}
+
+.color-wheel-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    width: 44%;
+    height: 44%;
+    border-radius: 50%;
+    background: #fafafa;
+}
+
+.color-wheel-dot {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2.5px solid #fff;
+    box-shadow: 0 0 4px rgba(0,0,0,0.35);
+    pointer-events: none;
+}
+
+.color-pool-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.color-pool-preview-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    flex-shrink: 0;
+}
+
+.color-pool-preview-hex {
+    font-family: monospace;
+    font-size: 13px;
+    color: #555;
+}
+
+.color-pool-lightness {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 240px;
+}
+
+.color-pool-lightness span {
+    font-size: 12px;
+    color: #888;
+    flex-shrink: 0;
+}
+
+.color-pool-lightness input {
+    flex: 1;
+    accent-color: #667eea;
+}
+
+.color-pool-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: nowrap;
+}
+
+.color-pool-actions .btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.color-pool-actions .spacer {
+    flex: 1;
+}
+
+/* 批量添加颜色弹窗 */
+.batch-color-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.4);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.batch-color-dialog {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    width: 90%;
+    max-width: 420px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.batch-color-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: monospace;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.batch-color-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    min-height: 24px;
+}
+
+.batch-color-preview-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+.batch-color-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+}
+
+/* 偏移规则快速配置 */
+.offset-rule-panel {
+    display: none;
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+
+.offset-form-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.offset-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.offset-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.offset-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.offset-source-tag {
+    padding: 3px 10px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    background: #fff;
+    color: #666;
+    transition: all 0.15s;
+}
+
+.offset-source-tag.selected {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1a73e8;
+}
+
+.offset-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
 }
 `;

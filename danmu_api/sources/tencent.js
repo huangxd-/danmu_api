@@ -55,6 +55,32 @@ export default class TencentSource extends BaseSource {
       return null;
     }
 
+    let mediaType = contentType;
+
+    // 提取 3D 与 2D 属性标签并追加至媒体类型
+    let is3D = false;
+    let is2D = false;
+    if (videoInfo.coverDoc) {
+        if (videoInfo.coverDoc.richTags && Array.isArray(videoInfo.coverDoc.richTags)) {
+            videoInfo.coverDoc.richTags.forEach(tag => {
+                if (tag.text && tag.text.includes('3D')) is3D = true;
+                if (tag.text && tag.text.includes('2D')) is2D = true;
+            });
+        }
+        if (videoInfo.coverDoc.tags && Array.isArray(videoInfo.coverDoc.tags)) {
+            videoInfo.coverDoc.tags.forEach(tag => {
+                if (tag && tag.includes('3D')) is3D = true;
+                if (tag && tag.includes('2D')) is2D = true;
+            });
+        }
+    }
+    
+    if (is3D) {
+        mediaType = "3D" + mediaType;
+    } else if (is2D) {
+        mediaType = "2D" + mediaType;
+    }
+
     // 过滤非腾讯视频内容
     const allSites = (videoInfo.playSites || []).concat(videoInfo.episodeSites || []);
     if (allSites.length > 0 && !allSites.some(site => site.enName === 'qq')) {
@@ -75,7 +101,7 @@ export default class TencentSource extends BaseSource {
       provider: "tencent",
       mediaId: mediaId,
       title: title,
-      type: contentType,  // 使用中文类型,与360/vod保持一致
+      type: mediaType,  
       year: videoInfo.year,
       imageUrl: videoInfo.imgUrl,
       episodeCount: episodeCount
@@ -155,6 +181,31 @@ export default class TencentSource extends BaseSource {
       if (itemList.length === 0 && data.data && data.data.normalList && data.data.normalList.itemList) {
         log("info", "[Tencent] MainNeed box 未找到，使用 normalList");
         itemList = data.data.normalList.itemList;
+      }
+
+      // 追加「相关影视」box 中 title 包含 keyword 的 itemList
+      if (data.data && data.data.areaBoxList) {
+        for (const box of data.data.areaBoxList) {
+          if (
+            box.itemList &&
+            box.boxTitle &&
+            Array.isArray(box.boxTitle.boxTitles) &&
+            box.boxTitle.boxTitles.includes("相关影视")
+          ) {
+            const relatedItems = box.itemList.filter(item =>
+              item.videoInfo &&
+              item.videoInfo.title &&
+              item.videoInfo.title.includes(keyword)
+            );
+            if (relatedItems.length > 0) {
+              log("info", `[Tencent] 追加「相关影视」box 中匹配 "${keyword}" 的 ${relatedItems.length} 个项目`);
+              itemList = [...itemList, ...relatedItems];
+            } else {
+              log("info", `[Tencent] 「相关影视」box 中无匹配 "${keyword}" 的项目`);
+            }
+            break;
+          }
+        }
       }
 
       if (itemList.length === 0) {
@@ -338,7 +389,7 @@ export default class TencentSource extends BaseSource {
     }
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -368,12 +419,22 @@ export default class TencentSource extends BaseSource {
           }
 
           if (links.length > 0) {
+            // 从第一集标题中提取版本信息
+            const firstEpTitle = eps[0].unionTitle || eps[0].title || `第1集`;
+            let displayTitle = anime.title;
+
+            // 检查第一集标题是否包含 anime.title 且匹配 xxxx[xxx版] 格式
+            const versionMatch = firstEpTitle.match(/\[.+版\]/);
+            if (versionMatch && firstEpTitle.includes(anime.title)) {
+              displayTitle = `${anime.title}${versionMatch[0]}`;
+            }
+
             // 将字符串mediaId转换为数字ID (使用哈希函数)
             const numericAnimeId = convertToAsciiSum(anime.mediaId);
             let transformedAnime = {
               animeId: numericAnimeId,
               bangumiId: anime.mediaId,
-              animeTitle: `${anime.title}(${anime.year})【${anime.type}】from tencent`,
+              animeTitle: `${displayTitle}(${anime.year})【${anime.type}】from tencent`,
               type: anime.type,
               typeDescription: anime.type,
               imageUrl: anime.imageUrl,
@@ -386,7 +447,7 @@ export default class TencentSource extends BaseSource {
 
             tmpAnimes.push(transformedAnime);
 
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }

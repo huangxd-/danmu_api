@@ -46,13 +46,28 @@ export async function httpGet(url, options = {}) {
     linkSignal(options.signal, controller);
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          ...options.headers,
-        },
-        signal: controller.signal
-      });
+      // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
+      let response;
+      if (typeof WebAssembly === 'undefined') {
+        log("info", "iOS环境降级使用node-fetch");
+        const fetch = (await import('node-fetch')).default;
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            ...options.headers,
+          },
+          signal: controller.signal
+        });
+      } else {
+        // 现代浏览器环境
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            ...options.headers,
+          },
+          signal: controller.signal
+        });
+      }
 
       clearTimeout(timeoutId);
 
@@ -84,20 +99,34 @@ export async function httpGet(url, options = {}) {
         // 获取 ArrayBuffer
         const arrayBuffer = await response.arrayBuffer();
 
-        // 使用 DecompressionStream 进行解压
-        // "deflate" 对应 zlib 的 inflate
-        const decompressionStream = new DecompressionStream("deflate");
-        const decompressedStream = new Response(
-          new Blob([arrayBuffer]).stream().pipeThrough(decompressionStream)
-        );
-
-        // 读取解压后的文本
+        // 兼容iOS巨魔环境：检查DecompressionStream是否可用
         let decodedData;
-        try {
-          decodedData = await decompressedStream.text();
-        } catch (e) {
-          log("error", "[请求模拟] 解压缩失败", e);
-          throw e;
+        if (typeof DecompressionStream !== 'undefined') {
+          // 现代浏览器环境
+          const decompressionStream = new DecompressionStream("deflate");
+          const decompressedStream = new Response(
+            new Blob([arrayBuffer]).stream().pipeThrough(decompressionStream)
+          );
+          try {
+            decodedData = await decompressedStream.text();
+          } catch (e) {
+            log("error", "[请求模拟] 解压缩失败", e);
+            throw e;
+          }
+        } else {
+          // iOS巨魔环境降级处理：使用pako库
+          log("info", "iOS环境降级使用pako解压");
+          try {
+            // 动态导入pako库
+            const pako = await import('pako');
+            // 解压数据
+            const inflateResult = pako.inflate(new Uint8Array(arrayBuffer));
+            // 转换为字符串
+            decodedData = new TextDecoder('utf-8').decode(inflateResult);
+          } catch (e) {
+            log("error", "[请求模拟] pako解压缩失败", e);
+            throw e;
+          }
         }
 
         data = decodedData; // 更新解压后的数据
@@ -223,7 +252,16 @@ export async function httpPost(url, body, options = {}) {
     }
 
     try {
-      const response = await fetch(url, fetchOptions);
+      // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
+      let response;
+      if (typeof WebAssembly === 'undefined') {
+        log("info", "iOS环境降级使用node-fetch");
+        const fetch = (await import('node-fetch')).default;
+        response = await fetch(url, fetchOptions);
+      } else {
+        // 现代浏览器环境
+        response = await fetch(url, fetchOptions);
+      }
 
       clearTimeout(timeoutId);
 
