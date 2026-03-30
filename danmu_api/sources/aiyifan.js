@@ -27,9 +27,9 @@ export default class AiyifanSource extends BaseSource {
 
     // API 基础地址
     this.SEARCH_API      = "https://rankv21.tripdata.app/v3/list/briefsearch";
-    this.PLAYLIST_API    = "https://app-m10.tripdata.app/v3/video/languagesplaylist";
-    this.VIDEO_API       = "https://app-m10.tripdata.app/v3/video/play";
-    this.DANMU_API       = "https://app-m10.tripdata.app/api/video/getBarrage";
+    this.PLAYLIST_API    = "https://m10.yfsp.tv/v3/video/languagesplaylist";
+    this.VIDEO_API       = "https://m10.yfsp.tv/v3/video/play";
+    this.DANMU_API       = "https://m10.yfsp.tv/api/video/getBarrage";
     this.DOMAIN_API      = "https://www.yfsp.tv/play";
   }
 
