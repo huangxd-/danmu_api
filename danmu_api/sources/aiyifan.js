@@ -31,7 +31,7 @@ export default class AiyifanSource extends BaseSource {
 
     this.signingConfig = null;
     this.signingConfigFetchedAt = 0;
-    this.SIGNING_CONFIG_TTL_MS = 5 * 60 * 1000;
+    this.SIGNING_CONFIG_TTL_MS = 60 * 1000;
   }
 
   /**
