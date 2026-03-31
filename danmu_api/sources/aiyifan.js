@@ -15,10 +15,6 @@ import { globals } from '../configs/globals.js';
 export default class AiyifanSource extends BaseSource {
   constructor() {
     super();
-    // 签名常量
-    this.PUBLIC_KEY = "CJStD3SqE3GrCouoCpbVIb1VCJOmBZ4sBZ8mE2uoDJHVDpKrP69cEMKtCZ0qD31bP68qDJ9bCJOvDZ4oDM4sOJ1VCJTcCpOuCpHYCpOmDZLcOJTaD3GrDZ5ZP68qOJOpDc6";
-    this.SALT = "StD3JStD3SqE3GrCouoC";
-
     this.USER_AGENT = (
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
       "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -31,17 +27,101 @@ export default class AiyifanSource extends BaseSource {
     this.VIDEO_API       = "https://m10.yfsp.tv/v3/video/play";
     this.DANMU_API       = "https://m10.yfsp.tv/api/video/getBarrage";
     this.DOMAIN_API      = "https://www.yfsp.tv/play";
+    this.CONFIG_PAGE_API = "https://www.yfsp.tv/";
+
+    this.signingConfig = null;
+    this.signingConfigFetchedAt = 0;
+    this.SIGNING_CONFIG_TTL_MS = 5 * 60 * 1000;
   }
 
   /**
    * 计算接口签名 vv
    */
-  computeVv(params) {
+  computeVv(params, signingConfig) {
     const sortedParams = Object.keys(params)
       .map(k => `${k}=${params[k]}`)
       .join('&');
-    const raw = this.PUBLIC_KEY + "&" + sortedParams.toLowerCase() + "&" + this.SALT;
+    const raw = signingConfig.publicKey + "&" + sortedParams.toLowerCase() + "&" + signingConfig.privateKey;
     return md5(raw);
+  }
+
+  extractSigningConfig(html) {
+    const match = html.match(/"pConfig":\{"publicKey":"([^"]+)","privateKey":\[(.*?)\]\}/);
+    if (!match) {
+      return null;
+    }
+
+    let privateKeys = [];
+    try {
+      privateKeys = JSON.parse(`[${match[2]}]`);
+    } catch (error) {
+      log("error", `[Aiyifan] 解析桌面站 privateKey 失败: ${error.message}`);
+      return null;
+    }
+
+    if (!match[1] || !privateKeys.length) {
+      return null;
+    }
+
+    return {
+      publicKey: match[1],
+      privateKey: privateKeys[0]
+    };
+  }
+
+  async getSigningConfig(forceRefresh = false) {
+    const now = Date.now();
+    const cacheValid = this.signingConfig && now - this.signingConfigFetchedAt < this.SIGNING_CONFIG_TTL_MS;
+    if (!forceRefresh && cacheValid) {
+      return this.signingConfig;
+    }
+
+    const headers = {
+      "User-Agent": this.USER_AGENT,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    };
+
+    const response = await httpGet(globals.makeProxyUrl(this.CONFIG_PAGE_API), { headers });
+    const html = typeof response.data === "string" ? response.data : String(response.data ?? "");
+    const signingConfig = this.extractSigningConfig(html);
+
+    if (!signingConfig) {
+      throw new Error("未能从桌面站页面解析到 pConfig");
+    }
+
+    this.signingConfig = signingConfig;
+    this.signingConfigFetchedAt = now;
+    log("info", `[Aiyifan] 已更新桌面站签名配置: ${signingConfig.publicKey.slice(0, 12)}...`);
+    return signingConfig;
+  }
+
+  async requestSignedJson(api, baseParams, headers, logPrefix, forceRefresh = false) {
+    const signingConfig = await this.getSigningConfig(forceRefresh);
+    const vv = this.computeVv(baseParams, signingConfig);
+    const params = {
+      ...baseParams,
+      vv,
+      pub: signingConfig.publicKey
+    };
+
+    const urlWithParams = updateQueryString(api, params);
+    const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
+    const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    if (data?.ret !== 200 || data?.data?.code !== 0) {
+      const message = data?.data?.msg || data?.msg || "未知错误";
+      if (!forceRefresh) {
+        log("warn", `[${logPrefix}] 当前签名配置请求失败，尝试刷新后重试: ${message}`);
+        return this.requestSignedJson(api, baseParams, headers, logPrefix, true);
+      }
+      throw new Error(message);
+    }
+
+    return { data, signingConfig, vv };
   }
 
   /**
@@ -132,14 +212,6 @@ export default class AiyifanSource extends BaseSource {
       cid: "0,1,4,152",
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
       "Accept": "application/json"
@@ -148,10 +220,7 @@ export default class AiyifanSource extends BaseSource {
     log("info", `[播放列表] 请求 vid: ${vid}`);
     
     try {
-      const urlWithParams = updateQueryString(this.PLAYLIST_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data } = await this.requestSignedJson(this.PLAYLIST_API, baseParams, headers, "播放列表");
 
       const episodes = [];
       const infoList = data.data?.info || [];
@@ -187,14 +256,6 @@ export default class AiyifanSource extends BaseSource {
       isMasterSupport: 1
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
       "Accept": "application/json"
@@ -202,13 +263,10 @@ export default class AiyifanSource extends BaseSource {
 
     const epInfo = epId ? `(ID:${epId})` : "";
     log("info", `[视频信息] 请求 key: ${epKey} ${epInfo}`);
-    log("info", `[视频信息] vv签名: ${vv.substring(0, 16)}...`);
 
     try {
-      const urlWithParams = updateQueryString(this.VIDEO_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data, vv } = await this.requestSignedJson(this.VIDEO_API, baseParams, headers, "视频信息");
+      log("info", `[视频信息] vv签名: ${vv.substring(0, 16)}...`);
       return data.data || {};
     } catch (error) {
       log("error", `[视频信息失败] 错误: ${error.message}`);
@@ -245,26 +303,15 @@ export default class AiyifanSource extends BaseSource {
       uniqueKey: uniqueKey,
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
     };
 
     log("info", `[弹幕] 请求 uniqueKey: ${uniqueKey}`);
-    log("info", `[弹幕] vv签名: ${vv.substring(0, 16)}...`);
 
     try {
-      const urlWithParams = updateQueryString(this.DANMU_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data, vv } = await this.requestSignedJson(this.DANMU_API, baseParams, headers, "弹幕");
+      log("info", `[弹幕] vv签名: ${vv.substring(0, 16)}...`);
 
       const danmuList = data.data?.info || [];
       log("info", `[弹幕] 获取到 ${danmuList.length} 条弹幕`);
