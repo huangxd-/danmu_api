@@ -1,13 +1,14 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { httpGet, updateQueryString } from "../utils/http-util.js";
-import { convertToAsciiSum, md5 } from "../utils/codec-util.js";
+import { convertToAsciiSum } from "../utils/codec-util.js";
 import { hexToInt } from "../utils/danmu-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches } from "../utils/common-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { globals } from '../configs/globals.js';
+import { AiyifanSigningProvider } from '../utils/aiyifan-util.js';
 
 // =====================
 // 获取爱壹帆弹幕
@@ -15,10 +16,6 @@ import { globals } from '../configs/globals.js';
 export default class AiyifanSource extends BaseSource {
   constructor() {
     super();
-    // 签名常量
-    this.PUBLIC_KEY = "CJStD3SqE3GrCouoCpbVIb1VCJOmBZ4sBZ8mE2uoDJHVDpKrP69cEMKtCZ0qD31bP68qDJ9bCJOvDZ4oDM4sOJ1VCJTcCpOuCpHYCpOmDZLcOJTaD3GrDZ5ZP68qOJOpDc6";
-    this.SALT = "StD3JStD3SqE3GrCouoC";
-
     this.USER_AGENT = (
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
       "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -31,17 +28,20 @@ export default class AiyifanSource extends BaseSource {
     this.VIDEO_API       = "https://m10.yfsp.tv/v3/video/play";
     this.DANMU_API       = "https://m10.yfsp.tv/api/video/getBarrage";
     this.DOMAIN_API      = "https://www.yfsp.tv/play";
+    this.CONFIG_PAGE_API = "https://www.yfsp.tv/";
+    this.signingProvider = new AiyifanSigningProvider({
+      userAgent: this.USER_AGENT,
+      configPageUrl: this.CONFIG_PAGE_API
+    });
+    this.inflightDanmuRequests = new Map();
   }
 
-  /**
-   * 计算接口签名 vv
-   */
-  computeVv(params) {
-    const sortedParams = Object.keys(params)
-      .map(k => `${k}=${params[k]}`)
-      .join('&');
-    const raw = this.PUBLIC_KEY + "&" + sortedParams.toLowerCase() + "&" + this.SALT;
-    return md5(raw);
+  extractEpisodeRequestKey(id) {
+    try {
+      return new URL(id).searchParams.get("id") ?? id;
+    } catch {
+      return id;
+    }
   }
 
   /**
@@ -132,14 +132,6 @@ export default class AiyifanSource extends BaseSource {
       cid: "0,1,4,152",
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
       "Accept": "application/json"
@@ -148,10 +140,7 @@ export default class AiyifanSource extends BaseSource {
     log("info", `[播放列表] 请求 vid: ${vid}`);
     
     try {
-      const urlWithParams = updateQueryString(this.PLAYLIST_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data } = await this.signingProvider.signedGetJson(this.PLAYLIST_API, baseParams, headers, "播放列表");
 
       const episodes = [];
       const infoList = data.data?.info || [];
@@ -187,14 +176,6 @@ export default class AiyifanSource extends BaseSource {
       isMasterSupport: 1
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
       "Accept": "application/json"
@@ -202,13 +183,10 @@ export default class AiyifanSource extends BaseSource {
 
     const epInfo = epId ? `(ID:${epId})` : "";
     log("info", `[视频信息] 请求 key: ${epKey} ${epInfo}`);
-    log("info", `[视频信息] vv签名: ${vv.substring(0, 16)}...`);
 
     try {
-      const urlWithParams = updateQueryString(this.VIDEO_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data, vv } = await this.signingProvider.signedGetJson(this.VIDEO_API, baseParams, headers, "视频信息");
+      log("info", `[视频信息] vv签名: ${vv.substring(0, 16)}...`);
       return data.data || {};
     } catch (error) {
       log("error", `[视频信息失败] 错误: ${error.message}`);
@@ -245,26 +223,15 @@ export default class AiyifanSource extends BaseSource {
       uniqueKey: uniqueKey,
     };
 
-    const vv = this.computeVv(baseParams);
-
-    const params = {
-      ...baseParams,
-      vv: vv,
-      pub: this.PUBLIC_KEY
-    };
-
     const headers = {
       "User-Agent": this.USER_AGENT,
     };
 
     log("info", `[弹幕] 请求 uniqueKey: ${uniqueKey}`);
-    log("info", `[弹幕] vv签名: ${vv.substring(0, 16)}...`);
 
     try {
-      const urlWithParams = updateQueryString(this.DANMU_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      const { data, vv } = await this.signingProvider.signedGetJson(this.DANMU_API, baseParams, headers, "弹幕");
+      log("info", `[弹幕] vv签名: ${vv.substring(0, 16)}...`);
 
       const danmuList = data.data?.info || [];
       log("info", `[弹幕] 获取到 ${danmuList.length} 条弹幕`);
@@ -419,35 +386,51 @@ export default class AiyifanSource extends BaseSource {
   async getEpisodeDanmu(id) {
     log("info", `[Aiyifan] 获取弹幕: ${id}`);
 
-    // 从 URL 中提取 id 参数
-    const videoId = new URL(id).searchParams.get("id") ?? id;
-
-    // 获取视频信息
-    const videoInfo = await this.getVideoInfo(videoId);
-    if (!videoInfo) {
-      log("error", "获取视频信息失败");
-      return [];
+    const requestKey = this.extractEpisodeRequestKey(id);
+    const inflightRequest = this.inflightDanmuRequests.get(requestKey);
+    if (inflightRequest) {
+      log("info", `[Aiyifan] 复用进行中的弹幕请求: ${requestKey}`);
+      return await inflightRequest;
     }
 
-    // 提取uniqueKey
-    const uniqueKey = this.extractUniqueKey(videoInfo);
-    if (!uniqueKey) {
-      log("error", "未获取到uniqueKey");
-      return [];
+    const requestPromise = (async () => {
+      // 从 URL 中提取 id 参数
+      const videoId = requestKey;
+
+      // 获取视频信息
+      const videoInfo = await this.getVideoInfo(videoId);
+      if (!videoInfo) {
+        log("error", "获取视频信息失败");
+        return [];
+      }
+
+      // 提取uniqueKey
+      const uniqueKey = this.extractUniqueKey(videoInfo);
+      if (!uniqueKey) {
+        log("error", "未获取到uniqueKey");
+        return [];
+      }
+
+      // 获取弹幕
+      const danmuList = await this.fetchBarrage(uniqueKey);
+      if (danmuList.length === 0) {
+        log("info", "未获取到弹幕");
+        return [];
+      }
+
+      // 按时间排序
+      danmuList.sort((a, b) => (a.second || 0) - (b.second || 0));
+
+      log("info", `[Aiyifan] 获取到 ${danmuList.length} 条弹幕`);
+      return danmuList;
+    })();
+
+    this.inflightDanmuRequests.set(requestKey, requestPromise);
+    try {
+      return await requestPromise;
+    } finally {
+      this.inflightDanmuRequests.delete(requestKey);
     }
-
-    // 获取弹幕
-    const danmuList = await this.fetchBarrage(uniqueKey);
-    if (danmuList.length === 0) {
-      log("info", "未获取到弹幕");
-      return [];
-    }
-
-    // 按时间排序
-    danmuList.sort((a, b) => (a.second || 0) - (b.second || 0));
-
-    log("info", `[Aiyifan] 获取到 ${danmuList.length} 条弹幕`);
-    return danmuList;
   }
 
   /**
