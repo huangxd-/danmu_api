@@ -1081,6 +1081,14 @@ export async function matchAnime(url, req, clientIp) {
     let resAnime;
     let resEpisode;
 
+    let resData = {
+      "errorCode": 0,
+      "success": true,
+      "errorMessage": "",
+      "isMatched": false,
+      "matches": []
+    };
+
     // 根据指定平台创建动态平台顺序
     const dynamicPlatformOrder = createDynamicPlatformOrder(preferredPlatform);
     log("info", `Original platformOrderArr: ${globals.platformOrderArr}`);
@@ -1101,6 +1109,7 @@ export async function matchAnime(url, req, clientIp) {
         resAnime = __ret.resAnime;
 
         if (resAnime) {
+          resData["isMatched"] = true;
           log("info", `Found match with platform: ${platform || 'default'}`);
           break;
         }
@@ -1114,19 +1123,10 @@ export async function matchAnime(url, req, clientIp) {
       }
     }
 
-    let resData = {
-      "errorCode": 0,
-      "success": true,
-      "errorMessage": "",
-      "isMatched": false,
-      "matches": []
-    };
-
     if (resEpisode) {
       if (clientIp) {
         setLastSearch(clientIp, { title, season, episode, episodeId: resEpisode.episodeId });
       }
-      resData["isMatched"] = true;
       resData["matches"] = [
         AnimeMatch.fromJson({
           "episodeId": resEpisode.episodeId,
