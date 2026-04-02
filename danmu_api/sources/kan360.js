@@ -70,6 +70,43 @@ export default class Kan360Source extends BaseSource {
     }
   }
 
+  // 获取某站点的总集数
+  async getNumber(cat, id, site) {
+    try {
+      const url = `https://api.web.360kan.com/v1/detail?cat=${cat}&id=${id}&site=${site}`;
+      const res = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+      const result = res.data;
+      if (result && result.data && result.data.allupinfo) {
+        return Number(result.data.allupinfo[site]);
+      }
+    } catch (error) {
+      log("error", "getNumber error:", error && error.message ? error.message : error);
+    }
+    return null;
+  }
+
+  // 获取 allepidetail（start..end）
+  async get360Detail(cat, id, site, start, end) {
+    try {
+      const url = `https://api.web.360kan.com/v1/detail?cat=${cat}&id=${id}&start=${start}&end=${end}&site=${site}`;
+      const res = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+      return res.data;
+    } catch (error) {
+      log("error", "get360Detail error:", error && error.message ? error.message : error);
+    }
+    return null;
+  }
+
   async search(keyword) {
     try {
       const response = await httpGet(
@@ -130,14 +167,46 @@ export default class Kan360Source extends BaseSource {
               }
             }
           } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
-            if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
-              for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
-                const item = anime.seriesPlaylinks[i];
-                links.push({
-                  "name": (i + 1).toString(),
-                  "url": item.url,
-                  "title": `【${anime.seriesSite}】 第${i + 1}集`
-                });
+            // 先根据 cat_name 映射 cat 值（电影=1, 电视剧=2, 动漫=4）
+            let cat = 0;
+            if (anime.cat_name === '电视剧') cat = 2;
+            else if (anime.cat_name === '动漫') cat = 4;
+
+            // 获取总集数（若 seriesPlaylinks 为空或不存在时使用）
+            let number = null;
+
+            // 尝试使用 seriesPlaylinks（常规情况）
+            if (Array.isArray(anime.seriesPlaylinks) && anime.seriesPlaylinks.length > 0) {
+              if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
+                for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
+                  const item = anime.seriesPlaylinks[i];
+                  links.push({
+                    "name": (i + 1).toString(),
+                    "url": item.url,
+                    "title": `【${anime.seriesSite}】 第${i + 1}集`
+                  });
+                }
+              }
+            } else if (anime.playlinks && typeof anime.playlinks === 'object') {
+              // 对 playlinks 中的每个 siteKey 逐个尝试使用 v1/detail 获取 allepidetail
+              for (const siteKey of Object.keys(anime.playlinks)) {
+                if (!globals.vodAllowedPlatforms.includes(siteKey)) continue;
+                try {
+                  const detailId = anime.en_id;
+                  const siteNumber = await this.getNumber(cat, detailId, siteKey);
+                  const detail = await this.get360Detail(cat, detailId, siteKey, 1, siteNumber);
+                  if (detail && detail.data && detail.data.allepidetail && detail.data.allepidetail[siteKey]) {
+                    for (const ep of detail.data.allepidetail[siteKey]) {
+                      links.push({
+                        name: ep.playlink_num,
+                        url: ep.url,
+                        title: `【${siteKey}】 第${ep.playlink_num}集`
+                      });
+                    }
+                  }
+                } catch (e) {
+                  log('error', `[360kan] failed to fetch detail for site ${siteKey}: ${e && e.message ? e.message : e}`);
+                }
               }
             }
           } else if (anime.cat_name === "综艺") {
