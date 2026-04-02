@@ -654,6 +654,7 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
       return {
         animeId: anime.animeId,
         animeTitle: title,
+        aliases: anime.aliases || [],
         type: anime.type,
         year: anime.startDate ? anime.startDate.slice(0, 4) : null,
         episodeCount: anime.episodeCount,
@@ -776,37 +777,52 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
 
     let isMatch = false;
 
-    // 1. 标题/年份匹配检查
-    if (season && episode) {
-        // 剧集模式
-        if (normalizeSpaces(anime.animeTitle).includes(normalizedTitle)) {
-            // 年份匹配优先于季匹配
-            if (!matchYear(anime, year)) {
-                log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
-                continue;
+    // 构建待匹配的标题候选池 (主标题 + 所有别名)
+    const candidateTitles = [anime.animeTitle];
+    if (anime.aliases && Array.isArray(anime.aliases)) {
+        candidateTitles.push(...anime.aliases);
+    }
+
+    // 1. 标题/年份/别名综合匹配检查
+    for (const candTitle of candidateTitles) {
+        if (!candTitle) continue;
+
+        if (season && episode) {
+            // 剧集模式
+            if (normalizeSpaces(candTitle).includes(normalizedTitle)) {
+                // 年份匹配依然以原始 anime 为准，且年份匹配优先于季匹配
+                if (!matchYear(anime, year)) {
+                    log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
+                    continue;
+                }
+
+                // 年份匹配通过后，再判断season
+                const animeIsPrefer = 
+                  globals.rememberLastSelect && 
+                  preferAnimeId && 
+                  (String(anime.bangumiId) === String(preferAnimeId) || 
+                  String(anime.animeId) === String(preferAnimeId));
+
+                // 构造一个虚拟的 anime 对象传入 matchSeason，这样当命中别名时，matchSeason 才能正确判断后缀
+                const tempAnime = { ...anime, animeTitle: candTitle };
+                
+                if (matchSeason(tempAnime, title, season) || animeIsPrefer) {
+                    isMatch = true;
+                    break; // 别名命中跳出
+                }
             }
-
-            // 年份匹配通过后，再判断season
-            const animeIsPrefer = 
-              globals.rememberLastSelect && 
-              preferAnimeId && 
-              (String(anime.bangumiId) === String(preferAnimeId) || 
-              String(anime.animeId) === String(preferAnimeId));
-
-            if (matchSeason(anime, title, season) || animeIsPrefer) {
+        } else {
+            // 电影模式
+            const cleanTitle = candTitle.split("(")[0].trim();
+            if (cleanTitle === title) {
+                // 年份匹配检查
+                if (!matchYear(anime, year)) {
+                    log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
+                    continue;
+                }
                 isMatch = true;
+                break; // 别名命中跳出
             }
-        }
-    } else {
-        // 电影模式
-        const animeTitle = anime.animeTitle.split("(")[0].trim();
-        if (animeTitle === title) {
-            // 年份匹配检查
-            if (!matchYear(anime, year)) {
-                log("info", `Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
-                continue;
-            }
-            isMatch = true;
         }
     }
 
