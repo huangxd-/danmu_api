@@ -663,7 +663,7 @@ function detectSuffixStart(title) {
  * @param {string} title 原始标题
  * @returns {string} 清洗后的标题主体
  */
-function cleanSearchQuery(title) {
+export function cleanSearchQuery(title) {
   const limit = detectSuffixStart(title);
   if (limit < title.length) {
     return title.substring(0, limit).trim();
