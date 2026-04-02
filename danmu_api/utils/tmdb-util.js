@@ -51,45 +51,45 @@ export async function searchTmdbTitles(title, mediaType = "multi", options = {})
     maxPages = 3,      // 最多获取几页结果
     signal = null      // 中断信号
   } = options;
-  
+
   // 如果指定了具体页码，只获取单页
   if (options.page !== undefined) {
     const url = `search/${mediaType}?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN&page=${page}`;
     return await tmdbApiGet(url, { signal });
   }
-  
+
   // 默认获取多页合并结果
   const allResults = [];
-  
+
   for (let currentPage = 1; currentPage <= maxPages; currentPage++) {
     // 检查是否中断
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    
+
     const url = `search/${mediaType}?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN&page=${currentPage}`;
     const response = await tmdbApiGet(url, { signal });
-    
+
     if (!response || !response.data) {
       break;
     }
-    
+
     const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-    
+
     if (!data.results || data.results.length === 0) {
       break;
     }
-    
+
     allResults.push(...data.results);
-    
+
     // 如果当前页结果少于20条，说明没有更多结果了
     if (data.results.length < 20) {
       break;
     }
   }
-  
+
   log("info", `[TMDB] 共获取到 ${allResults.length} 条搜索结果（最多${maxPages}页）`);
-  
+
   // 返回与原格式兼容的结构
   return {
     data: {
@@ -118,77 +118,74 @@ async function getTmdbAlternativeTitles(mediaType, tmdbId, options = {}) {
 }
 
 // 从别名中提取中文别名相关函数
-function extractChineseTitleFromAlternatives(altData, mediaType) {
-  if (!altData || !altData.data) return null;
-  
-  // TV 剧集的别名在 results 字段，电影在 titles 字段
-  const titles = altData.data.results || altData.data.titles || [];
-  
-  if (!Array.isArray(titles) || titles.length === 0) {
-    return null;
-  }
-  
-  // 优先级：CN（中国大陆）> TW（台湾）> HK（香港）> SG（新加坡）
-  const priorityRegions = ['CN', 'TW', 'HK', 'SG'];
-  
-  for (const region of priorityRegions) {
-    const match = titles.find(t => {
-      const iso = t.iso_3166_1 || t.iso_639_1;
-      const title = t.title || t.name || "";
-      return iso === region && title && !isNonChinese(title);
-    });
-    
+function extractChineseTitleFromAlternatives(altData, mediaType, queryTitle = "") {
+  // 兼容不同 mediaType 的层级结构
+  const titles = altData?.data?.results || altData?.data?.titles || [];
+  if (!titles.length) return null;
+
+  const cleanQuery = (queryTitle || "").toLowerCase().trim();
+  const getStr = t => t.title || t.name || "";
+
+  // 定义优先级判定规则数组，按先后顺序依次验证
+  const priorityRules = [
+    // 1. 最高优先级：精确命中用户搜索词
+    t => cleanQuery && getStr(t).toLowerCase().trim() === cleanQuery,
+    // 2. 地区优先级：按 CN > TW > HK > SG 顺序映射出 4 个规则函数
+    ...['CN', 'TW', 'HK', 'SG'].map(region => 
+      t => (t.iso_3166_1 || t.iso_639_1) === region && !isNonChinese(getStr(t))
+    ),
+    // 3. 兜底优先级：任何包含中文的别名
+    t => !isNonChinese(getStr(t))
+  ];
+
+  // 遍历策略链，一旦有规则命中 (find 返回了对象)，立即提取并结束
+  for (const rule of priorityRules) {
+    const match = titles.find(rule);
     if (match) {
-      const chineseTitle = match.title || match.name;
-      log("info", `[TMDB] 从别名中找到中文标题 (${region}): ${chineseTitle}`);
-      return chineseTitle;
+      const bestMatchTitle = getStr(match);
+      log("info", `[TMDB] 按优先级策略成功提取最佳中文别名: ${bestMatchTitle}`);
+      return bestMatchTitle;
     }
   }
-  
-  // 如果没有找到指定地区的，查找任何包含中文的别名
-  const anyChineseTitle = titles.find(t => {
-    const title = t.title || t.name || "";
-    return title && !isNonChinese(title);
-  });
-  
-  if (anyChineseTitle) {
-    const title = anyChineseTitle.title || anyChineseTitle.name;
-    log("info", `[TMDB] 从别名中找到中文标题 (其他地区): ${title}`);
-    return title;
-  }
-  
+
   return null;
 }
 
 // 别名获取判断相关函数
-async function getChineseTitleForResult(result, signal) {
+async function getChineseTitleForResult(result, signal, queryTitle = "") {
   const resultTitle = result.name || result.title || "";
-  
-  // 如果已经是中文标题，直接返回
-  if (!isNonChinese(resultTitle)) {
+
+  // 如果主标题正好完全匹配搜索词，直接返回
+  if (queryTitle && resultTitle.toLowerCase().trim() === queryTitle.toLowerCase().trim()) {
     return resultTitle;
   }
-  
-  // 非中文标题，尝试获取中文别名
-  log("info", `[TMDB] 检测到非中文标题 "${resultTitle}", 尝试获取中文别名`);
-  
+
+  // 当主标题不是中文或者有搜索词但主标题没有完全命中时，才去拿别名池
+  const needsAlternative = isNonChinese(resultTitle) || (queryTitle && resultTitle.toLowerCase().trim() !== queryTitle.toLowerCase().trim());
+
+  if (!needsAlternative) {
+    return resultTitle;
+  }
+
+  log("info", `[TMDB] 尝试获取中文别名以寻找更优匹配 (当前标题: "${resultTitle}")`);
+
   const mediaType = result.media_type || (result.name ? "tv" : "movie");
-  
+
   try {
     // 在发起别名请求前检查是否已中断
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    
+
     const altResp = await getTmdbAlternativeTitles(mediaType, result.id, { signal });
-    
+
     // 别名请求返回后再次检查（请求期间可能被中断）
     if (signal && signal.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    
-    const chineseTitle = extractChineseTitleFromAlternatives(altResp, mediaType);
-    
+
+    const chineseTitle = extractChineseTitleFromAlternatives(altResp, mediaType, queryTitle);
+
     if (chineseTitle) {
       log("info", `[TMDB] 将使用中文别名进行相似匹配: ${chineseTitle}`);
       return chineseTitle;
@@ -225,7 +222,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
   if (!task) {
     // 创建一个新的控制器，用于控制真正的后台网络请求
     const masterController = new AbortController();
-    
+
     // 定义搜索核心逻辑
     const executeSearch = async () => {
       try {
@@ -238,17 +235,17 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
           const allGenreIds = genreIds.length > 0 ? genreIds : genres.map(g => g.id);
           const originalLanguage = mediaInfo.original_language || '';
           const ANIMATION_GENRE_ID = 16;
-          
+
           // 动画类型直接通过
           if (allGenreIds.includes(ANIMATION_GENRE_ID)) {
             return { isValid: true, reason: "明确动画类型(genre_id: 16)" };
           }
-          
+
           // 日语内容通过（涵盖日剧、日影、日综艺）
           if (originalLanguage === 'ja') {
             return { isValid: true, reason: `原始语言为日语(ja),可能是日剧/日影/日综艺` };
           }
-          
+
           return { 
             isValid: false, 
             reason: `非动画且非日语内容(language: ${originalLanguage}, genres: ${allGenreIds.join(',')})` 
@@ -265,10 +262,10 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
               details: "搜索结果为空" 
             };
           }
-          
+
           let validCount = 0;
           const validItems = [];
-          
+
           for (const item of results) {
             const validation = isValidContent(item);
             if (validation.isValid) {
@@ -277,7 +274,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
               validItems.push(`${itemTitle}(${validation.reason})`);
             }
           }
-          
+
           return {
             hasValid: validCount > 0,
             validCount: validCount,
@@ -297,28 +294,28 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
               .replace(/[：:、，。！？；""''（）【】《》]/g, '')
               .trim();
           };
-          
+
           const n1 = normalize(s1);
           const n2 = normalize(s2);
-          
+
           // 完全匹配
           if (n1 === n2) return 1.0;
-          
+
           // 包含关系检查
           const shorter = n1.length < n2.length ? n1 : n2;
           const longer = n1.length >= n2.length ? n1 : n2;
-          
+
           if (longer.includes(shorter) && shorter.length > 0) {
             // 如果有连词则得到一定加分
             const lengthRatio = shorter.length / longer.length;
             return 0.6 + (lengthRatio * 0.30);
           }
-          
+
           // 编辑距离计算
           const longer2 = s1.length > s2.length ? s1 : s2;
           const shorter2 = s1.length > s2.length ? s2 : s1;
           if (longer2.length === 0) return 1.0;
-          
+
           const editDistance = (str1, str2) => {
             str1 = str1.toLowerCase();
             str2 = str2.toLowerCase();
@@ -341,18 +338,18 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
             }
             return costs[str2.length];
           };
-          
+
           return (longer2.length - editDistance(longer2, shorter2)) / longer2.length;
         };
 
         // 第一步：TMDB搜索
         log("info", `[TMDB] 正在搜索 (Shared Task): ${cleanTitle}`);
-        
+
         // 检查 masterController 是否已被中断
         if (backgroundSignal.aborted) throw new DOMException('Aborted', 'AbortError');
 
         const respZh = await searchTmdbTitles(cleanTitle, "multi", { signal: backgroundSignal });
-        
+
         if (!respZh || !respZh.data) {
           log("info", "[TMDB] TMDB搜索结果为空");
           return null;
@@ -367,12 +364,12 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
 
         // 第二步：类型验证（宽松策略：只要有一个符合就继续）
         const validationResult = validateResults(dataZh.results);
-        
+
         if (!validationResult.hasValid) {
           log("info", `[TMDB] 类型判断未通过,跳过后续搜索: ${validationResult.details}`);
           return null;
         }
-        
+
         log("info", `[TMDB] 类型判断通过: ${validationResult.details}`);
 
         // 第三步：找到最相似的结果
@@ -386,13 +383,13 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         for (const result of dataZh.results) {
           const resultTitle = result.name || result.title || "";
           if (!resultTitle) continue;
-          
+
           // 先计算原标题的相似度
           const directScore = similarity(cleanTitle, resultTitle);
           const originalTitle = result.original_name || result.original_title || "";
           const originalScore = originalTitle ? similarity(cleanTitle, originalTitle) : 0;
           const initialScore = Math.max(directScore, originalScore);
-          
+
           // 如果原标题已经100%匹配，标记跳过后续所有别名搜索
           if (initialScore === 1.0 && !skipAlternativeFetch) {
             skipAlternativeFetch = true;
@@ -404,27 +401,29 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
             }
             continue;
           }
-          
+
           // 获取可用的中文标题
           let chineseTitle;
           let finalScore;
-          
-          // 如果已经找到100%匹配或已是中文，直接使用原标题不获取别名
-          if (skipAlternativeFetch || !isNonChinese(resultTitle)) {
+
+          // 检查原标题是否与查询词绝对一致
+          const isExactMatch = resultTitle.toLowerCase().trim() === cleanTitle.toLowerCase().trim();
+
+          // 如果强制跳过了，或者它本身就是我们要找的精确匹配词，不再调接口拿别名
+          if (skipAlternativeFetch || isExactMatch) {
             chineseTitle = resultTitle;
             finalScore = initialScore;
-            
-            if (skipAlternativeFetch && isNonChinese(resultTitle)) {
+
+            if (skipAlternativeFetch && isExactMatch) {
               log("info", `[TMDB] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}% (已找到完全匹配，跳过别名搜索)`);
             } else {
               log("info", `[TMDB] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}%`);
             }
           } else {
-            // 非中文且未达到别名获取上限，尝试获取别名
+            // 非完全匹配且未达到别名获取上限，尝试获取别名
             if (alternativeTitleFetchCount < MAX_ALTERNATIVE_FETCHES) {
               try {
-                // 使用 backgroundSignal
-                chineseTitle = await getChineseTitleForResult(result, backgroundSignal);
+                chineseTitle = await getChineseTitleForResult(result, backgroundSignal, cleanTitle);
                 if (chineseTitle !== resultTitle) {
                   alternativeTitleFetchCount++;
                 }
@@ -438,21 +437,21 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
               chineseTitle = resultTitle;
               log("info", `[TMDB] 已达到别名获取上限(${MAX_ALTERNATIVE_FETCHES})，使用原标题: ${resultTitle}`);
             }
-            
+
             const finalDirectScore = similarity(cleanTitle, chineseTitle);
             finalScore = Math.max(finalDirectScore, originalScore);
-            
+
             const displayInfo = chineseTitle !== resultTitle 
               ? `"${resultTitle}" (别名: ${chineseTitle})` 
               : `"${resultTitle}"`;
             log("info", `[TMDB] 匹配检查 ${displayInfo} - 相似度: ${(finalScore * 100).toFixed(2)}%`);
-            
+
             if (finalScore === 1.0 && !skipAlternativeFetch) {
               skipAlternativeFetch = true;
               log("info", `[TMDB] 通过别名找到完全匹配，跳过后续所有别名搜索`);
             }
           }
-          
+
           if (finalScore > bestScore) {
             bestScore = finalScore;
             bestMatch = result;
@@ -509,7 +508,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         TMDB_PENDING.delete(cleanTitle);
       })
     };
-    
+
     TMDB_PENDING.set(cleanTitle, task);
     log("info", `[TMDB] 启动新搜索任务: ${cleanTitle}`);
   } else {
@@ -621,22 +620,7 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
 // =====================
 
 // 识别季度、剧场版、外传、副标题等后缀信息的正则白名单
-const SUFFIX_PATTERNS = [
-  /(\s+|^)(?:第)?(\d+|[一二三四五六七八九十]+)[季期部]/,
-  /(\s+|^)season\s*\d+/i,
-  /(\s+|^)s\d+/i,
-  /(\s+|^)part\s*\d+/i,
-  /(\s+|^)the\s+final\s+season/i,
-  /(\s+|^)movie(?![a-z])/i, // 负向预查，防止误匹配单词内部
-  /(\s+|^)film(?![a-z])/i,
-  /(\s+|^)ova(?![a-z])/i,
-  /(\s+|^)oad(?![a-z])/i,
-  /(\s+|^)sp(?![a-z])/i,
-  /[:：]\s*.+/,
-  /[~～].+/,
-  /\s+.*篇/,
-  /.*外传/
-];
+const SUFFIX_PATTERN = /(?:\s+|^)(?:第?(?:\d+|[一二三四五六七八九十]+)[季期部]|season\s*\d+|s\d+|part\s*\d+|the\s+final\s+season|(?:movie|film|ova|oad|sp)(?![a-z]))|[:：~～]|\s+.*?篇|外传/i;
 
 const SEPARATOR_REGEX = /[ :：~～]/;
 
@@ -646,16 +630,8 @@ const SEPARATOR_REGEX = /[ :：~～]/;
  * @returns {number} 后缀起始索引
  */
 function detectSuffixStart(title) {
-  let minIndex = title.length;
-  for (const pattern of SUFFIX_PATTERNS) {
-    const match = title.match(pattern);
-    if (match && match.index !== undefined) {
-      if (match.index < minIndex) {
-        minIndex = match.index;
-      }
-    }
-  }
-  return minIndex;
+  const match = title.match(SUFFIX_PATTERN);
+  return match ? match.index : title.length;
 }
 
 /**
@@ -705,7 +681,7 @@ export function smartTitleReplace(animes, cnAlias) {
   for (let i = 0; i < animes.length; i++) {
     const anime = animes[i];
     const originalTitle = anime.title || "";
-    
+
     // 策略 A: LCP 模式
     if (lcp && lcp.length > 1 && originalTitle.startsWith(lcp)) {
       const suffix = originalTitle.substring(lcp.length).trim();
