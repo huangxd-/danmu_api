@@ -5,7 +5,7 @@ import { httpGet } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
-import { getTmdbJaOriginalTitle, smartTitleReplace, cleanSearchQuery } from "../utils/tmdb-util.js";
+import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
 import TencentSource from "./tencent.js";
 import IqiyiSource from "./iqiyi.js";
 import MangoSource from "./mango.js";
@@ -298,13 +298,6 @@ export default class DandanSource extends BaseSource {
     while (queue.length > 0) {
       const currentBatch = queue.splice(0, queue.length);
 
-      // 使动态加入的相关作品调用 TMDB 智能替换
-      const newlyAddedRelateds = currentBatch.filter(a => a.isRelated && !a._displayTitle);
-      if (newlyAddedRelateds.length > 0) {
-        newlyAddedRelateds.forEach(a => a.title = a.animeTitle);
-        smartTitleReplace(newlyAddedRelateds, cnAlias);
-      }
-
       await Promise.all(currentBatch.map(async (anime) => {
         try {
           // 获取详情数据（包含剧集、别名和相关作品）
@@ -380,22 +373,7 @@ export default class DandanSource extends BaseSource {
           }
 
           if (links.length > 0) {
-            // 复用 TMDB 工具清洗用户搜索词剥离季度/Part等后缀
-            const baseQueryTitle = cleanSearchQuery(queryTitle);
-
-            // 在官方别名池中寻找与纯净主标题精确匹配的别名（忽略大小写）
-            const matchedApiAlias = apiAliases.find(alias => {
-                if (!alias) return false;
-                return alias.toLowerCase() === baseQueryTitle.toLowerCase();
-            });
-
-            // 如果详情接口中存在完全匹配的官方别名，强制复用智能拼接替换
-            if (matchedApiAlias) {
-                smartTitleReplace([anime], matchedApiAlias);
-                log("info", `[Dandan] 命中 API 官方别名: 搜索词 "${baseQueryTitle}" 匹配到 "${matchedApiAlias}", 已将原标题 "${anime.animeTitle}" 替换展示`);
-            }
-
-            // 优先使用 智能标题替换后的标题，如果没有则直接使用原标题
+            // 优先使用 TMDB 智能标题替换后的标题，如果没有则直接使用原标题
             const displayTitle = anime._displayTitle || anime.animeTitle;
 
             // 合并别名池：API返回的别名 + 原始标题（供合并工具对齐使用）
