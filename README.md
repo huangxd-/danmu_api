@@ -519,7 +519,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | renren   | renren |
 | hanjutv  | hanjutv |
 | bahamut  | bahamut |
-| dandan   | dandan |
+| dandan   | [弹弹play](https://www.dandanplay.com/) |
 | animeko  | [animeko](https://github.com/open-ani/animeko) |
 | custom   | custom |
 
@@ -662,8 +662,14 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - TMDB源在SOURCE_ORDER添加tmdb的同时，需要添加TMDB_API_KEY环境变量
 - 弹幕分片下载请求已加入重试机制，重试次数为1次
 - 如果同时配置了本地缓存和upstash redis缓存和本地redis缓存，优先级为本地redis > upstash redis缓存 > 本地缓存
-- 弹弹play源用的是第三方接口，感谢开源项目 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere)
 - 有任何问题，如部署/环境变量配置等，可通过deepwiki对本项目进行提问，链接入口：https://deepwiki.com/huangxd-/danmu_api，其中项目内容一般每周刷新一次
+
+### 部署完成后在播放器填写后弹幕未生效自主排查步骤
+以API示例 `http://192.168.1.7:9321/87654321` 为例（默认为87654321的情况下也可以不带token）
+1. 首先确认你的api部署成功 访问 `http://192.168.1.7:9321/87654321` 有json输出
+2. 检查你在播放器的填写是否正确，有无多余空格等
+3. 播放器请求后，查看 `http://192.168.1.7:9321/87654321/api/logs` 日志，看请求是否有报错，比如有用户在自己软路由上搭建，但走了全局代理，导致人人等访问不了，请确保走直连
+4. 如果你播放的影片片名不规范，很可能搜不到，请确保片名规范
 
 ### 关联项目
 [喂饭教程1：danmu_api vercel 自动同步部署方案 - 永远保持最新版本！实时同步原作者更新](https://github.com/xiaoyao20084321/log-var-danmu-deployment-guide)
@@ -674,12 +680,10 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 
 [喂饭教程4：使用Vercel搭建万能反向代理，部署后请绑定自定义域名使用](https://github.com/souying/vercel-api-proxy)
 
-### 部署完成后在播放器填写后弹幕未生效自主排查步骤
-以API示例 `http://192.168.1.7:9321/87654321` 为例（默认为87654321的情况下也可以不带token）
-1. 首先确认你的api部署成功 访问 `http://192.168.1.7:9321/87654321` 有json输出
-2. 检查你在播放器的填写是否正确，有无多余空格等
-3. 播放器请求后，查看 `http://192.168.1.7:9321/87654321/api/logs` 日志，看请求是否有报错，比如有用户在自己软路由上搭建，但走了全局代理，导致人人等访问不了，请确保走直连
-4. 如果你播放的影片片名不规范，很可能搜不到，请确保片名规范
+### 特别感谢
+- 开源项目 [danmaku-anywhere](https://github.com/Mr-Quin/danmaku-anywhere) 提供的[弹弹play开放平台](https://doc.dandanplay.com/open/)接口
+
+- 开源项目 [animeko](https://github.com/open-ani/animeko) 提供的弹幕API
 
 ### 贡献者
 <a href="https://github.com/huangxd-/danmu_api/graphs/contributors">
