@@ -1465,16 +1465,11 @@ async function fetchMergedComments(url, animeTitle, commentId) {
             const raw = await sourceInstance.getEpisodeDanmu(realId, parts);
             const formatted = sourceInstance.formatComments(raw);
             
-			// 给合并工具里的每一条弹幕打上独立的原始源标签
+            // 给合并工具里的每一条弹幕打上独立的原始源标签
             if (formatted && Array.isArray(formatted)) {
                 formatted.forEach(item => {
                     if (!item._sourceLabel) item._sourceLabel = sourceLabel;
                 });
-            }
-			
-            // 提取并挂载 dandan 源传出的精确偏移量
-            if (raw && raw.relatedShifts) {
-              formatted.relatedShifts = raw.relatedShifts;
             }
 
             stats[sourceLabel] = formatted.length;
@@ -1501,16 +1496,6 @@ async function fetchMergedComments(url, animeTitle, commentId) {
 
   // 等待所有源请求完成
   const results = await Promise.all(tasks);
-  
-  // 跨源时间轴对齐（仅当存在 dandan 源时执行）
-  if (sourceNames.includes('dandan')) {
-    // 提取精确偏移集合
-    const dandanIndex = sourceNames.indexOf('dandan');
-    const dandanShifts = (results[dandanIndex] && results[dandanIndex].relatedShifts) ? results[dandanIndex].relatedShifts : {};
-
-    // 执行对齐函数
-    alignSourceTimelines(results, sourceNames, realIds, dandanShifts);
-  }
 
   // 按来源分别应用弹幕时间偏移（对齐后、合并前）
   if (globals.danmuOffsetRules?.length > 0 && animeTitle && commentId) {
@@ -1869,7 +1854,7 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await renrenSource.getSegmentComments(segment);
     } else if (platform === "dandan") {
       danmus = await dandanSource.getSegmentComments(segment);
-	  } else if (platform === "animeko") {
+    } else if (platform === "animeko") {
       danmus = await animekoSource.getSegmentComments(segment);
     } else if (platform === "custom") {
       danmus = await customSource.getSegmentComments(segment);
