@@ -2583,15 +2583,15 @@ export function mergeDanmakuList(listA, listB) {
 
 /**
  * 跨源时间轴对齐：以 dandan 为基准，对其他源计算并应用全局偏移
- * 采用最大匹配率策略: matchCount / min(dandanCount, sourceCount)
- * * @param {Array<Array<Object>>} results - 各源弹幕数组
+ * 采用最大匹配率策略: maxCount / min(dandanCount, sourceCount)
+ * @param {Array<Array<Object>>} results - 各源弹幕数组
  * @param {Array<string>} sourceNames - 源名数组
  * @param {Array<string>} realIds - 对应的 ID 数组
  * @param {number} [minMatchRatio=0.8] - 最小匹配率阈值，默认 80%
- * @param {number} [offsetThreshold=3] - 最小触发偏移阈值(秒)，默认 3秒
+ * @param {number} [offsetThreshold=1] - 最小触发偏移阈值(秒)，默认 1秒
  * @returns {Array<Array<Object>>} 对齐后的各源弹幕数组
  */
-export function alignSourceTimelines(results, sourceNames, realIds, minMatchRatio = 0.8, offsetThreshold = 3) {
+export function alignSourceTimelines(results, sourceNames, realIds, minMatchRatio = 0.8, offsetThreshold = 1) {
   // 寻找基准源 Dandan，如果没有或无数据，直接跳过对齐
   const dandanIndex = sourceNames.findIndex(name => name === 'dandan');
   if (dandanIndex === -1 || !results[dandanIndex] || results[dandanIndex].length === 0) {
@@ -2638,22 +2638,16 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
       if (text && dandanTextMap.has(text)) {
         matchCount++;
         const dandanTime = dandanTextMap.get(text);
-        // 计算偏移：当前源时间 - dandan基准时间
-        const offset = Math.round((time - dandanTime) * 100) / 100;
+        
+        // 使用 1秒 为桶宽取整，防止因几十毫秒的误差导致相同的偏移量被碎片化分散
+        const offset = Math.round(time - dandanTime);
         offsetCounts.set(offset, (offsetCounts.get(offset) || 0) + 1);
       }
     }
 
-    // 最大匹配率策略: 用两者中较小的总数作为分母，抵抗聚合源数据膨胀
     const minCount = Math.min(dandanTotalCount, list.length);
-    const matchRatio = matchCount / minCount;
 
-    if (matchRatio < minMatchRatio) {
-      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 匹配率过低 (${(matchRatio * 100).toFixed(1)}% < ${(minMatchRatio * 100).toFixed(1)}%)，跳过时间轴对齐 (匹配数:${matchCount}, dandan:${dandanTotalCount}, 副源:${list.length})`);
-      continue;
-    }
-
-    // 寻找出现频率最高的偏移量（众数）作为最终偏移
+    // 先寻找出现频率最高的偏移量（众数）作为最终偏移
     let bestOffset = 0;
     let maxCount = 0;
     for (const [offset, count] of offsetCounts) {
@@ -2663,13 +2657,23 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
       }
     }
 
+    const rawMatchRatio = matchCount / minCount;
+    const effectiveMatchRatio = maxCount / minCount; // 有效匹配率（仅算最佳偏移的支撑票数）
+    const consensusRatio = matchCount > 0 ? maxCount / matchCount : 0; // 集中度
+
+    // 如果总匹配率没过线，或者有效匹配率太低(<5%)，或者票数太分散毫无共识(<15%)，均视为噪音并拦截
+    if (rawMatchRatio < minMatchRatio || effectiveMatchRatio < 0.05 || consensusRatio < 0.15) {
+      log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 匹配率或集中度过低 (有效:${(effectiveMatchRatio * 100).toFixed(1)}%, 集中度:${(consensusRatio * 100).toFixed(1)}%, 总匹配:${(rawMatchRatio * 100).toFixed(1)}%)，跳过时间轴对齐 (最佳偏移:${bestOffset}s 获 ${maxCount} 票, 基于较小者:${minCount})`);
+      continue;
+    }
+
     // 如果偏移量太小（低于阈值），则认为原生对齐已经足够好，不执行修改
     if (Math.abs(bestOffset) < offsetThreshold) {
       log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 最佳偏移量 ${bestOffset}s 较小 (低于阈值 ${offsetThreshold}s)，无需对齐`);
       continue;
     }
 
-    log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用时间轴本地计算偏移 ${bestOffset}s (匹配率: ${(matchRatio * 100).toFixed(1)}%, 该偏移获 ${maxCount} 票, 基于较小者: ${minCount})`);
+    log("info", `[Merge][AlignTimeline] ${sourceName}:${realId} 应用时间轴本地计算偏移 ${bestOffset}s (有效匹配率: ${(effectiveMatchRatio * 100).toFixed(1)}%, 集中度: ${(consensusRatio * 100).toFixed(1)}%, 该偏移获 ${maxCount} 票, 基于较小者: ${minCount})`);
 
     // 应用偏移修正
     for (let i = 0; i < parsedCache.length; i++) {
