@@ -860,7 +860,8 @@ function checkDateMatch(dateA, dateB, isDub = false) {
  * @returns {boolean} 是否允许合并
  */
 function isMergeRatioValid(mergedCount, totalA, totalB, sourceA, sourceB, isAnyCollection = false) {
-    if (sourceA === 'animeko' || sourceB === 'animeko') return true; 
+    if (/^(dandan|animeko)$/i.test(sourceA) || /^(dandan|animeko)$/i.test(sourceB)) return true; 
+
     if (isAnyCollection) {
         const minTotal = Math.min(totalA, totalB);
         if (minTotal > 0 && (mergedCount / minTotal) > 0.5) return true;
@@ -1923,8 +1924,6 @@ async function processMergeTask(params) {
                         let accumulatedCount = 0;
                         for (let s = 1; s < seasonNum; s++) accumulatedCount += (seasonLengthMap.get(s) || 0);
 
-                        // 移除 -2 缓冲。既然使用 Mode 策略得到了较准确的长度，直接信任该长度。
-                        // 这样可以避免 S2 的第 1 集错误地回溯匹配到 S1 的最后几集。
                         let safeAccumulated = accumulatedCount;
 
                         if (safeAccumulated >= collectionLinks.length) {
@@ -1974,15 +1973,68 @@ async function processMergeTask(params) {
             let mergedCount = 0;
             const redundantS = identifyRedundantTitle(derivedMatch.links, derivedMatch.animeTitle, secSource);
 
+            // 提取当前的共识集数差 (Consensus Shift)
+            let consensusShift = null;
+            const shiftCounts = new Map();
             for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
-              const pIndex = k + offset; 
+                const pIdx = k + offset;
+                if (pIdx >= 0 && pIdx < filteredPLinksWithIndex.length) {
+                    const pLinkItem = filteredPLinksWithIndex[pIdx];
+                    const sLinkItem = filteredMLinksWithIndex[k];
+                    const infoP = extractEpisodeInfo(getTempTitle(pLinkItem.link.title || pLinkItem.link.name, redundantP), currentPrimarySource);
+                    const infoS = extractEpisodeInfo(getTempTitle(sLinkItem.link.title || sLinkItem.link.name, redundantS), secSource);
+                    if (infoP.num !== null && infoS.num !== null && !infoP.isSpecial && !infoS.isSpecial) {
+                        const diff = infoP.num - infoS.num;
+                        shiftCounts.set(diff, (shiftCounts.get(diff) || 0) + 1);
+                    }
+                }
+            }
+            let maxShiftCount = 0;
+            for (const [diff, count] of shiftCounts.entries()) {
+                if (count > maxShiftCount) {
+                    maxShiftCount = count;
+                    consensusShift = diff;
+                }
+            }
+
+            for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
+              let pIndex = k + offset; 
               const sourceLinkItem = filteredMLinksWithIndex[k];
               const sourceLink = sourceLinkItem.link;
               const sTitleShort = sourceLink.name || sourceLink.title || `Index ${k}`;
 
               const orphanItem = { link: sourceLink, originalIndex: sourceLinkItem.originalIndex, relativeIndex: pIndex, info: null };
-              const cleanTitleS = getTempTitle(sourceLink.title, redundantS);
+              const cleanTitleS = getTempTitle(sourceLink.title || sourceLink.name, redundantS);
               orphanItem.info = extractEpisodeInfo(cleanTitleS, secSource);
+
+              // 智能数值对齐：破解源缺集导致的数组错位，并为落单集计算精确小数排序
+              if (consensusShift !== null && orphanItem.info.num !== null && !orphanItem.info.isSpecial) {
+                  const targetNum = orphanItem.info.num + consensusShift;
+                  const exactMatchIndex = filteredPLinksWithIndex.findIndex(pItem => {
+                      const pTitle = getTempTitle(pItem.link.title || pItem.link.name, redundantP);
+                      const pInfo = extractEpisodeInfo(pTitle, currentPrimarySource);
+                      return pInfo.num === targetNum && !pInfo.isSpecial;
+                  });
+
+                  if (exactMatchIndex !== -1) {
+                      pIndex = exactMatchIndex;
+                      orphanItem.relativeIndex = pIndex;
+                  } else {
+                      pIndex = -1; // 理论存在的集数在主源找不到，强制设为落单
+                      let closestIdx = -0.5;
+                      for (let i = 0; i < filteredPLinksWithIndex.length; i++) {
+                          const pItem = filteredPLinksWithIndex[i];
+                          const pTitle = getTempTitle(pItem.link.title || pItem.link.name, redundantP);
+                          const pInfo = extractEpisodeInfo(pTitle, currentPrimarySource);
+                          if (pInfo.num !== null && !pInfo.isSpecial && pInfo.num < targetNum) {
+                              closestIdx = i;
+                          }
+                      }
+                      orphanItem.relativeIndex = closestIdx + (k * 0.001) + 0.1;
+                  }
+              } else {
+                  orphanItem.relativeIndex = pIndex !== -1 ? pIndex : (k + offset);
+              }
 
               if (pIndex >= 0 && pIndex < filteredPLinksWithIndex.length) {
                 const originalPIndex = filteredPLinksWithIndex[pIndex].originalIndex;
@@ -2034,7 +2086,7 @@ async function processMergeTask(params) {
                 mergedCount++;
                 pendingMutations.push({ linkIndex: originalPIndex, newUrl: newMergedUrl, newTitle: newMergedTitle });
               } else {
-                  mappingEntries.push({ idx: pIndex, text: `   [落单] (主源越界) <-> ${sTitleShort}` });
+                  mappingEntries.push({ idx: orphanItem.relativeIndex, text: `   [落单] (主源越界) <-> ${sTitleShort}` });
                   orphanedEpisodes.push(orphanItem); 
               }
             }
@@ -2601,7 +2653,7 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
   const dandanList = results[dandanIndex];
   const dandanTotalCount = dandanList.length;
   const dandanTextMap = new Map();
-  
+
   dandanList.forEach(dd => {
     const text = normalizeText(getDanmuText(dd));
     const time = getDanmuTime(dd);
@@ -2653,7 +2705,7 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
 
     parsedCache.forEach(({ danmu, time }) => {
       const targetTime = Math.max(0, time - bestOffset);
-      
+
       if (typeof danmu.p === 'string') {
         danmu.p = danmu.p.replace(/^[^,]+(?=,)/, targetTime.toFixed(2));
       }
