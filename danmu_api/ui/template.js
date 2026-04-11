@@ -8,6 +8,7 @@ import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
 import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
+import { requestRecordsJsContent } from "./js/requestrecords.js";
 import { systemSettingsJsContent } from "./js/systemsettings.js";
 
 // language=HTML
@@ -54,6 +55,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn" onclick="switchSection('logs', event)">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api', event)">接口调试</button>
                 <button class="nav-btn" onclick="switchSection('push', event)">推送弹幕</button>
+                <button class="nav-btn" onclick="switchSection('request-records', event)">请求记录</button>
                 <button class="nav-btn" onclick="switchSection('env', event)" id="env-nav-btn">系统配置</button>
             </div>
         </div>
@@ -95,30 +97,68 @@ export const HTML_TEMPLATE = /* html */ `
             <!-- 接口调试 -->
             <div class="section" id="api-section">
                 <h2>接口调试</h2>
-                <div class="api-selector">
-                    <div class="form-group">
-                        <label>选择接口</label>
-                        <select id="api-select" onchange="loadApiParams()">
-                            <option value="">-- 请选择接口 --</option>
-                            <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
-                            <option value="searchEpisodes">搜索剧集 - /api/v2/search/episodes</option>
-                            <option value="matchAnime">匹配动漫 - /api/v2/match</option>
-                            <option value="getBangumi">获取番剧详情 - /api/v2/bangumi/:animeId</option>
-                            <option value="getComment">获取弹幕 - /api/v2/comment/:commentId</option>
-                            <option value="getSegmentComment">获取分片弹幕 - /api/v2/segmentcomment</option>
-                        </select>
+                <div class="api-top-tabs">
+                    <button class="api-top-tab active" onclick="switchApiTopTab('debug', event)">接口调试</button>
+                    <button class="api-top-tab" onclick="switchApiTopTab('danmu-test', event)">弹幕测试</button>
+                </div>
+
+                <div class="api-tab-content active" id="api-debug-content">
+                    <div class="api-selector">
+                        <div class="form-group">
+                            <label>选择接口</label>
+                            <select id="api-select" onchange="loadApiParams()">
+                                <option value="">-- 请选择接口 --</option>
+                                <option value="searchAnime">搜索动漫 - /api/v2/search/anime</option>
+                                <option value="searchEpisodes">搜索剧集 - /api/v2/search/episodes</option>
+                                <option value="matchAnime">匹配动漫 - /api/v2/match</option>
+                                <option value="getBangumi">获取番剧详情 - /api/v2/bangumi/:animeId</option>
+                                <option value="getComment">获取弹幕 - /api/v2/comment/:commentId</option>
+                                <option value="getSegmentComment">获取分片弹幕 - /api/v2/segmentcomment</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="api-params" id="api-params" style="display: none;">
+                        <h3 style="margin-bottom: 15px;">接口参数</h3>
+                        <div id="params-form"></div>
+                        <button class="btn btn-success" onclick="testApi()">发送请求</button>
+                    </div>
+                    <div id="api-response-container" style="display: none;">
+                        <h3 style="margin: 20px 0 10px;">响应结果</h3>
+                        <div class="api-response" id="api-response"></div>
                     </div>
                 </div>
 
-                <div class="api-params" id="api-params" style="display: none;">
-                    <h3 style="margin-bottom: 15px;">接口参数</h3>
-                    <div id="params-form"></div>
-                    <button class="btn btn-success" onclick="testApi()">发送请求</button>
-                </div>
+                <div class="api-tab-content" id="danmu-test-content">
+                    <div class="danmu-test-tabs">
+                        <button class="danmu-test-tab active" onclick="switchDanmuTestTab('auto', event)">自动匹配测试</button>
+                        <button class="danmu-test-tab" onclick="switchDanmuTestTab('manual', event)">手动匹配测试</button>
+                    </div>
 
-                <div id="api-response-container" style="display: none;">
-                    <h3 style="margin: 20px 0 10px;">响应结果</h3>
-                    <div class="api-response" id="api-response"></div>
+                    <div class="danmu-test-panel active" id="auto-match-panel">
+                        <p style="color: #666; margin-bottom: 15px;">模拟播放器自动匹配流程：输入文件名 → 匹配剧集 → 获取弹幕</p>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>文件名</label>
+                            <div style="display:flex;gap:10px;margin-top:5px;">
+                                <input type="text" id="auto-match-filename" placeholder="示例: 生万物 S02E08, 无忧渡.S02E08.2160p.WEB-DL" style="flex:1;">
+                                <button class="btn btn-success" id="auto-match-btn" onclick="autoMatchTest()">开始匹配</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="danmu-test-panel" id="manual-match-panel">
+                        <p style="color: #666; margin-bottom: 15px;">模拟播放器手动搜索流程：搜索动漫 → 选择番剧 → 选择剧集 → 获取弹幕</p>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>搜索关键字</label>
+                            <div style="display:flex;gap:10px;margin-top:5px;">
+                                <input type="text" id="manual-search-keyword" placeholder="请输入动漫名称" style="flex:1;">
+                                <button class="btn btn-primary" id="manual-search-btn" onclick="manualSearchAnime()">搜索</button>
+                            </div>
+                        </div>
+                        <div id="manual-anime-list" style="display:none;"></div>
+                        <div id="manual-episode-list" style="display:none;"></div>
+                    </div>
+
+                    <div id="danmu-result-area" style="display:none;"></div>
                 </div>
             </div>
 
@@ -141,6 +181,19 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div id="push-anime-list" class="anime-list" style="display: none;"></div>
                 <div id="push-episode-list" class="episode-list" style="display: none; margin-top: 20px;"></div>
+            </div>
+
+            <!-- 请求记录 -->
+            <div class="section" id="request-records-section">
+                <h2>请求记录</h2>
+                <div class="log-controls">
+                    <div>
+                        <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
+                        <span id="total-requests-today" style="color: #ff5722; margin-left: 15px; vertical-align: middle; font-size: 1.2em; font-weight: bold;"></span>
+                    </div>
+                    <span style="color: #666;">云服务部署需要配置redis</span>
+                </div>
+                <div class="request-records-container" id="request-records-list"></div>
             </div>
 
             <!-- 系统配置 -->
@@ -288,9 +341,9 @@ export const HTML_TEMPLATE = /* html */ `
     <!-- 项目声明 -->
     <footer class="footer">
         <p class="footer-text">
-            一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔人韩巴弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+            一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西埋帆弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/claw等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
         </p>
-        <p class="footer-text">本项目仅为个人爱好开发，代码开源。如有任何侵权行为，请联系本人删除。</p>
+        <p class="footer-text">本项目仅为个人学习爱好开发，代码开源。如有任何侵权行为，请联系本人删除。</p>
         <p class="footer-links">
             <a href="https://t.me/ddjdd_bot" target="_blank" class="footer-link">💬 TG MSG ROBOT</a>
             <a href="https://t.me/logvar_danmu_group" target="_blank" class="footer-link">👥 TG GROUP</a>
@@ -309,6 +362,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${logviewJsContent}
         ${apitestJsContent}
         ${pushDanmuJsContent}
+        ${requestRecordsJsContent}
         ${systemSettingsJsContent}
     </script>
 </body>

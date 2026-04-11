@@ -13,9 +13,9 @@ export const Globals = {
   accessedEnvVars: {},
 
   // 静态常量
-  VERSION: '1.11.0',
-  MAX_LOGS: 500, // 日志存储，最多保存 500 行
-  MAX_ANIMES: 100,
+  VERSION: '1.18.5',
+  MAX_LOGS: 1000, // 日志存储，最多保存 1000 行
+  MAX_RECORDS: 100, // 请求记录最大数量
 
   // 运行时状态
   animes: [],
@@ -26,13 +26,19 @@ export const Globals = {
   localCacheValid: false, // 本地缓存是否生效
   localCacheInitialized: false, // 本地缓存是否已初始化
   redisValid: false, // redis是否生效
+  localRedisValid: false, // 本地redis是否生效
+  aiValid: false, // AI配置是否生效
   redisCacheInitialized: false, // redis 缓存是否已初始化
   lastSelectMap: new Map(), // 存储查询关键字上次选择的animeId，用于下次match自动匹配时优先选择该anime
+  reqRecords: [], // 记录请求历史，包括接口/参数/请求时间
+  todayReqNum: 0, // 今日请求数量统计
   lastHashes: { // 存储上一次各变量哈希值
     animes: null,
     episodeIds: null,
     episodeNum: null,
-    lastSelectMap: null
+    lastSelectMap: null,
+    reqRecords: null,
+    todayReqNum: null
   },
   searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
@@ -64,6 +70,80 @@ export const Globals = {
   },
 
   /**
+   * 智能构建代理URL
+   * 逻辑：专用反代/万能反代直接替换/拼接URL（无视平台）；正向代理走5321端口（仅本地Node有效）
+   * @param {string} targetUrl 原始目标URL
+   * @returns {string} 处理后的URL
+   */
+  makeProxyUrl(targetUrl) {
+    const proxyConfig = this.envs.proxyUrl || '';
+    
+    if (!proxyConfig || !targetUrl) return targetUrl;
+
+    const configs = proxyConfig.split(',').map(s => s.trim()).filter(s => s);
+    let forwardProxy = null;
+    let specificProxy = null;
+    let universalProxy = null;
+
+    let targetObj;
+    try {
+      targetObj = new URL(targetUrl);
+    } catch (e) {
+      return targetUrl;
+    }
+
+    const hostname = targetObj.hostname;
+
+    // 解析配置优先级
+    for (const conf of configs) {
+      if (conf.startsWith('bahamut@') && hostname.includes('gamer.com.tw')) {
+         specificProxy = conf.substring(8);
+         break;
+      } else if (conf.startsWith('tmdb@') && hostname.includes('tmdb')) {
+         specificProxy = conf.substring(5);
+         break;
+      } else if (conf.startsWith('bilibili@') && hostname.includes('bilibili')) {
+         specificProxy = conf.substring(9);
+         break;
+      } else if (conf.startsWith('@') && !universalProxy) {
+         universalProxy = conf.substring(1);
+      } else if (!conf.includes('@') && !forwardProxy) {
+         forwardProxy = conf;
+      }
+    }
+
+    // 1. 专用反代 (直接替换 Protocol + Host + Port + PathPrefix)
+    if (specificProxy) {
+        try {
+          const proxyObj = new URL(specificProxy);
+          targetObj.protocol = proxyObj.protocol;
+          targetObj.host = proxyObj.host;
+          targetObj.port = proxyObj.port;
+          // 如果反代URL包含路径前缀，则拼接到前面
+          if (proxyObj.pathname !== '/') {
+             targetObj.pathname = proxyObj.pathname.replace(/\/$/, '') + targetObj.pathname;
+          }
+          return targetObj.toString();
+        } catch (e) {
+          return targetUrl;
+        }
+    }
+
+    // 2. 万能反代 (拼接: ProxyURL + TargetURL)
+    if (universalProxy) {
+        const cleanProxy = universalProxy.replace(/\/$/, '');
+        return `${cleanProxy}/${targetUrl}`;
+    }
+
+    // 3. 正向代理 (仅本地环境回退到 5321 中转)
+    if (forwardProxy) {
+        return `http://127.0.0.1:5321/proxy?url=${encodeURIComponent(targetUrl)}`;
+    }
+
+    return targetUrl;
+  },
+
+  /**
    * 获取全局配置快照
    * @returns {Object} 当前全局配置
    */
@@ -83,8 +163,12 @@ export const Globals = {
         // 映射大写常量到小写
         if (prop === 'version') return self.VERSION;
         if (prop === 'maxLogs') return self.MAX_LOGS;
-        if (prop === 'maxAnimes') return self.MAX_ANIMES;
+        if (prop === 'maxAnimes') return self.envs.MAX_ANIMES;
+        if (prop === 'maxRecords') return self.MAX_RECORDS;
         if (prop === 'maxLastSelectMap') return self.MAX_LAST_SELECT_MAP;
+
+        // 暴露方法
+        if (prop === 'makeProxyUrl') return self.makeProxyUrl.bind(self);
 
         // 其他属性直接返回
         return self[prop];

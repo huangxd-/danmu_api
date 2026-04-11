@@ -205,7 +205,7 @@ export default class YoukuSource extends BaseSource {
     return data;
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -253,7 +253,7 @@ export default class YoukuSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
@@ -682,6 +682,7 @@ export default class YoukuSource extends BaseSource {
         else if (pos === 2) content.ct = 4;
       }
       content.content = item.content;
+      content.like = item.extFields.voteUp;
       return content;
     });
   }

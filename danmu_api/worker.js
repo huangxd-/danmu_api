@@ -4,10 +4,18 @@ import { log, formatLogMessage } from './utils/log-util.js'
 import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
+import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache } from "./apis/system-api.js";
-import { handleSetEnv, handleAddEnv, handleDelEnv } from "./apis/env-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
+import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
+import {
+    handleCookieStatus,
+    handleCookieVerify,
+    handleQRGenerate,
+    handleQRCheck,
+    handleCookieSave
+} from "./utils/cookie-util.js";
 
 let globals;
 
@@ -22,12 +30,39 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
     await judgeLocalCacheValid(path, deployPlatform);
+    const { judgeLocalRedisValid } = await import("./utils/local-redis-util.js");
+    await judgeLocalRedisValid(path);
   }
   await judgeRedisValid(path);
+  if (!globals.aiValid && globals.aiBaseUrl && globals.aiModel && globals.aiApiKey && path !== "/favicon.ico" && path !== "/robots.txt") {
+    const ai = new AIClient({
+      baseURL: globals.aiBaseUrl,
+      model: globals.aiModel,
+      apiKey: globals.aiApiKey,
+      systemPrompt: '回答尽量简洁',
+    })
+
+    const status = await ai.verify()
+    if (status.ok) {
+      globals.aiValid = true;
+    }
+  }
 
   log("info", `request url: ${JSON.stringify(url)}`);
   log("info", `request path: ${path}`);
   log("info", `client ip: ${clientIp}`);
+
+  // --- IP 黑名单拦截 ---
+  if (globals.ipBlacklist?.length) {
+    const isBlocked = globals.ipBlacklist.some(rule => matchIpBlacklistRule(rule, clientIp));
+    if (isBlocked) {
+      log("warn", `[IP Blacklist] Blocked request from IP: ${clientIp}`);
+      return jsonResponse(
+        { errorCode: 403, success: false, errorMessage: "Forbidden" },
+        403
+      );
+    }
+  }
 
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
@@ -49,6 +84,88 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
   if (globals.redisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getRedisCaches();
+  }
+  if (deployPlatform === "node" && globals.localRedisValid && path !== "/favicon.ico" && path !== "/robots.txt") {
+    const { getLocalRedisCaches } = await import("./utils/local-redis-util.js");
+    await getLocalRedisCaches();
+  }
+
+  // 检查路径是否包含指定的接口关键字
+  const targetPaths = [
+    '/api/v2/search/anime',
+    '/api/v2/match',
+    '/api/v2/search/episodes',
+    '/api/v2/bangumi',
+    '/api/v2/comment',
+    '/api/v2/segmentcomment'
+  ];
+
+  // 只有当path包含指定接口关键字时才添加到请求记录数组
+  if (targetPaths.some(targetPath => path.includes(targetPath))) {
+    // 更新今日请求计数
+    // 从 reqRecords 最后一个元素获取上一个请求的时间
+    const lastRecord = globals.reqRecords.length > 0 ? globals.reqRecords[globals.reqRecords.length - 1] : null;
+    const currentDate = new Date().toDateString();
+
+    if (lastRecord) {
+      const lastDate = new Date(lastRecord.timestamp).toDateString();
+      console.log("currentDate: ", currentDate);
+      console.log("lastDate: ", lastDate);
+      if (lastDate !== currentDate) {
+        // 新的一天，重置计数
+        globals.todayReqNum = 1;
+      } else {
+        // 同一天，计数加1
+        globals.todayReqNum++;
+      }
+    } else {
+      // 没有历史记录，重置为1
+      globals.todayReqNum = 1;
+    }
+
+    // 处理路径，只保留从/api/v2开始的部分
+    let normalizedPath = req.url;
+    const apiV2Index = normalizedPath.indexOf('/api/v2');
+    if (apiV2Index !== -1) {
+      normalizedPath = normalizedPath.substring(apiV2Index);
+    }
+
+    // 获取请求体JSON（如果是POST/PUT/PATCH请求）
+    let requestBody = null;
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      try {
+        const clonedReq = req.clone();
+        const contentType = clonedReq.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          requestBody = await clonedReq.json();
+        } else {
+          // 尝试解析为JSON，即使content-type不匹配
+          const text = await clonedReq.text();
+          if (text) {
+            requestBody = JSON.parse(text);
+          }
+        }
+      } catch (e) {
+        // JSON解析失败，保持为null
+        requestBody = null;
+      }
+    }
+
+    // 记录请求历史，包括接口/参数/请求时间
+    const requestRecord = {
+      interface: normalizedPath,
+      params: requestBody, // 请求体JSON
+      timestamp: new Date().toISOString(), // 请求时间
+      method: method, // HTTP方法
+      clientIp: clientIp // 客户端IP
+    };
+
+    globals.reqRecords.push(requestRecord);
+
+    // 限制记录数量不超过 MAX_RECORDS
+    if (globals.reqRecords.length > globals.MAX_RECORDS) {
+      globals.reqRecords = globals.reqRecords.slice(-globals.MAX_RECORDS);
+    }
   }
 
   // GET /
@@ -111,44 +228,62 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleConfig(true); // 有权限
   }
 
+  // GET /api/reqrecords - 获取请求记录 (需要 token)
+  if (path === "/api/reqrecords" && method === "GET") {
+    return handleReqRecords();
+  }
+
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
   if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') 
-    && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')) {
+    && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
+    && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
+    && !path.startsWith('/api/ai')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
-      
-      // 1. 清理：应对“用户填写/api/v2”+“客户端添加/api/v2”导致的重复前缀
+
+      // 清理：应对"用户填写/api/v2"+"客户端添加/api/v2"导致的重复前缀
+      path = path.replace(/\/+/g, '/');
       while (path.startsWith('/api/v2/api/v2/')) {
           log("info", `[Path Check] Found redundant /api/v2 prefix. Cleaning...`);
           // 从第二个 /api/v2 的位置开始截取，相当于移除第一个
           path = path.substring('/api/v2'.length);
       }
-      
-      // 打印日志：只有在发生清理时才显示清理后的路径，否则显示“无需清理”
+
+      // 打印日志：只有在发生清理时才显示清理后的路径，否则显示"无需清理"
       if (path !== pathBeforeCleanup) {
           log("info", `[Path Check] Path after cleanup: "${path}"`);
       } else {
           log("info", `[Path Check] Path after cleanup: No cleanup needed.`);
       }
-      
-      // 2. 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime），则补全
+
+      // 补全：如果路径缺少前缀（例如请求原始路径为 /search/anime 或 /v2/search/anime），则智能补全
       const pathBeforePrefixCheck = path;
       if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') 
-        && !path.startsWith('/api/env') && !path.startsWith('/api/env') && !path.startsWith('/api/cache')) {
-          log("info", `[Path Check] Path is missing /api/v2 prefix. Adding...`);
-          path = '/api/v2' + path;
+        && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
+        && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
+        && !path.startsWith('/api/ai')) {
+          if (path.startsWith('/v2/') || path === '/v2') {
+              log("info", `[Path Check] Path is missing /api prefix. Adding /api...`);
+              path = '/api' + path;
+          } else if (path.startsWith('/api/') || path === '/api') {
+              log("info", `[Path Check] Path is missing /v2 prefix. Adding /v2...`);
+              path = '/api/v2' + path.substring(4);
+          } else {
+              log("info", `[Path Check] Path is missing /api/v2 prefix. Adding /api/v2...`);
+              path = '/api/v2' + (path.startsWith('/') ? path : '/' + path);
+          }
       }
-        
-      // 打印日志：只有在发生添加前缀时才显示添加后的路径，否则显示“无需补全”
+
+      // 打印日志：只有在发生添加前缀时才显示添加后的路径，否则显示"无需补全"
       if (path === pathBeforePrefixCheck) {
           log("info", `[Path Check] Prefix Check: No prefix addition needed.`);
       }
-      
+
       log("info", `[Path Check] Final normalized path: "${path}"`);
   }
-  
+
   // GET /
   if (path === "/" && method === "GET") {
     return handleUI();
@@ -166,7 +301,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/v2/match
   if (path === "/api/v2/match" && method === "POST") {
-    return matchAnime(url, req);
+    return matchAnime(url, req, clientIp);
   }
 
   // GET /api/v2/bangumi/:animeId
@@ -174,11 +309,14 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return getBangumi(path);
   }
 
-  // GET /api/v2/comment/:commentId or /api/v2/comment?url=xxx
-  if (path.startsWith("/api/v2/comment") && method === "GET") {
+  // GET /api/v2/comment/:commentId or /api/v2/comment?url=xxx or /api/v2/extcomment?url=xxx
+  if ((path.startsWith("/api/v2/comment") || path.startsWith("/api/v2/extcomment")) && method === "GET") {
     const queryFormat = url.searchParams.get('format');
     const videoUrl = url.searchParams.get('url');
-    const segmentFlag = url.searchParams.get('segmentflag');
+    const segmentFlagParam = url.searchParams.get('segmentflag');
+    const durationParam = url.searchParams.get('duration');
+    const segmentFlag = segmentFlagParam === 'true' || segmentFlagParam === '1';
+    const includeDuration = durationParam === 'true' || durationParam === '1';
 
     // ⚠️ 限流设计说明：
     // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
@@ -191,8 +329,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(videoUrl);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
       }
 
       // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
@@ -227,7 +364,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       }
 
       // 通过URL获取弹幕
-      return getCommentByUrl(videoUrl, queryFormat, segmentFlag);
+      return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
     }
 
     // 否则通过commentId获取弹幕
@@ -247,8 +384,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const cachedComments = getCommentCache(urlForComment);
       if (cachedComments !== null) {
         log("info", `[Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
-        const responseData = { count: cachedComments.length, comments: cachedComments };
-        return formatDanmuResponse(responseData, queryFormat);
+        return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
       }
     }
 
@@ -287,7 +423,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
-    return getComment(path, queryFormat, segmentFlag);
+    return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
   }
 
   // POST /api/v2/segmentcomment - 接收segment类的JSON请求体
@@ -297,7 +433,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       // 从请求体获取segment数据
       const requestBody = await req.json();
       let segment;
-      
+
       // 尝试解析JSON
       try {
         segment = Segment.fromJson(requestBody);
@@ -355,7 +491,139 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleClearCache();
   }
 
+  // ========== Cookie 管理 API ==========
+
+  // GET /api/cookie/status - 获取Cookie状态
+  if (path === "/api/cookie/status" && method === "GET") {
+    return handleCookieStatus();
+  }
+
+  // POST /api/cookie/qr/generate - 生成登录二维码
+  if (path === "/api/cookie/qr/generate" && method === "POST") {
+    return handleQRGenerate();
+  }
+
+  // POST /api/cookie/qr/check - 检查二维码扫描状态
+  if (path === "/api/cookie/qr/check" && method === "POST") {
+    return handleQRCheck(req);
+  }
+
+  // POST /api/cookie/verify - 校验指定Cookie（用于前端实时检测）
+  if (path === "/api/cookie/verify" && method === "POST") {
+    return handleCookieVerify(req);
+  }
+
+  // POST /api/cookie/save - 保存Cookie
+  if (path === "/api/cookie/save" && method === "POST") {
+    return handleCookieSave(req);
+  }
+
+  // POST /api/ai/verify - 验证AI连通性
+  if (path === "/api/ai/verify" && method === "POST") {
+    return handleAiVerify(req);
+  }
+
   return jsonResponse({ message: "Not found" }, 404);
+}
+
+function matchIpBlacklistRule(rule, clientIp) {
+  if (!rule || !clientIp || clientIp === 'unknown') return false;
+
+  if (rule.type === 'exact') {
+    return rule.value === clientIp;
+  }
+
+  if (rule.type === 'regex') {
+    return rule.value.test(clientIp);
+  }
+
+  if (rule.type === 'cidr') {
+    return isIpInCidr(clientIp, rule.ip, rule.prefix);
+  }
+
+  return false;
+}
+
+function isIpInCidr(ip, cidrIp, prefix) {
+  const isIpv6 = ip.includes(':') || cidrIp.includes(':');
+  if (isIpv6) {
+    const ipBytes = ipv6ToBytes(ip);
+    const cidrBytes = ipv6ToBytes(cidrIp);
+    if (!ipBytes || !cidrBytes || prefix < 0 || prefix > 128) return false;
+    const fullBytes = Math.floor(prefix / 8);
+    const remainingBits = prefix % 8;
+
+    for (let i = 0; i < fullBytes; i++) {
+      if (ipBytes[i] !== cidrBytes[i]) return false;
+    }
+
+    if (remainingBits > 0) {
+      const mask = (0xff << (8 - remainingBits)) & 0xff;
+      return (ipBytes[fullBytes] & mask) === (cidrBytes[fullBytes] & mask);
+    }
+
+    return true;
+  }
+
+  const ipInt = ipv4ToInt(ip);
+  const cidrInt = ipv4ToInt(cidrIp);
+  if (ipInt === null || cidrInt === null || prefix < 0 || prefix > 32) return false;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (ipInt & mask) === (cidrInt & mask);
+}
+
+function ipv4ToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  const nums = parts.map(part => Number(part));
+  if (nums.some(num => Number.isNaN(num) || num < 0 || num > 255)) return null;
+  return ((nums[0] << 24) >>> 0) + (nums[1] << 16) + (nums[2] << 8) + nums[3];
+}
+
+function ipv6ToBytes(ip) {
+  if (!ip || typeof ip !== 'string' || !ip.includes(':')) return null;
+  const normalized = ip.trim();
+  const segments = normalized.split('::');
+  if (segments.length > 2) return null;
+
+  let leftParts = segments[0] ? segments[0].split(':').filter(Boolean) : [];
+  let rightParts = segments[1] ? segments[1].split(':').filter(Boolean) : [];
+
+  const expandIpv4Part = (parts) => {
+    if (parts.length === 0) return parts;
+    const last = parts[parts.length - 1];
+    if (!last.includes('.')) return parts;
+    const ipv4Int = ipv4ToInt(last);
+    if (ipv4Int === null) return null;
+    const high = ((ipv4Int >>> 16) & 0xffff).toString(16);
+    const low = (ipv4Int & 0xffff).toString(16);
+    return [...parts.slice(0, -1), high, low];
+  };
+
+  leftParts = expandIpv4Part(leftParts);
+  rightParts = expandIpv4Part(rightParts);
+  if (!leftParts || !rightParts) return null;
+
+  if (segments.length === 1) {
+    if (leftParts.length !== 8) return null;
+  } else {
+    const totalParts = leftParts.length + rightParts.length;
+    if (totalParts > 8) return null;
+    const missing = 8 - totalParts;
+    rightParts = new Array(missing).fill('0').concat(rightParts);
+  }
+
+  const parts = leftParts.concat(rightParts);
+  if (parts.length !== 8) return null;
+
+  const bytes = [];
+  for (const part of parts) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return null;
+    const value = parseInt(part, 16);
+    bytes.push((value >> 8) & 0xff, value & 0xff);
+  }
+
+  return bytes;
 }
 
 function isRunningOnVercel() {

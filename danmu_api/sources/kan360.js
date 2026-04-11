@@ -70,6 +70,113 @@ export default class Kan360Source extends BaseSource {
     }
   }
 
+  // 获取某站点的总集数
+  async getNumber(cat, id, site) {
+    try {
+      const url = `https://api.web.360kan.com/v1/detail?cat=${cat}&id=${id}&site=${site}`;
+      const res = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+      const result = res.data;
+      if (result && result.data && result.data.allupinfo) {
+        return Number(result.data.allupinfo[site]);
+      }
+    } catch (error) {
+      log("error", "getNumber error:", error && error.message ? error.message : error);
+    }
+    return null;
+  }
+
+  // 获取 allepidetail（start..end）
+  async get360Detail(cat, id, site, start, end) {
+    try {
+      const url = `https://api.web.360kan.com/v1/detail?cat=${cat}&id=${id}&start=${start}&end=${end}&site=${site}`;
+      const res = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+      return res.data;
+    } catch (error) {
+      log("error", "get360Detail error:", error && error.message ? error.message : error);
+    }
+    return null;
+  }
+
+  // 使用 episodesv2 接口获取剧集分集（电视剧/动漫）
+  async getEpisodesV2(cat, entId, site) {
+    try {
+      const sParam = JSON.stringify([{ cat_id: String(cat), ent_id: String(entId), site: site }]);
+      const url = `https://api.so.360kan.com/episodesv2?v_ap=1&s=${encodeURIComponent(sParam)}`;
+
+      const response = await httpGet(url, {
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+
+      let data = response.data;
+
+      // 接口可能返回 JSONP（回调包装），尝试剥离
+      if (typeof data === 'string') {
+          const firstParen = data.indexOf('(');
+          const lastParen = data.lastIndexOf(')');
+          if (firstParen !== -1 && lastParen !== -1 && lastParen > firstParen) {
+            const jsonText = data.substring(firstParen + 1, lastParen);
+            try {
+              data = JSON.parse(jsonText);
+            } catch (e) {
+              log('error', `getEpisodesV2 JSON parse error: ${e.message}`);
+              return [];
+            }
+          } else {
+          // 如果是纯字符串但非 JSONP，尝试解析为 JSON
+            try {
+              data = JSON.parse(data);
+            } catch (e) {
+              log('error', `getEpisodesV2 unexpected response format`);
+              return [];
+            }
+          }
+        }
+
+        if (!data) return [];
+
+      if (data.code === 0 && Array.isArray(data.data) && data.data.length > 0) {
+        const seriesHTML = data.data[0].seriesHTML || {};
+        const seriesPlaylinks = seriesHTML.seriesPlaylinks || seriesHTML.series_playlinks || [];
+        const results = [];
+
+        for (let i = 0; i < seriesPlaylinks.length; i++) {
+          const item = seriesPlaylinks[i];
+          if (!item) continue;
+          if (typeof item === 'string') {
+            results.push({ name: (i + 1).toString(), url: item, sort: (i + 1).toString() });
+          } else if (typeof item === 'object') {
+            const urlField = item.url;
+            const numField = (i + 1);
+            results.push({ name: String(numField), url: urlField || '' });
+          }
+        }
+
+        return results.filter(r => r.url);
+      }
+
+      return [];
+    } catch (error) {
+      log('error', 'getEpisodesV2 error:', {
+        message: error && error.message ? error.message : String(error),
+        stack: error && error.stack ? error.stack : undefined,
+      });
+      return [];
+    }
+  }
+
   async search(keyword) {
     try {
       const response = await httpGet(
@@ -105,7 +212,7 @@ export default class Kan360Source extends BaseSource {
 
   async getEpisodes(id) {}
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -130,14 +237,64 @@ export default class Kan360Source extends BaseSource {
               }
             }
           } else if (anime.cat_name === "电视剧" || anime.cat_name === "动漫") {
-            if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
-              for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
-                const item = anime.seriesPlaylinks[i];
-                links.push({
-                  "name": (i + 1).toString(),
-                  "url": item.url,
-                  "title": `【${anime.seriesSite}】 第${i + 1}集`
-                });
+            // 先根据 cat_name 映射 cat 值（电影=1, 电视剧=2, 动漫=4）
+            let cat = 0;
+            if (anime.cat_name === '电视剧') cat = 2;
+            else if (anime.cat_name === '动漫') cat = 4;
+
+            // 获取总集数（若 seriesPlaylinks 为空或不存在时使用）
+            let number = null;
+
+            // 尝试使用 seriesPlaylinks（常规情况）
+            if (Array.isArray(anime.seriesPlaylinks) && anime.seriesPlaylinks.length > 0) {
+              if (globals.vodAllowedPlatforms.includes(anime.seriesSite)) {
+                for (let i = 0; i < anime.seriesPlaylinks.length; i++) {
+                  const item = anime.seriesPlaylinks[i];
+                  links.push({
+                    "name": (i + 1).toString(),
+                    "url": item.url,
+                    "title": `【${anime.seriesSite}】 第${i + 1}集`
+                  });
+                }
+              }
+            } else if (anime.playlinks && typeof anime.playlinks === 'object') {
+              // 对 playlinks 中的每个 siteKey 优先尝试使用 episodesv2 获取完整分集列表
+              for (const siteKey of Object.keys(anime.playlinks)) {
+                if (!globals.vodAllowedPlatforms.includes(siteKey)) continue;
+                try {
+                  const detailId = anime.en_id;
+                  const eps = await this.getEpisodesV2(cat, detailId, siteKey);
+                  if (eps && eps.length > 0) {
+                    for (const ep of eps) {
+                      links.push({
+                        name: ep.name,
+                        url: ep.url,
+                        title: `【${siteKey}】 第${ep.name}集`,
+                        sort: ep.name
+                      });
+                    }
+                  } else {
+                    // 回退：尝试使用 v1/detail 获取 allepidetail
+                    try {
+                      const siteNumber = await this.getNumber(cat, detailId, siteKey);
+                      const detail = await this.get360Detail(cat, detailId, siteKey, 1, siteNumber);
+                      if (detail && detail.data && detail.data.allepidetail && detail.data.allepidetail[siteKey]) {
+                        for (const ep of detail.data.allepidetail[siteKey]) {
+                          links.push({
+                            name: ep.playlink_num,
+                            url: ep.url,
+                            title: `【${siteKey}】 第${ep.playlink_num}集`,
+                            sort: ep.playlink_num
+                          });
+                        }
+                      }
+                    } catch (e) {
+                      log('error', `[360kan] fallback detail fetch failed for site ${siteKey}: ${e && e.message ? e.message : e}`);
+                    }
+                  }
+                } catch (e) {
+                  log('error', `[360kan] failed to fetch episodesv2 for site ${siteKey}: ${e && e.message ? e.message : e}`);
+                }
               }
             }
           } else if (anime.cat_name === "综艺") {
@@ -173,7 +330,7 @@ export default class Kan360Source extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {

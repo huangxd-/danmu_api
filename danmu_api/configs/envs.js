@@ -2,6 +2,8 @@
  * 环境变量管理模块
  * 提供获取和设置环境变量的函数，支持 Cloudflare Workers 和 Node.js
  */
+import { parseOffsetRules } from '../utils/offset-util.js';
+
 export class Envs {
   static env;
 
@@ -9,9 +11,47 @@ export class Envs {
   static originalEnvVars = new Map();
   static accessedEnvVars = new Map();
 
-  static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'sohu']; // vod允许的播放平台
-  static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom', 'sohu']; // 全部源允许的播放平台
-  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom', 'sohu']; // 允许的源
+  static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan']; // vod允许的播放平台
+  static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'animeko', 'custom']; // 全部源允许的播放平台
+  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'animeko', 'custom']; // 允许的源
+  static MERGE_ALLOWED_SOURCES = ['tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'animeko']; // 允许的源合并
+  static DEFAULT_AI_MATCH_PROMPT = `你是一个专业的影视匹配专家，你的的任务是根据用户提供的 JSON 数据，从候选动漫列表中匹配最符合条件的动漫及集数。
+
+输入字段说明：
+- title: 查询标题
+- season: 季数（可为 null）
+- episode: 集数（可为 null）
+- year: 年份（可为 null）
+- dynamicPlatformOrder: 平台偏好列表（可为 null）
+- preferAnimeId: 偏好动漫 ID（可为 null）
+- animes: 候选动漫列表
+  - animeId: 动漫id
+    animeTitle: 动漫标题，(年份)前面才是真实的标题
+	aliases: 动漫标题的别名，视情况可以作为(动漫标题)看待
+    type: 类型
+    startDate: 发布日期，有年份
+    episodeCount: 总集数
+    source: 弹幕来源
+
+匹配规则 (按优先级排序):
+1. 如果preferAnimeId非空，且animes存在该animeId，则返回该id对应的anime和episode
+2. 标题相似度: 优先匹配标题相似度最高的条目
+3. 季度严格匹配: 如果指定了季度,必须严格匹配
+4. 类型匹配: episode为空则优先匹配电影，非空则匹配电视剧等
+5. 年份接近: 优先选择年份接近的
+6. 平台匹配：如果有多个高度相似的结果且dynamicPlatformOrder非空，则从前往后选择相对应的平台
+7. 集数完整: 如果有多个高度相似的结果,选择集数最完整的
+
+请分析哪个动漫最符合查询条件，如果指定了季数和集数，请也返回对应的集信息。
+请严格按照以下 JSON 格式返回结果，不要包含任何其他内容：
+{
+  "animeIndex": 匹配的动漫在列表中的索引(从0开始) 或 null
+}
+
+如果没有找到合适的匹配，返回：
+{
+  "animeIndex": null
+}`;
 
   /**
    * 获取环境变量
@@ -122,13 +162,25 @@ export class Envs {
 
   /**
    * 解析平台排序
+   * 支持单个平台或通过&连接的组合平台（如 bilibili1&dandan）
    * @returns {Array} 平台排序数组
    */
   static resolvePlatformOrder() {
-    const orderArr = this.get('PLATFORM_ORDER', '', 'string')
+    const rawOrder = this.get('PLATFORM_ORDER', '', 'string');
+    
+    const orderArr = rawOrder
       .split(',')
       .map(s => s.trim())
-      .filter(s => this.ALLOWED_PLATFORMS.includes(s));
+      .filter(item => {
+        if (!item) return false;
+        // 如果包含 &，则分割校验每一部分是否有效
+        if (item.includes('&')) {
+            const parts = item.split('&').map(p => p.trim());
+            return parts.every(p => this.ALLOWED_PLATFORMS.includes(p));
+        }
+        // 单个平台直接校验
+        return this.ALLOWED_PLATFORMS.includes(item);
+      });
 
     this.accessedEnvVars.set('PLATFORM_ORDER', orderArr);
 
@@ -136,17 +188,94 @@ export class Envs {
   }
 
   /**
+   * 解析源合并配置
+   * 从环境变量 MERGE_SOURCE_PAIRS 获取配置
+   * 支持使用分号或逗号分隔多组配置
+   * 支持一主多从配置，第一个为主源，后续为副源
+   * 允许单源配置（用于保留特定源的原始结果，不被合并消耗）
+   * 格式示例: bilibili&animeko, dandan&animeko&bahamut,dandan
+   * @returns {Array} 合并配置数组 [{primary: 'dandan', secondaries: ['animeko', 'bahamut']}, {primary: 'renren', secondaries: []}]
+   */
+  static resolveMergeSourcePairs() {
+    const config = this.get('MERGE_SOURCE_PAIRS', '', 'string');
+    if (!config) return [];
+    
+    // 使用正则同时支持分号(;)和逗号(,)作为配置组的分隔符
+    return config.split(/[,;]/)
+      .map(group => {
+        // 过滤空字符串
+        if (!group) return null;
+        
+        // 按 & 分割，第一个是主源，剩余的是副源列表
+        const parts = group.split('&').map(s => s.trim()).filter(s => s);
+        
+        // 允许单源配置 (length >= 1)
+        if (parts.length < 1) return null;
+
+        const primary = parts[0];
+        const secondaries = parts.slice(1);
+
+        // 验证主源是否在允许列表中
+        if (!this.MERGE_ALLOWED_SOURCES.includes(primary)) return null;
+
+        // 过滤有效的副源，且排除主源本身（防止自我合并）
+        const validSecondaries = secondaries.filter(sec => 
+            sec !== primary && this.MERGE_ALLOWED_SOURCES.includes(sec)
+        );
+
+        return { primary, secondaries: validSecondaries };
+      })
+      .filter(Boolean);
+  }
+
+  /**
    * 解析剧集标题过滤正则
+   * @description 过滤非正片内容，同时内置白名单防止误杀正片
    * @returns {RegExp} 过滤正则表达式
    */
   static resolveEpisodeTitleFilter() {
-    const defaultFilter = '(特别|惊喜|纳凉)?企划|合伙人手记|超前(营业|vlog)?|速览|vlog|reaction|纯享|加更(版|篇)?|抢先(看|版|集|篇)?|抢鲜|预告|花絮(独家)?|' +
-      '特辑|彩蛋|专访|幕后(故事|花絮|独家)?|直播(陪看|回顾)?|未播(片段)?|衍生|番外|会员(专享|加长|尊享|专属|版)?|片花|精华|看点|速看|解读|影评|解说|吐槽|盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|' +
-      '花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|' +
-      'NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|' +
-      '剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|采访|陪看(记)?|' +
-      '试看版|短剧|精编|Plus|独家版|特别版|短片|发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|观察室|上班那点事儿|' +
-      '周top|赛段|直拍|REACTION|VLOG|全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘';
+    const defaultFilter = 
+      // [1] 基础物料与口语词防御，保护: 企划书, 预告犯, 被抢先了, 抢先一步, 化学反应, 一直拍, 单纯享
+      '(特别|惊喜|纳凉)?企划(?!(书|案|部))|合伙人手记|超前(营业|vlog)?|速览|vlog|' +
+      '(?<!(Chain|Chemical|Nuclear|连锁|化学|核|生化|生理|应激))reaction|' +
+      '(?<!(单))纯享|加更(版|篇)?|抢先(看|版|集|篇)?|(?<!(被|争|谁))抢[先鲜](?!(一步|手|攻|了|告|言|机|话))|抢鲜|' +
+      '预告(?!(函|信|书|犯))|(?<!(死亡|恐怖|灵异|怪谈))花絮(独家)?|(?<!(一|直))直拍|' +
+      
+      // [2] 影像特辑与PV防御，保护: 行动彩蛋, 采访吸血鬼, HPV/MPV, 鸦片花
+      '(制作|拍摄|幕后|花絮|未播|独家|演员|导演|主创|杀青|探班|收官|开播|先导|彩蛋|NG|回顾|高光|个人|主创)特辑|' +
+      '(?<!(行动|计划|游戏|任务|危机|神秘|黄金))彩蛋|(?<!(嫌疑人|证人|家属|律师|警方|凶手|死者))专访|' +
+      '(?<!(证人))采访(?!(吸血鬼|鬼))|(正式|角色|先导|概念|首曝|定档|剧情|动画|宣传|主题曲|印象)[\\s\\.]*[PpＰｐ][VvＶｖ]|' +
+      '(?<!(鸦|雪|纸|相|照|图|名|大))片花|' +
+      
+      // [3] 幕后/衍生/直播防御，保护: 幕后主谋, 番外地, 直播杀人/犯罪
+      '(?<!(退居|回归|走向|转战|隐身|藏身|的))幕后(?!(主谋|主使|黑手|真凶|玩家|老板|金主|英雄|功臣|推手|大佬|操纵|交易|策划|博弈|BOSS|真相))(故事|花絮|独家)?|' +
+      '衍生(?!(品|物|兽))|番外(?!(地|人))|直播(陪看|回顾)?|直播(?!(.*(事件|杀人|自杀|谋杀|犯罪|现场|游戏|挑战)))|' +
+      '未播(片段)?|会员(专享|加长|尊享|专属|版)?|' +
+      
+      // [4] 解读/回顾/盘点防御，保护: 生命精华, 案情回顾, 财务盘点, 新闻发布会
+      '(?<!(提取|吸收|生命|魔法|修护|美白))精华|看点|速看|解读(?!.*(密文|密码|密电|电报|档案|书信|遗书|碑文|代码|信号|暗号|讯息|谜题|人心|唇语|真相|谜团|梦境))|' +
+      '(?<!(案情|人生|死前|历史|世纪))回顾|影评|解说|吐槽|(?<!(年终|季度|库存|资产|物资|财务|收获|战利))盘点|' +
+      '拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|' +
+      '番外彩蛋|精彩片段|精彩看点|精彩集锦|看点解析|看点预告|NG镜头|NG花絮|' +
+      
+      // [5] 音乐/访谈/版本标识防御，保护: 生活插曲, Love Plus, 导演特别版, 独家记忆
+      '番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|(?<!(生命|生活|情感|爱情|一段|小|意外))插曲|' +
+      '高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|' +
+      '独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|陪看(记)?|试看版|短剧|精编|' +
+      '(?<!(Love|Disney|One|C|Note|S\\d+|\\+|&|\\s))Plus|独家版|(?<!(导演|加长|周年))特别版(?!(图|画))|短片|' +
+      '(?<!(新闻|紧急|临时|召开|破坏|大闹|澄清|道歉|新品|产品|事故))发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|' +
+      '福利(?!(院|会|主义|课))篇|(福利|加更|番外|彩蛋|衍生|特别|收官|游戏|整蛊|日常)篇|独家(?!(记忆|试爱|报道|秘方|占有|宠爱|恩宠))|' +
+      
+      // [6] “局”字深度逻辑防御，保护: 公安/警察/税务/教育/档案/交通等局, 以及做局/破局/局中局/局长
+      '.{2,}(?<!(市|分|警|总|省|卫|药|政|监|结|大|开|破|布|僵|困|骗|赌|胜|败|定|乱|危|迷|谜|入|搅|设|中|残|平|和|终|变|对|安|做|书|画|察|务|案|通|信|育|商|象|源|业|冰))局(?!(长|座|势|面|部|内|外|中|限|促|气))|' +
+      
+      // [7] 观察室/纪录片/揭秘防御，保护: ICU观察室, 宇宙/自然/赛事全纪录, 揭秘者
+      '(?<!(重症|隔离|实验|心理|审讯|单向|术后))观察室|上班那点事儿|周top|赛段|VLOG|' +
+      '(?<!(大案|要案|刑侦|侦查|破案|档案|风云|历史|战争|探案|自然|人文|科学|医学|地理|宇宙|赛事|世界杯|奥运))全纪录|' +
+      '开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘(?!(者|人))|' +
+
+      // [8] 动画花絮过滤：只杀结构的明确前缀 (如 S1, S2, C1, C2, SP1, OP1 等)
+      '(?:^|】\\s*|\\]\\s*)(?:[SC]|SP|OP|ED|PV)\\d+(?:[\\s:：\\.\\-]|$)';
 
     // 读取环境变量，如果设置了则完全覆盖默认值
     const customFilter = this.get('EPISODE_TITLE_FILTER', '', 'string', false).trim();
@@ -155,10 +284,156 @@ export class Envs {
     this.accessedEnvVars.set('EPISODE_TITLE_FILTER', keywords);
 
     try {
-      return new RegExp(`^(.*?)(?:${keywords})(.*?)$`);
+      return new RegExp(`^(.*?)(?:${keywords})(.*?)$`, 'i');
     } catch (error) {
       console.warn(`Invalid EPISODE_TITLE_FILTER format, using default.`);
-      return new RegExp(`^(.*?)(?:${defaultFilter})(.*?)$`);
+      return new RegExp(`^(.*?)(?:${defaultFilter})(.*?)$`, 'i');
+    }
+  }
+
+  /**
+   * 解析 IP 黑名单列表
+   * @description 支持逗号/分号/换行分隔，支持 /regex/ 或 /regex/i 的正则格式，支持 IPv4/IPv6 CIDR（如 127.0.0.0/24、2001:db8::/64）
+   * @returns {Array} IP 黑名单规则列表
+   */
+  static resolveIpBlacklist() {
+    const rawList = this.get('IP_BLACKLIST', '', 'string', false).trim();
+
+    if (!rawList) {
+      this.accessedEnvVars.set('IP_BLACKLIST', []);
+      return [];
+    }
+
+    const entries = rawList
+      .split(/[\n,;]+/)
+      .map(item => item.trim())
+      .filter(Boolean);
+
+    const rules = [];
+
+    for (const entry of entries) {
+      try {
+        if (entry.startsWith('/') && entry.lastIndexOf('/') > 0) {
+          const lastSlashIndex = entry.lastIndexOf('/');
+          const pattern = entry.slice(1, lastSlashIndex);
+          const flags = entry.slice(lastSlashIndex + 1);
+          rules.push({ type: 'regex', value: new RegExp(pattern, flags) });
+          continue;
+        }
+
+        if (entry.includes('/')) {
+          const [ip, prefix] = entry.split('/').map(s => s.trim());
+          const prefixNum = Number(prefix);
+          const isIpv4 = this.isValidIpv4(ip);
+          const isIpv6 = this.isValidIpv6(ip);
+          if (Number.isInteger(prefixNum)) {
+            if (isIpv4 && prefixNum >= 0 && prefixNum <= 32) {
+              rules.push({ type: 'cidr', ip, prefix: prefixNum });
+              continue;
+            }
+            if (isIpv6 && prefixNum >= 0 && prefixNum <= 128) {
+              rules.push({ type: 'cidr', ip, prefix: prefixNum });
+              continue;
+            }
+          }
+        }
+
+        if (this.isValidIpv4(entry) || this.isValidIpv6(entry)) {
+          rules.push({ type: 'exact', value: entry });
+          continue;
+        }
+
+        const escaped = entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        rules.push({ type: 'regex', value: new RegExp(`^${escaped}$`) });
+      } catch (error) {
+        console.warn(`Invalid IP_BLACKLIST entry: ${entry}, skipped.`);
+      }
+    }
+
+    this.accessedEnvVars.set('IP_BLACKLIST', entries);
+
+    return rules;
+  }
+
+  /**
+   * 校验 IPv4 地址合法性
+   * @param {string} ip IPv4 地址
+   * @returns {boolean}
+   */
+  static isValidIpv4(ip) {
+    if (!ip || typeof ip !== 'string') return false;
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    return parts.every(part => {
+      if (!/^(\d{1,3})$/.test(part)) return false;
+      const num = Number(part);
+      return num >= 0 && num <= 255;
+    });
+  }
+
+  /**
+   * 校验 IPv6 地址合法性（支持 :: 缩写与 IPv4 映射）
+   * @param {string} ip IPv6 地址
+   * @returns {boolean}
+   */
+  static isValidIpv6(ip) {
+    if (!ip || typeof ip !== 'string') return false;
+    const normalized = ip.trim();
+    if (!normalized.includes(':')) return false;
+
+    const [left, right] = normalized.split('::');
+    if (normalized.split('::').length > 2) return false;
+
+    const leftParts = left ? left.split(':').filter(Boolean) : [];
+    let rightParts = right ? right.split(':').filter(Boolean) : [];
+
+    const expandIpv4Part = (parts) => {
+      if (parts.length === 0) return parts;
+      const last = parts[parts.length - 1];
+      if (!last.includes('.')) return parts;
+      if (!this.isValidIpv4(last)) return null;
+      const nums = last.split('.').map(n => Number(n));
+      const high = ((nums[0] << 8) | nums[1]).toString(16);
+      const low = ((nums[2] << 8) | nums[3]).toString(16);
+      return [...parts.slice(0, -1), high, low];
+    };
+
+    const leftExpanded = expandIpv4Part(leftParts);
+    if (!leftExpanded) return false;
+    rightParts = expandIpv4Part(rightParts);
+    if (!rightParts) return false;
+
+    const totalParts = leftExpanded.length + rightParts.length;
+    if (totalParts > 8) return false;
+
+    const isValidGroup = (part) => /^[0-9a-fA-F]{1,4}$/.test(part);
+    if (!leftExpanded.every(isValidGroup)) return false;
+    if (!rightParts.every(isValidGroup)) return false;
+
+    return true;
+  }
+
+  /**
+   * 解析剧名过滤正则
+   * @description 用于控制剧名过滤规则，没有默认值
+   * @returns {RegExp|null} 过滤正则表达式或null
+   */
+  static resolveAnimeTitleFilter() {
+    // 读取环境变量，如果没有设置则返回null
+    const filterStr = this.get('ANIME_TITLE_FILTER', '', 'string', false).trim();
+    
+    if (!filterStr) {
+      this.accessedEnvVars.set('ANIME_TITLE_FILTER', '');
+      return null;
+    }
+
+    this.accessedEnvVars.set('ANIME_TITLE_FILTER', filterStr);
+
+    try {
+      return new RegExp(`^(.*?)(?:${filterStr})(.*?)$`, 'i');
+    } catch (error) {
+      console.warn(`Invalid ANIME_TITLE_FILTER format, returning null.`);
+      return null;
     }
   }
 
@@ -168,15 +443,6 @@ export class Envs {
    */
   static getOriginalEnvVars() {
     return this.originalEnvVars;
-  }
-  
-  /** 解析弹幕转换颜色
-   * @returns {string} 弹幕转换颜色
-   */
-  static resolveConvertColor() {
-    // CONVERT_COLOR_TO_WHITE 变量向前兼容处理
-    let convertColorToWhite = this.get('CONVERT_COLOR_TO_WHITE', false, 'boolean');
-    return this.get('CONVERT_COLOR', convertColorToWhite ? 'white': 'default', 'string');
   }
 
   /**
@@ -231,39 +497,52 @@ export class Envs {
 
       // 源配置
       'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置，默认360,vod,renren,hanjutv' },
+      'MERGE_SOURCE_PAIRS': { category: 'source', type: 'multi-select', options: this.MERGE_ALLOWED_SOURCES, description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，允许多组，允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源。\n格式：源1&源2&源3 ，多组用逗号分隔。\n示例：dandan&animeko&bahamut,bilibili&animeko,dandan' },
       'OTHER_SERVER': { category: 'source', type: 'text', description: '第三方弹幕服务器，默认https://api.danmu.icu' },
       'CUSTOM_SOURCE_API_URL': { category: 'source', type: 'text', description: '自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源' },
       'VOD_SERVERS': { category: 'source', type: 'text', description: 'VOD站点配置，格式：名称@URL,名称@URL，默认金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top' },
       'VOD_RETURN_MODE': { category: 'source', type: 'select', options: ['all', 'fastest'], description: 'VOD返回模式：all（所有站点）或 fastest（最快的站点），默认fastest' },
       'VOD_REQUEST_TIMEOUT': { category: 'source', type: 'number', description: 'VOD请求超时时间，默认10000', min: 5000, max: 30000 },
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
+      'DOUBAN_COOKIE': { category: 'source', type: 'text', description: '豆瓣Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置，默认8', min: 1, max: 16 },
       
       // 匹配配置
-      'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置' },
+      'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置，可以配置自动匹配时的优选平台。\n当配置合并平台的时候，可以指定期望的合并源，\n示例：一个结果返回了"dandan&bilibili1&animeko"和"youku"时，\n当配置"youku"时返回"youku" \n当配置"dandan&animeko"时返回"dandan&bilibili1&animeko"' },
+      'ANIME_TITLE_FILTER': { category: 'match', type: 'text', description: '剧名过滤规则' },
       'EPISODE_TITLE_FILTER': { category: 'match', type: 'text', description: '剧集标题过滤规则' },
-      'ENABLE_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '集标题过滤开关' },
+      'ENABLE_ANIME_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤' },
       'STRICT_TITLE_MATCH': { category: 'match', type: 'boolean', description: '严格标题匹配模式' },
       'TITLE_TO_CHINESE': { category: 'match', type: 'boolean', description: '外语标题转换中文开关' },
+      'ANIME_TITLE_SIMPLIFIED': { category: 'match', type: 'boolean', description: '搜索的剧名标题自动繁转简' },
       'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
+      'AI_BASE_URL': { category: 'match', type: 'text', description: 'AI服务基础URL，不填默认为https://api.openai.com/v1' },
+      'AI_MODEL': { category: 'match', type: 'text', description: 'AI模型名称，不填默认为gpt-4o' },
+      'AI_API_KEY': { category: 'match', type: 'text', description: 'AI服务API密钥，默认为空，需手动填写' },
+      'AI_MATCH_PROMPT': { category: 'match', type: 'text', description: 'AI自动匹配提示词模板，不填提供默认提示词，默认提示词请查看README' },
 
       // 弹幕配置
       'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表' },
       'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0表示不去重），默认1', min: 0, max: 30 },
       'DANMU_LIMIT': { category: 'danmu', type: 'number', description: '弹幕数量限制，单位为k，即千：默认 0，表示不限制弹幕数', min: 0, max: 100 },
-      'DANMU_SIMPLIFIED': { category: 'danmu', type: 'boolean', description: '弹幕繁体转简体开关' },
+      'DANMU_SIMPLIFIED_TRADITIONAL': { category: 'danmu', type: 'select', options: ['default', 'simplified', 'traditional'], description: '弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）' },
       'CONVERT_TOP_BOTTOM_TO_SCROLL': { category: 'danmu', type: 'boolean', description: '顶部/底部弹幕转换为浮动弹幕' },
       'CONVERT_COLOR': { category: 'danmu', type: 'select', options: ['default', 'white', 'color'], description: '弹幕转换颜色配置' },
+      'COLOR_POOL': { category: 'danmu', type: 'text', description: '自定义颜色池（CONVERT_COLOR为color时生效），不配置使用默认颜色池，格式：十进制颜色值逗号分隔' },
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
+      'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
+      'DANMU_OFFSET': { category: 'danmu', type: 'text', sources: this.ALLOWED_SOURCES, description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒，多条用逗号分隔，正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式：在路径或来源末尾追加 %，如 东方/S03/E02@tencent%:11，按公式 原时间 * (视频时长 + 偏移秒数) / 视频时长 缩放全部弹幕时间。示例：overlord/S01:90,re-zero/S02@bilibili:120,re-zero/S02/E03@dandan&bilibili:10,东方/S03/E02@tencent%:11' },
 
       // 缓存配置
-      'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认1', min: 1, max: 120 },
-      'COMMENT_CACHE_MINUTES': { category: 'cache', type: 'number', description: '弹幕缓存时间(分钟)，默认1', min: 1, max: 120 },
+      'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认3', min: 1, max: 120 },
+      'COMMENT_CACHE_MINUTES': { category: 'cache', type: 'number', description: '弹幕缓存时间(分钟)，默认3', min: 1, max: 120 },
       'REMEMBER_LAST_SELECT': { category: 'cache', type: 'boolean', description: '记住手动选择结果' },
-      'MAX_LAST_SELECT_MAP': { category: 'cache', type: 'number', description: '记住上次选择映射缓存大小限制', min: 10, max: 1000 },
+      'MAX_LAST_SELECT_MAP': { category: 'cache', type: 'number', description: '记住上次选择映射缓存大小限制，默认100', min: 10, max: 1000 },
+      'MAX_ANIMES': { category: 'cache', type: 'number', description: '动漫标题缓存最大数量，默认100', min: 100, max: 1000 },
       'UPSTASH_REDIS_REST_URL': { category: 'cache', type: 'text', description: 'Upstash Redis请求链接' },
       'UPSTASH_REDIS_REST_TOKEN': { category: 'cache', type: 'text', description: 'Upstash Redis访问令牌' },
+      'LOCAL_REDIS_URL': { category: 'cache', type: 'text', description: '本地 Redis 连接URL，示例：redis://:password@127.0.0.1:6379/0，只支持本地部署和docker部署' },
 
       // 系统配置
       'PROXY_URL': { category: 'system', type: 'text', description: '代理/反代地址' },
@@ -273,6 +552,7 @@ export class Envs {
       'DEPLOY_PLATFROM_PROJECT': { category: 'system', type: 'text', description: '部署平台项目名称' },
       'DEPLOY_PLATFROM_TOKEN': { category: 'system', type: 'text', description: '部署平台访问令牌' },
       'NODE_TLS_REJECT_UNAUTHORIZED': { category: 'system', type: 'number', description: '在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1', min: 0, max: 1 },
+      'IP_BLACKLIST': { category: 'system', type: 'text', description: 'IP 黑名单列表，支持逗号/分号/换行分隔，支持 /regex/ 或 /regex/i 正则，支持 IPv4/IPv6 CIDR（如 10.0.0.0/4、2001:db8::/64）。命中则拒绝请求' },
     };
     
     return {
@@ -281,37 +561,52 @@ export class Envs {
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       adminToken: this.get('ADMIN_TOKEN', '', 'string', true), // admin token，用于系统管理访问控制
       sourceOrderArr: this.resolveSourceOrder(), // 源排序
+      mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
       customSourceApiUrl: this.get('CUSTOM_SOURCE_API_URL', '', 'string', true), // 自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源
       vodServers: this.resolveVodServers(), // vod站点配置，格式：名称@URL,名称@URL
       vodReturnMode: this.get('VOD_RETURN_MODE', 'fastest', 'string').toLowerCase(), // vod返回模式：all（所有站点）或 fastest（最快的站点）
       vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
+      doubanCookie: this.get('DOUBAN_COOKIE', '', 'string', true), // 豆瓣cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
       platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
+      animeTitleFilter: this.resolveAnimeTitleFilter(), // 剧名正则过滤
       episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
-      danmuSimplified: this.get('DANMU_SIMPLIFIED', true, 'boolean'), // 弹幕繁体转简体开关
+      danmuSimplifiedTraditional: this.get('DANMU_SIMPLIFIED_TRADITIONAL', 'default', 'string'), // 弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
+      likeSwitch: this.get('LIKE_SWITCH', true, 'boolean'), // 弹幕点赞数显示开关，默认开启
+      danmuOffset: this.get('DANMU_OFFSET', '', 'string'), // 弹幕时间偏移配置
+      danmuOffsetRules: parseOffsetRules(this.get('DANMU_OFFSET', '', 'string')), // 解析后的偏移规则（缓存）
       tmdbApiKey: this.get('TMDB_API_KEY', '', 'string', true), // TMDB API KEY
       redisUrl: this.get('UPSTASH_REDIS_REST_URL', '', 'string', true), // upstash redis url
       redisToken: this.get('UPSTASH_REDIS_REST_TOKEN', '', 'string', true), // upstash redis url
+      localRedisUrl: this.get('LOCAL_REDIS_URL', '', 'string', true), // 本地 Redis 连接URL，示例：redis://:password@127.0.0.1:6379/0，只支持本地部署和docker部署
       rateLimitMaxRequests: this.get('RATE_LIMIT_MAX_REQUESTS', 3, 'number'), // 限流配置：时间窗口内最大请求次数（默认 3，0表示不限流）
-      enableEpisodeFilter: this.get('ENABLE_EPISODE_FILTER', false, 'boolean'), // 集标题过滤开关配置（默认 false，禁用过滤）
+      enableAnimeEpisodeFilter: this.get('ENABLE_ANIME_EPISODE_FILTER', false, 'boolean'), // 控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤（默认 false，禁用过滤）
       logLevel: this.get('LOG_LEVEL', 'info', 'string'), // 日志级别配置（默认 info，可选值：error, warn, info）
-      searchCacheMinutes: this.get('SEARCH_CACHE_MINUTES', 1, 'number'), // 搜索结果缓存时间配置（分钟，默认 1）
-      commentCacheMinutes: this.get('COMMENT_CACHE_MINUTES', 1, 'number'), // 弹幕缓存时间配置（分钟，默认 1）
+      searchCacheMinutes: this.get('SEARCH_CACHE_MINUTES', 3, 'number'), // 搜索结果缓存时间配置（分钟，默认 3）
+      commentCacheMinutes: this.get('COMMENT_CACHE_MINUTES', 3, 'number'), // 弹幕缓存时间配置（分钟，默认 3）
       convertTopBottomToScroll: this.get('CONVERT_TOP_BOTTOM_TO_SCROLL', false, 'boolean'), // 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
-      convertColor: this.resolveConvertColor(), // 弹幕转换颜色配置，支持 default、white、color（默认 default，禁用转换）
+      convertColor: this.get('CONVERT_COLOR', 'default', 'string'), // 弹幕转换颜色配置，支持 default、white、color（默认 default，禁用转换）
+      colorPool: this.get('COLOR_POOL', '16777215,16777215,16777215,16777215,16777215,16777215,16777215,16777215,16744319,16752762,16774799,9498256,8388564,8900346,14204888,16758465', 'string'), // 自定义颜色池，CONVERT_COLOR为color时生效
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml）
       strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean'), // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
+      animeTitleSimplified: this.get('ANIME_TITLE_SIMPLIFIED', false, 'boolean'), // 搜索的剧名标题自动繁转简
       titleMappingTable: this.resolveTitleMappingTable(), // 剧名映射表，用于自动匹配时替换标题进行搜索
+      ipBlacklist: this.resolveIpBlacklist(), // IP 黑名单（支持正则）
+      aiBaseUrl: this.get('AI_BASE_URL', 'https://api.openai.com/v1', 'string'), // AI服务基础URL
+      aiModel: this.get('AI_MODEL', 'gpt-4o', 'string'), // AI模型名称
+      aiApiKey: this.get('AI_API_KEY', '', 'string', true), // AI服务API密钥
+      aiMatchPrompt: this.get('AI_MATCH_PROMPT', this.DEFAULT_AI_MATCH_PROMPT, 'string'), // AI自动匹配提示词模板
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）
+      MAX_ANIMES: this.get('MAX_ANIMES', 100, 'number'), // 动漫标题缓存最大数量（默认 100）
       deployPlatformAccount: this.get('DEPLOY_PLATFROM_ACCOUNT', '', 'string', true), // 部署平台账号ID配置（默认空）
       deployPlatformProject: this.get('DEPLOY_PLATFROM_PROJECT', '', 'string', true), // 部署平台项目名称配置（默认空）
       deployPlatformToken: this.get('DEPLOY_PLATFROM_TOKEN', '', 'string', true), // 部署平台项目名称配置（默认空）

@@ -407,7 +407,7 @@ export default class MangoSource extends BaseSource {
     return episodeInfos;
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -452,7 +452,7 @@ export default class MangoSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
             return;
@@ -491,7 +491,7 @@ export default class MangoSource extends BaseSource {
             };
 
             tmpAnimes.push(transformedAnime);
-            addAnime({...transformedAnime, links: links});
+            addAnime({...transformedAnime, links: links}, detailStore);
 
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
@@ -568,6 +568,7 @@ export default class MangoSource extends BaseSource {
     // 弹幕和视频信息 API 基础地址
     const api_video_info = "https://pcweb.api.mgtv.com/video/info";
     const api_ctl_barrage = "https://galaxy.bz.mgtv.com/getctlbarrage";
+    const api_rd_barrage = "https://galaxy.bz.mgtv.com/rdbarrage";
 
     // 解析 URL 获取 cid 和 vid
     const regex = /^(https?:\/\/[^\/]+)(\/[^?#]*)/;
@@ -615,8 +616,9 @@ export default class MangoSource extends BaseSource {
     const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
     const time = data.data.info.time;
 
-    // 尝试使用新API（支持彩色弹幕）获取分段列表
+    let useNewApi = true;
     try {
+      // 尝试使用新API（支持彩色弹幕）获取分段列表
       const ctlBarrageUrl = `${api_ctl_barrage}?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid=${vid}&pid=&cid=${cid}&ticket=`;
       const res = await httpGet(ctlBarrageUrl, {
         headers: {
@@ -629,25 +631,35 @@ export default class MangoSource extends BaseSource {
       // 检查数据结构
       if (!ctlBarrage.data || !ctlBarrage.data.cdn_list || !ctlBarrage.data.cdn_version) {
         log("warn", `新API缺少必要字段，返回空分段列表`);
-        return new SegmentListResponse({
-          "type": "imgo",
-          "segmentList": []
-        });
+        useNewApi = false;
       }
 
       // 构建分段列表
       const segmentList = [];
-      const totalSegments = Math.ceil(time_to_second(time) / 60); // 每1分钟一个分段
-      const cdnList = ctlBarrage.data.cdn_list.split(',')[0];
-      const cdnVersion = ctlBarrage.data.cdn_version;
+      if (!useNewApi) {
+        const step = 60; // 每60秒一个分段
+        const end_time = time_to_second(time);
+        for (let i = 0; i < end_time; i += step) {
+          segmentList.push({
+            "type": "imgo",
+            "segment_start": i,  // 每段开始时间（秒）
+            "segment_end": Math.min((i + step), time_to_second(time)), // 每段结束时间（秒）
+            "url": `${api_rd_barrage}?vid=${vid}&cid=${cid}&time=${i * 1000}`  // 每段弹幕URL
+          });
+        }
+      } else {
+        const totalSegments = Math.ceil(time_to_second(time) / 60); // 每1分钟一个分段
+        const cdnList = ctlBarrage.data.cdn_list.split(',')[0];
+        const cdnVersion = ctlBarrage.data.cdn_version;
 
-      for (let i = 0; i < totalSegments; i++) {
-        segmentList.push({
-          "type": "imgo",
-          "segment_start": i * 60,  // 每段开始时间（秒）
-          "segment_end": Math.min((i + 1) * 60, time_to_second(time)), // 每段结束时间（秒）
-          "url": `https://${cdnList}/${cdnVersion}/${i}.json`  // 每段弹幕URL
-        });
+        for (let i = 0; i < totalSegments; i++) {
+          segmentList.push({
+            "type": "imgo",
+            "segment_start": i * 60,  // 每段开始时间（秒）
+            "segment_end": Math.min((i + 1) * 60, time_to_second(time)), // 每段结束时间（秒）
+            "url": `https://${cdnList}/${cdnVersion}/${i}.json`  // 每段弹幕URL
+          });
+        }
       }
 
       return new SegmentListResponse({
@@ -713,6 +725,7 @@ export default class MangoSource extends BaseSource {
       content.timepoint = item.time / 1000;
       content.content = item.content;
       content.uid = item.uid;
+      content.like = item.v2_up_count;
       return content;
     });
   }
