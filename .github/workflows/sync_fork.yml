@@ -30,10 +30,18 @@ jobs:
           git remote add upstream https://github.com/huangxd-/danmu_api.git || true
           git fetch upstream main
 
-      - name: Sync main branch
+      - name: Sync repo while preserving workflow fix
         run: |
-          git checkout main
-          git merge --ff-only upstream/main
+          cp .github/workflows/sync_fork.yml /tmp/sync_fork.yml
+          git checkout upstream/main -- .
+          mkdir -p .github/workflows
+          cp /tmp/sync_fork.yml .github/workflows/sync_fork.yml
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: sync from upstream"
+          fi
 
       - name: Push changes
         run: |
@@ -47,8 +55,8 @@ jobs:
         if: failure()
         run: |
           echo "[Error] Sync failed. This might be due to:"
-          echo "1. Merge conflicts that need manual resolution"
-          echo "2. Force-push/diverged history in target repo"
+          echo "1. Conflicts in protected files"
+          echo "2. Branch protection or permission issues"
           echo "3. Network issues"
           echo "Please check the logs and consider manual sync if needed."
           exit 1
