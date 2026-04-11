@@ -10,7 +10,7 @@ import {
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
-import { resolveOffset, applyOffset } from "../utils/offset-util.js";
+import { resolveOffset, resolveOffsetRule, applyOffset } from "../utils/offset-util.js";
 import { 
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, 
   extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle
@@ -1521,16 +1521,26 @@ async function fetchMergedComments(url, animeTitle, commentId) {
       episode ||= findIndexById(commentId) + 1;
       const seasonStr = `S${season.toString().padStart(2, '0')}`;
       const episodeStr = `E${episode.toString().padStart(2, '0')}`;
-
-      results.forEach((list, idx) => {
-        const offset = resolveOffset(globals.danmuOffsetRules, {
-          anime: baseTitle, season: seasonStr, episode: episodeStr, source: sourceNames[idx]
+      for (let idx = 0; idx < results.length; idx++) {
+        const list = results[idx];
+        const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
+          anime: baseTitle,
+          season: seasonStr,
+          episode: episodeStr,
+          source: sourceNames[idx]
         });
-        if (offset !== 0 && Array.isArray(list)) {
-          log("info", `[Merge] 应用偏移 ${offset}s -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})`);
-          results[idx] = applyOffset(list, offset);
+        const offset = offsetRule?.offset || 0;
+        if (offset !== 0) {
+          const targetUrl = realIds[idx];
+          const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(targetUrl) : 0;
+          const offsetMode = offsetRule?.usePercent ? '%' : 's';
+          log("info", `[Merge] 应用偏移 ${offset}${offsetMode} -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
+          results[idx] = applyOffset(list, offset, {
+            usePercent: offsetRule?.usePercent,
+            videoDuration
+          });
         }
-      });
+      }
     }
   }
 
@@ -1674,12 +1684,17 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     episode ||= findIndexById(commentId) + 1;
     const seasonStr = `S${season.toString().padStart(2, '0')}`;
     const episodeStr = `E${episode.toString().padStart(2, '0')}`;
-    const offset = resolveOffset(globals.danmuOffsetRules, {
+    const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
       anime: baseTitle, season: seasonStr, episode: episodeStr, source
     });
+    const offset = offsetRule?.offset || 0;
     if (offset !== 0) {
-      log("info", `Applying danmu offset: ${offset}s for ${baseTitle}/${seasonStr}/${episodeStr}`);
-      danmus = applyOffset(danmus, offset);
+      const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(url) : 0;
+      log("info", `Applying danmu offset: ${offset}${offsetRule?.usePercent ? '%' : 's'} for ${baseTitle}/${seasonStr}/${episodeStr}${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
+      danmus = applyOffset(danmus, offset, {
+        usePercent: offsetRule?.usePercent,
+        videoDuration
+      });
     }
   }
 

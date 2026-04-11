@@ -612,7 +612,7 @@ function renderValueInput(item) {
             const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 10) : 3;
             container.innerHTML = \`
                 <label>变量值</label>
-                <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
+                <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒 或 剧名/S01/E01@来源%:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
                 <div style="margin-top: 8px;">
                     <button type="button" class="btn btn-primary btn-sm" id="offset-rule-toggle" onclick="toggleOffsetRulePanel()">
                         添加规则
@@ -638,6 +638,13 @@ function renderValueInput(item) {
                             <input type="number" id="offset-seconds" class="offset-input" placeholder="90">
                         </div>
                     </div>
+                    <div style="margin-bottom: 10px; display: flex; align-items: center; width: 100%;">
+                        <label class="offset-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; white-space: nowrap;">
+                            启用百分比模式（按视频时长缩放全部弹幕时间）
+                            <input type="checkbox" id="offset-use-percent" style="width: 16px; height: 16px; margin: 0; flex-shrink: 0;">
+                        </label>
+                    </div>
+                    alert(offsetSources.length);
                     \${offsetSources.length > 0 ? \`
                     <div style="margin-bottom: 10px;">
                         <label class="offset-label">来源 (可选，不选则对所有来源生效)</label>
@@ -1001,6 +1008,7 @@ function appendOffsetRule() {
     const season = document.getElementById('offset-season').value.trim();
     const episode = document.getElementById('offset-episode').value.trim();
     const seconds = document.getElementById('offset-seconds').value.trim();
+    const usePercent = !!document.getElementById('offset-use-percent')?.checked;
 
     if (!anime) {
         customAlert('请输入剧名');
@@ -1032,6 +1040,10 @@ function appendOffsetRule() {
         }
     }
 
+    if (usePercent) {
+        path += '%';
+    }
+
     const rule = path + ':' + seconds;
     const textarea = document.getElementById('text-value');
     const current = textarea.value.trim();
@@ -1041,6 +1053,10 @@ function appendOffsetRule() {
     document.getElementById('offset-season').value = '';
     document.getElementById('offset-episode').value = '';
     document.getElementById('offset-seconds').value = '';
+    const usePercentEl = document.getElementById('offset-use-percent');
+    if (usePercentEl) {
+        usePercentEl.checked = false;
+    }
     if (sourcesEl) {
         sourcesEl.querySelectorAll('.offset-source-tag.selected').forEach(el => {
             el.classList.remove('selected');
