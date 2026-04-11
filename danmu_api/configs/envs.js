@@ -504,8 +504,8 @@ export class Envs {
       'VOD_RETURN_MODE': { category: 'source', type: 'select', options: ['all', 'fastest'], description: 'VOD返回模式：all（所有站点）或 fastest（最快的站点），默认fastest' },
       'VOD_REQUEST_TIMEOUT': { category: 'source', type: 'number', description: 'VOD请求超时时间，默认10000', min: 5000, max: 30000 },
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
+      'DOUBAN_COOKIE': { category: 'source', type: 'text', description: '豆瓣Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置，默认8', min: 1, max: 16 },
-      'REAL_TIME_PULL_DANDAN': { category: 'source', type: 'boolean', description: '弹弹第三方弹幕源实时拉取开关，默认为false（关闭），可选值：true、false' },
       
       // 匹配配置
       'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置，可以配置自动匹配时的优选平台。\n当配置合并平台的时候，可以指定期望的合并源，\n示例：一个结果返回了"dandan&bilibili1&animeko"和"youku"时，\n当配置"youku"时返回"youku" \n当配置"dandan&animeko"时返回"dandan&bilibili1&animeko"' },
@@ -532,7 +532,7 @@ export class Envs {
       'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml'], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
       'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
-      'DANMU_OFFSET': { category: 'danmu', type: 'text', sources: this.ALLOWED_SOURCES, description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒，多条用逗号分隔，正数表示弹幕延后（向右），负数表示弹幕提前（向左），例如：overlord/S01:90,re-zero/S02@bilibili:120,re-zero/S02/E03@dandan&bilibili:10' },
+      'DANMU_OFFSET': { category: 'danmu', type: 'text', sources: this.ALLOWED_SOURCES, description: '弹幕时间偏移配置，格式：剧名:秒 或 剧名/季:秒 或 剧名/季/集:秒，支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒，多条用逗号分隔，正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式：在路径或来源末尾追加 %，如 东方/S03/E02@tencent%:11，按公式 原时间 * (视频时长 + 偏移秒数) / 视频时长 缩放全部弹幕时间。示例：overlord/S01:90,re-zero/S02@bilibili:120,re-zero/S02/E03@dandan&bilibili:10,东方/S03/E02@tencent%:11' },
 
       // 缓存配置
       'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认3', min: 1, max: 120 },
@@ -568,8 +568,8 @@ export class Envs {
       vodReturnMode: this.get('VOD_RETURN_MODE', 'fastest', 'string').toLowerCase(), // vod返回模式：all（所有站点）或 fastest（最快的站点）
       vodRequestTimeout: this.get('VOD_REQUEST_TIMEOUT', '10000', 'string'), // vod超时时间（默认10秒）
       bilibliCookie: this.get('BILIBILI_COOKIE', '', 'string', true), // b站cookie
+      doubanCookie: this.get('DOUBAN_COOKIE', '', 'string', true), // 豆瓣cookie
       youkuConcurrency: Math.min(this.get('YOUKU_CONCURRENCY', 8, 'number'), 16), // 优酷并发配置
-      realTimePullDandan: this.get('REAL_TIME_PULL_DANDAN', false, 'boolean'), // 弹弹第三方数据源实时拉取开关
       platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
       animeTitleFilter: this.resolveAnimeTitleFilter(), // 剧名正则过滤
       episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤

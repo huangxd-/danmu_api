@@ -78,7 +78,7 @@ LogVar 弹幕 API 服务器
   - 解决部分播放器不支持顶部/底部弹幕和彩色弹幕的问题
   - 增加点赞数显示，先去重再拼接点赞标记，点赞数缩写显示，≥5 才显示，避免低赞干扰
 - **弹幕限制数量**：支持通过环境变量配置等间隔采样弹幕数量。
-- **弹幕时间偏移功能**：支持通过环境变量 `DANMU_OFFSET` 配置弹幕时间偏移，解决弹幕与视频不同步的问题。格式为 `剧名:秒`（全剧偏移）、`剧名/季:秒`（整季偏移）、`剧名/季/集:秒`（单集偏移），支持指定来源 `剧名@来源:秒`、`剧名/季@来源1&来源2:秒`（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。
+- **弹幕时间偏移功能**：支持通过环境变量 `DANMU_OFFSET` 配置弹幕时间偏移，解决弹幕与视频不同步的问题。格式为 `剧名:秒`（全剧偏移）、`剧名/季:秒`（整季偏移）、`剧名/季/集:秒`（单集偏移），支持指定来源 `剧名@来源:秒`、`剧名/季@来源1&来源2:秒`（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。另外支持百分比模式：在来源或路径末尾增加 `%`，如 `东方/S03/E02@tencent%:11`，表示按公式 `原时间 * (视频时长 + 偏移秒数) / 视频时长` 缩放全部弹幕时间，更适合整集整体快慢不一致的场景。
 - **弹幕分片请求**：
   - `/api/v2/comment` 请求时支持定义 `segmentflag=true` 参数，用于请求弹幕分片列表
   - `/api/v2/comment/:commentId?format=json&duration=true` 可在 JSON 返回体中附带 `videoDuration`
@@ -382,8 +382,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | VOD_RETURN_MODE      | 【可选】VOD返回模式，可选值：`all`（返回所有站点结果）、`fastest`（只返回最快的站点结果），默认为`fastest`。当配置多个VOD站点时，`all`模式会返回所有站点的结果（结果较多），`fastest`模式只返回首先响应成功的站点结果（结果较少，避免重复）       |
 | VOD_REQUEST_TIMEOUT      | 【可选】VOD服务器单个请求超时时间（毫秒），防止慢速或失效的采集站阻塞搜索，默认为`10000`（10秒），建议值：`5000-15000`。由于`fastest`模式只返回最快响应的站点，可以设置较大的超时时间给慢速站点更多机会       |
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕和启用港澳台App接口），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，弹幕获取实际最少只需取 `SESSDATA=xxxx` 字段，但如果需要使用港澳台区域稳定的App搜索接口还需要`bili_jct=xxxx`或`access_key=xxxx` 字段，不知道怎么获取cookie的，可以从工具 [cookie-butler](https://cookie-butler.do-u.me) 获取    |
+| DOUBAN_COOKIE      | 【可选】豆瓣cookie，用于豆瓣相关接口请求，配置后可降低豆瓣接口风控影响，提升搜索/详情获取的稳定性。填写浏览器中已登录豆瓣后的完整 Cookie 字符串即可，格式示例：`bid=xxxx; ll="118282"; ...`。如遇到豆瓣搜索不稳定、返回异常或频繁验证，建议优先补充该变量       |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
-| REAL_TIME_PULL_DANDAN    | 【可选】dandan第三方弹幕源实时拉取开关，默认为`false`（关闭），可选值：`true`、`false`，用于在获取dandan源弹幕时重新拉取绑定的第三方弹幕源弹幕，覆盖dandan服务器内缓存的旧弹幕，实际拉取时需要在SOURCE_ORDER中先开启对应的源（dandan平台允许绑定的源：bilibili, bahamut, iqiyi, youku, tencent, imgo）       |
 | SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`360,vod,renren,hanjutv`，表示360数据排在最前，hanjutv数据排在最后，示例：`360,renren`：只返回360数据和renren数据，且360数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,renren,hanjutv,bahamut,dandan,animeko,custom`       |
 | PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, maiduidui, aiyifan, renren, hanjutv, bahamut, dandan, animeko, custom`  |
 | MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`imgo&iqiyi,dandan&bahamut&animeko,imgo`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,renren,hanjutv,bahamut,dandan,animeko` |
@@ -403,7 +403,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
 | DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式），支持通过查询参数`?format=xml`或`?format=json`覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
 | DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
-| DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。       |
+| DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式，在路径/来源末尾添加 `%`，例如：`东方/S03/E02@tencent%:11`，按 `原时间 * (视频时长 + 偏移秒数) / 视频时长` 计算新的弹幕发送时间。       |
 | PROXY_URL    | 【可选】代理/反代地址，目前只对巴哈姆特、TMDB API、bilibili生效，支持格式：<br> 正常代理：`http://127.0.0.1:7890` <br> 万能反代：`@http://127.0.0.1` <br> 特定反代：`源字段@http://127.0.0.1`，目前支持的字段有：`bahamut,tmdb,bilibili`（bilibili字段会启用阿b的港澳台番剧的搜索与获取）<br> 混合配置/示例：`http://你的代理地址:28233,bahamut@你的巴哈反代地址,tmdb@你的tmdb反代地址,@你的万能反代地址` <br> 优先级：特定反代 > 万能反代 > 正常代理，高优先级覆盖低优先级使用。 <br> （注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了bahamut源，请配置代理地址或者反代（[Netlify反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |
 | TMDB_API_KEY    | 【可选】TMDB API Key地址，目前只对巴哈姆特生效，配置后并行从TMDB获取日语原名搜索巴哈（如果TMDB条目类型不是动画或制作地区不是jp则不会进行巴哈搜索）可以解决巴哈译名不同导致的搜索无结果问题，例如大陆常用译名`间谍过家家`在巴哈译名为`間諜家家酒`，正常搜索无法搜索到，配置后可以解决这一问题但会稍微影响请求速度，[TMDBAPI](https://www.themoviedb.org/settings/api)获取方法参考：[TMDB API Key申请 - 绿联NAS私有云](https://www.ugnas.com/tutorial-detail/id-226.html)       |
 | RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |

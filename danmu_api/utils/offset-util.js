@@ -37,13 +37,21 @@ export function parseOffsetRules(env) {
     const offset = parseFloat(offsetStr);
     if (!Number.isFinite(offset)) return null;
 
+    // 百分比模式：在路径/来源段末尾追加 %，例如：东方/S03/E02@tencent%:11
+    let usePercent = false;
+    let normalizedPath = rawPath.trim();
+    if (normalizedPath.endsWith('%')) {
+      usePercent = true;
+      normalizedPath = normalizedPath.slice(0, -1).trim();
+    }
+
     // 分离 @来源
-    const atIdx = rawPath.lastIndexOf('@');
+    const atIdx = normalizedPath.lastIndexOf('@');
     let pathPart, sources, all;
 
     if (atIdx !== -1) {
-      pathPart = rawPath.substring(0, atIdx);
-      const sourcePart = rawPath.substring(atIdx + 1).trim().toLowerCase();
+      pathPart = normalizedPath.substring(0, atIdx);
+      const sourcePart = normalizedPath.substring(atIdx + 1).trim().toLowerCase();
       if (sourcePart === 'all' || sourcePart === '*') {
         sources = null;
         all = true;
@@ -53,7 +61,7 @@ export function parseOffsetRules(env) {
         if (sources.length === 0) return null;
       }
     } else {
-      pathPart = rawPath;
+      pathPart = normalizedPath;
       sources = null;
       all = false;
     }
@@ -66,7 +74,7 @@ export function parseOffsetRules(env) {
     const season = segments[1] ? normalizeSegment(segments[1]) : null;
     const episode = segments[2] ? normalizeSegment(segments[2]) : null;
 
-    return { anime, season, episode, sources, all, offset };
+    return { anime, season, episode, sources, all, offset, usePercent };
   }).filter(Boolean);
 }
 
@@ -81,7 +89,18 @@ export function parseOffsetRules(env) {
  * @returns {number} 偏移秒数，无匹配返回 0
  */
 export function resolveOffset(rules, { anime, season, episode, source }) {
-  if (!Array.isArray(rules) || rules.length === 0 || !anime) return 0;
+  const matchedRule = resolveOffsetRule(rules, { anime, season, episode, source });
+  return matchedRule ? matchedRule.offset : 0;
+}
+
+/**
+ * 根据规则查找匹配的偏移规则
+ * @param {Array} rules parseOffsetRules 返回的规则数组
+ * @param {Object} ctx 匹配上下文
+ * @returns {Object|null} 匹配到的规则对象，无匹配返回 null
+ */
+export function resolveOffsetRule(rules, { anime, season, episode, source }) {
+  if (!Array.isArray(rules) || rules.length === 0 || !anime) return null;
 
   // 拆分合并来源，并展开别名
   const sourceKeys = new Set();
@@ -127,12 +146,12 @@ export function resolveOffset(rules, { anime, season, episode, source }) {
       if (rule.sources) {
         // 来源特定规则
         if (sourceKeys.size > 0 && rule.sources.some(s => sourceKeys.has(s))) {
-          specificMatch = rule.offset;
+          specificMatch = rule;
         }
       } else if (rule.all) {
-        allMatch = rule.offset;
+        allMatch = rule;
       } else {
-        genericMatch = rule.offset;
+        genericMatch = rule;
       }
     }
 
@@ -142,21 +161,41 @@ export function resolveOffset(rules, { anime, season, episode, source }) {
     if (genericMatch !== null) return genericMatch;
   }
 
-  return 0;
+  return null;
 }
 
 /**
  * 应用时间偏移到弹幕数组（兼容多种时间字段格式）
  * @param {Array} danmus 弹幕数组
  * @param {number} offsetSeconds 偏移秒数
+ * @param {Object} options 额外选项
+ * @param {boolean} options.usePercent 是否启用百分比模式
+ * @param {number} options.videoDuration 视频时长（秒）
  * @returns {Array} 偏移后的弹幕数组
  */
-export function applyOffset(danmus, offsetSeconds) {
+export function applyOffset(danmus, offsetSeconds, options = {}) {
   const offset = Number(offsetSeconds);
   if (!offset || !Array.isArray(danmus) || danmus.length === 0) return danmus;
 
+  const usePercent = options?.usePercent === true;
+  const videoDuration = Number(options?.videoDuration || 0);
+  const scaleRatio = usePercent && Number.isFinite(videoDuration) && videoDuration > 0
+    ? (videoDuration + offset) / videoDuration
+    : null;
+
+  if (usePercent && scaleRatio === null) return danmus;
+
   const offsetMs = offset * 1000;
   const clamp = v => Math.max(0, v);
+  const roundTo = (value, digits = 2) => Number(value.toFixed(digits));
+  const transformSeconds = (time) => {
+    const value = scaleRatio !== null ? clamp(time * scaleRatio) : clamp(time + offset);
+    return scaleRatio !== null ? roundTo(value, 2) : value;
+  };
+  const transformMilliseconds = (time) => {
+    const value = scaleRatio !== null ? clamp(time * scaleRatio) : clamp(time + offsetMs);
+    return scaleRatio !== null ? Math.round(value) : value;
+  };
 
   return danmus.map(danmu => {
     if (!danmu || typeof danmu !== 'object') return danmu;
@@ -167,7 +206,7 @@ export function applyOffset(danmus, offsetSeconds) {
       const parts = updated.p.split(',');
       const time = parseFloat(parts[0]);
       if (Number.isFinite(time)) {
-        parts[0] = clamp(time + offset).toFixed(3);
+        parts[0] = transformSeconds(time).toFixed(2);
         updated.p = parts.join(',');
       }
     }
@@ -175,19 +214,19 @@ export function applyOffset(danmus, offsetSeconds) {
     // t 字段（秒）
     if (updated.t !== undefined && updated.t !== null) {
       const t = Number(updated.t);
-      if (Number.isFinite(t)) updated.t = clamp(t + offset);
+      if (Number.isFinite(t)) updated.t = transformSeconds(t);
     }
 
     // progress 字段（毫秒）
     if (updated.progress !== undefined && updated.progress !== null) {
       const p = Number(updated.progress);
-      if (Number.isFinite(p)) updated.progress = clamp(p + offsetMs);
+      if (Number.isFinite(p)) updated.progress = transformMilliseconds(p);
     }
 
     // timepoint 字段（秒）
     if (updated.timepoint !== undefined && updated.timepoint !== null) {
       const tp = Number(updated.timepoint);
-      if (Number.isFinite(tp)) updated.timepoint = clamp(tp + offset);
+      if (Number.isFinite(tp)) updated.timepoint = transformSeconds(tp);
     }
 
     return updated;
