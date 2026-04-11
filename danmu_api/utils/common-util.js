@@ -199,7 +199,7 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 export function normalizeSpaces(str) {
   if (!str) return '';
   // 移除所有空格与修饰性符号（包括多个连续空格、制表符等）
-  return String(str).trim().replace(/[\s【】\[\]《》<>「」!?！？.,，。~～]/g, '');
+  return String(str).trim().replace(/[\s【】\[\]《》<>「」!?！？.,，。~～()（）\-]/g, '');
 }
 
 /**
