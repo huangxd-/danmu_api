@@ -644,7 +644,6 @@ function renderValueInput(item) {
                             <input type="checkbox" id="offset-use-percent" style="width: 16px; height: 16px; margin: 0; flex-shrink: 0;">
                         </label>
                     </div>
-                    alert(offsetSources.length);
                     \${offsetSources.length > 0 ? \`
                     <div style="margin-bottom: 10px;">
                         <label class="offset-label">来源 (可选，不选则对所有来源生效)</label>
@@ -1915,6 +1914,9 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
     const key = document.getElementById('env-key').value.trim();
     const description = document.getElementById('env-description').value.trim();
     const type = document.getElementById('value-type').value;
+    const existingItem = editingKey !== null && envVariables[currentCategory]
+        ? envVariables[currentCategory][editingKey]
+        : null;
 
     // 根据类型获取值
     let value, itemData;
@@ -1996,7 +1998,10 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             }
 
             if (editingKey !== null) {
-                envVariables[currentCategory][editingKey] = itemData;
+                envVariables[currentCategory][editingKey] = {
+                    ...(existingItem || {}),
+                    ...itemData
+                };
                 addLog(\`更新配置项: \${key} = \${value}\`, 'success');
             } else {
                 envVariables[category].push(itemData);
@@ -2021,7 +2026,7 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
     } catch (error) {
         addLog(\`更新环境变量失败: \${error.message}\`, 'error');
         addLog(\`❌ 更新环境变量失败: \${error.message}\`, 'error');
-        customAlert(result.message + '，请检查部署平台相关环境变量配置是否正确');
+        customAlert(error.message + '，请检查部署平台相关环境变量配置是否正确');
     }
 });
 
