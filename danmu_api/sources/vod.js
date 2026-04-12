@@ -4,7 +4,7 @@ import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, sanitizeSearchKeyword } from "../utils/common-util.js";
 
 // =====================
 // 获取vod源播放链接
@@ -13,8 +13,12 @@ export default class VodSource extends BaseSource {
   // 查询vod站点影片信息
   async getVodAnimes(title, server, serverName) {
     try {
+      // 调用common-util简单净化搜索关键词
+      const safeTitle = sanitizeSearchKeyword(title);
+      const encodedTitle = encodeURIComponent(safeTitle);
+
       const response = await httpGet(
-        `${server}/api.php/provide/vod/?ac=detail&wd=${title}&pg=1`,
+        `${server}/api.php/provide/vod/?ac=detail&wd=${encodedTitle}&pg=1`,
         {
           headers: {
             "Content-Type": "application/json",
