@@ -192,7 +192,18 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 }
 
 /**
- * 规范化标题（移除空格并清理修饰性符号）
+ * 净化搜索关键词（专门针对请求源阶段的温和版）
+ * @param {string} str - 原始搜索词
+ * @returns {string} 净化后的搜索词
+ */
+export function sanitizeSearchKeyword(str) {
+  if (!str) return '';
+  // 仅移除零宽字符、BOM等肉眼不可见的“幽灵字符”，保留空格和合法标点，确保源站搜索的命中率。
+  return String(str).replace(/[\u200B-\u200F\uFEFF]/g, '').trim();
+}
+
+/**
+ * 规范化结果标题（移除空格并清理修饰性符号）
  * @param {string} str - 输入字符串
  * @returns {string} 规范化后的字符串
  */
