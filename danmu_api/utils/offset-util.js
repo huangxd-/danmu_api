@@ -179,8 +179,37 @@ export function applyOffset(danmus, offsetSeconds, options = {}) {
 
   const usePercent = options?.usePercent === true;
   const videoDuration = Number(options?.videoDuration || 0);
-  const scaleRatio = usePercent && Number.isFinite(videoDuration) && videoDuration > 0
-    ? (videoDuration + offset) / videoDuration
+  const getDanmuTimeSeconds = (danmu) => {
+    if (!danmu || typeof danmu !== 'object') return null;
+
+    if (typeof danmu.p === 'string') {
+      const parts = danmu.p.split(',');
+      const time = parseFloat(parts[0]);
+      if (Number.isFinite(time)) return time;
+    }
+
+    if (danmu.t !== undefined && danmu.t !== null) {
+      const time = Number(danmu.t);
+      if (Number.isFinite(time)) return time;
+    }
+
+    if (danmu.progress !== undefined && danmu.progress !== null) {
+      const time = Number(danmu.progress);
+      if (Number.isFinite(time)) return time / 1000;
+    }
+
+    if (danmu.timepoint !== undefined && danmu.timepoint !== null) {
+      const time = Number(danmu.timepoint);
+      if (Number.isFinite(time)) return time;
+    }
+
+    return null;
+  };
+  const fallbackDuration = videoDuration > 0
+    ? videoDuration
+    : getDanmuTimeSeconds(danmus[danmus.length - 1]) || 0;
+  const scaleRatio = usePercent && Number.isFinite(fallbackDuration) && fallbackDuration > 0
+    ? (fallbackDuration + offset) / fallbackDuration
     : null;
 
   if (usePercent && scaleRatio === null) return danmus;
