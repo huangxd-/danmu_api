@@ -320,7 +320,7 @@ export function validateType(value, expectedType) {
 // 从 animeTitle 中提取季数和纯剧名
 export function extractSeasonNumberFromAnimeTitle(animeTitle) {
   if (!animeTitle) return { season: null, baseTitle: null };
-// 先在原始标题上做拆分切除年份后缀，再去除非法字符
+  // 先在原始标题上做拆分切除年份后缀，再去除非法字符
   const match = animeTitle.match(/^(.*?)\(\d{4}\)/);
   const rawTitleWithoutYear = match ? match[1].trim() : animeTitle.split("(")[0].trim();
   const titleWithoutYear = normalizeSpaces(rawTitleWithoutYear);
