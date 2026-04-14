@@ -187,14 +187,15 @@ function matchYear(anime, queryYear) {
 }
 
 export function matchSeason(anime, queryTitle, season) {
-  const normalizedAnimeTitle = normalizeSpaces(anime.animeTitle);
+  // 先从原始带括号的标题中分离出名称主体再对主体进行净化剥离非法字符
+  const match = anime.animeTitle.match(/^(.*?)\(\d{4}\)/);
+  const originalTitle = match ? match[1].trim() : anime.animeTitle.split("(")[0].trim();
+  const normalizedAnimeTitle = normalizeSpaces(originalTitle);
   const normalizedQueryTitle = normalizeSpaces(queryTitle);
 
   if (normalizedAnimeTitle.includes(normalizedQueryTitle)) {
-    const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
-    const title = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
-    if (title.startsWith(normalizedQueryTitle)) {
-      const afterTitle = title.substring(normalizedQueryTitle.length).trim();
+    if (normalizedAnimeTitle.startsWith(normalizedQueryTitle)) {
+      const afterTitle = normalizedAnimeTitle.substring(normalizedQueryTitle.length).trim();
       if (afterTitle === '' && season === 1) {
         return true;
       }
