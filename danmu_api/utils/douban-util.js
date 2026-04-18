@@ -70,6 +70,13 @@ export async function searchDoubanTitles(keyword, count = 20) {
   return await doubanApiGet(url);
 }
 
+// 使用 豆瓣 公开 API 查询片名
+export async function searchDoubanTitlesByPublic(keyword, count = 20) {
+  const url = `/movie/search`;
+  const data = { q: keyword, start: 0, count: count };
+  return await doubanApiPost(url, data);
+}
+
 // 使用 豆瓣 API 查询详情
 export async function getDoubanDetail(doubanId) {
   const url = `/movie/${doubanId}?for_mobile=1`;

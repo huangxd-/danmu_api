@@ -1,6 +1,6 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
-import { getDoubanDetail, searchDoubanTitles } from "../utils/douban-util.js";
+import { getDoubanDetail, searchDoubanTitles, searchDoubanTitlesByPublic } from "../utils/douban-util.js";
 
 // =====================
 // 获取豆瓣源播放链接
@@ -17,9 +17,24 @@ export default class DoubanSource extends BaseSource {
 
   async search(keyword) {
     try {
-      const response = await searchDoubanTitles(keyword);
+      let response = await searchDoubanTitles(keyword);
+      let data = response?.data;
 
-      const data = response.data;
+      // 兜底策略：如果 searchDoubanTitles 失败或返回空结果，使用 searchDoubanTitlesByPublic
+      if (!data || (!data?.subjects?.items?.length && !data?.smart_box?.length)) {
+        log("info", "searchDoubanTitles failed or empty, trying searchDoubanTitlesByPublic");
+        const fallbackResponse = await searchDoubanTitlesByPublic(keyword);
+        const fallbackData = fallbackResponse?.data;
+
+        if (fallbackData?.subjects?.length > 0) {
+          // 将 searchDoubanTitlesByPublic 返回的数据转换为原格式
+          data = {
+            subjects: {
+              items: fallbackData.subjects.map(item => this.convertToOriginalFormat(item)),
+            }
+          };
+        }
+      }
 
       let tmpAnimes = [];
       if (data?.subjects?.items?.length > 0) {
@@ -41,6 +56,58 @@ export default class DoubanSource extends BaseSource {
       });
       return [];
     }
+  }
+
+  // 将 searchDoubanTitlesByPublic 返回的数据格式转换为原格式
+  convertToOriginalFormat(item) {
+    // subtype: "movie" -> "电影", "tv" -> "电视剧"
+    const typeMap = {
+      'movie': '电影',
+      'tv': '电视剧'
+    };
+    const typeName = typeMap[item.subtype] || item.subtype;
+
+    // 构建 cover_url：从原始图片URL中提取图片ID，然后构造固定格式的URL
+    const originalImageUrl = item.images?.large || item.images?.medium || item.images?.small || '';
+    let coverUrl = '';
+    if (originalImageUrl) {
+      // 从类似 https://img3.doubanio.com/view/photo/s_ratio_poster/public/p2887095203.jpg 的URL中提取 p2887095203
+      const match = originalImageUrl.match(/\/(p\d+)\.jpg/);
+      if (match && match[1]) {
+        const imageId = match[1]; // 例如 p2887095203
+        coverUrl = `https://qnmob3.doubanio.com/view/photo/large/public/${imageId}.jpg?imageView2/0/q/80/w/9999/h/120/format/jpg`;
+      }
+    }
+
+    // 构建 card_subtitle，包含地区、类型、导演、演员等信息
+    const directors = item.directors?.map(d => d.name).join(' ') || '';
+    const casts = item.casts?.slice(0, 3).map(c => c.name).join(' ') || '';
+    const cardSubtitle = `${item.year} / ${item.genres?.join(' / ') || ''} / ${directors}${casts ? ' / ' + casts : ''}`;
+
+    return {
+      layout: 'subject',
+      type_name: typeName,
+      target_id: String(item.id),
+      target: {
+        rating: {
+          count: item.collect_count || 0,
+          max: item.rating?.max || 10,
+          star_count: item.rating?.stars ? parseInt(item.rating.stars) / 10 : 0,
+          value: item.rating?.average || 0
+        },
+        controversy_reason: '',
+        title: item.title,
+        abstract: '',
+        has_linewatch: false,
+        uri: `douban://douban.com/${item.subtype === 'movie' ? 'movie' : 'tv'}/${item.id}`,
+        cover_url: coverUrl,
+        year: String(item.year || ''),
+        card_subtitle: cardSubtitle,
+        id: String(item.id),
+        null_rating_reason: ''
+      },
+      target_type: item.subtype === 'movie' ? 'movie' : 'tv'
+    };
   }
 
   async getEpisodes(id) {}
