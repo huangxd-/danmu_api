@@ -1,44 +1,44 @@
-name: Fork Sync
+姓名: fork Sync
 
-permissions:
-    contents: write
+权限:
+内容: 写
 
-on:
-    schedule:
-        - cron: "0 0 * * *"  # 每天午夜执行
-    workflow_dispatch:  # 允许手动触发
+在……之上:
+计划表:
+        - 克朗: "*/10* * * *"  # 每十分钟执行
+workflow_dispatch:  # 允许手动触发
 
-jobs:
-    sync_with_upstream:
-        name: Sync with Upstream
-        runs-on: ubuntu-latest
-        if: ${{ github.event.repository.fork }}
+工作:
+与上游同步(_W):
+姓名: 与上游同步
+连续的：Ubuntu-最新
+如果: ${{github.event.repository.fork}}
 
-        steps:
-            - name: Checkout target repo
-              uses: actions/checkout@v4
-              with:
-                token: ${{ secrets.GITHUB_TOKEN }}
+步骤:
+            - 姓名: 签出目标回购
+uses: 操作/结帐@v4
+和……一起:
+令牌: ${{secrets.GITHUB_TOKEN}}
 
-            - name: Sync Upstream
-              uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-              with:
-                  target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-                  upstream_sync_repo: huangxd-/danmu_api
-                  upstream_sync_branch: main
-                  target_sync_branch: main
-                  test_mode: false
+            - 姓名: 同步上游
+uses: aormsby/Fork-Sync-with-Upream-action@v3.4
+和……一起:
+target_repo_token: ${{secrets.GITHUB_TOKEN}}
+upstream_sync_repo: huangxd-/danmu_api
+upstream_sync_branch: 主要的
+target_sync_branch: 主要的
+test_mode: 假的
 
-            - name: Check for new commits
-              if: success()
-              run: echo "Sync completed successfully"
+-姓名：检查新提交
+如果: 成功()
+跑: 回声"同步成功完成"
 
-            - name: Check for Failure
-              if: failure()
-              run: |
-                  echo "[Error] Sync failed. This might be due to:"
-                  echo "1. Changes in the upstream workflow file"
-                  echo "2. Merge conflicts that need manual resolution"
-                  echo "3. Network issues"
-                  echo "Please check the logs and consider manual sync if needed."
-                  exit 1
+-姓名: 检查故障
+如果: 失败()
+跑: |
+回声“[错误]同步失败。 这可能是由于："
+回声"1.上游工作流文件中的更改"
+回声"2.需要手动解决的合并冲突"
+回显“3.网络问题”
+回声"请检查日志，如果需要，请考虑手动同步。"
+出口1
