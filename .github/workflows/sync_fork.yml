@@ -1,44 +1,34 @@
-姓名: fork Sync
+name: fork Sync
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
 
-权限:
-内容: 写
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.repository.fork }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-在……之上:
-计划表:
-        - 克朗: "*/10 * * * *"  # 每十分钟执行
-workflow_dispatch:  # 允许手动触发
+      - name: Sync upstream
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+        with:
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_repo: huangxd-/danmu_api
+          upstream_sync_branch: main
+          target_sync_branch: main
+          test_mode: false
 
-工作:
-与上游同步(_W):
-姓名: 与上游同步
-连续的：Ubuntu-最新
-如果: ${{github.event.repository.fork}}
+      - name: 同步成功
+        if: success()
+        run: echo Sync success
 
-步骤:
-            - 姓名: 签出目标回购
-uses: 操作/结帐@v4
-和……一起:
-令牌: ${{secrets.GITHUB_TOKEN}}
-
-            - 姓名: 同步上游
-uses: aormsby/Fork-Sync-with-Upream-action@v3.4
-和……一起:
-target_repo_token: ${{secrets.GITHUB_TOKEN}}
-upstream_sync_repo: huangxd-/danmu_api
-upstream_sync_branch: 主要的
-target_sync_branch: 主要的
-test_mode: 假的
-
--姓名：检查新提交
-如果: 成功()
-跑: 回声"同步成功完成"
-
--姓名: 检查故障
-如果: 失败()
-跑: |
-回声“[错误]同步失败。 这可能是由于："
-回声"1.上游工作流文件中的更改"
-回声"2.需要手动解决的合并冲突"
-回显“3.网络问题”
-回声"请检查日志，如果需要，请考虑手动同步。"
-出口1
+      - name: 同步失败
+        if: failure()
+        run: |
+          echo Sync error
+          exit 1
