@@ -9,12 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.repository.fork }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sync upstream
+      - name: Sync with upstream (force reset)
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -22,13 +23,15 @@ jobs:
           upstream_sync_branch: main
           target_sync_branch: main
           test_mode: false
+          force_sync: true
+          sync_strategy: "reset"
 
-      - name: 同步成功
+      - name: Success message
         if: success()
-        run: echo Sync success
+        run: echo "✅ 已强制同步上游最新代码，分支已与上游保持一致"
 
-      - name: 同步失败
+      - name: Failure message
         if: failure()
         run: |
-          echo Sync error
+          echo "❌ 同步失败，请检查工作流日志"
           exit 1
