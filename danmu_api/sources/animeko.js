@@ -6,9 +6,10 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { titleMatches } from "../utils/common-util.js";
+import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
 // =====================
-// 获取Animeko弹幕(https://github.com/open-ani/animeko)
+// 获取Animeko弹幕（https://github.com/open-ani/animeko）
 // =====================
 
 /**
@@ -35,6 +36,28 @@ export default class AnimekoSource extends BaseSource {
    * @returns {Promise<Array>} 转换后的搜索结果列表
    */
   async search(keyword) {
+    if (globals.useBangumiData) {
+      const localMatches = searchBangumiData(keyword, ['bangumi']);
+      if (localMatches.length > 0) {
+        log("info", `[Animeko] Bangumi-Data 命中 ${localMatches.length} 条数据`);
+        return this.transformResults(localMatches.map(m => {
+          const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
+          const finalTitle = displayTitle + (m.titleSuffix || '');
+
+          return {
+            id: parseInt(m.siteId),
+            name: m.title,
+            name_cn: finalTitle,
+			imageUrl: "",
+            date: m.begin,
+            score: 0,
+            platform: m.typeStr, 
+            aliases: m.titles
+          };
+        }));
+      }
+    }
+
     try {
       // 标准化函数
       const searchKeyword = keyword.replace(/[._]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -151,24 +174,10 @@ export default class AnimekoSource extends BaseSource {
    */
   hasExplicitSeasonInfo(title) {
     if (!title) return false;
-    
-    const patterns = [
-      /第\s*[0-9一二三四五六七八九十]+\s*[季期部]/i, // 第2季
-      /Season\s*\d+/i,          // Season 2
-      /S\d+/i,                  // S2
-      /Part\s*\d+/i,            // Part 2
-      /OVA/i, /OAD/i,
-      /剧场版|Movie|Film/i,
-      /续篇|续集/i,
-      /SP/i,
-      /(?<!\d)\d+$/,            // 末尾数字
-      /\S+篇/i,                 // 篇章标识 (如: 柱训练篇)
-      /\S+章/i,
-      /Act\s*\d+/i,
-      /Phase\s*\d+/i
-    ];
 
-    return patterns.some(p => p.test(title));
+    const pattern = /第\s*[0-9一二三四五六七八九十]+\s*[季期部]|Season\s*\d+|S\d+|Part\s*\d+|OVA|OAD|剧场版|Movie|Film|续[篇集]|SP|(?<!\d)\d+$|\S+[篇章]|Act\s*\d+|Phase\s*\d+/i;
+
+    return pattern.test(title);
   }
 
   /**
