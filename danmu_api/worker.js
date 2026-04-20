@@ -5,6 +5,7 @@ import { getRedisCaches, judgeRedisValid } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, getLocalCaches, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
+import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
@@ -26,6 +27,13 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   const url = new URL(req.url);
   let path = url.pathname;
   const method = req.method;
+
+  //  Bangumi Data 辅助函数，用于判断数据更新
+  const isDataDependentRequest = path.includes('/search') || path.includes('/match');
+
+  if (globals.useBangumiData) {
+      await initBangumiData(deployPlatform, isDataDependentRequest);
+  }
 
   globals.deployPlatform = deployPlatform;
   if (deployPlatform === "node") {
