@@ -9,6 +9,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import dotenv from 'dotenv';
 import { Request as NodeFetchRequest } from 'node-fetch';
 import { handleRequest } from './worker.js';
+import { clearBangumiDataCache } from './utils/bangumi-data-util.js';
 
 // =====================
 // server.js - 本地node智能启动脚本：根据 Node.js 环境自动选择最优启动模式
@@ -186,6 +187,12 @@ async function setupEnvWatcher() {
 
           console.log('[server] Environment variables reloaded successfully');
           console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
+
+          // 如果检测到关闭了 Bangumi Data 功能，主动释放 V8 内存
+          if (process.env.USE_BANGUMI_DATA === 'false' || process.env.USE_BANGUMI_DATA === false) {
+              clearBangumiDataCache();
+          }
+
         } catch (error) {
           console.log('[server] Error reloading configuration files:', error.message);
         }
