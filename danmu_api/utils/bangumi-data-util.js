@@ -189,7 +189,7 @@ async function downloadAndCache(cachePath) {
 export function searchBangumiData(keyword, siteKeys) {
     if (!memoryCache || !memoryCache.items) return [];
 
-    const validDubRegex = /(?:普通话|国语|中文配音|中配|中文|粤配|粤语|台配|台语|港配|港语|字幕|助听|日语|日配|原版|原声)(?:版)?/;
+    const validDubRegex = /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/;
     const results = [];
     for (const item of memoryCache.items) {
         // 构建完整的搜索标题池
