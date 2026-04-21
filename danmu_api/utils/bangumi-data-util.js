@@ -148,10 +148,18 @@ async function downloadAndCache(cachePath) {
             memoryCache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
             parseTimeMs = Date.now() - parseStartTime;
         } else {
-            // 纯内存加载
-            const response = await httpGet(url);
+            // 纯内存加载，显式声明压缩头榨干 CDN 性能]
+            log("info", `[请求模拟] HTTP GET: ${url}`);
+            const response = await fetch(url, {
+                headers: {
+                    // br (Brotli) 的压缩率比 gzip 还要高 15%~20%
+                    'Accept-Encoding': 'br, gzip, deflate'
+                }
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
             parseStartTime = Date.now();
-            memoryCache = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+            memoryCache = await response.json();
             parseTimeMs = Date.now() - parseStartTime;
         }
 
