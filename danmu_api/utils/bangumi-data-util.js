@@ -45,6 +45,9 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
             log("warn", "[Bangumi-Data] 本次运行已退化为纯内存模式 (重启后需重新下载)。");
             hasLoggedCacheWarning = true;
         }
+    } else if (!hasLoggedCacheWarning) {
+        log("info", `[Bangumi-Data] 检测到 ${deployPlatform} 云环境，当前运行于纯内存加速模式。`);
+        hasLoggedCacheWarning = true;
     }
 
     // 内存数据生命周期校验
