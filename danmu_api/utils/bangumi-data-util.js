@@ -31,7 +31,7 @@ const DOWNLOAD_TIMEOUT_MS = 20000;
  * @param {boolean} isDataDependentRequest - 当前是否为强依赖数据的核心接口请求
  * @returns {Promise<void>}
  */
-export async function initBangumiData(deployPlatform, isDataDependentRequest = false) {
+export async function initBangumiData(deployPlatform, isDataDependentRequest = false, ctx = null) {
     if (!globals.useBangumiData) return;
 
     let cachePath = null;
@@ -118,6 +118,10 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
             await downloadPromise; 
         } else {
             log("info", `[Bangumi-Data] 当前非核心请求，数据获取转入后台异步执行`);
+            if (ctx && typeof ctx.waitUntil === 'function') {
+                log("info", `[Bangumi-Data] 调用 ctx.waitUntil 延长 Serverless 生命周期`);
+                ctx.waitUntil(downloadPromise);
+            }
         }
     } else if (isDataDependentRequest) {
         log("info", `[Bangumi-Data] 正在等待基础数据下载完成...`);
