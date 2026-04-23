@@ -14,12 +14,14 @@ import { titleMatches } from './common-util.js';
 let memoryCache = null;
 let memoryCacheTime = 0;
 let isDownloading = false;
+let downloadLockTime = 0;
 let memoryFootprintMB = '0.00';
 let hasLoggedCacheWarning = false;
 
 // 定义缓存目录和文件名
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILENAME = 'bangumi-data-cache.json';
+const DOWNLOAD_TIMEOUT_MS = 20000;
 
 /**
  * 初始化 Bangumi Data 数据源
@@ -50,6 +52,12 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         hasLoggedCacheWarning = true;
     }
 
+    // 幽灵死锁自愈机制 (针对 Serverless 强杀)
+    if (isDownloading && (Date.now() - downloadLockTime > DOWNLOAD_TIMEOUT_MS)) {
+        log("warn", "[Bangumi-Data] 检测到下载状态锁死 (由于 Serverless 进程休眠/强杀导致)，强制释放锁...");
+        isDownloading = false;
+    }
+
     // 内存数据生命周期校验
     if (memoryCache) {
         if (cacheDays > 0 && (Date.now() - memoryCacheTime < expireMs)) {
@@ -60,6 +68,7 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         if (isDataDependentRequest && !isDownloading) {
             log("info", `[Bangumi-Data] 内存数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
             isDownloading = true;
+			downloadLockTime = Date.now();
             downloadAndCache(cachePath).finally(() => { isDownloading = false; });
         }
         return;
@@ -86,6 +95,7 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
                 if (isDataDependentRequest && !isDownloading) {
                     log("info", `[Bangumi-Data] 磁盘数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
                     isDownloading = true;
+					downloadLockTime = Date.now();
                     downloadAndCache(cachePath).finally(() => { isDownloading = false; });
                 }
             }
@@ -100,6 +110,7 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
     if (!isDownloading) {
         log("info", `[Bangumi-Data] 未命中任何有效缓存，正在获取基础数据...`);
         isDownloading = true;
+		downloadLockTime = Date.now();
 
         const downloadPromise = downloadAndCache(cachePath).finally(() => { isDownloading = false; });
 
@@ -110,8 +121,15 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         }
     } else if (isDataDependentRequest) {
         log("info", `[Bangumi-Data] 正在等待基础数据下载完成...`);
+        let waitCount = 0;
         while (isDownloading) {
+            if (waitCount > 150) { // 最多等待 15 秒 (150 * 100ms)
+                log("warn", "[Bangumi-Data] 等待排队超时，放弃等待");
+                isDownloading = false;
+                break;
+            }
             await new Promise(resolve => setTimeout(resolve, 100));
+            waitCount++;
         }
     }
 }
