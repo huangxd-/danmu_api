@@ -175,7 +175,7 @@ export default class AnimekoSource extends BaseSource {
   hasExplicitSeasonInfo(title) {
     if (!title) return false;
 
-    const pattern = /第\s*[0-9一二三四五六七八九十]+\s*[季期部]|Season\s*\d+|S\d+|Part\s*\d+|OVA|OAD|剧场版|Movie|Film|续[篇集]|SP|(?<!\d)\d+$|\S+[篇章]|Act\s*\d+|Phase\s*\d+/i;
+    const pattern = /第?\s*(?:\d+|[一二三四五六七八九十]+)\s*[季期部]|Season\s*\d+|S\d+|Part\s*\d+|Act\s*\d+|Phase\s*\d+|The\s+Final\s+Season|OVA|OAD|剧场版|劇場版|Movie|Film|续[篇集]|外传|SP|(?<!\d)\d+$|\S+[篇章]/i
 
     return pattern.test(title);
   }
