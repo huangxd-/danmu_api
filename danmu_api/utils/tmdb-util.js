@@ -649,7 +649,7 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
 // =====================
 
 // 识别季度、剧场版、外传、副标题等后缀信息的正则白名单
-const SUFFIX_PATTERN = /(?:\s+|^)(?:第?(?:\d+|[一二三四五六七八九十]+)[季期部]|season\s*\d+|s\d+|part\s*\d+|the\s+final\s+season|(?:movie|film|ova|oad|sp|剧场版|劇場版)(?![a-z]))|[:：~～]|\s+.*?篇|外传/i;
+const SUFFIX_PATTERN = /(?:\s+|^)(?:第?\s*(?:\d+|[一二三四五六七八九十]+)\s*[季期部]|season\s*\d+|s\d+|part\s*\d+|act\s*\d+|phase\s*\d+|the\s+final\s+season|(?:movie|film|ova|oad|sp|剧场版|劇場版|续[篇集]|外传)(?![a-z]))|[:：~～]|\s+.*?篇|(?<=\s|^)\d+$/i
 
 const SEPARATOR_REGEX = /[ :：~～]/;
 
