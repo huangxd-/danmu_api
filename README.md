@@ -1,10 +1,10 @@
----  
-title: Danmu-api  
-emoji: 🚀  
-colorFrom: blue  
-colorTo: purple  
-sdk: docker  
-pinned: false  
+---
+title: Danmu-api
+emoji: 🚀
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
 ---
 <div align="center">
   <img src="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg" alt="Clash" width="128" style="border-radius: 16px;" />
