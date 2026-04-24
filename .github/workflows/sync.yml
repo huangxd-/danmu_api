@@ -1,0 +1,19 @@
+name: Sync to Hugging Face
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+      - name: Push to HF
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git push --force https://Zyc545423122:$HF_TOKEN@huggingface.co/spaces/Zyc545423122/Danmu-api main
