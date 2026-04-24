@@ -15,7 +15,7 @@ COPY danmu_api/ ./danmu_api/
 COPY config/ ./config_example/
 
 # 暴露端口
-EXPOSE 9321
+EXPOSE 7860
 
 # 启动命令
 CMD ["node", "danmu_api/server.js"]
