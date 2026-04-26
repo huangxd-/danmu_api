@@ -125,13 +125,13 @@ function log(level, ...args) {
 
 const RegexStore = {
     Lang: {
-        CN: /(普通话|国语|中文配音|中配|中文|粤配|粤语|台配|台语|港配|港语|字幕|助听)(?:版)?/,
-        JP: /(日语|日配|原版|原声)(?:版)?/,
-        CN_DUB_VER: /(\(|（|\[)?(普通话|国语|中文配音|中配|中文|粤配|粤语|台配|台语|港配|港语|字幕|助听)版?(\)|）|\])?/g,
-        JP_DUB_VER: /(\(|（|\[)?(日语|日配|原版|原声)版?(\)|）|\])?/g,
-        KEYWORDS_STRONG: /(?:普通话|国语|中文配音|中配|中文|粤配|粤语|台配|台语|港配|港语|字幕|助听|日语|日配|原版|原声)(?:版)?/g,
-        CN_STD: /普通话|国语|中文配音|中配|中文|粤配|粤语|台配|台语|港配|港语|字幕|助听/g,
-        JP_STD: /日语|日配|原版|原声/g
+        CN: /(普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽])(?:版)?/,
+        JP: /(日[语語]|日配|原版|原[声聲])(?:版)?/,
+        CN_DUB_VER: /(\(|（|\[)?(普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽])版?(\)|）|\])?/g,
+        JP_DUB_VER: /(\(|（|\[)?(日[语語]|日配|原版|原[声聲])版?(\)|）|\])?/g,
+        KEYWORDS_STRONG: /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/g,
+        CN_STD: /普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]/g,
+        JP_STD: /日[语語]|日配|原版|原[声聲]/g
     },
     Season: {
         PURE_PART: /^(?:(?:第|S(?:eason)?)\s*\d+(?:季|期|部)?|(?:Part|P|第)\s*\d+(?:部分)?)$/i,
@@ -156,7 +156,7 @@ const RegexStore = {
         WHITESPACE: /\s+/g,
         FROM_SUFFIX: /\s*from\s+.*$/i,
         PARENTHESES_CONTENT: /(\(|（|\[).*?(\)|）|\])/g,
-        MOVIE_KEYWORDS: /剧场版|the\s*movie|theatrical|movie|film|电影/gi,
+        MOVIE_KEYWORDS: /剧场版|劇場版|the\s*movie|theatrical|movie|film|电影/gi,
         LONE_VER_CHAR: /(\s|^)版(\s|$)/g,
         NON_ALPHANUM_CN: /[^\u4e00-\u9fa5a-zA-Z0-9]/g,
         META_SUFFIX: /(\(|（|\[)(续篇|TV版|无修|未删减|完整版)(\)|）|\])/gi,
@@ -176,7 +176,7 @@ const RegexStore = {
         PUNCTUATION: /[!！?？,，.。、~～:：\-–—]/g,
         DANDAN_TAG: /^【(dandan|animeko)】/i,
         SPECIAL_START: /^S\d+/i,
-        MOVIE_CHECK: /剧场版|movie|film/i,
+        MOVIE_CHECK: /剧场版|劇場版|movie|film/i,
         PV_CHECK: /(pv|trailer|预告)/i,
         SPECIAL_CHECK: /^(s|o|sp|special)\d/i,
         SEASON_MATCH: /(?:^|\s)(?:第|S)(\d+)[季S]/i,
@@ -210,7 +210,7 @@ const SEASON_PATTERNS = [
   { regex: /\bs\s*(\d+)\b/i, prefix: 'S' },
   { regex: /\bpart\s*(\d+)/i, prefix: 'P' },
   { regex: /\b(ova|oad)\d*\b/i, val: 'OVA' },
-  { regex: /(剧场版|the\s*movie|theatrical|movie|film|电影)/i, val: 'MOVIE' },
+  { regex: /(剧场版|劇場版|the\s*movie|theatrical|movie|film|电影)/i, val: 'MOVIE' },
   { regex: /(续篇|续集)/, val: 'SEQUEL' },
   { regex: /\b(sp|special)\d*\b/i, val: 'SP' },
   { regex: /[^0-9](\d)$/, prefix: 'S', useCleaned: true } 
@@ -360,7 +360,7 @@ function cleanTitleForSimilarity(text) {
     const startBracketMatch = clean.match(/^(?:【|\[)(.+?)(?:】|\])/);
     if (startBracketMatch) {
         const content = startBracketMatch[1];
-        if (!/^(TV|剧场版|movie|film|anime|动漫|动画|AVC|HEVC|MP4|MKV)$/i.test(content)) {
+        if (!/^(TV|剧场版|劇場版|movie|film|anime|动漫|动画|AVC|HEVC|MP4|MKV)$/i.test(content)) {
              clean = clean.replace(startBracketMatch[0], content + ' ');
         }
     }
@@ -2247,7 +2247,7 @@ function detectCollectionCandidates(curAnimes) {
         const startBracketMatch = protectedTitle.match(/^(?:【|\[)(.+?)(?:】|\])/);
         if (startBracketMatch) {
             const content = startBracketMatch[1];
-            if (!/^(TV|剧场版|movie|film|anime|动漫|动画|AVC|HEVC|MP4|MKV)$/i.test(content)) {
+            if (!/^(TV|剧场版|劇場版|movie|film|anime|动漫|动画|AVC|HEVC|MP4|MKV)$/i.test(content)) {
                 protectedTitle = protectedTitle.replace(startBracketMatch[0], content + ' ');
             }
         }
