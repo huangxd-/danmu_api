@@ -739,8 +739,8 @@ if (isAggregateOnly && dynamicPlatformOrder?.length > 0) {
 
 function getBangumiDataForMatch(anime, detailStore = null) {
   const detailAnime =
-    resolveAnimeByIdFromDetailStore(anime?.bangumiId, detailStore, anime?.source) ||
-    resolveAnimeByIdFromDetailStore(anime?.animeId, detailStore, anime?.source);
+    resolveAnimeById(anime?.bangumiId, detailStore, anime?.source) ||  
+    resolveAnimeById(anime?.animeId, detailStore, anime?.source);
 
   if (!detailAnime) {
     log("warn", `[matchAnime] Missing request detail snapshot for anime ${anime?.animeId ?? anime?.bangumiId}`);
