@@ -1117,6 +1117,7 @@ export async function matchAnime(url, req, clientIp) {
     if (aiMatchResult.resAnime) {
       resAnime = aiMatchResult.resAnime;
       resEpisode = aiMatchResult.resEpisode;
+      resData["isMatched"] = true;
       log("info", `AI match found: ${resAnime.animeTitle}; episode: ${resEpisode.episodeTitle}`);
     } else {
       // AI匹配失败或未配置，使用传统匹配方式

@@ -287,7 +287,11 @@ export function titleMatches(title, query) {
   }
 
   // 策略3：相似度匹配 (阈值0.8)
-  // 解决"和/与"等翻译差异，只要搜索词中 大于 80% 的字符出现在标题里，即视为匹配
+  // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略阻断
+  if (Math.abs(t.length - q.length) > Math.max(t.length, q.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(q)) {
+    return false; 
+  }
+  // 核心相似度计算：解决"和/与"等翻译差异
   const qSet = new Set(q);
   const tSet = new Set(t);
   const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
