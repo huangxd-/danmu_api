@@ -692,7 +692,18 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
     if (!selectedAnime) {
       log("error", `AI returned invalid anime index: ${animeIndex}`);
       return { resEpisode: null, resAnime: null };
-    }
+    }// 如果AI选了纯聚合源（不含bilibili/tencent/iqiyi/youku），但候选列表中有更优先的平台，则放弃AI结果  
+const preferredPlatformSources = ['bilibili', 'tencent', 'iqiyi', 'youku'];  
+const isAggregateOnly = !preferredPlatformSources.some(p => selectedAnime.source?.includes(p));  
+if (isAggregateOnly && dynamicPlatformOrder?.length > 0) {  
+  const hasPreferredPlatformAnime = searchData.animes.some(a =>  
+    preferredPlatformSources.some(p => a.source?.includes(p))  
+  );  
+  if (hasPreferredPlatformAnime) {  
+    log("warn", `AI selected aggregate-only source "${selectedAnime.source}", falling back to traditional match`);  
+    return { resEpisode: null, resAnime: null };  
+  }  
+}
 
     const bangumiData = getBangumiDataForMatch(selectedAnime, detailStore);
     if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
@@ -1114,7 +1125,7 @@ export async function matchAnime(url, req, clientIp) {
 
     // 尝试使用AI进行匹配
     const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, requestAnimeDetailsMap);
-    if (aiMatchResult.resAnime) {
+    if (aiMatchResult.resAnime && aiMatchResult.resEpisode) {
       resAnime = aiMatchResult.resAnime;
       resEpisode = aiMatchResult.resEpisode;
       resData["isMatched"] = true;
