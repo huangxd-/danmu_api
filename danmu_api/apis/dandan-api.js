@@ -1331,16 +1331,11 @@ function buildBangumiData(anime, idParam = "") {
     });
     log("info", `[getBangumi] Episode filter enabled. Filtered episodes: ${episodesList.length}/${anime.links.length}`);
 
-    // 如果过滤后没有有效剧集，返回错误
-    if (episodesList.length === 0) {
-      log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam || anime.bangumiId}`);
-      return {
-        errorCode: 404,
-        success: false,
-        errorMessage: "No valid episodes after filtering",
-        bangumi: null
-      };
-    }
+    // 如果过滤后没有有效剧集，返回空列表而不是错误（允许 AI 匹配继续）  
+if (episodesList.length === 0) {  
+  log("warn", `[getBangumi] No valid episodes after filtering for anime ID ${idParam || anime.bangumiId}, returning empty episodes list`);  
+  episodesList = []; // 保持为空数组  
+}
 
     // 重新排序episodeNumber
     episodesList = episodesList.map((episode, index) => ({
