@@ -47,6 +47,7 @@ LogVar 弹幕 API 服务器
 - [部署到 Netlify 【推荐】](#部署到-netlify-推荐)
 - [部署到 腾讯云 edgeone pages](#部署到-腾讯云-edgeone-pages)
 - [部署到 Cloudflare](#部署到-cloudflare)
+- [部署到 Hugging Face Spaces](#部署到-hugging-face-spaces)
 - [API食用指南](#api食用指南)
 - [环境变量列表](#环境变量列表)
 - [采集源及对应平台列表](#采集源及对应平台列表)
@@ -79,7 +80,7 @@ LogVar 弹幕 API 服务器
   - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
   - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
-- **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Claw部署和 Docker 一键启动。
+- **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Hugging Face Spaces、Claw部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西播放链接可获取弹幕，如`senplayer`。
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
@@ -319,6 +320,20 @@ LogVar 弹幕 API 服务器
 ~~创建一个worker，将`danmu_api/worker.js`里的代码直接拷贝到你创建的`worker.js`里，然后点击部署。~~
 
 > cf部署可能不稳定，推荐用vercel/netlify部署。
+
+## 部署到 Hugging Face Spaces
+
+### Docker 部署
+1. 在 Hugging Face 创建 Space，SDK 选择 **Docker**。
+2. 将仓库代码推送到 Space 仓库，或在 Space 中连接/同步你的 Git 仓库。
+3. 在 Space Settings > Variables and secrets 中至少添加 `TOKEN` 环境变量。
+4. 如果需要在 UI 中保存环境变量并触发重启，额外添加：
+   - `DEPLOY_PLATFROM_ACCOUNT`: Hugging Face 用户名或组织名
+   - `DEPLOY_PLATFROM_PROJECT`: Space 名称
+   - `DEPLOY_PLATFROM_TOKEN`: 具备目标 Space 写入权限的 User Access Token
+
+- 示例请求：`https://{account}-{space}.hf.space/87654321/api/v2/search/anime?keyword=子夜归`
+  > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{account}-{space}.hf.space/api/v2/search/anime?keyword=子夜归`
 
 ## API食用指南
 支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer/peekpili 等支持弹幕API的播放器。

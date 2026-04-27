@@ -645,13 +645,20 @@ function isRunningOnVercel() {
   );
 }
 
+function detectDeployPlatform(env) {
+  if (env?.SPACE_ID || (typeof process !== 'undefined' && process.env?.SPACE_ID)) {
+    return "huggingface";
+  }
+  return isRunningOnVercel() ? "vercel" : "cloudflare";
+}
+
 // --- Cloudflare Workers 入口 ---
 export default {
   async fetch(request, env, ctx) {
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    return handleRequest(request, env, isRunningOnVercel() ? "vercel" : "cloudflare", clientIp, ctx);
+    return handleRequest(request, env, detectDeployPlatform(env), clientIp, ctx);
   },
 };
 
