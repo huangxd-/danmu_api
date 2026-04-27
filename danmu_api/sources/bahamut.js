@@ -174,12 +174,12 @@ export default class BahamutSource extends BaseSource {
               item.title = finalTitle;
               item._displayTitle = finalTitle;
               item.aliases = [...matchedLocal.titles];
-              
+
               // 将原始网络标题加入别名池，防止后续匹配时丢失源站的精确特征
               if (originalBahamutTitle && !item.aliases.includes(originalBahamutTitle)) {
                   item.aliases.push(originalBahamutTitle);
               }
-              
+
               item._typeStr = matchedLocal.typeStr; 
 
               log("info", `[Bahamut] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
