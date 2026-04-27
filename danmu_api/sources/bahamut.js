@@ -47,6 +47,7 @@ export default class BahamutSource extends BaseSource {
               "Content-Type": "application/json",
               "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
             },
+			retries: 1,
           });
 
           // 如果原始搜索有结果，中断 TMDB 流程
@@ -110,7 +111,8 @@ export default class BahamutSource extends BaseSource {
               "Content-Type": "application/json",
               "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
             },
-            signal: tmdbAbortController.signal
+            signal: tmdbAbortController.signal,
+            retries: 1,
           });
 
           if (tmdbResp && tmdbResp.data && tmdbResp.data.anime && tmdbResp.data.anime.length > 0) {
@@ -209,6 +211,7 @@ export default class BahamutSource extends BaseSource {
           "Content-Type": "application/json",
           "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
         },
+		retries: 1,
       });
 
       // 判断 resp 和 resp.data 是否存在
