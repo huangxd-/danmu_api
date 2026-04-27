@@ -5,6 +5,7 @@ import fetch from 'node-fetch';
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
 import { titleMatches } from './common-util.js';
+import { simplized, traditionalized } from './zh-util.js';
 
 // =====================
 // Bangumi Data 管理工具（https://github.com/bangumi-data/bangumi-data）
@@ -261,6 +262,14 @@ export function searchBangumiData(keyword, siteKeys) {
 
     const validDubRegex = /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/;
     const results = [];
+
+    // 简繁转换搜索关键词
+    let searchTerms = [keyword];
+    try {
+        searchTerms = [...new Set([keyword, simplized(keyword), traditionalized(keyword)])];
+    } catch (e) {
+    }
+
     for (const item of memoryCache.items) {
         // 构建完整的搜索标题池
         const titles = [item.title];
@@ -270,7 +279,7 @@ export function searchBangumiData(keyword, siteKeys) {
             }
         }
 
-        const isMatch = titles.some(t => t && titleMatches(t, keyword));
+        const isMatch = titles.some(t => t && searchTerms.some(kw => titleMatches(t, kw)));
 
         if (isMatch && item.sites) {
             // 捕获所有符合条件的站点记录，支持同源多区域版本（如大陆版和港澳台版共存）
