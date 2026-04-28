@@ -1,5 +1,6 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
+import { simplized, traditionalized } from './zh-util.js';
 
 // =====================
 // 通用工具方法
@@ -269,8 +270,15 @@ export function titleMatches(title, query) {
   const t = normalizeSpaces(title).toLowerCase();
   const q = normalizeSpaces(query).toLowerCase();
 
-  // 策略2：包含匹配优先 (性能最优且准确，只要完整包含即匹配)
-  if (t.includes(q)) return true;
+  // 预处理：构建搜索词变种池 (原词、简体、繁体)，利用 Set 去重
+  let qList = [q];
+  try {
+    qList = [...new Set([query, simplized(query), traditionalized(query)])]
+      .map(kw => normalizeSpaces(kw).toLowerCase()).filter(Boolean);
+  } catch (e) {}
+
+  // 策略2：包含匹配优先 (性能最优且准确，只要完整包含任意变种即匹配)
+  if (qList.some(kw => t.includes(kw))) return true;
 
   // 季度特征校验 (针对策略3的宽松相似度，防止字符集混淆导致季度错乱)
   const querySeason = getExplicitSeasonNumber(query);
@@ -287,16 +295,20 @@ export function titleMatches(title, query) {
   }
 
   // 策略3：相似度匹配 (阈值0.8)
-  // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略阻断
-  if (Math.abs(t.length - q.length) > Math.max(t.length, q.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(q)) {
-    return false; 
-  }
-  // 核心相似度计算：解决"和/与"等翻译差异
-  const qSet = new Set(q);
-  const tSet = new Set(t);
-  const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
+  const tSet = new Set(t); // 提取到循环外，避免重复创建
+  
+  // 使用 some 遍历变种池，包裹原版的相似度逻辑
+  return qList.some(kw => {
+    // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略阻断
+    if (Math.abs(t.length - kw.length) > Math.max(t.length, kw.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(kw)) {
+      return false; 
+    }
+    // 核心相似度计算：解决"和/与"等翻译差异
+    const qSet = new Set(kw);
+    const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
 
-  return (matchCount / qSet.size) > 0.8;
+    return (matchCount / qSet.size) > 0.8;
+  });
 }
 
 /**
