@@ -296,10 +296,9 @@ export function titleMatches(title, query) {
 
   // 策略3：相似度匹配 (阈值0.8)
   const tSet = new Set(t); // 提取到循环外，避免重复创建
-  
-  // 使用 some 遍历变种池，包裹原版的相似度逻辑
+
   return qList.some(kw => {
-    // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略阻断
+    // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略
     if (Math.abs(t.length - kw.length) > Math.max(t.length, kw.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(kw)) {
       return false; 
     }
