@@ -12,6 +12,30 @@ import { SegmentListResponse } from '../models/dandan-model.js';
 // 获取腾讯视频弹幕
 // =====================
 export default class TencentSource extends BaseSource {
+  extractAliasesFromHintWords(hintWords) {
+    if (!hintWords || typeof hintWords !== 'string') return [];
+
+    const aliases = [];
+    const addAlias = (value) => {
+      const alias = String(value || '').replace(/<\/?em>/g, '').trim();
+      if (alias && !aliases.includes(alias)) aliases.push(alias);
+    };
+
+    const aliasMatch = hintWords.match(/(?:又名|别名)\s*[：:]\s*(.+)$/);
+    if (!aliasMatch) return aliases;
+
+    aliasMatch[1]
+      .split(/[、,，/|]+/)
+      .forEach(addAlias);
+
+    return aliases;
+  }
+
+  titleOrAliasMatches(anime, queryTitle) {
+    if (titleMatches(anime.title, queryTitle)) return true;
+    return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle));
+  }
+
   /**
    * 过滤腾讯视频搜索项
    * @param {Object} item - 搜索项
@@ -96,11 +120,13 @@ export default class TencentSource extends BaseSource {
     }
 
     const episodeCount = contentType === '电影' ? 1 : (videoInfo.subjectDoc ? videoInfo.subjectDoc.videoNum : 0);
+    const aliases = this.extractAliasesFromHintWords(videoInfo.hintWords).filter(alias => alias !== title);
 
     return {
       provider: "tencent",
       mediaId: mediaId,
       title: title,
+      aliases: aliases,
       type: mediaType,  
       year: videoInfo.year,
       imageUrl: videoInfo.imgUrl,
@@ -400,7 +426,7 @@ export default class TencentSource extends BaseSource {
 
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
     const processTencentAnimes = await Promise.all(sourceAnimes
-      .filter(s => titleMatches(s.title, queryTitle))
+      .filter(s => this.titleOrAliasMatches(s, queryTitle))
       .map(async (anime) => {
         try {
           const eps = await this.getEpisodes(anime.mediaId);
@@ -443,6 +469,7 @@ export default class TencentSource extends BaseSource {
               rating: 0,
               isFavorited: true,
               source: "tencent",
+              aliases: anime.aliases || [],
             };
 
             tmpAnimes.push(transformedAnime);
