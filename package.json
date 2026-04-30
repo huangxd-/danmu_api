@@ -11,15 +11,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@upstash/redis": "^1.34.0"
+    "@upstash/redis": "latest"
   },
   "devDependencies": {
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "esbuild": "^20.15.10",
+    "esbuild": "^0.24.0",
     "https-proxy-agent": "^7.0.6",
     "node-fetch": "^3.3.2",
     "pako": "^2.1.0",
-    "redis": "^5.11.0"
+    "redis": "^4.7.0"
   }
 }
