@@ -51,7 +51,8 @@ export default class DandanSource extends BaseSource {
             typeDescription: m.typeStr, 
             imageUrl: "", 
             startDate: m.begin,
-            rating: 0
+            rating: 0,
+			aliases: [...m.titles]
           };
         });
       }
@@ -71,6 +72,7 @@ export default class DandanSource extends BaseSource {
               "Content-Type": "application/json",
               "User-Agent": DandanUserAgent,
             },
+			retries: 1,
           });
 
           // 判断 resp 和 resp.data 是否存在
@@ -127,6 +129,7 @@ export default class DandanSource extends BaseSource {
               "User-Agent": DandanUserAgent,
             },
             signal: tmdbAbortController.signal,
+			retries: 1,
           });
 
           // 判断 resp 和 resp.data 是否存在
@@ -350,7 +353,11 @@ export default class DandanSource extends BaseSource {
           }
 
           // 区分初始搜索结果与动态相关作品的结果过滤逻辑
-          const allTitles = [anime.animeTitle, ...apiAliases];
+          const allTitles = [
+            anime.animeTitle, 
+            ...apiAliases, 
+            ...(anime.aliases || [])
+          ];
           let isMatch = false;
 
           if (anime.isRelated || anime.isTmdbSource) {
@@ -400,7 +407,7 @@ export default class DandanSource extends BaseSource {
             const displayTitle = anime._displayTitle || anime.animeTitle;
 
             // 合并别名池：API返回的别名 + 原始标题（供合并工具对齐使用）
-            const finalAliases = [...apiAliases];
+            const finalAliases = [...new Set([...apiAliases, ...(anime.aliases || [])])];
             if (anime.animeTitle && anime.animeTitle !== displayTitle && !finalAliases.includes(anime.animeTitle)) {
               finalAliases.push(anime.animeTitle);
             }

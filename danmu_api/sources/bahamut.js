@@ -47,6 +47,7 @@ export default class BahamutSource extends BaseSource {
               "Content-Type": "application/json",
               "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
             },
+			retries: 1,
           });
 
           // 如果原始搜索有结果，中断 TMDB 流程
@@ -110,7 +111,8 @@ export default class BahamutSource extends BaseSource {
               "Content-Type": "application/json",
               "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
             },
-            signal: tmdbAbortController.signal
+            signal: tmdbAbortController.signal,
+            retries: 1,
           });
 
           if (tmdbResp && tmdbResp.data && tmdbResp.data.anime && tmdbResp.data.anime.length > 0) {
@@ -166,6 +168,7 @@ export default class BahamutSource extends BaseSource {
           );
 
           if (matchedLocal) {
+              const originalBahamutTitle = item.title;
               const displayTitle = matchedLocal.titles.find(t => t && t.includes(keyword)) || matchedLocal.titles[1] || matchedLocal.title;
               const finalTitle = displayTitle + (matchedLocal.titleSuffix || '');
 
@@ -173,6 +176,12 @@ export default class BahamutSource extends BaseSource {
               item.title = finalTitle;
               item._displayTitle = finalTitle;
               item.aliases = [...matchedLocal.titles];
+
+              // 将原始网络标题加入别名池，防止后续匹配时丢失源站的精确特征
+              if (originalBahamutTitle && !item.aliases.includes(originalBahamutTitle)) {
+                  item.aliases.push(originalBahamutTitle);
+              }
+
               item._typeStr = matchedLocal.typeStr; 
 
               log("info", `[Bahamut] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
@@ -202,6 +211,7 @@ export default class BahamutSource extends BaseSource {
           "Content-Type": "application/json",
           "User-Agent": "Anime/2.29.2 (7N5749MM3F.tw.com.gamer.anime; build:972; iOS 26.0.0) Alamofire/5.6.4",
         },
+		retries: 1,
       });
 
       // 判断 resp 和 resp.data 是否存在
@@ -313,7 +323,9 @@ export default class BahamutSource extends BaseSource {
         return true;
       }
 
-      return bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle);
+      // 优先匹配主标题，若失败则继续在别名池中进行匹配兜底
+      return bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle) || 
+             (Array.isArray(item.aliases) && item.aliases.some(alias => bahamutTitleMatches(alias, queryTitle, usedSearchTitle)));
     });
 
     // 记录替换前的原始标题，作为别名传递给合并工具进行比对

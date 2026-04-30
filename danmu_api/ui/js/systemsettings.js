@@ -345,8 +345,8 @@ async function checkDeployPlatformConfig() {
             missingVars.push('DEPLOY_PLATFROM_TOKEN');
         }
         
-        // 对于netlify和cloudflare部署平台，还需要检查DEPLOY_PLATFROM_ACCOUNT
-        if (deployPlatform.toLowerCase() === 'netlify' || deployPlatform.toLowerCase() === 'cloudflare') {
+        // 对于需要账号ID的部署平台，还需要检查DEPLOY_PLATFROM_ACCOUNT
+        if (['netlify', 'cloudflare', 'huggingface'].includes(deployPlatform.toLowerCase())) {
             if (!deployPlatformAccount || deployPlatformAccount.trim() === '') {
                 missingVars.push('DEPLOY_PLATFROM_ACCOUNT');
             }
