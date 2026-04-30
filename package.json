@@ -6,14 +6,17 @@
   "main": "danmu_api/server.js",
   "scripts": {
     "start": "node danmu_api/server.js",
-    "build-forward-widget": "node build-forward-widget.js"
+    "build": "echo 'Build completed'"
   },
   "author": "",
   "license": "ISC",
-  "dependencies": {"@upstash/redis": "^1.34.0"
+  "dependencies": {
+    "@upstash/redis": "^1.34.0"
+  },
+  "devDependencies": {
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "esbuild": "^0.25.10",
+    "esbuild": "^20.15.10",
     "https-proxy-agent": "^7.0.6",
     "node-fetch": "^3.3.2",
     "pako": "^2.1.0",
