@@ -7,6 +7,7 @@ import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
 import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
+import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
@@ -29,7 +30,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   const method = req.method;
 
   //  Bangumi Data 辅助函数，用于判断数据更新
-  const isDataDependentRequest = path.includes('/search') || path.includes('/match');
+  const isDataDependentRequest = path.includes('/search') || path.includes('/match') || path.includes('/danmaku');
 
   if (globals.useBangumiData) {
       await initBangumiData(deployPlatform, isDataDependentRequest, ctx);
@@ -75,7 +76,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
 
-  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
+  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment", "danmaku"];
 
   const firstPart = parts[0] || "";
   const isDefaultToken = globals.token === "87654321";
@@ -103,6 +104,8 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     '/api/v2/search/anime',
     '/api/v2/match',
     '/api/v2/search/episodes',
+    '/api/v2/fongmi/danmaku',
+    '/danmaku',
     '/api/v2/bangumi',
     '/api/v2/comment',
     '/api/v2/segmentcomment'
@@ -231,6 +234,13 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     path = "/" + parts.slice(1).join("/");
   }
 
+  // 兼容部分客户端将自定义弹幕短地址再次拼接官方完整路径的情况
+  // 例如: /danmaku/api/v2/fongmi/danmaku?name=...&episode=...
+  if (path.endsWith("/danmaku/api/v2/fongmi/danmaku")) {
+    log("info", `[Path Fix] Collapsed nested danmaku path: "${path}" -> "/danmaku"`);
+    path = "/danmaku";
+  }
+
   // GET /api/config - 获取配置信息 (需要 token)
   if (path === "/api/config" && method === "GET") {
     return handleConfig(true); // 有权限
@@ -244,7 +254,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   log("info", path);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
-  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') 
+  if (path !== "/" && path !== "/danmaku" && path !== "/api/logs" && !path.startsWith('/api/env') 
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/ai')) {
@@ -305,6 +315,16 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // GET /api/v2/search/episodes
   if (path === "/api/v2/search/episodes" && method === "GET") {
     return searchEpisodes(url);
+  }
+
+  // GET|POST /api/v2/fongmi/danmaku
+  if (path === "/api/v2/fongmi/danmaku" && (method === "GET" || method === "POST")) {
+    return getFongmiDanmaku(url, req);
+  }
+
+  // GET|POST /danmaku
+  if (path === "/danmaku" && (method === "GET" || method === "POST")) {
+    return getFongmiDanmaku(url, req);
   }
 
   // GET /api/v2/match
