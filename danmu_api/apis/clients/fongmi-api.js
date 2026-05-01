@@ -2,12 +2,27 @@ import { globals } from "../../configs/globals.js";
 import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
-import { extractEpisodeTitle, extractEpisodeNumberFromTitle, normalizeSpaces } from "../../utils/common-util.js";
+import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, normalizeSpaces } from "../../utils/common-util.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 
 // =====================
 // FongMi 弹幕接口适配
 // =====================
+
+const FONGMI_TITLE_CLEAN_RULES = [
+  [/[\(\[（【]\s*(19|20)\d{2}\s*[\)\]）】]/g, " "],
+  [/\b(19|20)\d{2}\b/g, " "],
+  [/\b(?:2160p|1080p|720p|4k|web-?dl|web-?rip|blu-?ray|hdr|dv|x265|x264|h\.?265|h\.?264|60fps)\b/gi, " "],
+  [/[_.-]+/g, " "]
+];
+
+const FONGMI_EPISODE_CLEAN_RULES = [
+  [/\[[^\]]*\]/g, " "],
+  [/[【（(][^】）)]*[】）)]/g, " "],
+  [/\.(mp4|mkv|avi|rmvb|ts|flv|mov|m4v)$/gi, " "],
+  [/\b(?:2160p|1080p|720p|4k|web-?dl|web-?rip|blu-?ray|hdr|dv|x265|x264|h\.?265|h\.?264|60fps|aac|flac|dts)\b/gi, " "],
+  [/[_~.-]+/g, " "]
+];
 
 /**
  * 规范化 FongMi 传入文本，统一大小写、空格和简繁体。
@@ -44,9 +59,11 @@ function extractDateDigits(value) {
  * @returns {string} 预处理后的标题
  */
 function normalizeFongmiTitleByRegex(name) {
-  return String(name || "")
-    .replace(/[\(\[（【]\s*(19|20)\d{2}\s*[\)\]）】]/g, " ")
-    .replace(/\b(19|20)\d{2}\b/g, " ");
+  let text = String(name || "");
+  FONGMI_TITLE_CLEAN_RULES.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  return text;
 }
 
 /**
@@ -56,7 +73,45 @@ function normalizeFongmiTitleByRegex(name) {
  * @returns {string} 预处理后的集数文本
  */
 function normalizeFongmiEpisodeByRegex(episode) {
-  return String(episode || "");
+  let text = String(episode || "");
+  FONGMI_EPISODE_CLEAN_RULES.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  return normalizeSpaces(text);
+}
+
+/**
+ * 从 FongMi 集数文本中提取更稳健的集数。
+ * 除了复用公共提取逻辑外，再补充网盘命名常见格式。
+ * @param {string} episode 原始集数文本
+ * @returns {number|null} 集数，未提取到则返回 null
+ */
+function extractFongmiEpisodeNumber(episode) {
+  const normalizedEpisode = normalizeFongmiEpisodeByRegex(episode);
+  const commonNum = extractEpisodeNumberFromTitle(normalizedEpisode);
+  if (commonNum !== null) return commonNum;
+
+  const seasonEpisodeMatch = normalizedEpisode.match(/S\d{1,2}\s*E(\d{1,4})/i);
+  if (seasonEpisodeMatch) {
+    return parseInt(seasonEpisodeMatch[1], 10);
+  }
+
+  const chineseEpisodeMatch = normalizedEpisode.match(/第\s*([一二三四五六七八九十百零〇两\d]+)\s*(?:集|话|期|回|章)/);
+  if (chineseEpisodeMatch) {
+    return convertChineseNumber(chineseEpisodeMatch[1]);
+  }
+
+  const xEpisodeMatch = normalizedEpisode.match(/(?:^|\s)(\d{1,4})x(?:\s|$)/i);
+  if (xEpisodeMatch) {
+    return parseInt(xEpisodeMatch[1], 10);
+  }
+
+  const standaloneEpisodeMatch = normalizedEpisode.match(/(?:^|\s)(\d{1,4})(?:\s|$)/);
+  if (standaloneEpisodeMatch) {
+    return parseInt(standaloneEpisodeMatch[1], 10);
+  }
+
+  return null;
 }
 
 /**
@@ -81,6 +136,11 @@ function buildFongmiSearchKeywords(name) {
   const cleanedName = normalizeSpaces(normalizeFongmiTitleByRegex(rawName)).trim();
   if (cleanedName && cleanedName !== rawName) {
     pushKeyword(cleanedName);
+  }
+
+  const plainBracketName = normalizeSpaces(rawName.replace(/[\(\[（【].*$/, "")).trim();
+  if (plainBracketName && plainBracketName !== rawName) {
+    pushKeyword(plainBracketName);
   }
 
   return keywords.sort((a, b) => a.length - b.length);
@@ -196,8 +256,8 @@ function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
   if (episodeText.includes(targetText) || targetText.includes(episodeText)) score += 4500;
   if (titleWithoutPlatform && (titleWithoutPlatform.includes(targetText) || targetText.includes(titleWithoutPlatform))) score += 2500;
 
-  const targetNum = extractEpisodeNumberFromTitle(normalizedTargetEpisode);
-  const episodeNum = extractEpisodeNumberFromTitle(episodeTitle);
+  const targetNum = extractFongmiEpisodeNumber(normalizedTargetEpisode);
+  const episodeNum = extractFongmiEpisodeNumber(episodeTitle);
   const episodeIndexNum = parseInt(episode?.episodeNumber || `${index + 1}`, 10);
   if (targetNum !== null && episodeNum !== null && targetNum === episodeNum) score += 7000;
   if (targetNum !== null && Number.isFinite(episodeIndexNum) && targetNum === episodeIndexNum) score += 4000;
@@ -205,6 +265,9 @@ function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
   const targetDate = extractDateDigits(normalizedTargetEpisode);
   const episodeDate = extractDateDigits(episodeTitle);
   if (targetDate && episodeDate && targetDate === episodeDate) score += 9000;
+
+  if (targetDate && targetText.includes(targetDate)) score += 800;
+  if (animeText.includes("综艺") && targetDate && episodeDate) score += 1200;
 
   if (animeText.includes("综艺") && targetDate && !episodeDate && targetNum === null) score -= 1500;
 
