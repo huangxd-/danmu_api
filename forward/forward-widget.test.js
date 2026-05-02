@@ -259,7 +259,7 @@ async function testNewFlow() {
       // title: "https://www.bilibili.com/bangumi/play/ep1231564",
       // title: "https://www.bilibili.com/video/av170001?p=2",
       // title: "https://www.bilibili.com/video/BV17x411w7KC?p=3",
-      title: '绿野仙踪',
+      title: '寻秦记',
       ...commonParams,
     });
     if (verbose) {

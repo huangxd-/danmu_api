@@ -75,7 +75,7 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
               if (result.errors.length === 0) {
                 let outputContent = fs.readFileSync('dist/logvar-danmu.js', 'utf8');
                 
-                // // 更通用的模式，匹配包含这四个函数名的导出语句
+                // 更通用的模式，匹配包含这四个函数名的导出语句
                 const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
                 outputContent = outputContent.replace(genericExportPattern, '');
 
@@ -86,6 +86,9 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
                 // 删除本地redis相关
                 outputContent = outputContent.replace(/.*setLocalRedisKey.*\n?/g, '\n');
                 outputContent = outputContent.replace(/.*updateLocalRedisCaches.*\n?/g, '\n');
+
+                // 删除包含 bangumi-data-util.js 关键字的行
+                outputContent = outputContent.replace(/.*bangumi-data-util\.js.*\n?/g, '');
                 
                 // 保存修改后的内容
                 fs.writeFileSync('dist/logvar-danmu.js', outputContent);
