@@ -25,10 +25,3 @@ jobs:
 
       - name: Push to your fork
         run: git push origin main
-
-      # 步骤 3：【保险丝】额外调用 Vercel Deploy Hook 强制触发部署
-      # 只有当你配置了 VERCEL_DEPLOY_HOOK 变量时才会执行
-      - name: Trigger Vercel Deploy Hook (Optional)
-        if: ${{ vars.VERCEL_DEPLOY_HOOK }}
-        run: |
-          curl -X POST "${{ vars.VERCEL_DEPLOY_HOOK }}"
