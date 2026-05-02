@@ -9,6 +9,7 @@ on:
 jobs:
   sync-to-huggingface:
     runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_HF_SYNC == 'true' }}
 
     steps:
       - name: Checkout repository
