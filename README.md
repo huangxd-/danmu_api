@@ -59,6 +59,8 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
   - `POST /api/v2/segmentcomment?format=json`：通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
+  - `GET /api/v2/fongmi/danmaku?name={name}&episode={episode}`：FengMi影视api。
+  - `GET /danmaku/api/v2/fongmi/danmaku?name={name}&episode={episode}`：兼容FengMi影视api短路径。
 - **弹幕格式输出**：支持 JSON 和 XML 两种格式输出，通过以下方式配置：
   - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml`（默认：json）
   - 查询参数：`?format=xml` 或 `?format=json`（优先级最高）
@@ -328,7 +330,7 @@ LogVar 弹幕 API 服务器
   > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`https://{account}-{space}.hf.space/api/v2/search/anime?keyword=子夜归`
 
 ## API食用指南
-支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer/peekpili 等支持弹幕API的播放器。
+支持 forward/senplayer/hills/小幻/yamby/eplayerx/afusekt/uz影视/dscloud/lenna/danmaku-anywhere/omnibox/ChaiChaiEmbyTV/moontv/capyplayer/kerkerker/LinPlayer/peekpili/FengMi影视 等支持弹幕API的播放器。
 
 配合 dd-danmaku 扩展新增对 Emby Web 端弹幕的支持，具体使用方法参考 [PR #98](https://github.com/huangxd-/danmu_api/pull/98) 。
 
