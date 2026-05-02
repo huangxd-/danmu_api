@@ -1,39 +1,30 @@
-name: Auto Sync & Deploy to Vercel
+name: Sync and Deploy
 
 on:
-  # 1. 定时触发：每 10 分钟检查一次
   schedule:
     - cron: '*/10 * * * *'
-  # 2. 手动触发：方便你在 GitHub 上点击按钮测试
   workflow_dispatch:
 
 jobs:
   sync-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      # 步骤 1：拉取上游作者 (xy9420) 仓库的最新代码
-      - name: Checkout upstream code
+      - name: Checkout your fork
         uses: actions/checkout@v4
         with:
-          repository: xy9420/danmu_api
-          ref: 'main'           # 拉取 main 分支
-          path: upstream_code   # 存放到临时文件夹 upstream_code
-          fetch-depth: 0        # 拉取完整 Git 历史
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      # 步骤 2：将拉取到的代码推送到你的“部署仓库”，从而触发 Vercel 更新
-      - name: Push to your deploy repo
-        env:
-          # 组装带有 Token 的远程仓库地址，用于推送
-          DEPLOY_REPO: https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/${{ github.repository_owner }}/danmu_api_deploy.git
+      - name: Add upstream and merge
         run: |
-          cd upstream_code
-          # 配置 Git 用户信息（用于提交）
-          git config user.name "Auto-Sync Bot"
-          git config user.email "bot@github-actions.com"
-          # 添加你的部署仓库为远程别名
-          git remote add deploy "$DEPLOY_REPO"
-          # 强制推送代码到部署仓库的 main 分支（该操作会触发 Vercel 部署）
-          git push deploy HEAD:main --force
+          git remote add upstream https://github.com/huangxd-/danmu_api.git
+          git fetch upstream
+          git checkout main
+          git merge upstream/main --allow-unrelated-histories -X theirs --no-edit
+
+      - name: Push to your fork
+        run: git push origin main
 
       # 步骤 3：【保险丝】额外调用 Vercel Deploy Hook 强制触发部署
       # 只有当你配置了 VERCEL_DEPLOY_HOOK 变量时才会执行
