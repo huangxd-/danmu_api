@@ -1,0 +1,27 @@
+name: Sync and Deploy
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout your fork
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Add upstream and merge
+        run: |
+          git remote add upstream https://github.com/huangxd-/danmu_api.git
+          git fetch upstream
+          git checkout main
+          git merge upstream/main --allow-unrelated-histories -X theirs --no-edit
+
+      - name: Push to your fork
+        run: git push origin main
