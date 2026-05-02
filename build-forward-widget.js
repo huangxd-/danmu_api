@@ -20,6 +20,7 @@ const uiModules = [
   './ui/js/pushdanmu.js',
   './ui/js/systemsettings.js',
   './utils/local-redis-util.js',
+  './utils/bangumi-data-util.js',
   'danmu_api/ui/template.js',
   'danmu_api/ui/css/base.css.js',
   'danmu_api/ui/css/components.css.js',
@@ -31,7 +32,8 @@ const uiModules = [
   'danmu_api/ui/js/apitest.js',
   'danmu_api/ui/js/pushdanmu.js',
   'danmu_api/ui/js/systemsettings.js',
-  'danmu_api/utils/local-redis-util.js'
+  'danmu_api/utils/local-redis-util.js',
+  'danmu_api/utils/bangumi-data-util.js'
 ];
 
 let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8');
@@ -47,14 +49,18 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
       target: 'es2020',
       outfile: 'dist/logvar-danmu.js',
       format: 'esm', // 保持ES模块格式
-      external: ['redis'],
+      external: ['redis', 'fs', 'path', 'stream/promises', 'node-fetch'],
       plugins: [
         // 插件：排除UI相关模块
         {
           name: 'exclude-ui-modules',
           setup(build) {
             // 拦截对UI相关模块的导入
-            build.onResolve({ filter: /.*ui.*\.(css|js)$|.*template\.js$|.*local-redis-util\.js$/ }, (args) => {
+            build.onResolve({ filter: /.*ui.*\.(css|js)$|.*template\.js$|.*local-redis-util\.js$|.*bangumi-data-util\.js$/ }, (args) => {
+              // 直接匹配 bangumi-data-util.js 和 local-redis-util.js
+              if (args.path.includes('bangumi-data-util.js') || args.path.includes('local-redis-util.js')) {
+                return { path: args.path, external: true };
+              }
               if (uiModules.some(uiModule => args.path.includes(uiModule.replace('./', '').replace('../', '')))) {
                 return { path: args.path, external: true };
               }
