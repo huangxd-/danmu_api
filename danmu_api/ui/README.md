@@ -162,8 +162,33 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 | Netlify | ✅ | ✅ | ✅ |
 | EdgeOne | ❌ | ✅ | ✅ |
 | Cloudflare | ✅ | ✅ | ✅ |
+| Hugging Face Spaces | ✅ | ✅ | ✅ |
 | Node.js | ❌ | ❌ | ❌ |
 | Docker | ❌ | ❌ | ❌ |
+
+---
+
+### 5. Hugging Face Spaces 平台
+
+#### 需要的变量
+- `DEPLOY_PLATFROM_ACCOUNT`: Hugging Face 用户名或组织名
+- `DEPLOY_PLATFROM_PROJECT`: Space 名称
+- `DEPLOY_PLATFROM_TOKEN`: User Access Token
+
+#### 获取步骤
+
+**获取 Account 与 Space 名称**
+
+1. 打开你的 Hugging Face Space 页面
+2. Space 地址格式为 `https://huggingface.co/spaces/{account}/{space}`
+3. `{account}` 填入 `DEPLOY_PLATFROM_ACCOUNT`，`{space}` 填入 `DEPLOY_PLATFROM_PROJECT`
+
+**获取 User Access Token (`DEPLOY_PLATFROM_TOKEN`)**
+
+1. 登录 [Hugging Face Access Tokens](https://huggingface.co/settings/tokens)
+2. 创建 Fine-grained token 或 Write token
+3. 如果使用 Fine-grained token，请授予目标 Space 的写入权限
+4. **立即复制并保存** Token(只显示一次)
 
 ---
 

@@ -523,7 +523,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
 
 }
 
-function filterSameEpisodeTitle(filteredTmpEpisodes) {
+export function filterSameEpisodeTitle(filteredTmpEpisodes) {
     const filteredEpisodes = filteredTmpEpisodes.filter((episode, index, episodes) => {
         // 查找当前 episode 标题是否在之前的 episodes 中出现过
         return !episodes.slice(0, index).some(prevEpisode => {
@@ -726,7 +726,7 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
   }
 }
 
-function getBangumiDataForMatch(anime, detailStore = null) {
+export function getBangumiDataForMatch(anime, detailStore = null) {
   const detailAnime =
     resolveAnimeByIdFromDetailStore(anime?.bangumiId, detailStore, anime?.source) ||
     resolveAnimeByIdFromDetailStore(anime?.animeId, detailStore, anime?.source);
