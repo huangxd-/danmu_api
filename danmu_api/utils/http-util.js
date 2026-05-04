@@ -348,7 +348,7 @@ export async function httpPost(url, body, options = {}) {
 async function httpRequestMethod(method, url, body, options = {}) {
   log("info", `[请求模拟] HTTP ${method}: ${url}`);
 
-  const { headers = {}, params, allow_redirects = true } = options;
+  const { headers = {} } = options;
 
   const fetchOptions = {
     method,
@@ -358,6 +358,10 @@ async function httpRequestMethod(method, url, body, options = {}) {
   // 只有在 body 存在时才设置（DELETE 通常无 body）
   if (body !== undefined && body !== null) {
     fetchOptions.body = body;
+  }
+
+  if (options.body !== undefined && options.body !== null) {
+    fetchOptions.body = options.body;
   }
 
   // 如果传递了 signal，直接透传给 fetch

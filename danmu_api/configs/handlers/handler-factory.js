@@ -16,6 +16,9 @@ export class HandlerFactory {
       case 'edgeone':
         const { EdgeoneHandler } = await import('./edgeone-handler.js');
         return new EdgeoneHandler();
+      case 'huggingface':
+        const { HuggingfaceHandler } = await import('./huggingface-handler.js');
+        return new HuggingfaceHandler();
       case 'node':
         const { NodeHandler } = await import(['./node-handler', '.js'].join(''));
         return new NodeHandler();
@@ -30,6 +33,6 @@ export class HandlerFactory {
    * 获取所有支持的平台列表
    */
   static getSupportedPlatforms() {
-    return ['cloudflare', 'vercel', 'netlify', 'edgeone', 'node'];
+    return ['cloudflare', 'vercel', 'netlify', 'edgeone', 'huggingface', 'node'];
   }
 }
