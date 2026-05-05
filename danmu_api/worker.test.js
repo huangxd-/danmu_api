@@ -180,6 +180,31 @@ test('worker.js API endpoints', async (t) => {
     });
   });
 
+  await t.test('BilibiliSource should resolve b23.tv short links from redirect location', async () => {
+    Globals.init({});
+    const source = new BilibiliSource();
+    const shortUrl = 'https://b23.tv/BV1GJ411x7h7';
+    const targetUrl = 'https://www.bilibili.com/video/BV1GJ411x7h7';
+    let seenRedirectMode;
+
+    await withMockFetch(async (url, options) => {
+      assert.equal(url, shortUrl);
+      seenRedirectMode = options.redirect;
+      return {
+        ok: false,
+        status: 302,
+        url: shortUrl,
+        headers: new Headers({ location: targetUrl }),
+        text: async () => '',
+      };
+    }, async () => {
+      const resolvedUrl = await source.resolveB23Link(shortUrl);
+      assert.equal(resolvedUrl, targetUrl);
+    });
+
+    assert.equal(seenRedirectMode, 'manual');
+  });
+
   // 测试标题解析
   await t.test('PARSE TitleSeasonEpisode', async () => {
     let title, season, episode;

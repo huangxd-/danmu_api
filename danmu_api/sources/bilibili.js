@@ -31,28 +31,27 @@ export default class BilibiliSource extends BaseSource {
 
   // 解析 b23.tv 短链接
   async resolveB23Link(shortUrl) {
+    let timeoutId;
     try {
       log("info", `正在解析 b23.tv 短链接: ${shortUrl}`);
 
-      // 设置超时时间（默认5秒）
-      const timeout = parseInt(globals.vodRequestTimeout);
+      // b23.tv 第一跳会在 Location 中给出真实 B 站地址。
+      // 只读取第一跳，避免继续访问最终页面时被 B 站页面风控返回 412。
+      const timeout = parseInt(globals.vodRequestTimeout || '5000', 10) || 5000;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      // 使用原生 fetch 获取重定向后的 URL
-      // fetch 默认会自动跟踪重定向，response.url 会是最终的 URL
-      const response = await httpGet(shortUrl, {
+      timeoutId = setTimeout(() => controller.abort(), timeout);
+      const fetchFn = typeof fetch === 'function' ? fetch : (await import('node-fetch')).default;
+      const response = await fetchFn(shortUrl, {
+        method: 'GET',
         headers: {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         },
         signal: controller.signal,
-        redirect: 'follow'
+        redirect: 'manual'
       });
 
-      clearTimeout(timeoutId);
-
-      // 获取最终的 URL（重定向后的 URL）
-      const finalUrl = response.url;
+      const location = response.headers?.get?.('location') || response.headers?.get?.('Location');
+      const finalUrl = location ? new URL(location, shortUrl).toString() : response.url;
       if (finalUrl && finalUrl !== shortUrl) {
         log("info", `b23.tv 短链接已解析为: ${finalUrl}`);
         return finalUrl;
@@ -63,6 +62,8 @@ export default class BilibiliSource extends BaseSource {
     } catch (error) {
       log("error", "解析 b23.tv 短链接失败:", error);
       return shortUrl; // 如果出错，返回原 URL
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
