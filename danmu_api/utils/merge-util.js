@@ -1981,17 +1981,31 @@ async function processMergeTask(params) {
 
             // 1. 提取共识集数差 (Consensus Shift)
             const shiftCounts = new Map();
+            let lastPNum = null;
             filteredMLinksWithIndex.forEach((sItem, k) => {
                 const pItem = filteredPLinksWithIndex[k + offset];
                 if (!pItem) return;
 
-                const infoP = extractEpisodeInfo(getTempTitle(pItem.link.title || pItem.link.name, redundantP), currentPrimarySource);
-                const infoS = extractEpisodeInfo(getTempTitle(sItem.link.title || sItem.link.name, redundantS), secSource);
+                const titleP = getTempTitle(pItem.link.title || pItem.link.name, redundantP);
+                const titleS = getTempTitle(sItem.link.title || sItem.link.name, redundantS);
+                const infoP = extractEpisodeInfo(titleP, currentPrimarySource);
+                const infoS = extractEpisodeInfo(titleS, secSource);
 
-                if (infoP.num !== null && infoS.num !== null && !infoP.isSpecial && !infoS.isSpecial) {
-                    const diff = infoP.num - infoS.num;
-                    shiftCounts.set(diff, (shiftCounts.get(diff) || 0) + 1);
+                if (infoP.num === null || infoS.num === null || isBroadSpecial(infoP) || isBroadSpecial(infoS)) return;
+
+                const diff = infoP.num - infoS.num;
+                const sim = calculateSimilarity(cleanEpisodeText(titleP), cleanEpisodeText(titleS));
+
+                // 权重计算: 基础(1.0) + 文本奖励(1.0) 
+                let weight = 1.0 + (sim > 0.45 ? 1.0 : 0);
+                // 断层惩罚：检测到主源正片跳集 (防异构/占位区污染)
+                if (lastPNum !== null && (infoP.num - lastPNum > 1)) {
+                    weight = 0.1;
+                } else {
+                    lastPNum = infoP.num; // 未断层则更新游标
                 }
+
+                shiftCounts.set(diff, (shiftCounts.get(diff) || 0) + weight);
             });
             const consensusShift = shiftCounts.size > 0 
                 ? [...shiftCounts.entries()].reduce((max, curr) => curr[1] > max[1] ? curr : max)[0] 
@@ -2634,7 +2648,11 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     if (item._isMerged || globalConsumedIds.has(item.animeId)) curAnimes.splice(i, 1);
   }
 
-  log("info", `[Merge] 合并执行完毕，最终列表数量: ${curAnimes.length}`);
+  if (newMergedAnimes.length > 0) {
+      log("info", `[Merge] 合并执行完毕，新增了 ${newMergedAnimes.length} 个合并项，最终列表数量: ${curAnimes.length}`);
+  } else {
+      log("info", `[Merge] 扫描完毕，未产生任何合并，列表保持不变 (数量: ${curAnimes.length})`);
+  }
 }
 
 /**
