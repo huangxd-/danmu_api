@@ -37,9 +37,9 @@ export default class AnimekoSource extends BaseSource {
    */
   async search(keyword) {
     if (globals.useBangumiData) {
-      const localMatches = searchBangumiData(keyword, ['bangumi']);
+      const localMatches = await searchBangumiData(keyword, ['bangumi']);
       if (localMatches.length > 0) {
-        log("info", `[Animeko] Bangumi-Data 命中 ${localMatches.length} 条数据`);
+        log("info", `[Animeko] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
         return this.transformResults(localMatches.map(m => {
           const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
           const finalTitle = displayTitle + (m.titleSuffix || '');
