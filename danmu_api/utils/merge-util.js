@@ -508,6 +508,7 @@ function calculateSimilarity(str1, str2) {
   if (!str1 || !str2) return 0;
   const s1 = cleanTitleForSimilarity(str1);
   const s2 = cleanTitleForSimilarity(str2);
+  if (s1 === '' && s2 === '') return 0.0;
   if (s1 === s2) return 1.0;
   const len1 = s1.length, len2 = s2.length;
   const maxLen = Math.max(len1, len2), minLen = Math.min(len1, len2);
@@ -1411,6 +1412,7 @@ function findBestAlignmentOffset(primaryLinks, secondaryLinks, seriesLangA = 'Un
     let totalTextScore = 0, rawTextScoreSum = 0, matchCount = 0;
     let numericDiffs = new Map();
     let hasSeasonShiftMatch = false;
+    let lastPNumLocal = null;
 
     for (let i = 0; i < secondaryLinks.length; i++) {
       const pIndex = i + offset;
@@ -1453,10 +1455,23 @@ function findBestAlignmentOffset(primaryLinks, secondaryLinks, seriesLangA = 'Un
         rawTextScoreSum += sim;
         if (infoA.num !== null && infoB.num !== null && infoA.num === infoB.num) pairScore += MergeWeights.EP_ALIGN.NUMERIC_MATCH; 
 
+        let weightMultiplier = 1.0;
+        if (infoA.num !== null && !infoA.isSpecial) {
+            if (lastPNumLocal !== null && (infoA.num - lastPNumLocal > 1)) {
+                weightMultiplier = 0.1;
+            } else {
+                lastPNumLocal = infoA.num;
+            }
+        }
+
+        pairScore *= weightMultiplier;
+        sim *= weightMultiplier;
+
+        rawTextScoreSum += sim;
         totalTextScore += pairScore;
         if (infoA.num !== null && infoB.num !== null) {
             const diffKey = (infoB.num - infoA.num).toFixed(4);
-            numericDiffs.set(diffKey, (numericDiffs.get(diffKey) || 0) + 1);
+            numericDiffs.set(diffKey, (numericDiffs.get(diffKey) || 0) + weightMultiplier);
         }
         matchCount++;
       }
@@ -2417,6 +2432,9 @@ function detectCollectionCandidates(curAnimes) {
  * @returns {Promise<void>}
  */
 export async function applyMergeLogic(curAnimes, detailStore = null) {
+  if (!curAnimes || curAnimes.length < 2) {
+    return;
+  }
   const groups = globals.mergeSourcePairs; 
   if (!groups || groups.length === 0) return;
 
@@ -2585,7 +2603,9 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
        items.forEach(item => remainingCandidates.push(item));
     });
 
-    if (remainingCandidates.length > 0) {
+    const uniqueRemainingSources = new Set(remainingCandidates.map(a => a.source));
+
+    if (remainingCandidates.length > 0 && uniqueRemainingSources.size >= 2) {
         log("info", `[Merge] [Phase 2] 启动标准回退匹配: 剩余 ${remainingCandidates.length} 个资源。`);
         sortCandidates(remainingCandidates, "Phase 2");
 

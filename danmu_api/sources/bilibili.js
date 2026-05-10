@@ -288,7 +288,7 @@ export default class BilibiliSource extends BaseSource {
     let localMatches = [];
     if (globals.useBangumiData) {
       // 获取本地匹配条目
-      localMatches = searchBangumiData(keyword, [
+      localMatches = await searchBangumiData(keyword, [
         'bilibili', 'bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw'
       ]);
       log("info", `[Bilibili] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
@@ -321,15 +321,14 @@ export default class BilibiliSource extends BaseSource {
       const seenIds = new Set();
       const consumedLocalMdIds = new Set();
 
-      // 处理网络结果：对齐本地数据进行信息增强
+      // 对齐 Bangumi Data 进行信息强化
       for (const item of networkResults) {
         if (!item || (!item.mediaId && !item.season_id)) continue;
 
-        // 对齐逻辑：优先匹配 mdId，其次匹配原名
-        const matchedLocal = localMatches.find(m => 
-            (item.mdId && item.mdId === `md${m.siteId}`) || 
-            (item.org_title && m.title === item.org_title)
-        );
+        // 对齐逻辑：优先精准匹配 mdId，其次降级匹配原名
+        const matchedLocal = 
+            localMatches.find(m => item.mdId && item.mdId === `md${m.siteId}`) || 
+            localMatches.find(m => item.org_title && m.title === item.org_title);
 
         if (matchedLocal) {
             const displayTitle = matchedLocal.titles.find(t => t && t.includes(keyword)) || matchedLocal.titles[1] || matchedLocal.title;

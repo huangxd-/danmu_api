@@ -12,7 +12,7 @@ import MangoSource from "./mango.js";
 import BilibiliSource from "./bilibili.js";
 import YoukuSource from "./youku.js";
 import BahamutSource from "./bahamut.js";
-import { titleMatches, getExplicitSeasonNumber } from "../utils/common-util.js";
+import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
 const tencentSource = new TencentSource();
@@ -37,7 +37,7 @@ export default class DandanSource extends BaseSource {
    */
   async search(keyword, isFallback = false) {
     if (globals.useBangumiData && !isFallback) {
-      const localMatches = searchBangumiData(keyword, ['anidb']);
+      const localMatches = await searchBangumiData(keyword, ['anidb']);
       if (localMatches.length > 0) {
         log("info", `[Dandan] Bangumi-Data 本地命中 ${localMatches.length} 条数据`);
         return localMatches.map(m => {
@@ -314,8 +314,30 @@ export default class DandanSource extends BaseSource {
     const existingIds = new Set();
     const queue = [];
 
-    // 初始化任务队列与去重池：将所有初始搜索结果载入队列，标记为非相关作品
-    for (const anime of sourceAnimes) {
+    // 提取搜索词中的明确季度信息
+    const querySeason = getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查初始结果中是否已包含匹配项
+    let matchedAnimes = sourceAnimes;
+    let isTargetFoundInInitial = false;
+
+    if (querySeason !== null) {
+      const filtered = sourceAnimes.filter(anime => {
+        const titleToCheck = anime._displayTitle || anime.animeTitle;
+        const s = extractSeasonNumberFromAnimeTitle(titleToCheck).season;
+        return s === querySeason || (querySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (filtered.length > 0) {
+        matchedAnimes = filtered;
+        isTargetFoundInInitial = true;
+        log("info", `[Dandan] 结果已命中目标季(第${querySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    // 初始化任务队列与去重池：将筛选后的条目载入队列，标记为非相关作品
+    for (const anime of matchedAnimes) {
       existingIds.add(anime.animeId);
       queue.push({ ...anime, isRelated: false });
     }
@@ -334,11 +356,14 @@ export default class DandanSource extends BaseSource {
           // 计算当前作品标题与用户原始搜索词的相似度
           const similarity = this.calculateSimilarity(queryTitle, anime.animeTitle);
 
+          // 关联挖掘控制逻辑：仅当用户未指定明确季度，或者初始扫描未命中目标季度时，才执行相关作品的深度展开
+          const canExpandRelateds = !isTargetFoundInInitial;
+
           // 相似度高于10%时，对每个关联作品单独判断是否符合展开条件：
           // 关联作品标题含季度信息（避免范围发散），或初始搜索结果不少于25个（API25个结果上限，用相关作品突破）
-          if (similarity >= 0.1 && details.relateds && Array.isArray(details.relateds)) {
+          if (similarity >= 0.1 && details.relateds && Array.isArray(details.relateds) && canExpandRelateds) {
             for (const rel of details.relateds) {
-              const hasSeason = getExplicitSeasonNumber(rel.animeTitle) !== null;
+              const hasSeason = extractSeasonNumberFromAnimeTitle(rel.animeTitle).season !== null;
               if (!existingIds.has(rel.animeId) && (hasSeason || initialCount >= 25)) {
                 existingIds.add(rel.animeId);
                 queue.push({
