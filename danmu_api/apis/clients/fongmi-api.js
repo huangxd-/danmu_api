@@ -4,6 +4,7 @@ import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
 import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, normalizeSpaces } from "../../utils/common-util.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
+import { selectFongmiCandidateByAi } from "./fongmi-ai-match.js";
 
 // =====================
 // FongMi 弹幕接口适配
@@ -326,6 +327,7 @@ export async function getFongmiDanmaku(url, req) {
   const detailStore = new Map();
   const keywords = buildFongmiSearchKeywords(name);
   let animes = [];
+  let matchedKeyword = name;
 
   for (const keyword of keywords) {
     searchUrl.searchParams.set("keyword", keyword);
@@ -333,6 +335,7 @@ export async function getFongmiDanmaku(url, req) {
     const searchData = await searchRes.json();
     animes = Array.isArray(searchData?.animes) ? searchData.animes : [];
     if (animes.length) {
+      matchedKeyword = keyword;
       if (keyword !== name) {
         log("info", `[Fongmi] Search fallback hit: raw=${name}, keyword=${keyword}, episode=${episode}`);
       }
@@ -346,12 +349,18 @@ export async function getFongmiDanmaku(url, req) {
   }
 
   const apiBase = buildFongmiApiBase(req);
-  const candidates = buildFongmiDanmakuItems(animes, detailStore, apiBase)
+  let candidates = buildFongmiDanmakuItems(animes, detailStore, apiBase)
     .map(item => ({
       ...item,
       score: scoreFongmiEpisodeMatch(item.anime, item.episode, episode, item.index)
     }))
     .sort((a, b) => b.score - a.score);
+
+  const selectedCandidate = await selectFongmiCandidateByAi(globals, name, episode, candidates, matchedKeyword);
+  if (selectedCandidate) {
+    candidates = [selectedCandidate, ...candidates.filter(candidate => candidate !== selectedCandidate)];
+    log("info", `[Fongmi] selected: ${selectedCandidate.anime.animeTitle} - ${selectedCandidate.episode.episodeTitle}`);
+  }
 
   const seen = new Set();
   const items = [];
