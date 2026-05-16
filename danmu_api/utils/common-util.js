@@ -260,9 +260,10 @@ export function getExplicitSeasonNumber(text) {
  * 标题匹配路由函数：支持严格模式，或 宽松模式下的"包含+相似度"混合策略
  * @param {string} title - 动漫标题
  * @param {string} query - 搜索关键词
+ * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-export function titleMatches(title, query) {
+export function titleMatches(title, query, parsedSeason = null) {
   // 策略1：严格模式仅允许头部或完全匹配
   if (globals.strictTitleMatch) return strictTitleMatch(title, query);
 
@@ -281,7 +282,7 @@ export function titleMatches(title, query) {
   if (qList.some(kw => t.includes(kw))) return true;
 
   // 季度特征校验 (针对策略3的宽松相似度，防止字符集混淆导致季度错乱)
-  const querySeason = getExplicitSeasonNumber(query);
+  const querySeason = parsedSeason !== null ? parsedSeason : getExplicitSeasonNumber(query);
   if (querySeason !== null) {
     const titleSeason = getExplicitSeasonNumber(title);
 

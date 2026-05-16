@@ -1780,7 +1780,7 @@ function fastCloneAnime(anime) {
 
 /**
  * 执行单个主源的合并任务
- * 包含：寻找匹配、ID生成、链接映射、集数补全、跨源合集时序接管、共识差精准对齐、番外专项制导
+ * 包含：寻找匹配、ID生成、链接映射、集数补全、跨源合集时序接管、共识差精准对齐、番外专项制导、原子化元数据合并
  * @param {Object} params - 任务参数对象
  * @returns {Promise<Anime|null>} 合并后的新对象或 null
  */
@@ -1797,14 +1797,20 @@ async function processMergeTask(params) {
         return null;
     }
 
-    const cachedPAnime = globals.animes.find(a => String(a.animeId) === String(pAnime.animeId));
-    if (!cachedPAnime?.links) {
+    // 以传入的最新对象为元数据基准进行克隆，确保包含数据流传递过程中的全量最新元数据
+    let derivedAnime = fastCloneAnime(pAnime);
+
+    if (!derivedAnime.links) {
+        const cachedPAnime = globals.animes.find(a => String(a.animeId) === String(pAnime.animeId));
+        derivedAnime.links = cachedPAnime?.links ? fastCloneAnime(cachedPAnime.links) : [];
+    }
+
+    if (!derivedAnime.links || derivedAnime.links.length === 0) {
          log("warn", `${logPrefix} 主源数据不完整，跳过: ${pAnime.animeTitle}`);
          return null;
     }
 
     const logTitleA = pAnime.animeTitle.replace(RegexStore.Clean.FROM_SUFFIX, '');
-    let derivedAnime = fastCloneAnime(cachedPAnime);
 
     const actualMergedSources = []; 
     const contentSignatureParts = [pAnime.animeId];
@@ -2168,6 +2174,24 @@ async function processMergeTask(params) {
                       link.url = mutation.newUrl;
                       link.title = mutation.newTitle;
                   }
+                  // 处理别名
+                  const getBaseTitle = (t) => {
+                      if (!t) return '';
+                      return t.replace(RegexStore.Clean.YEAR_TAG, '')
+                              .replace(RegexStore.Clean.SOURCE_TAG, '')
+                              .replace(RegexStore.Clean.FROM_SUFFIX, '')
+                              .trim();
+                  };
+
+                  const currentPrimaryBase = getBaseTitle(derivedAnime.animeTitle);
+
+                  derivedAnime.aliases = [...new Set([
+                      ...(derivedAnime.aliases || []),
+                      ...(derivedMatch.aliases || []),
+                      ...(match.aliases || []),
+                      getBaseTitle(derivedMatch.animeTitle)
+                  ])].filter(alias => alias && alias !== currentPrimaryBase);
+
                   log("info", `${logPrefix} 关联成功: [${currentPrimarySource}] ${logTitleA} <-> [${secSource}] ${logTitleB} (本次合并 ${mergedCount} 集)`);
                   if (mappingEntries.length > 0) {
                       mappingEntries.sort((a, b) => a.idx - b.idx);

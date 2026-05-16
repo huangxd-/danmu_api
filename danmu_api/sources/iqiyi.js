@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
-import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
@@ -644,13 +644,14 @@ export default class IqiyiSource extends BaseSource {
   }
 
   /**
-   * 处理搜索结果并格式化为 DanDanPlay 格式
-   * @param {Array} sourceAnimes - 搜索结果数组
-   * @param {string} queryTitle - 搜索关键词
-   * @param {Array} curAnimes - 当前动漫列表
-   * @returns {Promise<void>}
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map|null} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
    */
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -659,9 +660,26 @@ export default class IqiyiSource extends BaseSource {
       return [];
     }
 
-    const processIqiyiAnimes = await Promise.all(sourceAnimes
-      .filter(s => titleMatches(s.title, queryTitle))
-      .map(async (anime) => {
+    let filteredAnimes = sourceAnimes.filter(s => titleMatches(s.title, queryTitle, querySeason));
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查初始结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const s = extractSeasonNumberFromAnimeTitle(anime.title).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[iQiyi] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    const processIqiyiAnimes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
           const eps = await this.getEpisodes(anime.mediaId);
 

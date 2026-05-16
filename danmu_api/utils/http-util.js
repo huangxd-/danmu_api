@@ -25,6 +25,8 @@ function linkSignal(externalSignal, internalController) {
 export async function httpGet(url, options = {}) {
   // 从 options 中获取重试次数，默认为 0
   const maxRetries = parseInt(options.retries || '0', 10) || 0;
+  // 提取允许放行的特定状态码白名单
+  const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
   let lastError;
 
   // 执行请求，包含重试逻辑
@@ -71,7 +73,8 @@ export async function httpGet(url, options = {}) {
 
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
+      // 非 2xx 且不在白名单内的状态码抛出异常
+      if (!response.ok && !validStatusCodes.includes(response.status)) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -216,6 +219,7 @@ export async function httpGet(url, options = {}) {
 export async function httpPost(url, body, options = {}) {
   // 从 options 中获取重试次数，默认为 0
   const maxRetries = parseInt(options.retries || '0', 10) || 0;
+  const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
   let lastError;
 
   // 执行请求，包含重试逻辑
@@ -267,8 +271,7 @@ export async function httpPost(url, body, options = {}) {
 
       const data = await response.text();
 
-
-      if (!response.ok) {
+      if (!response.ok && !validStatusCodes.includes(response.status)) {
         log("error", `[请求模拟] response data: `, data);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -349,6 +352,7 @@ async function httpRequestMethod(method, url, body, options = {}) {
   log("info", `[请求模拟] HTTP ${method}: ${url}`);
 
   const { headers = {} } = options;
+  const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
 
   const fetchOptions = {
     method,
@@ -373,7 +377,7 @@ async function httpRequestMethod(method, url, body, options = {}) {
     const response = await fetch(url, fetchOptions);
     const textData = await response.text();
 
-    if (!response.ok) {
+    if (!response.ok && !validStatusCodes.includes(response.status)) {
       log("error", `[请求模拟] response data: `, textData);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
