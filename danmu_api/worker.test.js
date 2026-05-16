@@ -40,6 +40,7 @@ import { addAnime, addEpisode } from "./utils/cache-util.js";
 import { convertToAsciiSum } from "./utils/codec-util.js";
 import { handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
+import { initBangumiData, searchBangumiData, clearBangumiDataCache } from "./utils/bangumi-data-util.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -1557,6 +1558,47 @@ test('worker.js API endpoints', async (t) => {
   //   const handler = new EdgeoneHandler();
   //   const res = await handler.deploy();
   //   assert(res, `Expected res is true, but got ${res}`);
+  // });
+
+  // // 测试 Bangumi Data 本地检索功能与数据结构解析
+  // await t.test('searchBangumiData', async () => {
+  //   const originalUseBangumiData = Globals.getConfig().useBangumiData;
+  //   Globals.getConfig().useBangumiData = true;
+  //   try {
+  //     // 确保 Bangumi Data 核心数据源加载至内存
+  //     await initBangumiData('node', true);
+  //     const keyword = '间谍过家家';
+  //     const targetSites = ['gamer', 'gamer_hk'];
+  //     // 执行本地内存级检索
+  //     const results = await searchBangumiData(keyword, targetSites);
+  //     assert(Array.isArray(results), `Expected Array.isArray(results) to be true, but got ${typeof results}`);
+  //     assert(results.length > 0, `Expected results.length > 0, but got ${results.length}`);
+  //     if (results.length > 0) {
+  //       assert(results[0].title !== undefined, `Expected results[0].title !== undefined`);
+  //       assert(results[0].siteId !== undefined, `Expected results[0].siteId !== undefined`);
+  //     }
+  //   } finally {
+  //     clearBangumiDataCache();
+  //     Globals.getConfig().useBangumiData = originalUseBangumiData;
+  //   }
+  // });
+
+  // // 测试带有季度参数的精确拦截与检索机制
+  // await t.test('searchAnimeWithSeason', async () => {
+  //   const config = Globals.getConfig();
+  //   const originalSourceOrderArr = Array.isArray(config.sourceOrderArr) ? [...config.sourceOrderArr] : config.sourceOrderArr;
+  //   config.sourceOrderArr = ['360','iqiyi','dandan','animeko'];
+  //   try {
+  //     // 构造带有 season 参数的 URL 请求对象以模拟 match 接口的内部下发
+  //     const targetUrl = new URL('http://localhost/search/anime?keyword=间谍过家家&season=2');
+  //     const response = await searchAnime(targetUrl);
+  //     const data = await parseResponse(response);
+  //     assert.equal(data.success, true);
+  //     assert(Array.isArray(data.animes), `Expected Array.isArray(data.animes) to be true`);
+  //     assert(data.animes.length > 0, `Expected data.animes.length > 0, but got ${data.animes.length}`);
+  //   } finally {
+  //     config.sourceOrderArr = originalSourceOrderArr;
+  //   }
   // });
 
 });

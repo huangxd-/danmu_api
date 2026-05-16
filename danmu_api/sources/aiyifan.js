@@ -5,7 +5,7 @@ import { convertToAsciiSum } from "../utils/codec-util.js";
 import { hexToInt } from "../utils/danmu-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches } from "../utils/common-util.js";
+import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { simplized } from "../utils/zh-util.js";
 import { globals } from '../configs/globals.js';
 import { AiyifanSigningProvider } from '../utils/aiyifan-util.js';
@@ -308,14 +308,14 @@ export default class AiyifanSource extends BaseSource {
   }
 
   /**
-   * 处理animes结果
-   * @param {Array} sourceAnimes - 源动漫数据
-   * @param {string} queryTitle - 查询标题
-   * @param {Array} curAnimes - 当前动漫列表
-   * @param {any} detailStore - 详情存储
-   * @returns {Promise<Array>} 处理后的动漫列表
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
    */
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
@@ -323,9 +323,27 @@ export default class AiyifanSource extends BaseSource {
       return [];
     }
 
-    const processPromises = sourceAnimes
-      .filter(anime => titleMatches(anime.title, queryTitle))
-      .map(async (anime) => {
+    // 基础标题与季度匹配过滤
+    let filteredAnimes = sourceAnimes.filter(anime => titleMatches(anime.title, queryTitle, querySeason));
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const s = extractSeasonNumberFromAnimeTitle(anime.title).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[Aiyifan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    const processPromises = filteredAnimes.map(async (anime) => {
         try {
           // 获取剧集列表
           const eps = await this.getEpisodes(anime.mediaId);

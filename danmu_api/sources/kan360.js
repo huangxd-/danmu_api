@@ -4,7 +4,7 @@ import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches } from "../utils/common-util.js";
+import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 
 // =====================
 // 获取360看源播放链接
@@ -212,7 +212,15 @@ export default class Kan360Source extends BaseSource {
 
   async getEpisodes(id) {}
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  /**
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
+   */
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -221,9 +229,27 @@ export default class Kan360Source extends BaseSource {
       return [];
     }
 
-    const process360Animes = await Promise.all(sourceAnimes
-      .filter(anime => titleMatches(anime.titleTxt, queryTitle))
-      .map(async (anime) => {
+    // 基础标题与季度匹配过滤
+    let filteredAnimes = sourceAnimes.filter(anime => titleMatches(anime.titleTxt, queryTitle, querySeason));
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const s = extractSeasonNumberFromAnimeTitle(anime.titleTxt).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[360kan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    const process360Animes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
           let links = [];
           if (anime.cat_name === "电影") {

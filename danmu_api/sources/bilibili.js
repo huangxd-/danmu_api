@@ -5,7 +5,7 @@ import { httpGet, httpGetWithStreamCheck } from "../utils/http-util.js";
 import { parseDanmakuBase64, md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches } from "../utils/common-util.js";
+import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { simplized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
@@ -553,7 +553,15 @@ export default class BilibiliSource extends BaseSource {
     return [];
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  /**
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
+   */
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -577,10 +585,33 @@ export default class BilibiliSource extends BaseSource {
     const cnAlias = sourceAnimes.length > 0 ? sourceAnimes[0]._tmdbCnAlias : null;
     smartTitleReplace(sourceAnimes, cnAlias);
 
-    const processPromises = sourceAnimes
-      // 港澳台资源不做严格标题匹配，其他资源根据当前标题或别名池（已包含原标题和 org_title）验证查询匹配度
-      .filter(anime => anime.isOversea || titleMatches(anime.title, queryTitle) || (anime.aliases && anime.aliases.some(alias => titleMatches(alias, queryTitle))))
-      .map(async (anime) => {
+    // 基础标题与季度匹配过滤
+    // 港澳台资源不做严格标题匹配，其他资源根据当前标题或别名池（已包含原标题和 org_title）验证查询匹配度
+    let filteredAnimes = sourceAnimes.filter(anime => 
+        anime.isOversea || 
+        titleMatches(anime.title, queryTitle, querySeason) || 
+        (anime.aliases && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason)))
+    );
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const titleToCheck = anime._displayTitle || anime.title;
+        const s = extractSeasonNumberFromAnimeTitle(titleToCheck).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[Bilibili] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    const processPromises = filteredAnimes.map(async (anime) => {
         try {
           let links = [];
 
