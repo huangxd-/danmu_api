@@ -1,6 +1,6 @@
-import AIClient from "../../utils/ai-util.js";
 import { log } from "../../utils/log-util.js";
 import { getPreferAnimeId, setPreferByAnimeId, writeCacheToFile } from "../../utils/cache-util.js";
+import { httpPost } from "../../utils/http-util.js";
 import { setRedisKey } from "../../utils/redis-util.js";
 import { setLocalRedisKey } from "../../utils/local-redis-util.js";
 
@@ -50,6 +50,61 @@ mode=selectGroup 时，只能返回以下两种格式之一：
 {"groupId":"youku:2763893"}
 {"groupId":null}`;
 
+function buildFongmiAiChatRequest(globals, messages, options, payload = null) {
+  const body = {
+    model: options.model || globals.aiModel,
+    temperature: options.temperature ?? 0.0,
+    max_tokens: options.maxTokens ?? 8192,
+    stream: false,
+    messages
+  };
+  if (options.responseFormat) body.response_format = options.responseFormat;
+  if (options.thinking) body.thinking = options.thinking;
+
+  const request = {
+    url: `${String(globals.aiBaseUrl || "").replace(/\/$/, "")}/chat/completions`,
+    body
+  };
+  if (payload) request.payload = payload;
+  return request;
+}
+
+function buildFongmiAiOptions(globals) {
+  const options = {
+    maxTokens: 2048,
+    responseFormat: { type: "json_object" }
+  };
+  const baseUrl = String(globals.aiBaseUrl || "").toLowerCase();
+  const model = String(globals.aiModel || "").toLowerCase();
+  if (baseUrl.includes("deepseek") || model.includes("deepseek")) {
+    options.thinking = { type: "disabled" };
+  }
+  return options;
+}
+
+function summarizeFongmiAiResponse(data) {
+  return {
+    id: data?.id || "",
+    object: data?.object || "",
+    model: data?.model || "",
+    choices: (data?.choices || []).map(choice => {
+      const message = choice?.message || {};
+      const content = message.content || "";
+      const reasoningContent = message.reasoning_content || "";
+      return {
+        index: choice?.index,
+        finishReason: choice?.finish_reason,
+        messageKeys: Object.keys(message),
+        contentLength: content.length,
+        contentPreview: content.slice(0, 200),
+        reasoningContentLength: reasoningContent.length,
+        reasoningContentPreview: reasoningContent.slice(0, 200)
+      };
+    }),
+    usage: data?.usage || null
+  };
+}
+
 function parseFongmiAiJson(aiResponse) {
   const text = String(aiResponse || "").trim();
   if (!text) return null;
@@ -93,7 +148,7 @@ function extractEpisodeNoFromRawEpisode(episode) {
 
   const patterns = [
     /[Ss]\d{1,2}\s*[Ee](\d{1,4})/,
-    /第\s*(\d{1,4})\s*[集话]/,
+    /第\s*(\d{1,4})\s*[集期话]/,
     /[Ee][Pp]?\.?\s*(\d{1,4})/,
     /(?:^|[^\d])(\d{1,4})(?=$|[^\d])/
   ];
@@ -120,6 +175,34 @@ function findRegularEpisodeCandidate(episode, candidates) {
   return candidates.find(candidate => String(getCandidateId(candidate)) === String(match[0])) || null;
 }
 
+function findFocusedEpisodeCandidate(episode, candidates) {
+  const focus = buildFongmiAiFocus(episode);
+  if (!focus?.episodeNo) return null;
+
+  let matches = candidates.filter(candidate => {
+    const title = candidate?.episode?.episodeTitle || "";
+    return String(extractFocusedEpisodeNo(title)) === String(focus.episodeNo);
+  });
+  if (!matches.length) return null;
+
+  if (focus.dateToken) {
+    const dateMatches = matches.filter(candidate => extractDateToken(candidate?.episode?.episodeTitle || "") === focus.dateToken);
+    if (dateMatches.length) matches = dateMatches;
+  }
+
+  if (focus.partToken) {
+    const partMatches = matches.filter(candidate => extractEpisodePartToken(candidate?.episode?.episodeTitle || "") === focus.partToken);
+    if (partMatches.length) matches = partMatches;
+  }
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function shouldSkipPreferredFallback(episode) {
+  const focus = buildFongmiAiFocus(episode);
+  return Boolean(focus?.episodeNo);
+}
+
 function findPreferredCandidate(name, matchedKeyword, episode, candidates) {
   const keys = [...new Set([matchedKeyword, name].filter(Boolean))];
 
@@ -138,10 +221,21 @@ function findPreferredCandidate(name, matchedKeyword, episode, candidates) {
     });
     if (!preferredCandidates.length) continue;
 
+    const focusedCandidate = findFocusedEpisodeCandidate(episode, preferredCandidates);
+    if (focusedCandidate) {
+      log("info", `[Fongmi][Prefer] selected focused episode by lastSelectMap: key=${key}, animeId=${preferAnimeId}, source=${preferSource || ""}, episode=${focusedCandidate.episode?.episodeTitle || ""}`);
+      return focusedCandidate;
+    }
+
     const episodeCandidate = findRegularEpisodeCandidate(episode, preferredCandidates);
     if (episodeCandidate) {
       log("info", `[Fongmi][Prefer] selected episode by lastSelectMap: key=${key}, animeId=${preferAnimeId}, source=${preferSource || ""}, episode=${episodeCandidate.episode?.episodeTitle || ""}`);
       return episodeCandidate;
+    }
+
+    if (shouldSkipPreferredFallback(episode)) {
+      log("info", `[Fongmi][Prefer] skipped fallback by lastSelectMap: key=${key}, animeId=${preferAnimeId}, source=${preferSource || ""}`);
+      return null;
     }
 
     const preferredCandidate = preferredCandidates[0];
@@ -176,9 +270,31 @@ function normalizeCandidateTitle(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function extractDateToken(value) {
+  const match = String(value || "").match(/(20\d{2})[.\-/年](\d{1,2})[.\-/月](\d{1,2})/);
+  if (!match) return "";
+
+  const month = String(parseInt(match[2], 10)).padStart(2, "0");
+  const day = String(parseInt(match[3], 10)).padStart(2, "0");
+  return `${match[1]}${month}${day}`;
+}
+
+function extractEpisodePartToken(value) {
+  const match = String(value || "").match(/第\s*\d{1,4}\s*期\s*([上中下])/);
+  return match ? match[1] : "";
+}
+
+function buildFongmiAiFocus(episode) {
+  return {
+    episodeNo: extractEpisodeNoFromRawEpisode(episode),
+    dateToken: extractDateToken(episode),
+    partToken: extractEpisodePartToken(episode)
+  };
+}
+
 function extractRegularEpisodeNo(title) {
   const text = String(title || "");
-  const match = text.match(/第\s*0*(\d{1,4})\s*([集话])/);
+  const match = text.match(/第\s*0*(\d{1,4})\s*([集期话])/);
   if (!match) return null;
 
   const episodeNo = parseInt(match[1], 10);
@@ -201,6 +317,19 @@ function buildRegularEpisodePattern(title, episodeNo, suffix) {
   return normalizedTitle
     .replace(episodePrefixRe, `第{n}${suffix}`)
     .replace(standaloneNoRe, (match, prefix) => `${prefix}{n}`);
+}
+
+function extractFocusedEpisodeNo(title) {
+  const regularEpisodeNo = extractRegularEpisodeNo(title);
+  if (regularEpisodeNo) return regularEpisodeNo.value;
+
+  const text = normalizeCandidateTitle(title);
+  const match = text.match(/(?:^|[_\s-])0*(\d{1,4})(?:\D*)$/);
+  if (!match) return null;
+
+  const episodeNo = parseInt(match[1], 10);
+  if (!Number.isInteger(episodeNo) || episodeNo <= 0) return null;
+  return String(episodeNo);
 }
 
 function buildRegularGroupPayload(group) {
@@ -316,6 +445,42 @@ function buildGroupPayload(group, { includeEpisodes = true } = {}) {
   };
 }
 
+function buildFocusedGroupPayload(group, focus) {
+  const payload = buildGroupPayload(group);
+  const targetEpisodeNo = focus?.episodeNo;
+  if (!targetEpisodeNo || !payload) return payload;
+
+  if (payload.kind === "regular" && Array.isArray(payload.episodes)) {
+    const focusedEpisodes = payload.episodes.filter(([, episodeNo]) => String(episodeNo) === String(targetEpisodeNo));
+    if (focusedEpisodes.length) {
+      return {
+        ...payload,
+        episodes: focusedEpisodes
+      };
+    }
+  }
+
+  if (payload.kind === "episodes" && Array.isArray(payload.episodes)) {
+    let focusedEpisodes = payload.episodes.filter(([, title]) => String(extractFocusedEpisodeNo(title)) === String(targetEpisodeNo));
+    if (focus?.dateToken) {
+      const dateFocused = focusedEpisodes.filter(([, title]) => extractDateToken(title) === focus.dateToken);
+      if (dateFocused.length) focusedEpisodes = dateFocused;
+    }
+    if (focus?.partToken) {
+      const partFocused = focusedEpisodes.filter(([, title]) => extractEpisodePartToken(title) === focus.partToken);
+      if (partFocused.length) focusedEpisodes = partFocused;
+    }
+    if (focusedEpisodes.length) {
+      return {
+        ...payload,
+        episodes: focusedEpisodes
+      };
+    }
+  }
+
+  return payload;
+}
+
 function findCandidateByAiResponse(parsedResponse, candidates) {
   const rawCandidateId = parsedResponse?.candidateId ?? parsedResponse?.id ?? parsedResponse?.episodeId;
   if (rawCandidateId !== null && rawCandidateId !== undefined) {
@@ -387,15 +552,27 @@ async function rememberFongmiAiCandidate(globals, name, matchedKeyword, candidat
   }
 }
 
-async function askFongmiAi(globals, payload) {
-  const aiClient = new AIClient({
-    apiKey: globals.aiApiKey,
-    baseURL: globals.aiBaseUrl,
-    model: globals.aiModel,
-    systemPrompt: FONGMI_AI_MATCH_PROMPT
-  });
+async function askFongmiAi(globals, payload, stage = "selectCandidate") {
+  const options = buildFongmiAiOptions(globals);
+  const messages = [
+    { role: "system", content: FONGMI_AI_MATCH_PROMPT },
+    { role: "user", content: JSON.stringify(payload) }
+  ];
+  const request = buildFongmiAiChatRequest(globals, messages, options, payload);
 
-  const aiResponse = await aiClient.ask(JSON.stringify(payload), { maxTokens: 1024 });
+  const response = await httpPost(request.url, JSON.stringify(request.body), {
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${globals.aiApiKey}`
+    },
+    timeout: 60000
+  });
+  const responseData = response.data;
+  if (responseData?.error) {
+    throw new Error(`AI API error ${response.status}: ${responseData.error.message}`);
+  }
+  log("info", `[Fongmi][AI] raw response summary (${stage}): ${JSON.stringify(summarizeFongmiAiResponse(responseData))}`);
+  const aiResponse = responseData?.choices?.[0]?.message?.content || "";
   log("info", `[Fongmi][AI] match response: ${aiResponse}`);
   return parseFongmiAiJson(aiResponse);
 }
@@ -413,6 +590,7 @@ export async function selectFongmiCandidateByAi(globals, name, episode, candidat
   }
 
   const groups = buildCandidateGroups(candidates);
+  const focus = buildFongmiAiFocus(episode);
 
   try {
     let aiCandidates = candidates;
@@ -423,7 +601,7 @@ export async function selectFongmiCandidateByAi(globals, name, episode, candidat
         mode: "selectCandidate",
         name,
         episodeRaw: episode,
-        groups: groups.map(group => buildGroupPayload(group))
+        groups: groups.map(group => buildFocusedGroupPayload(group, focus))
       };
     } else {
       if (groups.length === 1) {
@@ -432,7 +610,7 @@ export async function selectFongmiCandidateByAi(globals, name, episode, candidat
           mode: "selectCandidate",
           name,
           episodeRaw: episode,
-          groups: [buildGroupPayload(groups[0])]
+          groups: [buildFocusedGroupPayload(groups[0], focus)]
         };
       } else {
         const groupResponse = await askFongmiAi(globals, {
@@ -440,7 +618,7 @@ export async function selectFongmiCandidateByAi(globals, name, episode, candidat
           name,
           episodeRaw: episode,
           groups: groups.map(group => buildGroupPayload(group, { includeEpisodes: false }))
-        });
+        }, "selectGroup");
         const groupId = groupResponse?.groupId;
         const selectedGroup = groups.find(group => String(group.groupId) === String(groupId));
         if (!selectedGroup) {
@@ -455,12 +633,12 @@ export async function selectFongmiCandidateByAi(globals, name, episode, candidat
           mode: "selectCandidate",
           name,
           episodeRaw: episode,
-          groups: [buildGroupPayload(selectedGroup)]
+          groups: [buildFocusedGroupPayload(selectedGroup, focus)]
         };
       }
     }
 
-    const parsedResponse = await askFongmiAi(globals, payload);
+    const parsedResponse = await askFongmiAi(globals, payload, payload.mode);
     const selectedCandidate = findCandidateByAiResponse(parsedResponse, aiCandidates);
     if (!selectedCandidate) return null;
 
