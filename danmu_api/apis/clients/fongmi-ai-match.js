@@ -13,6 +13,8 @@ const FONGMI_AI_REGULAR_GROUP_UNSAFE_RE = /(?:第\s*\d+\s*期|[上下中](?:\s|$
 
 const FONGMI_AI_MATCH_PROMPT = `你是影视弹幕候选选择器。你只负责从输入候选里选择最适合当前播放内容的一项。
 
+输出必须是严格 JSON。不要输出 Markdown、代码块、解释、注释或多余文本。
+
 输入 JSON 字段：
 - name: 播放器传入的作品名
 - episodeRaw: 播放器传入的原始集数、期数、日期、文件名或分集标题，不要假设已经被正确解析
@@ -37,20 +39,16 @@ const FONGMI_AI_MATCH_PROMPT = `你是影视弹幕候选选择器。你只负责
 8. localScore 只能作为参考；标题、类型或集数明显不匹配时，不要因为 localScore 高而选择。
 9. 如果没有足够把握，返回 null，不要猜。
 
-mode=selectCandidate 时只返回 JSON，不要解释：
-{
-  "candidateId": "已有 candidateId" 或 null
-}
+mode=selectCandidate 时，只能返回以下两种格式之一：
+{"candidateId":"10057"}
+{"candidateId":null}
 
-也可以在非常确定时返回：
-{
-  "episodeTitle": "输入中精确存在的候选分集标题"
-}
+如果你通过分集标题判断，也可以返回输入中精确存在的 episodeTitle：
+{"episodeTitle":"【youku】 第22集 唐宫奇案之青雾风鸣 22"}
 
-mode=selectGroup 时只返回：
-{
-  "groupId": "已有 groupId" 或 null
-}`;
+mode=selectGroup 时，只能返回以下两种格式之一：
+{"groupId":"youku:2763893"}
+{"groupId":null}`;
 
 function parseFongmiAiJson(aiResponse) {
   const text = String(aiResponse || "").trim();
@@ -81,14 +79,55 @@ function sameCandidateWork(a, b) {
   return String(aId ?? "") === String(bId ?? "") && String(aSource ?? "") === String(bSource ?? "");
 }
 
-function findPreferredCandidate(name, matchedKeyword, candidates) {
+function extractEpisodeNoFromRawEpisode(episode) {
+  let text = String(episode || "");
+  if (!text) return null;
+
+  text = text
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[【（(][^】）)]*[】）)]/g, " ")
+    .replace(/\.(?:mp4|mkv|avi|rmvb|ts|flv|mov|m4v)\s*$/i, " ")
+    .replace(/["'“”‘’]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const patterns = [
+    /[Ss]\d{1,2}\s*[Ee](\d{1,4})/,
+    /第\s*(\d{1,4})\s*[集话]/,
+    /[Ee][Pp]?\.?\s*(\d{1,4})/,
+    /(?:^|[^\d])(\d{1,4})(?=$|[^\d])/
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+
+    const value = parseInt(match[1], 10);
+    if (Number.isInteger(value) && value > 0 && value < 10000) return String(value);
+  }
+
+  return null;
+}
+
+function findRegularEpisodeCandidate(episode, candidates) {
+  const targetEpisodeNo = extractEpisodeNoFromRawEpisode(episode);
+  if (!targetEpisodeNo) return null;
+
+  const regularPayload = buildRegularGroupPayload({ candidates });
+  const match = regularPayload?.episodes?.find(([, episodeNo]) => String(episodeNo) === targetEpisodeNo);
+  if (!match) return null;
+
+  return candidates.find(candidate => String(getCandidateId(candidate)) === String(match[0])) || null;
+}
+
+function findPreferredCandidate(name, matchedKeyword, episode, candidates) {
   const keys = [...new Set([matchedKeyword, name].filter(Boolean))];
 
   for (const key of keys) {
     const [preferAnimeId, preferSource] = getPreferAnimeId(key);
     if (!preferAnimeId) continue;
 
-    const preferredCandidate = candidates.find(candidate => {
+    const preferredCandidates = candidates.filter(candidate => {
       const candidateId = getCandidateAnimeId(candidate);
       const candidateSource = getCandidateSource(candidate);
       const animeMatches =
@@ -97,7 +136,15 @@ function findPreferredCandidate(name, matchedKeyword, candidates) {
       const sourceMatches = !preferSource || String(candidateSource) === String(preferSource);
       return animeMatches && sourceMatches;
     });
+    if (!preferredCandidates.length) continue;
 
+    const episodeCandidate = findRegularEpisodeCandidate(episode, preferredCandidates);
+    if (episodeCandidate) {
+      log("info", `[Fongmi][Prefer] selected episode by lastSelectMap: key=${key}, animeId=${preferAnimeId}, source=${preferSource || ""}, episode=${episodeCandidate.episode?.episodeTitle || ""}`);
+      return episodeCandidate;
+    }
+
+    const preferredCandidate = preferredCandidates[0];
     if (preferredCandidate) {
       log("info", `[Fongmi][Prefer] selected by lastSelectMap: key=${key}, animeId=${preferAnimeId}, source=${preferSource || ""}`);
       return preferredCandidate;
@@ -348,7 +395,7 @@ async function askFongmiAi(globals, payload) {
     systemPrompt: FONGMI_AI_MATCH_PROMPT
   });
 
-  const aiResponse = await aiClient.ask(JSON.stringify(payload), { maxTokens: 256 });
+  const aiResponse = await aiClient.ask(JSON.stringify(payload), { maxTokens: 1024 });
   log("info", `[Fongmi][AI] match response: ${aiResponse}`);
   return parseFongmiAiJson(aiResponse);
 }
@@ -356,7 +403,7 @@ async function askFongmiAi(globals, payload) {
 export async function selectFongmiCandidateByAi(globals, name, episode, candidates, matchedKeyword = name) {
   if (!candidates.length) return null;
 
-  const preferredCandidate = findPreferredCandidate(name, matchedKeyword, candidates);
+  const preferredCandidate = findPreferredCandidate(name, matchedKeyword, episode, candidates);
   if (preferredCandidate) return preferredCandidate;
 
   if (!globals.aiValid || !globals.aiApiKey) return null;
