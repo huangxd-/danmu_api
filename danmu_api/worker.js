@@ -319,12 +319,12 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
   // GET|POST /api/v2/fongmi/danmaku
   if (path === "/api/v2/fongmi/danmaku" && (method === "GET" || method === "POST")) {
-    return getFongmiDanmaku(url, req);
+    return getFongmiDanmaku(url, req, clientIp);
   }
 
   // GET|POST /danmaku
   if (path === "/danmaku" && (method === "GET" || method === "POST")) {
-    return getFongmiDanmaku(url, req);
+    return getFongmiDanmaku(url, req, clientIp);
   }
 
   // GET /api/v2/match

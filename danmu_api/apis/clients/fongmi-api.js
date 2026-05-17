@@ -5,6 +5,7 @@ import { simplized } from "../../utils/zh-util.js";
 import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, normalizeSpaces } from "../../utils/common-util.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 import { selectFongmiCandidateByAi } from "./fongmi-ai-match.js";
+import { rememberFongmiSearchContext } from "./fongmi-prefer.js";
 
 // =====================
 // FongMi 弹幕接口适配
@@ -359,7 +360,7 @@ function buildFongmiDanmakuItems(animes, detailStore, apiBase) {
  * @param {Request} req 请求对象
  * @returns {Promise<Response>} 弹幕候选响应
  */
-export async function getFongmiDanmaku(url, req) {
+export async function getFongmiDanmaku(url, req, clientIp = null) {
   const { name, episode } = await parseFongmiRequestParams(url, req);
 
   if (!name) {
@@ -398,6 +399,7 @@ export async function getFongmiDanmaku(url, req) {
       score: scoreFongmiEpisodeMatch(item.anime, item.episode, episode, item.index)
     }))
     .sort((a, b) => b.score - a.score);
+  rememberFongmiSearchContext(clientIp, matchedKeyword, candidates[0]);
 
   const selectedCandidate = await selectFongmiCandidateByAi(globals, name, episode, candidates, matchedKeyword);
   if (selectedCandidate) {

@@ -18,6 +18,7 @@ import {
 import { getTMDBChineseTitle } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines } from "../utils/merge-util.js";
 import { getHanjutvSourceLabel } from "../utils/hanjutv-util.js";
+import { rememberFongmiCommentPreference } from "./clients/fongmi-prefer.js";
 import AIClient from '../utils/ai-util.js';
 import Kan360Source from "../sources/kan360.js";
 import VodSource from "../sources/vod.js";
@@ -1573,6 +1574,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     return jsonResponse({ count: 0, comments: [] }, 404);
   }
   log("info", `Fetched comment ID: ${commentId}`);
+  rememberFongmiCommentPreference(commentId, animeTitle, clientIp);
 
   // 检查弹幕缓存
   const cachedComments = getCommentCache(url);
