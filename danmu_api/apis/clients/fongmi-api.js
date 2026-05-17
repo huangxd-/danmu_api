@@ -24,6 +24,30 @@ const FONGMI_EPISODE_CLEAN_RULES = [
   [/[_~.-]+/g, " "]
 ];
 
+const FONGMI_EPISODE_PATTERNS = [
+  { pattern: /[Ss]\d{1,2}\s*[Ee](\d{1,4})/, group: 1 },                     // S01E05 / s1e5
+  { pattern: /第\s*([零一二三四五六七八九十百零〇两\d]+)\s*[集期话章回段篇]/, group: 1, chinese: true },  // 第12集 / 第十二期
+  { pattern: /[Ee][Pp]?\.?\s*(\d{1,4})/, group: 1 },                        // EP05 / Ep.5 / E5
+  { pattern: /[Ee](\d{1,4})(?:\s|$|\.)/, group: 1 },                        // E05 后面有空格/结尾/点
+  { pattern: /Episode\s*(\d{1,4})/i, group: 1 },                            // Episode 5
+  { pattern: /(?:正在)?播放[：:]\s*(\d{1,4})/, group: 1 },                   // 播放:5 / 正在播放：12
+  { pattern: /(?:第\s*)?[零一二三四五六七八九十百\d]+\s*季\s*[|｜]\s*(\d{1,4})/, group: 1 },  // 第1季|18 / 第一季｜05 (Emby格式)
+  { pattern: /[\[【\(（](\d{1,4})[\]】\)）]/, group: 1 },                    // [05] / 【05】 / (05)
+  { pattern: /@@@(\d{1,4})/, group: 1 },                                    // 剧名@@@5
+  { pattern: /(?:^|[\s_\-])(\d{1,4})x(?:[\s_\-]|$)/i, group: 1 },          // 1x05 / 2-3x12-
+  { pattern: /\s(\d{1,4})\.(?:mp4|mkv|avi|mov|mp3|1080|720|4k|2k)/i, group: 1 },  // 剧 05.mp4 / 名 12.1080p
+  { pattern: /[_\-](\d{1,4})(?:\s|$|\.)/, group: 1 },                       // 剧名_05 / 名-12.
+  { pattern: /\s(\d{1,4})\s/, group: 1 },                                   // 剧 05 名 (空格包围)
+  { pattern: /\s(\d{1,4})$/, group: 1 },                                    // 剧名 05 (末尾数字)
+  { pattern: /^(\d{1,4})\s/, group: 1 },                                    // 05 剧名 (开头数字)
+  { pattern: /(\d{1,4})(?:\s|$)$/, group: 1 }                               // 剧名05 (结尾无空格)
+];
+
+const FONGMI_DATE_PATTERNS = [
+  { pattern: /(\d{4})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})/, type: "ymd" },  // 2025-05-13 / 2025.05.13 / 2025年5月13日
+  { pattern: /(\d{4})(\d{2})(\d{2})/, type: "ymd_compact" }                 // 20250513 (8位紧凑日期)
+];
+
 /**
  * 规范化 FongMi 传入文本，统一大小写、空格和简繁体。
  * @param {string} value 原始文本
@@ -74,10 +98,11 @@ function normalizeFongmiTitleByRegex(name) {
  */
 function normalizeFongmiEpisodeByRegex(episode) {
   let text = String(episode || "");
-  FONGMI_EPISODE_CLEAN_RULES.forEach(([pattern, replacement]) => {
+  FONGMI_EPISODE_CLEAN_RULES.forEach(([pattern, replacement], i) => {
     text = text.replace(pattern, replacement);
   });
-  return normalizeSpaces(text);
+  const result = text.replace(/\s+/g, ' ').trim();
+  return result;
 }
 
 /**
@@ -87,29 +112,47 @@ function normalizeFongmiEpisodeByRegex(episode) {
  * @returns {number|null} 集数，未提取到则返回 null
  */
 function extractFongmiEpisodeNumber(episode) {
+  if (!episode) return null;
+  const text = String(episode);
+
+  for (const { pattern, group, chinese } of FONGMI_EPISODE_PATTERNS) {
+    const match = text.match(pattern);
+    if (match && match[group] !== undefined) {
+      const value = match[group];
+      if (chinese) {
+        const num = convertChineseNumber(value);
+        if (num !== null && !isNaN(num)) return num;
+      } else {
+        const num = parseInt(value, 10);
+        if (!isNaN(num) && num > 0 && num < 10000) return num;
+      }
+    }
+  }
+
+  for (const { pattern, type } of FONGMI_DATE_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      if (type === "ymd") {
+        const y = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const d = parseInt(match[3], 10);
+        if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+          return y * 10000 + m * 100 + d;
+        }
+      } else if (type === "ymd_compact") {
+        const y = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const d = parseInt(match[3], 10);
+        if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+          return y * 10000 + m * 100 + d;
+        }
+      }
+    }
+  }
+
   const normalizedEpisode = normalizeFongmiEpisodeByRegex(episode);
   const commonNum = extractEpisodeNumberFromTitle(normalizedEpisode);
   if (commonNum !== null) return commonNum;
-
-  const seasonEpisodeMatch = normalizedEpisode.match(/S\d{1,2}\s*E(\d{1,4})/i);
-  if (seasonEpisodeMatch) {
-    return parseInt(seasonEpisodeMatch[1], 10);
-  }
-
-  const chineseEpisodeMatch = normalizedEpisode.match(/第\s*([一二三四五六七八九十百零〇两\d]+)\s*(?:集|话|期|回|章)/);
-  if (chineseEpisodeMatch) {
-    return convertChineseNumber(chineseEpisodeMatch[1]);
-  }
-
-  const xEpisodeMatch = normalizedEpisode.match(/(?:^|\s)(\d{1,4})x(?:\s|$)/i);
-  if (xEpisodeMatch) {
-    return parseInt(xEpisodeMatch[1], 10);
-  }
-
-  const standaloneEpisodeMatch = normalizedEpisode.match(/(?:^|\s)(\d{1,4})(?:\s|$)/);
-  if (standaloneEpisodeMatch) {
-    return parseInt(standaloneEpisodeMatch[1], 10);
-  }
 
   return null;
 }
@@ -362,7 +405,7 @@ export async function getFongmiDanmaku(url, req) {
       name: `${candidate.anime.animeTitle} - ${candidate.episode.episodeTitle}`,
       url: candidate.commentUrl
     });
-    if (items.length >= 12) break;
+    if (items.length >= 1000) break;
   }
 
   log("info", `[Fongmi] name=${name}, episode=${episode}, candidates=${items.length}`);

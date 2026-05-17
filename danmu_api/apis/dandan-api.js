@@ -219,7 +219,9 @@ export function matchSeason(anime, queryTitle, season) {
 // Extracted function for GET /api/v2/search/anime
 export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null) {
   let queryTitle = url.searchParams.get("keyword");
-  log("info", `Search anime with keyword: ${queryTitle}`);
+  let querySeason = url.searchParams.get("season");
+  querySeason = querySeason ? parseInt(querySeason, 10) : null;
+  log("info", `Search anime with keyword: ${queryTitle}, target season: ${querySeason}`);
 
   // 关键字为空直接返回，不用多余查询
   if (queryTitle === "") {
@@ -239,9 +241,10 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   }
 
   const requestAnimeDetailsMap = detailStore instanceof Map ? detailStore : new Map();
+  const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
 
   // 检查搜索缓存
-  const cachedResults = getSearchCache(queryTitle, requestAnimeDetailsMap);
+  const cachedResults = getSearchCache(cacheKey, requestAnimeDetailsMap);
   if (cachedResults !== null) {
     return jsonResponse({
       errorCode: 0,
@@ -317,11 +320,14 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       await updateLocalRedisCaches();
     }
 
+    // 构造响应 DTO：剥离合并产生的 links，确保接口纯净
+    const responseAnimes = curAnimes.map(({ links, ...pureAnime }) => pureAnime);
+
     return jsonResponse({
       errorCode: 0,
       success: true,
       errorMessage: "",
-      animes: curAnimes,
+      animes: responseAnimes,
     });
   }
 
@@ -376,73 +382,73 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
     for (const key of globals.sourceOrderArr) {
       if (key === '360') {
         // 等待处理360来源
-        await kan360Source.handleAnimes(animes360, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await kan360Source.handleAnimes(animes360, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'vod') {
         // 等待处理Vod来源（遍历所有VOD服务器的结果）
         if (animesVodResults && Array.isArray(animesVodResults)) {
           for (const vodResult of animesVodResults) {
             if (vodResult && vodResult.list && vodResult.list.length > 0) {
-              await vodSource.handleAnimes(vodResult.list, queryTitle, curAnimes, vodResult.serverName, requestAnimeDetailsMap);
+              await vodSource.handleAnimes(vodResult.list, queryTitle, curAnimes, vodResult.serverName, requestAnimeDetailsMap, querySeason);
             }
           }
         }
       } else if (key === 'tmdb') {
         // 等待处理TMDB来源
-        await tmdbSource.handleAnimes(animesTmdb, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await tmdbSource.handleAnimes(animesTmdb, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'douban') {
         // 等待处理Douban来源
-        await doubanSource.handleAnimes(animesDouban, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await doubanSource.handleAnimes(animesDouban, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'renren') {
         // 等待处理Renren来源
-        await renrenSource.handleAnimes(animesRenren, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await renrenSource.handleAnimes(animesRenren, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'hanjutv') {
         // 等待处理Hanjutv来源
-        await hanjutvSource.handleAnimes(animesHanjutv, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await hanjutvSource.handleAnimes(animesHanjutv, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'bahamut') {
         // 等待处理Bahamut来源
-        await bahamutSource.handleAnimes(animesBahamut, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await bahamutSource.handleAnimes(animesBahamut, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'dandan') {
         // 等待处理弹弹play来源
-        await dandanSource.handleAnimes(animesDandan, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await dandanSource.handleAnimes(animesDandan, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'custom') {
         // 等待处理自定义弹幕源来源
         await customSource.handleAnimes(animesCustom, queryTitle, curAnimes, requestAnimeDetailsMap);
       } else if (key === 'tencent') {
         // 等待处理Tencent来源
-        await tencentSource.handleAnimes(animesTencent, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await tencentSource.handleAnimes(animesTencent, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'youku') {
         // 等待处理Youku来源
-        await youkuSource.handleAnimes(animesYouku, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await youkuSource.handleAnimes(animesYouku, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'iqiyi') {
         // 等待处理iQiyi来源
-        await iqiyiSource.handleAnimes(animesIqiyi, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await iqiyiSource.handleAnimes(animesIqiyi, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'imgo') {
         // 等待处理Mango来源
-        await mangoSource.handleAnimes(animesImgo, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await mangoSource.handleAnimes(animesImgo, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'bilibili') {
         // 等待处理Bilibili来源
-        await bilibiliSource.handleAnimes(animesBilibili, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await bilibiliSource.handleAnimes(animesBilibili, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'migu') {
         // 等待处理Migu来源
-        await miguSource.handleAnimes(animesMigu, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await miguSource.handleAnimes(animesMigu, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'sohu') {
         // 等待处理Sohu来源
-        await sohuSource.handleAnimes(animesSohu, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await sohuSource.handleAnimes(animesSohu, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'leshi') {
         // 等待处理Leshi来源
-        await leshiSource.handleAnimes(animesLeshi, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await leshiSource.handleAnimes(animesLeshi, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'xigua') {
         // 等待处理Xigua来源
-        await xiguaSource.handleAnimes(animesXigua, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await xiguaSource.handleAnimes(animesXigua, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'maiduidui') {
         // 等待处理Maiduidui来源
-        await maiduiduiSource.handleAnimes(animesMaiduidui, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await maiduiduiSource.handleAnimes(animesMaiduidui, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'aiyifan') {
         // 等待处理Aiyifan来源
-        await aiyifanSource.handleAnimes(animesAiyifan, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await aiyifanSource.handleAnimes(animesAiyifan, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       } else if (key === 'animeko') {
         // 等待处理Animeko来源
-        await animekoSource.handleAnimes(animesAnimeko, queryTitle, curAnimes, requestAnimeDetailsMap);
+        await animekoSource.handleAnimes(animesAnimeko, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason);
       }
     }
   } catch (error) {
@@ -509,16 +515,20 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
       await updateLocalRedisCaches();
     }
 
+    // 构造响应 DTO：剥离合并产生的 links，确保接口纯净
+    const responseAnimes = curAnimes.map(({ links, ...pureAnime }) => pureAnime);
+
     // 缓存搜索结果
-    if (curAnimes.length > 0) {
-      setSearchCache(queryTitle, curAnimes, requestAnimeDetailsMap);
+    if (responseAnimes.length > 0) {
+      const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
+      setSearchCache(cacheKey, responseAnimes, requestAnimeDetailsMap);
     }
 
     return jsonResponse({
       errorCode: 0,
       success: true,
       errorMessage: "",
-      animes: curAnimes,
+      animes: responseAnimes,
     });
 
 }
@@ -1090,7 +1100,7 @@ export async function matchAnime(url, req, clientIp) {
     log("info", `prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
     const requestAnimeDetailsMap = new Map();
-    let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}`));
+    let originSearchUrl = new URL(req.url.replace("/match", `/search/anime?keyword=${title}&season=${season || ''}`));
     const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource, requestAnimeDetailsMap);
     const searchData = await searchRes.json();
     log("info", `searchData: ${searchData.animes}`);

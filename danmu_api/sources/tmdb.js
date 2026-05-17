@@ -118,8 +118,16 @@ export default class TmdbSource extends BaseSource {
 
   async getEpisodes(id) {}
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
-    return this.doubanSource.handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore);
+  /**
+   * 转发搜索结果处理至豆瓣源
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map|null} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
+   */
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
+    return this.doubanSource.handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore, querySeason);
   }
 
   async getEpisodeDanmu(id) {}
