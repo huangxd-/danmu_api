@@ -198,6 +198,33 @@ function findFocusedEpisodeCandidate(episode, candidates) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function narrowExplicitPartCandidates(episode, candidates) {
+  const focus = buildFongmiAiFocus(episode);
+  if (!focus?.episodeNo || !focus.partToken) return false;
+
+  const matches = candidates.filter(candidate => {
+    const title = candidate?.episode?.episodeTitle || "";
+    const episodeNo = extractFocusedEpisodeNo(title);
+    const partToken = extractEpisodePartToken(title);
+    const dateToken = extractDateToken(title);
+
+    if (String(episodeNo) !== String(focus.episodeNo)) return false;
+    if (partToken !== focus.partToken) return false;
+    if (focus.dateToken && dateToken && dateToken !== focus.dateToken) return false;
+    return true;
+  });
+
+  if (matches.length) {
+    candidates.splice(0, candidates.length, ...matches);
+    log("info", `[Fongmi][AI] explicit part narrowed candidates: part=${focus.partToken}, candidates=${matches.length}`);
+    return false;
+  }
+
+  candidates.splice(0, candidates.length);
+  log("info", `[Fongmi][AI] explicit part has no exact candidate: part=${focus.partToken}, episode=${episode}`);
+  return true;
+}
+
 function shouldSkipPreferredFallback(episode) {
   const focus = buildFongmiAiFocus(episode);
   return Boolean(focus?.episodeNo);
@@ -578,6 +605,9 @@ async function askFongmiAi(globals, payload, stage = "selectCandidate") {
 }
 
 export async function selectFongmiCandidateByAi(globals, name, episode, candidates, matchedKeyword = name) {
+  if (!candidates.length) return null;
+
+  if (narrowExplicitPartCandidates(episode, candidates)) return null;
   if (!candidates.length) return null;
 
   const preferredCandidate = findPreferredCandidate(name, matchedKeyword, episode, candidates);
