@@ -568,6 +568,7 @@ function renderValueInput(item) {
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
         const isDanmuOffset = currentKey === 'DANMU_OFFSET';
+		const isCustomMergeRules = currentKey === 'CUSTOM_MERGE_RULES';
         const offsetSources = item && item.sources ? item.sources : [];
 
         if (isColorPool) {
@@ -718,6 +719,56 @@ function renderValueInput(item) {
                     });
                 }
             }, 120);
+        } else if (isCustomMergeRules) {
+            // CUSTOM_MERGE_RULES 专用编辑界面
+            const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 10) : 3;
+            container.innerHTML = \`
+                <label>变量值</label>
+                <textarea id="text-value" placeholder="格式：副源 -> 主源 | 路由规则 或 副源 × 主源" rows="\${rows}" class="text-monospace">\${value || ''}</textarea>
+                <div style="margin-top: 8px;">
+                    <button type="button" class="btn btn-primary btn-sm" id="merge-rule-toggle" onclick="toggleMergeRulePanel()">
+                        添加规则
+                    </button>
+                </div>
+                <div id="merge-rule-panel" class="offset-rule-panel">
+                    <div class="offset-form-row">
+                        <div style="flex: 1; min-width: 120px;">
+                            <label class="offset-label">副源实体（副源剧名@源）</label>
+                            <input type="text" id="merge-sec-entity" class="offset-input" placeholder="例: 我推的孩子/S01@bahamut" onfocus="setMergeFocus('sec')">
+                        </div>
+                        <div style="width: 60px;">
+                            <label class="offset-label" style="text-align: center; display: block;">关系</label>
+                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; padding: 6px; text-align: center; font-weight: bold; font-size: 14px;">
+                                <option value="->">-&gt;</option>
+                                <option value="×">×</option>
+                            </select>
+                            <div id="merge-action-hint" style="font-size: 11px; color: #666; text-align: center; margin-top: 4px;">合并</div>
+                        </div>
+                        <div style="flex: 1; min-width: 120px;">
+                            <label class="offset-label">主源实体（主源剧名@源）</label>
+                            <input type="text" id="merge-prim-entity" class="offset-input" placeholder="例: 我推的孩子/S03@dandan" onfocus="setMergeFocus('prim')">
+                        </div>
+                    </div>
+                    <div class="offset-form-row" id="merge-route-row">
+                        <div style="flex: 1;">
+                            <label class="offset-label">集数路由规则 (选填，可多组。例如: E01>E01,E25~E35>E25~E35)</label>
+                            <input type="text" id="merge-route-rule" class="offset-input" placeholder="留空则交由系统自动计算偏移">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label class="offset-label">快速追加来源至当前聚焦的输入框 (没有 @ 则追加 @xxx，已存在 @ 则追加 &xxx 合并写法)</label>
+                        <div class="offset-sources">
+                            \${offsetSources.map(src => \`
+                                <div class="offset-source-tag" onclick="appendSourceToMerge('\${src}')">\${src}</div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                    <div class="offset-actions">
+                        <button type="button" class="btn btn-sm" onclick="toggleMergeRulePanel()">取消</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="appendMergeRule()">确认添加</button>
+                    </div>
+                </div>
+            \`;
         } else if (value && value.length > 50) {
             const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10);
             container.innerHTML = \`
@@ -1062,6 +1113,89 @@ function appendOffsetRule() {
         });
     }
     toggleOffsetRulePanel();
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 焦点状态记录
+let currentMergeFocus = 'sec';
+
+function setMergeFocus(type) {
+    currentMergeFocus = type;
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 快捷追加来源
+function appendSourceToMerge(source) {
+    const inputId = currentMergeFocus === 'sec' ? 'merge-sec-entity' : 'merge-prim-entity';
+    const inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+
+    let val = inputEl.value.trim();
+    if (val.includes('@')) {
+        val += '&' + source;
+    } else {
+        val += '@' + source;
+    }
+    inputEl.value = val;
+    inputEl.focus(); // 保持焦点，方便用户连续点击多个来源
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 切换规则面板
+function toggleMergeRulePanel() {
+    const panel = document.getElementById('merge-rule-panel');
+    if (panel) {
+        const isHidden = getComputedStyle(panel).display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        const btn = document.getElementById('merge-rule-toggle');
+        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+    }
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 切换操作符联动
+function onMergeActionChange() {
+    const action = document.getElementById('merge-action').value;
+    const routeRow = document.getElementById('merge-route-row');
+    const hint = document.getElementById('merge-action-hint');
+
+    if (action === '×') {
+        if (routeRow) routeRow.style.display = 'none';
+        if (hint) hint.textContent = '阻断';
+    } else {
+        if (routeRow) routeRow.style.display = 'flex';
+        if (hint) hint.textContent = '合并';
+    }
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 确认添加规则
+function appendMergeRule() {
+    const secEntity = document.getElementById('merge-sec-entity').value.trim();
+    const action = document.getElementById('merge-action').value;
+    const primEntity = document.getElementById('merge-prim-entity').value.trim();
+    const routeRule = document.getElementById('merge-route-rule').value.trim();
+
+    if (!secEntity || !primEntity) {
+        customAlert('副源实体和主源实体不能为空');
+        return;
+    }
+
+    let rule = secEntity + ' ' + action + ' ' + primEntity;
+    if (action === '->' && routeRule) {
+        rule += ' | ' + routeRule;
+    }
+
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+
+    if (current && !current.endsWith(';')) {
+        textarea.value = current + ';' + rule;
+    } else {
+        textarea.value = current ? current + rule : rule;
+    }
+
+    // 清空表单
+    document.getElementById('merge-sec-entity').value = '';
+    document.getElementById('merge-prim-entity').value = '';
+    document.getElementById('merge-route-rule').value = '';
+
+    toggleMergeRulePanel();
 }
 
 // 调整数字
