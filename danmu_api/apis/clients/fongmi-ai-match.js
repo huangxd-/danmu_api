@@ -307,7 +307,7 @@ function extractDateToken(value) {
 }
 
 function extractEpisodePartToken(value) {
-  const match = String(value || "").match(/第\s*\d{1,4}\s*期\s*([上中下])/);
+  const match = String(value || "").match(/第\s*\d{1,4}\s*[集期话]\s*(?:[-_./|｜]\s*)?(?:[（(【\[]\s*)?([上中下])(?:\s*[）)】\]])?(?=\s*(?:$|[\s_.\-:：,，.。;；、]))/);
   return match ? match[1] : "";
 }
 
