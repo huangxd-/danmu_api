@@ -196,9 +196,9 @@ async function setupEnvWatcher() {
           console.log('[server] Environment variables reloaded successfully');
           console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
 
-          // 如果检测到关闭了 Bangumi Data 功能，主动释放 V8 内存
+          // 如果检测到关闭了 Bangumi Data 功能，主动释放内存与物理磁盘缓存
           if (process.env.USE_BANGUMI_DATA === 'false' || process.env.USE_BANGUMI_DATA === false) {
-              clearBangumiDataCache();
+              clearBangumiDataCache(true);
           }
 
         } catch (error) {

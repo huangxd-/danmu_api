@@ -2827,6 +2827,22 @@ async function processMergeTask(params) {
                         mappingEntries.sort((a, b) => a.idx - b.idx);
                         log("info", `${logPrefix} [${secSource}] 映射详情:\n${mappingEntries.map(e => e.text).join('\n')}`);
                     }
+                    // ── 记录合并层级 ──────────────────────────────────────
+                    derivedAnime.mergedChildren = derivedAnime.mergedChildren || [];
+                    // 1. 将副源数据存入全新组合对象的 mergedChildren 集合中
+                    if (!derivedAnime.mergedChildren.some(c => String(c.animeId) === String(match.animeId) && c.source === match.source)) {
+                        derivedAnime.mergedChildren.push({
+                            animeId: match.animeId,
+                            animeTitle: match.animeTitle,
+                            source: match.source,
+                            episodes: derivedMatch.links ? derivedMatch.links.length : 0,
+                            imageUrl: match.imageUrl || ''
+                        });
+                    }
+
+                    // 2. 在全局缓存中将“被合并的原始副源”标记为隐藏
+                    const cachedSec = globals.animes.find(a => String(a.animeId) === String(match.animeId) && a.source === match.source);
+                    if (cachedSec) cachedSec.isHiddenChild = true;
 
                     // ── 合集进度双向写入 ──────────────────────────────────────
                     // 支持主源为合集与副源为合集两种情况，为链式关联的下一次切片铺路
@@ -2913,6 +2929,9 @@ async function processMergeTask(params) {
             return null;
         }
         generatedSignatures.add(signature);
+        // 在全局缓存中将“被取代的原始主源”标记为隐藏
+        const cachedPrim = globals.animes.find(a => String(a.animeId) === String(pAnime.animeId) && a.source === pAnime.source);
+        if (cachedPrim) cachedPrim.isHiddenChild = true;
 
         // 标记消费：合集 ID 仅标记全局消费（保留组内复用能力），普通 ID 标记两级消费
         for (let i = 1; i < contentSignatureParts.length; i++) {

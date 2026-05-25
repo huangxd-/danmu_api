@@ -603,10 +603,11 @@ export async function searchBangumiData(keyword, siteKeys) {
 }
 
 /**
- * 释放本地数据内存缓存
- * 当动态关闭本地数据开关时调用，协助 V8 引擎进行垃圾回收
+ * 释放本地数据内存缓存与磁盘缓存
+ * 当动态关闭本地数据开关或主动清理缓存时调用，协助 V8 引擎进行垃圾回收并释放物理磁盘空间
+ * @param {boolean} clearDisk - 是否同步清理物理磁盘文件
  */
-export function clearBangumiDataCache() {
+export function clearBangumiDataCache(clearDisk = false) {
     if (memoryCache !== null) {
         const itemCount = memoryCache.items ? memoryCache.items.length : 0;
         memoryCache = null; // 切断引用，等待 GC 回收
@@ -617,5 +618,22 @@ export function clearBangumiDataCache() {
         log("info", `[Bangumi-Data] 内存缓存已主动释放 (原条目数: ${itemCount}，释放: ${memoryFootprintMB} MB，当前项目总占用: ${totalMemMB} MB)`);
         memoryFootprintMB = '0.00'; // 重置探针
         hasLoggedCacheWarning = false; // 重置警告标记
+    }
+
+    // 同步清理物理磁盘缓存文件及其并发临时文件
+    if (clearDisk && fs.existsSync(CACHE_DIR)) {
+        try {
+            const cachePath = path.join(CACHE_DIR, CACHE_FILENAME);
+            if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
+            
+            // 清理可能存在的并发流临时文件
+            for (let i = 0; i < 5; i++) {
+                const tmpPath = `${cachePath}.tmp${i}`;
+                if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+            }
+            log("info", `[Bangumi-Data] 磁盘缓存已同步清理`);
+        } catch (e) {
+            log("error", `[Bangumi-Data] 磁盘缓存清理失败: ${e.message}`);
+        }
     }
 }

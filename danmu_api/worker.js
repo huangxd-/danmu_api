@@ -8,7 +8,7 @@ import AIClient from './utils/ai-util.js';
 import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -512,6 +512,11 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // POST /api/deploy - 重新部署
   if (path === "/api/deploy" && method === "POST") {
     return handleDeploy();
+  }
+
+  // GET /api/cache/animes - 获取最近 animes 缓存
+  if (path === "/api/cache/animes" && method === "GET") {
+    return handleCacheAnimes();
   }
 
   // POST /api/cache/clear - 清理缓存

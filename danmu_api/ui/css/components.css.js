@@ -691,6 +691,13 @@ export const componentsCssContent = /* css */ `
 .anime-title {
     margin: 8px 0 5px;
     font-size: 12px;
+    word-break: normal;            /* 保持正常的单词换行规则，优先在空格处断句以保证可读性 */
+    overflow-wrap: break-word;     /* 当长字符串（如多源合并后缀）超出容器时，允许在其内部强制换行 */
+    display: -webkit-box;          /* 启用 WebKit 特有的弹性伸缩盒模型 */
+    -webkit-line-clamp: 5;         /* 限制文本块最多显示的行数为5行 */
+    -webkit-box-orient: vertical;  /* 设置弹性盒子的子元素垂直排列 */
+    overflow: hidden;              /* 隐藏超出容器设定高度范围的文本内容 */
+    text-overflow: ellipsis;       /* 文本溢出时使用省略号(...)进行截断展示 */
 }
 
 .episode-list-container {
@@ -1726,4 +1733,201 @@ export const componentsCssContent = /* css */ `
     gap: 8px;
     justify-content: flex-end;
 }
+
+/* 最近数据与animes缓存面板样式 */
+
+/* 面板容器 */
+.recent-data-panel {
+    display: none;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.anime-cache-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.anime-cache-card {
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #eaeaea;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
+}
+
+.anime-cache-card-body {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 10px;
+}
+
+.anime-cache-cover {
+    width: 44px;
+    height: 60px;
+    border-radius: 4px;
+    background-color: #e2e3e5;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.anime-cache-info,
+.anime-cache-child-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.anime-cache-title {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+}
+
+.anime-cache-meta {
+    color: #888;
+    font-size: 11px;
+}
+
+.anime-cache-actions,
+.anime-cache-child-actions {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.anime-cache-actions { gap: 6px; }
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 11px;
+}
+
+/* 卡片底部标签切换栏(Tab 风格) */
+.anime-cache-footer {
+    display: flex;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #fdfdfd;
+    border-top: 1px solid #f0f0f0;
+}
+
+.cache-badge {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.cache-badge.badge-sources { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; }
+.cache-badge.badge-episodes { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; }
+.cache-badge.active { filter: brightness(0.9); box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+
+/* 折叠列表容器 */
+.merged-children-container,
+.episodes-list-container {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border-top: 1px solid #f0f0f0;
+}
+
+.episodes-list-container {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* 子节点卡片 */
+.anime-cache-child-item {
+    display: flex;
+    flex-direction: column; 
+    background: #fff;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px dashed #ccc;
+}
+
+.anime-cache-child-main {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+}
+
+.anime-cache-child-cover {
+    width: 33px;
+    height: 45px;
+    border-radius: 3px;
+    background-color: #e2e3e5;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.anime-cache-child-title {
+    font-weight: 500;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.anime-cache-child-actions { gap: 4px; }
+
+/* 合并映射详情 */
+.child-mapping-toggle {
+    font-size: 10px;
+    color: #666;
+    cursor: pointer;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #eee;
+    text-align: center;
+}
+
+.child-mapping-toggle:hover {
+    color: #0066cc;
+}
+
+.child-mapping-container {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    background: #fdfdfd;
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid #f0f0f0;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.mapping-row {
+    font-size: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.mapping-status { flex-shrink: 0; font-weight: bold; }
+.mapping-status.success { color: #28a745; }
+.mapping-status.warning { color: #d39e00; }
+.mapping-text { color: #555; word-break: break-all; }
 `;

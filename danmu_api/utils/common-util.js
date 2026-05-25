@@ -304,10 +304,19 @@ export function titleMatches(title, query, parsedSeason = null) {
       return false; 
     }
     // 核心相似度计算：解决"和/与"等翻译差异
-    const qSet = new Set(kw);
-    const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
+    let matchCount = 0;
+    // 将标题转为数组以实现字符消耗逻辑，避免同一字符被重复匹配
+    const tChars = Array.from(t); 
 
-    return (matchCount / qSet.size) > 0.8;
+    for (const char of kw) {
+      const idx = tChars.indexOf(char);
+      if (idx !== -1) {
+        matchCount++;
+        tChars[idx] = null; 
+      }
+    }
+
+    return (matchCount / kw.length) > 0.8;
   });
 }
 
