@@ -366,7 +366,14 @@ export async function getFongmiDanmaku(url, req, clientIp = null) {
   if (!name) {
     return jsonResponse([], 200);
   }
-
+  // 使用剧名映射表转换剧名
+  if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
+    const mappedTitle = globals.titleMappingTable.get(name);
+    if (mappedTitle) {
+      log("info", `[Fongmi] Title mapped from original: ${name} to: ${mappedTitle}`);
+      name = mappedTitle;
+    }
+  }
   const searchUrl = new URL(url.toString());
   const detailStore = new Map();
   const keywords = buildFongmiSearchKeywords(name);
