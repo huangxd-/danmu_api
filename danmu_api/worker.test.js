@@ -5,7 +5,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
@@ -204,6 +204,16 @@ test('worker.js API endpoints', async (t) => {
     });
 
     assert.equal(seenRedirectMode, 'manual');
+  });
+
+  await t.test('buildSearchAnimeUrl should preserve special characters in keyword', async () => {
+    const searchUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/match`, 'Love & Death', 1, 2);
+
+    assert.equal(searchUrl.pathname, '/api/v2/search/anime');
+    assert.equal(searchUrl.searchParams.get('keyword'), 'Love & Death');
+    assert.equal(searchUrl.searchParams.get('season'), '1');
+    assert.equal(searchUrl.searchParams.get('episode'), '2');
+    assert.equal(searchUrl.searchParams.has(' Death'), false);
   });
 
   // 测试标题解析
