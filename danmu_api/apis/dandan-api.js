@@ -1400,13 +1400,18 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   return {title, season, episode, year};
 }
 
-export function buildSearchAnimeUrl(baseUrl, keyword, season = '', episode = '') {
+export function buildSearchAnimeUrl(baseUrl, keyword, season, episode) {
   const searchUrl = new URL(baseUrl);
-  searchUrl.pathname = searchUrl.pathname.replace(/\/match$/, '/search/anime');
+  const apiPrefix = searchUrl.pathname.replace(/\/(?:match|search\/episodes)$/, '');
+  searchUrl.pathname = `${apiPrefix}/search/anime`;
   searchUrl.search = '';
   searchUrl.searchParams.set('keyword', keyword || '');
-  searchUrl.searchParams.set('season', season || '');
-  searchUrl.searchParams.set('episode', episode || '');
+  if (season !== undefined) {
+    searchUrl.searchParams.set('season', season || '');
+  }
+  if (episode !== undefined) {
+    searchUrl.searchParams.set('episode', episode || '');
+  }
   return searchUrl;
 }
 
@@ -1572,7 +1577,7 @@ export async function searchEpisodes(url) {
   }
 
   // 先搜索动漫
-  let searchUrl = buildSearchAnimeUrl(new URL('/match', url.origin).toString(), anime);
+  let searchUrl = buildSearchAnimeUrl(url, anime);
   const requestAnimeDetailsMap = new Map();
 
   const searchRes = await searchAnime(searchUrl, null, null, requestAnimeDetailsMap);

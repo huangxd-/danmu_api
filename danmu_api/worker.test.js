@@ -216,6 +216,15 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(searchUrl.searchParams.has(' Death'), false);
   });
 
+  await t.test('buildSearchAnimeUrl should derive /search/anime from /search/episodes requests', async () => {
+    const searchUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/search/episodes?anime=Love%20%26%20Death&episode=2`, 'Love & Death');
+
+    assert.equal(searchUrl.pathname, '/api/v2/search/anime');
+    assert.equal(searchUrl.searchParams.get('keyword'), 'Love & Death');
+    assert.equal(searchUrl.searchParams.has('season'), false);
+    assert.equal(searchUrl.searchParams.has('episode'), false);
+  });
+
   // 测试标题解析
   await t.test('PARSE TitleSeasonEpisode', async () => {
     let title, season, episode;
