@@ -92,7 +92,7 @@ class MiguSource extends BaseSource {
       return animes;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMiguAnimes error:", {
+      log("error", "[Migu] getMiguAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -120,7 +120,7 @@ class MiguSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "getMiguDetail: 请求失败或无数据返回");
+        log("info", "[Migu] getMiguDetail: 请求失败或无数据返回");
         return { duration: 0, epsID: null };
       }
 
@@ -130,7 +130,7 @@ class MiguSource extends BaseSource {
       return { duration, epsID };
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMiguDetail error:", {
+      log("error", "[Migu] getMiguDetail error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -149,7 +149,7 @@ class MiguSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!detailResp || !detailResp.data) {
-        log("info", "getMiguEposides: 请求失败或无数据返回");
+        log("info", "[Migu] getMiguEposides: 请求失败或无数据返回");
         return [];
       }
 
@@ -167,12 +167,12 @@ class MiguSource extends BaseSource {
             pID 
           }];
         }
-        log("info", "getMiguEposides: eps 不存在");
+        log("info", "[Migu] getMiguEposides: eps 不存在");
         return [];
       }
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMiguEposides error:", {
+      log("error", "[Migu] getMiguEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -265,7 +265,7 @@ class MiguSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求咪咕视频弹幕...", id);
+    log("info", "[Migu] 开始从本地请求咪咕视频弹幕...", id);
     
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -274,7 +274,7 @@ class MiguSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Migu] 弹幕分段数量: ${segmentList.length}`);
 
     // 并发请求所有弹幕段，限制并发数量为50
     const MAX_CONCURRENT = 100;
@@ -302,7 +302,7 @@ class MiguSource extends BaseSource {
             allComments.push(...comments);
           }
         } else {
-          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+          log("error", `[Migu] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
       }
       
@@ -313,7 +313,7 @@ class MiguSource extends BaseSource {
     }
 
     if (allComments.length === 0) {
-      log("info", `咪咕视频: 该视频暂无弹幕数据 (vid=${id})`);
+      log("info", `[Migu] 咪咕视频: 该视频暂无弹幕数据 (vid=${id})`);
       return [];
     }
 
@@ -323,14 +323,14 @@ class MiguSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取咪咕视频弹幕分段列表...", id);
+    log("info", "[Migu] 获取咪咕视频弹幕分段列表...", id);
 
     const itemId = this.extractEpId(id);
     const detail = await this.getDetail(itemId);
     const durationSec = time_to_second(detail.duration);
-    log("info", "itemId:", itemId);
-    log("info", "durationSec:", durationSec);
-    log("info", "epsID:", detail.epsID);
+    log("info", "[Migu] itemId:", itemId);
+    log("info", "[Migu] durationSec:", durationSec);
+    log("info", "[Migu] epsID:", detail.epsID);
 
     const segmentDuration = 30; // 每个分片30秒钟
     const segmentList = [];
@@ -376,7 +376,7 @@ class MiguSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Migu] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

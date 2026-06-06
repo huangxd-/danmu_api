@@ -90,12 +90,12 @@ export default class DandanSource extends BaseSource {
           // 原始搜索有结果，中断 TMDB 流程
           tmdbAbortController.abort();
           const animes = resp.data.animes;
-          log("info", `dandanSearchresp (original): ${JSON.stringify(animes)}`);
+          log("info", `[Dandan] dandanSearchresp (original): ${JSON.stringify(animes)}`);
           log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: original)`);
           return { success: true, data: animes, source: 'original' };
         } catch (error) {
           // 捕获原始搜索错误，但不阻塞 TMDB 搜索
-          log("error", "getDandanAnimes error:", {
+          log("error", "[Dandan] getDandanAnimes error:", {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -152,7 +152,7 @@ export default class DandanSource extends BaseSource {
             anime._tmdbCnAlias = cnAlias;
           }
 
-          log("info", `dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
+          log("info", `[Dandan] dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
           log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: tmdb)`);
           return { success: true, data: animes, source: 'tmdb' };
         } catch (error) {
@@ -197,7 +197,7 @@ export default class DandanSource extends BaseSource {
       return [];
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getDandanAnimes error:", {
+      log("error", "[Dandan] getDandanAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -219,13 +219,13 @@ export default class DandanSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "getDandanEposides: 请求失败或无数据返回");
+        log("info", "[Dandan] getDandanEposides: 请求失败或无数据返回");
         return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null };
       }
 
       // 判断 bangumi 数据是否存在
       if (!resp.data.bangumi) {
-        log("info", "getDandanEposides: bangumi 数据不存在");
+        log("info", "[Dandan] getDandanEposides: bangumi 数据不存在");
         return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null };
       }
 
@@ -264,14 +264,14 @@ export default class DandanSource extends BaseSource {
       const imageUrl = bangumiData.imageUrl || null;
 
       // 正常情况下输出 JSON 字符串
-      log("info", `getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
+      log("info", `[Dandan] getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
 
       // 返回包含剧集、别名、相关作品、类型及封面信息的完整对象
       return { episodes, titles, relateds, type, typeDescription, imageUrl };
 
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getDandanEposides error:", {
+      log("error", "[Dandan] getDandanEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -498,7 +498,7 @@ export default class DandanSource extends BaseSource {
           "User-Agent": DandanUserAgent,
         },
         retries: 1,
-      }).catch(e => { log('error', `dandan base comments error: ${e.message}`); return null; });
+      }).catch(e => { log('error', `[Dandan] dandan base comments error: ${e.message}`); return null; });
 
       const resp = await dandanPromise;
 
@@ -510,7 +510,7 @@ export default class DandanSource extends BaseSource {
       }
 
     } catch (error) {
-      log("error", "getEpisodeDanmu error:", {
+      log("error", "[Dandan] getEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -521,7 +521,7 @@ export default class DandanSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取弹弹play弹幕分段列表...", id);
+    log("info", "[Dandan] 获取弹弹play弹幕分段列表...", id);
 
     return new SegmentListResponse({
       "type": "dandan",

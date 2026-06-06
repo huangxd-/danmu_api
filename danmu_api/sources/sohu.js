@@ -172,7 +172,7 @@ export default class SohuSource extends BaseSource {
       if (start > 0 && end > start) {
         data = JSON.parse(data.substring(start, end));
       } else {
-        log("error", "搜狐视频: 无法解析JSONP响应");
+        log("error", "[Sohu] 搜狐视频: 无法解析JSONP响应");
         return null;
       }
     } else if (typeof data === "string") {
@@ -195,7 +195,7 @@ export default class SohuSource extends BaseSource {
       const videosData = data.videos || [];
 
       if (!videosData || videosData.length === 0) {
-        log("warning", `搜狐视频: 未找到分集列表 (media_id=${id})`);
+        log("warn", `[Sohu] 搜狐视频: 未找到分集列表 (media_id=${id})`);
         return [];
       }
 
@@ -374,7 +374,7 @@ export default class SohuSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求搜狐视频弹幕...", id);
+    log("info", "[Sohu] 开始从本地请求搜狐视频弹幕...", id);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -383,7 +383,7 @@ export default class SohuSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Sohu] 弹幕分段数量: ${segmentList.length}`);
 
     // 并发请求所有弹幕段，限制并发数量为5
     const MAX_CONCURRENT = 10;
@@ -415,7 +415,7 @@ export default class SohuSource extends BaseSource {
             break;
           }
         } else {
-          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+          log("error", `[Sohu] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
       }
       
@@ -426,7 +426,7 @@ export default class SohuSource extends BaseSource {
     }
 
     if (allComments.length === 0) {
-      log("info", `搜狐视频: 该视频暂无弹幕数据 (vid=${id})`);
+      log("info", `[Sohu] 搜狐视频: 该视频暂无弹幕数据 (vid=${id})`);
       return [];
     }
 
@@ -445,7 +445,7 @@ export default class SohuSource extends BaseSource {
       const response = await httpGet(segment.url, { headers, timeout: 10000 });
 
       if (!response || !response.data) {
-        log("error", `搜狐视频: 弹幕段响应为空 (${segment.segment_start}-${segment.segment_end}s)`);
+        log("error", `[Sohu] 搜狐视频: 弹幕段响应为空 (${segment.segment_start}-${segment.segment_end}s)`);
         return [];
       }
 
@@ -454,22 +454,22 @@ export default class SohuSource extends BaseSource {
         const comments = data.info?.comments || [];
 
         if (comments && comments.length > 0) {
-          log("info", `搜狐视频: 获取到 ${comments.length} 条弹幕 (${segment.segment_start}-${segment.segment_end}s)`);
+          log("info", `[Sohu] 搜狐视频: 获取到 ${comments.length} 条弹幕 (${segment.segment_start}-${segment.segment_end}s)`);
         }
 
         return comments || [];
       } catch (error) {
-        log("error", `搜狐视频: 解析弹幕响应失败: ${error.message}`);
+        log("error", `[Sohu] 搜狐视频: 解析弹幕响应失败: ${error.message}`);
         return [];
       }
     } catch (error) {
-      log("error", `搜狐视频: 获取弹幕段失败 (vid=${vid}, ${start}-${end}s): ${error.message}`);
+      log("error", `[Sohu] 搜狐视频: 获取弹幕段失败 (vid=${vid}, ${start}-${end}s): ${error.message}`);
       return [];
     }
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取搜狐视频弹幕分段列表...", id);
+    log("info", "[Sohu] 获取搜狐视频弹幕分段列表...", id);
 
     // 解析 episode_id
     const { vid, aid } = await this.extractVidAndAid(id);
@@ -515,7 +515,7 @@ export default class SohuSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Sohu] 请求分片弹幕失败:", error);
       return [];
     }
   }
@@ -561,7 +561,7 @@ export default class SohuSource extends BaseSource {
           like: comment.fcount
         };
       } catch (error) {
-        log("error", `格式化弹幕失败: ${error.message}, 弹幕数据:`, comment);
+        log("error", `[Sohu] 格式化弹幕失败: ${error.message}, 弹幕数据:`, comment);
         return null;
       }
     }).filter(comment => comment !== null);

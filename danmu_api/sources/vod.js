@@ -28,17 +28,17 @@ export default class VodSource extends BaseSource {
       );
       // 检查 response.data.list 是否存在且长度大于 0
       if (response && response.data && response.data.list && response.data.list.length > 0) {
-        log("info", `请求 ${serverName}(${server}) 成功`);
+        log("info", `[VOD] 请求 ${serverName}(${server}) 成功`);
         const data = response.data;
-        log("info", `${serverName} response: ↓↓↓`);
+        log("info", `[VOD] ${serverName} response: ↓↓↓`);
         printFirst200Chars(data);
         return { serverName, list: data.list };
       } else {
-        log("info", `请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
+        log("info", `[VOD] 请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
         return { serverName, list: [] };
       }
     } catch (error) {
-      log("error", `请求 ${serverName}(${server}) 失败:`, {
+      log("error", `[VOD] 请求 ${serverName}(${server}) 失败:`, {
         message: error.message,
         name: error.name,
         stack: error.stack,

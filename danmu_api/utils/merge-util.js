@@ -2538,7 +2538,7 @@ async function processMergeTask(params) {
                     const sLen = route.sec.end - route.sec.start + 1;
                     const pLen = route.prim.end - route.prim.start + 1;
                     if (sLen !== pLen) {
-                        log("warn", `[映射表] 路由区间跨度不对等，跳过此段: E${route.sec.start}~E${route.sec.end} > E${route.prim.start}~E${route.prim.end}`);
+                        log("warn", `[Merge] [映射表] 路由区间跨度不对等，跳过此段: E${route.sec.start}~E${route.sec.end} > E${route.prim.start}~E${route.prim.end}`);
                         continue;
                     }
                     for (let i = 0; i < sLen; i++) {

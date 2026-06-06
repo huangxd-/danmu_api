@@ -391,7 +391,7 @@ export default class YoukuSource extends BaseSource {
   }
 
    async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求优酷弹幕...", id);
+    log("info", "[Youku] 开始从本地请求优酷弹幕...", id);
 
     if (!id) {
       return [];
@@ -438,7 +438,7 @@ export default class YoukuSource extends BaseSource {
           }
         }
       } catch (e) {
-        log("error", "优酷分段批量请求失败:", e.message);
+        log("error", "[Youku] 优酷分段批量请求失败:", e.message);
       }
     }
 
@@ -448,7 +448,7 @@ export default class YoukuSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取优酷弹幕分段列表...", id);
+    log("info", "[Youku] 获取优酷弹幕分段列表...", id);
 
     if (!id) {
       return new SegmentListResponse({
@@ -475,14 +475,14 @@ export default class YoukuSource extends BaseSource {
     if (match) {
       path = match[2].split('/').filter(Boolean);  // 分割路径并去掉空字符串
       path.unshift("");
-      log("info", path);
+      log("info", "[Youku]", path);
     } else {
-      log("error", 'Invalid URL');
+      log("error", "[Youku] Invalid URL");
       return [];
     }
     const video_id = path[path.length - 1].split(".")[0].slice(3);
 
-    log("info", `video_id: ${video_id}`);
+    log("info", `[Youku] video_id: ${video_id}`);
 
     // 获取页面标题和视频时长
     let res;
@@ -496,14 +496,14 @@ export default class YoukuSource extends BaseSource {
         allow_redirects: false
       });
     } catch (error) {
-      log("error", "请求视频信息失败:", error);
+      log("error", "[Youku] 请求视频信息失败:", error);
       return [];
     }
 
     const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
     const title = data.title;
     const duration = data.duration;
-    log("info", `标题: ${title}, 时长: ${duration}`);
+    log("info", `[Youku] 标题: ${title}, 时长: ${duration}`);
 
     // 获取 cna 和 tk_enc
     let cna, _m_h5_tk_enc, _m_h5_tk;
@@ -517,14 +517,14 @@ export default class YoukuSource extends BaseSource {
         },
         allow_redirects: false
       });
-      log("info", `cnaRes: ${JSON.stringify(cnaRes)}`);
-      log("info", `cnaRes.headers: ${JSON.stringify(cnaRes.headers)}`);
+      log("info", `[Youku] cnaRes: ${JSON.stringify(cnaRes)}`);
+      log("info", `[Youku] cnaRes.headers: ${JSON.stringify(cnaRes.headers)}`);
       const etag = cnaRes.headers["etag"] || cnaRes.headers["Etag"];
-      log("info", `etag: ${etag}`);
+      log("info", `[Youku] etag: ${etag}`);
       // const match = cnaRes.headers["set-cookie"].match(/cna=([^;]+)/);
       // cna = match ? match[1] : null;
       cna = etag.replace(/^"|"$/g, '');
-      log("info", `cna: ${cna}`);
+      log("info", `[Youku] cna: ${cna}`);
 
       let tkEncRes;
       while (!tkEncRes) {
@@ -536,10 +536,10 @@ export default class YoukuSource extends BaseSource {
           allow_redirects: false
         });
       }
-      log("info", `tkEncRes: ${JSON.stringify(tkEncRes)}`);
-      log("info", `tkEncRes.headers: ${JSON.stringify(tkEncRes.headers)}`);
+      log("info", `[Youku] tkEncRes: ${JSON.stringify(tkEncRes)}`);
+      log("info", `[Youku] tkEncRes.headers: ${JSON.stringify(tkEncRes.headers)}`);
       const tkEncSetCookie = tkEncRes.headers["set-cookie"] || tkEncRes.headers["Set-Cookie"];
-      log("info", `tkEncSetCookie: ${tkEncSetCookie}`);
+      log("info", `[Youku] tkEncSetCookie: ${tkEncSetCookie}`);
 
       // 获取 _m_h5_tk_enc
       const tkEncMatch = tkEncSetCookie.match(/_m_h5_tk_enc=([^;]+)/);
@@ -549,10 +549,10 @@ export default class YoukuSource extends BaseSource {
       const tkH5Match = tkEncSetCookie.match(/_m_h5_tk=([^;]+)/);
       _m_h5_tk = tkH5Match ? tkH5Match[1] : null;
 
-      log("info", `_m_h5_tk_enc: ${_m_h5_tk_enc}`);
-      log("info", `_m_h5_tk: ${_m_h5_tk}`);
+      log("info", `[Youku] _m_h5_tk_enc: ${_m_h5_tk_enc}`);
+      log("info", `[Youku] _m_h5_tk: ${_m_h5_tk}`);
     } catch (error) {
-      log("error", "获取 cna 或 tk_enc 失败:", error);
+      log("error", "[Youku] 获取 cna 或 tk_enc 失败:", error);
       return [];
     }
 
@@ -634,7 +634,7 @@ export default class YoukuSource extends BaseSource {
 
       const queryString = buildQueryString(params);
       const url = `${api_danmaku}?${queryString}`;
-      log("info", `piece_url: ${url}`);
+      log("info", `[Youku] piece_url: ${url}`);
 
       return {
         "type": "youku",
@@ -660,7 +660,7 @@ export default class YoukuSource extends BaseSource {
   }
 
   async getEpisodeSegmentDanmu(segment) {
-    log("info", "开始从本地请求优酷分段弹幕...", segment.url);
+    log("info", "[Youku] 开始从本地请求优酷分段弹幕...", segment.url);
 
     const response = await httpPost(segment.url, buildQueryString({ data: segment.data }), {
       headers: {

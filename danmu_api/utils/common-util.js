@@ -17,11 +17,11 @@ export function printFirst200Chars(data) {
   } else if (typeof data === 'object') {
     dataToPrint = JSON.stringify(data);  // 如果是对象，转为字符串
   } else {
-    log("error", "Unsupported data type");
+    log("error", "[Utils] [Common] Unsupported data type");
     return;
   }
 
-  log("info", dataToPrint.slice(0, 200));  // 打印前200个字符
+  log("info", "[Utils] [Common]", dataToPrint.slice(0, 200));  // 打印前200个字符
 }
 
 // 正则表达式：提取episode标题中的内容
@@ -172,7 +172,7 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 
   // 验证平台是否有效
   if (!globals.allowedPlatforms.includes(preferredPlatform)) {
-    log("warn", `Invalid platform: ${preferredPlatform}, using default order`);
+    log("warn", `[Utils] [Common] Invalid platform: ${preferredPlatform}, using default order`);
     return [...globals.platformOrderArr];
   }
 

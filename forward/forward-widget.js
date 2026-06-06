@@ -556,7 +556,7 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
 // 获取变量数据
 async function getCaches() {
     if (globals.animes.length === 0) {
-        log("info", 'getCaches start.');
+        log("info", '[Forward] getCaches start.');
         const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
           Widget.storage.get('animes'),
           Widget.storage.get('episodeIds'),
@@ -582,7 +582,7 @@ async function getCaches() {
 
 // 存储更新后的变量
 async function updateCaches() {
-    log("info", 'updateCaches start.');
+    log("info", '[Forward] updateCaches start.');
     await Promise.all([
       Widget.storage.set('animes', globals.animes),
       Widget.storage.set('episodeIds', globals.episodeIds),
@@ -594,7 +594,7 @@ async function updateCaches() {
 
 // 删除存储的变量
 async function removeCaches() {
-    log("info", 'removeCaches start.');
+    log("info", '[Forward] removeCaches start.');
     await Promise.all([
       Widget.storage.remove('animes'),
       Widget.storage.remove('episodeIds'),
@@ -619,7 +619,7 @@ async function searchDanmu(params) {
   // 如果启用了搜索关键字繁转简，则进行转换
   if (globals.animeTitleSimplified) {
     simplifiedTitle = simplized(title);
-    log("info", `searchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
+    log("info", `[Forward] searchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
   }
 
   const response = await searchAnime(new URL(`${PREFIX_URL}/api/v2/search/anime?keyword=${simplifiedTitle}`));
@@ -677,7 +677,7 @@ async function searchDanmu(params) {
     }
   }
 
-  log("info", "animes: ", animes);
+  log("info", "[Forward] animes: ", animes);
 
   await updateCaches();
 
@@ -698,7 +698,7 @@ async function getDetailById(params) {
   const response = await getBangumi(`${PREFIX_URL}/api/v2/bangumi/${animeId}`);
   const resJson = await response.json();
 
-  log("info", "bangumi", resJson);
+  log("info", "[Forward] bangumi", resJson);
 
   await updateCaches();
 
@@ -720,11 +720,11 @@ async function getCommentsById(params) {
     const segmentList = Widget.storage.get(storeKey);
     const lastCommentId = Widget.storage.get(commentIdKey);
     
-    log("info", "storeKey:", storeKey);
-    log("info", "commentIdKey:", commentIdKey);
-    log("info", "commentId:", commentId);
-    log("info", "lastCommentId:", lastCommentId);
-    log("info", "segmentList:", segmentList);
+    log("info", "[Forward] storeKey:", storeKey);
+    log("info", "[Forward] commentIdKey:", commentIdKey);
+    log("info", "[Forward] commentId:", commentId);
+    log("info", "[Forward] lastCommentId:", lastCommentId);
+    log("info", "[Forward] segmentList:", segmentList);
 
     if (lastCommentId === commentId && segmentList) {
         return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
@@ -738,12 +738,10 @@ async function getCommentsById(params) {
     const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
     const resJson = await response.json();
 
-    log("info", "segmentList:", resJson.comments.segmentList);
+    log("info", "[Forward] segmentList:", resJson.comments.segmentList);
 
     Widget.storage.set(storeKey, resJson.comments.segmentList);
     Widget.storage.set(commentIdKey, commentId);
-
-    console.log("segmentList", resJson.comments.segmentList);
 
     await updateCaches();
 
@@ -770,7 +768,7 @@ async function getDanmuWithSegmentTime(params) {
         const time = Number(segmentTime);
         return time >= start && time < end;
     });
-    log("info", "segment:", segment);
+    log("info", "[Forward] segment:", segment);
     const response = await getSegmentComment(segment);
     const resJson = await response.json();
 

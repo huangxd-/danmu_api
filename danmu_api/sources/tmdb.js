@@ -45,11 +45,11 @@ export default class TmdbSource extends BaseSource {
         await this._getDoubanInfo(imdbId, mediaType, doubanIds);
       } else {
         const seasons = await getImdbSeasons(imdbId);
-        log("info", "imdb seasons:", seasons.data.seasons);
+        log("info", "[TMDB] imdb seasons:", seasons.data.seasons);
 
         const seasonPromises = (seasons?.data?.seasons ?? []).map(async (season) => {
           let finalImdbId = imdbId;
-          log("info", "imdb season:", season.season);
+          log("info", "[TMDB] imdb season:", season.season);
 
           try {
             if (Number(season.season) !== 1) {
@@ -59,7 +59,7 @@ export default class TmdbSource extends BaseSource {
 
             await this._getDoubanInfo(finalImdbId, mediaType, doubanIds);
           } catch (error) {
-            log("error", `处理第 ${season.season} 季失败，继续执行其他季:`, error);
+            log("error", `[TMDB] 处理第 ${season.season} 季失败，继续执行其他季:`, error);
           }
         });
 
@@ -68,7 +68,7 @@ export default class TmdbSource extends BaseSource {
 
       return doubanIds;
     } catch (error) {
-      log("error", "getTmdbIds error:", {
+      log("error", "[TMDB] getTmdbIds error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -90,14 +90,14 @@ export default class TmdbSource extends BaseSource {
         tmdbItems = data.results.filter(item => (item.name || item.title) === keyword);
       }
 
-      log("info", `tmdb items.length: ${tmdbItems.length}`);
+      log("info", `[TMDB] tmdb items.length: ${tmdbItems.length}`);
 
       const doubanPromises = tmdbItems.map(async (tmdbItem) => {
         try {
           const doubanIds = await this.getDoubanIdByTmdbId(tmdbItem.media_type, tmdbItem.id);
           return doubanIds;
         } catch (error) {
-          log("error", `获取 TMDB ID ${tmdbItem.id} 的豆瓣 ID 失败，继续处理其他条目:`, error);
+          log("error", `[TMDB] 获取 TMDB ID ${tmdbItem.id} 的豆瓣 ID 失败，继续处理其他条目:`, error);
           return []; // 失败返回空数组，不中断合并
         }
       });
@@ -107,7 +107,7 @@ export default class TmdbSource extends BaseSource {
 
       return tmpAnimes;
     } catch (error) {
-      log("error", "getTmdbAnimes error:", {
+      log("error", "[TMDB] getTmdbAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,

@@ -60,7 +60,7 @@ export class CloudflareHandler extends BaseHandler {
       // 获取所有环境变量
       const envs = await this._getAllEnvs(globals.deployPlatformAccount, globals.deployPlatformProject, globals.deployPlatformToken);
       if (envs === null) {
-        log("error", '[server] ✗ Failed to set environment variable: envs is null');
+        log("error", '[system] [Server] ✗ Failed to set environment variable: envs is null');
         return;
       }
 
@@ -82,7 +82,7 @@ export class CloudflareHandler extends BaseHandler {
 
       return this.updateLocalEnv(key, value);
     } catch (error) {
-      log("error", '[server] ✗ Failed to set environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to set environment variable:', error.message);
     }
   }
 
@@ -102,13 +102,13 @@ export class CloudflareHandler extends BaseHandler {
       await this._getAllEnvs(accountId, projectId, token);
       return true;
     } catch (error) {
-      log("error", 'checkParams failed! accountId, projectId or token is not valid:', error.message);
+      log("error", '[system] [Server] checkParams failed! accountId, projectId or token is not valid:', error.message);
       return false;
     }
   }
 
   async deploy() {
-    log("log", 'After modifying the environment variables on the cloudflare platform, it will be automatically deployed.');
+    log("info", '[system] [Server] After modifying the environment variables on the cloudflare platform, it will be automatically deployed.');
     return true;
   }
 }

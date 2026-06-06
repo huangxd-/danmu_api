@@ -99,7 +99,7 @@ export default class LeshiSource extends BaseSource {
 
       const htmlContent = response.data;
 
-      log("debug", `[Leshi] 搜索请求成功，响应长度: ${htmlContent.length} 字符`);
+      log("info", `[Leshi] 搜索请求成功，响应长度: ${htmlContent.length} 字符`);
 
       // 解析HTML，提取data-info属性
       const results = [];
@@ -114,13 +114,13 @@ export default class LeshiSource extends BaseSource {
         matches.push(match);
       }
 
-      log("debug", `[Leshi] 从HTML中找到 ${matches.length} 个 data-info 块`);
+      log("info", `[Leshi] 从HTML中找到 ${matches.length} 个 data-info 块`);
 
       for (const match of matches) {
         try {
           let dataInfoStr = match[1];
 
-          log("debug", `[Leshi] 提取到 data-info 原始字符串: ${dataInfoStr.substring(0, 200)}...`);
+          log("info", `[Leshi] 提取到 data-info 原始字符串: ${dataInfoStr.substring(0, 200)}...`);
 
           // 解析JavaScript对象字面量为JSON
           // 1. 先将所有单引号替换为双引号
@@ -130,7 +130,7 @@ export default class LeshiSource extends BaseSource {
 
           const dataInfo = JSON.parse(dataInfoStr);
 
-          log("debug", `[Leshi] 成功解析 data-info，pid=${dataInfo.pid}, type=${dataInfo.type}`);
+          log("info", `[Leshi] 成功解析 data-info，pid=${dataInfo.pid}, type=${dataInfo.type}`);
 
           // 提取基本信息
           let pid = dataInfo.pid || '';
@@ -238,10 +238,10 @@ export default class LeshiSource extends BaseSource {
           };
 
           results.push(result);
-          log("debug", `[Leshi] 解析成功 - ${title} (pid=${pid}, type=${resultType}, episodes=${episodeCount})`);
+          log("info", `[Leshi] 解析成功 - ${title} (pid=${pid}, type=${resultType}, episodes=${episodeCount})`);
 
         } catch (e) {
-          log("warning", `[Leshi] 解析搜索结果项失败: ${e}`);
+          log("warn", `[Leshi] 解析搜索结果项失败: ${e}`);
           continue;
         }
       }
@@ -250,7 +250,7 @@ export default class LeshiSource extends BaseSource {
         log("info", `[Leshi] 网络搜索 '${keyword}' 完成，找到 ${results.length} 个有效结果。`);
         log("info", `[Leshi] 搜索结果列表:`);
         for (const r of results) {
-          log("info", `  - ${r.title} (ID: ${r.mediaId}, 类型: ${r.type}, 年份: ${r.year})`);
+          log("info", `[Leshi]   - ${r.title} (ID: ${r.mediaId}, 类型: ${r.type}, 年份: ${r.year})`);
         }
       } else {
         log("info", `[Leshi] 网络搜索 '${keyword}' 完成，找到 0 个结果。`);
@@ -282,17 +282,17 @@ export default class LeshiSource extends BaseSource {
           const response = await httpGet(url, { timeout: 10000 });
           if (response && response.data && response.status === 200) {
             htmlContent = response.data;
-            log("debug", `成功获取页面: ${url}`);
+            log("info", `[Leshi] 成功获取页面: ${url}`);
             break;
           }
         } catch (e) {
-          log("debug", `尝试URL失败 ${url}: ${e}`);
+          log("info", `[Leshi] 尝试URL失败 ${url}: ${e}`);
           continue;
         }
       }
 
       if (!htmlContent) {
-        log("error", `无法获取作品页面: media_id=${id}`);
+        log("error", `[Leshi] 无法获取作品页面: media_id=${id}`);
         return [];
       }
 
@@ -303,7 +303,7 @@ export default class LeshiSource extends BaseSource {
       const twxjContainerMatch = /<div class="show_cnt twxj-[^"]*">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/.exec(htmlContent);
       
       if (twxjContainerMatch) {
-        log("debug", `找到图文选集容器`);
+        log("info", `[Leshi] 找到图文选集容器`);
         return this.parseEpisodesFromHtml(twxjContainerMatch[0], id);
       }
       
@@ -311,12 +311,12 @@ export default class LeshiSource extends BaseSource {
       const sjxjContainerMatch = /<div class="show_cnt sjxj-[^"]*">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/.exec(htmlContent);
       
       if (sjxjContainerMatch) {
-        log("debug", `找到数字选集容器`);
+        log("info", `[Leshi] 找到数字选集容器`);
         return this.parseEpisodesFromHtml(sjxjContainerMatch[0], id);
       }
       
       // 如果以上都没找到，尝试查找整个剧集区域
-      log("debug", `未找到特定选集容器，尝试查找第一集视频列表...`);
+      log("info", `[Leshi] 未找到特定选集容器，尝试查找第一集视频列表...`);
       
       const firstVideoListMatch = /<div class="show_play first_videolist[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/.exec(htmlContent);
       if (firstVideoListMatch) {
@@ -325,7 +325,7 @@ export default class LeshiSource extends BaseSource {
         return this.parseEpisodesFromHtml(containerHtml, id);
       }
       
-      log("error", `无法找到剧集列表容器: media_id=${id}`);
+      log("error", `[Leshi] 无法找到剧集列表容器: media_id=${id}`);
       
       // 从htmlContent直接匹配查找 https://www.le.com/ptv/vplay/77917395.html 形式的链接
       const regex = /https:\/\/www\.le\.com\/ptv\/vplay\/(\d+)\.html/g;
@@ -368,19 +368,19 @@ export default class LeshiSource extends BaseSource {
       const containerMatches = htmlContent.match(episodeContainerRegex);
       
       if (!containerMatches || containerMatches.length === 0) {
-        log("debug", `在HTML中未找到剧集容器div.col_4，尝试查找dl.dl_temp元素`);
+        log("info", `[Leshi] 在HTML中未找到剧集容器div.col_4，尝试查找dl.dl_temp元素`);
         // 如果没找到div.col_4，直接查找dl.dl_temp
         const episodeRegex = /<dl class="dl_temp">[\s\S]*?<\/dl>/g;
         const matches = htmlContent.match(episodeRegex);
         
         if (!matches || matches.length === 0) {
-          log("debug", `在HTML中未找到剧集元素，尝试更广泛的选择器`);
+          log("info", `[Leshi] 在HTML中未找到剧集元素，尝试更广泛的选择器`);
           // 尝试更广泛的匹配
           const broaderRegex = /<dl[^>]*class="[^"]*dl_temp[^"]*"[^>]*>[\s\S]*?<\/dl>/g;
           const broaderMatches = htmlContent.match(broaderRegex);
           
           if (!broaderMatches || broaderMatches.length === 0) {
-            log("error", `无法从HTML中解析到任何剧集: media_id=${mediaId}`);
+            log("error", `[Leshi] 无法从HTML中解析到任何剧集: media_id=${mediaId}`);
             return [];
           }
           
@@ -400,7 +400,7 @@ export default class LeshiSource extends BaseSource {
       }
       
       if (dlElements.length === 0) {
-        log("error", `从容器中未能提取到任何dl.dl_temp元素: media_id=${mediaId}`);
+        log("error", `[Leshi] 从容器中未能提取到任何dl.dl_temp元素: media_id=${mediaId}`);
         return [];
       }
       
@@ -419,7 +419,7 @@ export default class LeshiSource extends BaseSource {
         // 提取链接 - 优先匹配 vplay 链接
         const linkMatch = /<a[^>]+href="(\/\/www\.le\.com\/ptv\/vplay\/(\d+)\.html)"[^>]*>/.exec(element);
         if (!linkMatch) {
-          log("debug", `跳过无法解析链接的剧集元素`);
+          log("info", `[Leshi] 跳过无法解析链接的剧集元素`);
           continue;
         }
         
@@ -471,7 +471,7 @@ export default class LeshiSource extends BaseSource {
         // 过滤掉预告片或其他非正常剧集（可选）
         const isPreview = /预告|Preview|preview/.test(title);
         if (isPreview) {
-          log("debug", `跳过预告片: ${title}`);
+          log("info", `[Leshi] 跳过预告片: ${title}`);
           continue;
         }
         
@@ -485,7 +485,7 @@ export default class LeshiSource extends BaseSource {
         episodes.push(episode);
         
       } catch (e) {
-        log("warning", `[Leshi] 解析单个剧集失败: ${e.message}`);
+        log("warn", `[Leshi] 解析单个剧集失败: ${e.message}`);
         continue;
       }
     }
@@ -582,7 +582,7 @@ export default class LeshiSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求乐视网弹幕...", id);
+    log("info", "[Leshi] 开始从本地请求乐视网弹幕...", id);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -591,7 +591,7 @@ export default class LeshiSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Leshi] 弹幕分段数量: ${segmentList.length}`);
 
     // 并发请求所有弹幕段，限制并发数量为5
     const MAX_CONCURRENT = 10;
@@ -623,7 +623,7 @@ export default class LeshiSource extends BaseSource {
             break;
           }
         } else {
-          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+          log("error", `[Leshi] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
       }
       
@@ -634,7 +634,7 @@ export default class LeshiSource extends BaseSource {
     }
 
     if (allComments.length === 0) {
-      log("info", `乐视网: 该视频暂无弹幕数据 (vid=${id})`);
+      log("info", `[Leshi] 乐视网: 该视频暂无弹幕数据 (vid=${id})`);
       return [];
     }
 
@@ -670,13 +670,13 @@ export default class LeshiSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Leshi] 请求分片弹幕失败:", error);
       return [];
     }
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取乐视网弹幕分段列表...", id);
+    log("info", "[Leshi] 获取乐视网弹幕分段列表...", id);
 
     // 从ID中提取video_id
     let videoId = id;
@@ -701,7 +701,7 @@ export default class LeshiSource extends BaseSource {
       });
     }
 
-    log("info", `乐视网: 视频时长 ${duration}秒，分为 ${segments.length} 个时间段`);
+    log("info", `[Leshi] 乐视网: 视频时长 ${duration}秒，分为 ${segments.length} 个时间段`);
 
     return new SegmentListResponse({
       "type": "leshi",
@@ -718,7 +718,7 @@ export default class LeshiSource extends BaseSource {
       const response = await httpGet(`https://www.le.com/ptv/vplay/${videoId}.html`, { timeout: 10000 });
       
       if (!response || !response.data) {
-        log("warning", `乐视网: 获取视频时长失败，使用默认值2400秒`);
+        log("warn", `[Leshi] 乐视网: 获取视频时长失败，使用默认值2400秒`);
         return 2400;
       }
       
@@ -749,7 +749,7 @@ export default class LeshiSource extends BaseSource {
       // 默认返回40分钟
       return 2400;
     } catch (e) {
-      log("warning", `获取视频时长失败: ${e}，使用默认值2400秒`);
+      log("warn", `[Leshi] 获取视频时长失败: ${e}，使用默认值2400秒`);
       return 2400;
     }
   }
@@ -783,7 +783,7 @@ export default class LeshiSource extends BaseSource {
           t: Math.round(timeVal * 100) / 100
         };
       } catch (error) {
-        log("error", `格式化弹幕失败: ${error.message}, 弹幕数据:`, comment);
+        log("error", `[Leshi] 格式化弹幕失败: ${error.message}, 弹幕数据:`, comment);
         return null;
       }
     }).filter(comment => comment !== null);

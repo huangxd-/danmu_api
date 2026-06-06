@@ -1,5 +1,26 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+// 跨异步生命周期链路的日志上下文追踪器
+export const sourceLogContext = new AsyncLocalStorage();
+
+// 源调度键名（sourceOrderArr）到日志标签规范名称的映射
+// sourceOrderArr 中部分键名与对应源文件的标签命名不一致（如 360→360kan, imgo→mango）
+// 此映射表统一转换，确保 HTTP 日志标签与源文件内部标签一致
+const SOURCE_KEY_TO_LOG_NAME = {
+  '360': '360kan',
+  'imgo': 'mango',
+};
+
+/**
+ * 将 sourceOrderArr 中的调度键名转换为日志标签规范名称
+ * @param {string} sourceKey - sourceOrderArr 中的键名
+ * @returns {string} 对应的日志标签名称，如无映射则返回原值
+ */
+export function toLogSourceName(sourceKey) {
+  return SOURCE_KEY_TO_LOG_NAME[sourceKey] || sourceKey;
+}
 
 // =====================
 // 请求工具方法
@@ -31,12 +52,15 @@ export async function httpGet(url, options = {}) {
 
   // 执行请求，包含重试逻辑
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 获取当前异步生命周期的源标识
+    const currentSource = sourceLogContext.getStore() || "system";
+
     if (attempt > 0) {
-      log("info", `[请求模拟] 第 ${attempt} 次重试: ${url}`);
+      log("info", `[${currentSource}] [请求模拟] 第 ${attempt} 次重试: ${url}`);
       // 可选：添加重试延迟（指数退避）
       await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
     } else {
-      log("info", `[请求模拟] HTTP GET: ${url}`);
+      log("info", `[${currentSource}] [请求模拟] HTTP GET: ${url}`);
     }
 
     // 设置超时时间（默认5秒）
@@ -51,7 +75,7 @@ export async function httpGet(url, options = {}) {
       // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
       let response;
       if (typeof WebAssembly === 'undefined') {
-        log("info", "iOS环境降级使用node-fetch");
+        log("info", "[Utils] [HTTP] iOS环境降级使用node-fetch");
         const fetch = (await import('node-fetch')).default;
         response = await fetch(url, {
           method: 'GET',
@@ -81,7 +105,7 @@ export async function httpGet(url, options = {}) {
       let data;
 
       if (options.base64Data) {
-        log("info", "base64模式");
+        log("info", "[Utils] [HTTP] base64模式");
 
         // 先拿二进制
         const arrayBuffer = await response.arrayBuffer();
@@ -97,7 +121,7 @@ export async function httpGet(url, options = {}) {
         data = btoa(binary); // 得到 base64 字符串
 
       } else if (options.zlibMode) {
-        log("info", "zlib模式")
+        log("info", "[Utils] [HTTP] zlib模式")
 
         // 获取 ArrayBuffer
         const arrayBuffer = await response.arrayBuffer();
@@ -113,12 +137,12 @@ export async function httpGet(url, options = {}) {
           try {
             decodedData = await decompressedStream.text();
           } catch (e) {
-            log("error", "[请求模拟] 解压缩失败", e);
+            log("error", `[${currentSource}] [请求模拟] 解压缩失败`, e);
             throw e;
           }
         } else {
           // iOS巨魔环境降级处理：使用pako库
-          log("info", "iOS环境降级使用pako解压");
+          log("info", "[Utils] [HTTP] iOS环境降级使用pako解压");
           try {
             // 动态导入pako库
             const pako = await import('pako');
@@ -127,7 +151,7 @@ export async function httpGet(url, options = {}) {
             // 转换为字符串
             decodedData = new TextDecoder('utf-8').decode(inflateResult);
           } catch (e) {
-            log("error", "[请求模拟] pako解压缩失败", e);
+            log("error", `[${currentSource}] [请求模拟] pako解压缩失败`, e);
             throw e;
           }
         }
@@ -164,7 +188,7 @@ export async function httpGet(url, options = {}) {
 
       // 请求成功，返回结果
       if (attempt > 0) {
-        log("info", `[请求模拟] 重试成功`);
+        log("info", `[${currentSource}] [请求模拟] 重试成功`);
       }
 
       // 模拟 iOS 环境：返回 { data: ... } 结构
@@ -177,6 +201,7 @@ export async function httpGet(url, options = {}) {
     } catch (error) {
       clearTimeout(timeoutId);
       lastError = error;
+      const currentSource = sourceLogContext.getStore() || "system";
 
       // 如果是外部信号导致的中断，停止重试并直接抛出
       if (options.signal?.aborted) {
@@ -185,13 +210,13 @@ export async function httpGet(url, options = {}) {
 
       // 检查是否是超时错误
       if (error.name === 'AbortError') {
-        log("error", `[请求模拟] 请求超时:`, error.message);
+        log("error", `[${currentSource}] [请求模拟] 请求超时:`, error.message);
         log("error", '详细诊断:');
         log("error", '- URL:', url);
         log("error", '- 超时时间:', `${timeout}ms`);
         log("error", `- 当前尝试: ${attempt + 1}/${maxRetries + 1}`);
       } else {
-        log("error", `[请求模拟] 请求失败:`, error.message);
+        log("error", `[${currentSource}] [请求模拟] 请求失败:`, error.message);
         log("error", '详细诊断:');
         log("error", '- URL:', url);
         log("error", '- 错误类型:', error.name);
@@ -205,14 +230,15 @@ export async function httpGet(url, options = {}) {
 
       // 如果还有重试机会，继续循环；否则在循环结束后抛出错误
       if (attempt < maxRetries) {
-        log("info", `[请求模拟] 准备重试...`);
+        log("info", `[${currentSource}] [请求模拟] 准备重试...`);
         continue;
       }
     }
   }
 
   // 所有重试都失败，抛出最后一个错误
-  log("error", `[请求模拟] 所有重试均失败 (${maxRetries + 1} 次尝试)`);
+  const finalSource = sourceLogContext.getStore() || "system";
+  log("error", `[${finalSource}] [请求模拟] 所有重试均失败 (${maxRetries + 1} 次尝试)`);
   throw lastError;
 }
 
@@ -224,12 +250,14 @@ export async function httpPost(url, body, options = {}) {
 
   // 执行请求，包含重试逻辑
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const currentSource = sourceLogContext.getStore() || "system";
+
     if (attempt > 0) {
-      log("info", `[请求模拟] 第 ${attempt} 次重试: ${url}`);
+      log("info", `[${currentSource}] [请求模拟] 第 ${attempt} 次重试: ${url}`);
       // 可选：添加重试延迟（指数退避）
       await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt - 1), 5000)));
     } else {
-      log("info", `[请求模拟] HTTP POST: ${url}`);
+      log("info", `[${currentSource}] [请求模拟] HTTP POST: ${url}`);
     }
 
     // 设置超时时间（默认5秒）
@@ -259,7 +287,7 @@ export async function httpPost(url, body, options = {}) {
       // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
       let response;
       if (typeof WebAssembly === 'undefined') {
-        log("info", "iOS环境降级使用node-fetch");
+        log("info", "[Utils] [HTTP] iOS环境降级使用node-fetch");
         const fetch = (await import('node-fetch')).default;
         response = await fetch(url, fetchOptions);
       } else {
@@ -272,7 +300,7 @@ export async function httpPost(url, body, options = {}) {
       const data = await response.text();
 
       if (!response.ok && !validStatusCodes.includes(response.status)) {
-        log("error", `[请求模拟] response data: `, data);
+        log("error", `[${currentSource}] [请求模拟] response data: `, data);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -285,7 +313,7 @@ export async function httpPost(url, body, options = {}) {
 
       // 请求成功，返回结果
       if (attempt > 0) {
-        log("info", `[请求模拟] 重试成功`);
+        log("info", `[${currentSource}] [请求模拟] 重试成功`);
       }
 
       // 模拟 iOS 环境：返回 { data: ... } 结构
@@ -298,6 +326,7 @@ export async function httpPost(url, body, options = {}) {
     } catch (error) {
       clearTimeout(timeoutId);
       lastError = error;
+      const currentSource = sourceLogContext.getStore() || "system";
 
       // 如果是外部信号导致的中断，停止重试并直接抛出
       if (options.signal?.aborted) {
@@ -306,13 +335,13 @@ export async function httpPost(url, body, options = {}) {
 
       // 检查是否是超时错误
       if (error.name === 'AbortError') {
-        log("error", `[请求模拟] 请求超时:`, error.message);
+        log("error", `[${currentSource}] [请求模拟] 请求超时:`, error.message);
         log("error", '详细诊断:');
         log("error", '- URL:', url);
         log("error", '- 超时时间:', `${timeout}ms`);
         log("error", `- 当前尝试: ${attempt + 1}/${maxRetries + 1}`);
       } else {
-        log("error", `[请求模拟] 请求失败:`, error.message);
+        log("error", `[${currentSource}] [请求模拟] 请求失败:`, error.message);
         log("error", '详细诊断:');
         log("error", '- URL:', url);
         log("error", '- 错误类型:', error.name);
@@ -326,14 +355,15 @@ export async function httpPost(url, body, options = {}) {
 
       // 如果还有重试机会，继续循环；否则在循环结束后抛出错误
       if (attempt < maxRetries) {
-        log("info", `[请求模拟] 准备重试...`);
+        log("info", `[${currentSource}] [请求模拟] 准备重试...`);
         continue;
       }
     }
   }
 
   // 所有重试都失败，抛出最后一个错误
-  log("error", `[请求模拟] 所有重试均失败 (${maxRetries + 1} 次尝试)`);
+  const finalSource = sourceLogContext.getStore() || "system";
+  log("error", `[${finalSource}] [请求模拟] 所有重试均失败 (${maxRetries + 1} 次尝试)`);
   throw lastError;
 }
 
@@ -349,7 +379,8 @@ export async function httpPost(url, body, options = {}) {
  * @returns {Promise<{data: any, status: number, headers: Record<string, string>}>}
  */
 async function httpRequestMethod(method, url, body, options = {}) {
-  log("info", `[请求模拟] HTTP ${method}: ${url}`);
+  const currentSource = sourceLogContext.getStore() || "system";
+  log("info", `[${currentSource}] [请求模拟] HTTP ${method}: ${url}`);
 
   const { headers = {} } = options;
   const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
@@ -378,7 +409,7 @@ async function httpRequestMethod(method, url, body, options = {}) {
     const textData = await response.text();
 
     if (!response.ok && !validStatusCodes.includes(response.status)) {
-      log("error", `[请求模拟] response data: `, textData);
+      log("error", `[${currentSource}] [请求模拟] response data: `, textData);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
@@ -395,7 +426,8 @@ async function httpRequestMethod(method, url, body, options = {}) {
       headers: Object.fromEntries(response.headers.entries())
     };
   } catch (error) {
-    log("error", `[请求模拟] 请求失败:`, error.message);
+    const currentSource = sourceLogContext.getStore() || "system";
+    log("error", `[${currentSource}] [请求模拟] 请求失败:`, error.message);
     log("error", '详细诊断:');
     log("error", '- URL:', url);
     log("error", '- 错误类型:', error.name);
@@ -452,7 +484,8 @@ export async function getPageTitle(url) {
     return url;
 
   } catch (error) {
-    log("error", `获取标题失败: ${error.message}`);
+    const currentSource = sourceLogContext.getStore() || "system";
+    log("error", `[${currentSource}] 获取标题失败: ${error.message}`);
     return url;
   }
 }
@@ -618,7 +651,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
   linkSignal(options.signal, controller);
 
   try {
-    log("info", `[流式请求] HTTP GET: ${url}`);
+    const currentSource = sourceLogContext.getStore() || "system";
+    log("info", `[${currentSource}] [流式请求] HTTP GET: ${url}`);
 
     const response = await fetch(url, {
       method: 'GET',
@@ -634,11 +668,12 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
 
     // 环境兼容性回退
     if (!reader) {
-      log("warn", "[流式请求] 环境不支持流式读取,回退到普通请求");
+      const currentSource = sourceLogContext.getStore() || "system";
+      log("warn", `[${currentSource}] [流式请求] 环境不支持流式读取,回退到普通请求`);
       const text = await response.text();
       clearTimeout(timeoutId);
       if (checkCallback && !checkCallback(text.slice(0, SNIFF_LIMIT))) {
-          log("info", "[流式请求] 检测到无效数据(回退模式),丢弃结果");
+          log("info", `[${currentSource}] [流式请求] 检测到无效数据(回退模式),丢弃结果`);
           return null;
       }
       try { return JSON.parse(text); } catch { return text; }
@@ -669,7 +704,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
 
         // 执行回调检查
         if (!checkCallback(checkBuffer)) {
-          log("info", `[流式请求] 嗅探到无效特征(已读${receivedLength}字节),立即熔断`);
+          const currentSource = sourceLogContext.getStore() || "system";
+          log("info", `[${currentSource}] [流式请求] 嗅探到无效特征(已读${receivedLength}字节),立即熔断`);
           controller.abort();
           isAborted = true;
           break;
@@ -705,11 +741,12 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
     }
 
   } catch (error) {
+    const currentSource = sourceLogContext.getStore() || "system";
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
        return null;
     }
-    log("error", `[流式请求] 失败: ${error.message}`);
+    log("error", `[${currentSource}] [流式请求] 失败: ${error.message}`);
     return null;
   }
 }

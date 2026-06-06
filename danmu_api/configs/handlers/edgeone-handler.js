@@ -50,7 +50,7 @@ export class EdgeoneHandler extends BaseHandler {
 
       return this.updateLocalEnv(key, value);
     } catch (error) {
-      log("error", '[server] ✗ Failed to set environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to set environment variable:', error.message);
     }
   }
 
@@ -72,7 +72,7 @@ export class EdgeoneHandler extends BaseHandler {
 
       return this.delLocalEnv(key);
     } catch (error) {
-      log("error", '[server] ✗ Failed to del environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to del environment variable:', error.message);
     }
   }
 
@@ -81,7 +81,7 @@ export class EdgeoneHandler extends BaseHandler {
       await this._getAllEnvs(projectId, token);
       return true;
     } catch (error) {
-      log("error", 'checkParams failed! accountId, projectId or token is not valid:', error.message);
+      log("error", '[system] [Server] checkParams failed! accountId, projectId or token is not valid:', error.message);
       return false;
     }
   }
@@ -99,12 +99,12 @@ export class EdgeoneHandler extends BaseHandler {
 
       const res = await this._httpPost(globals.deployPlatformToken, data);
       if (res?.data?.Code !== 0) {
-        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        log("error", '[system] [Server] ✗ Failed to deploy:', JSON.stringify(res?.data));
         return false;
       }
       return true;
     } catch (error) {
-      log("error", '[server] ✗ Failed to deploy:', error.message);
+      log("error", '[system] [Server] ✗ Failed to deploy:', error.message);
       return false;
     }
   }

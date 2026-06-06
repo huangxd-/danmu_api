@@ -142,7 +142,7 @@ export function extractPConfigFromHtml(html) {
         return signingConfig;
       }
     } catch (error) {
-      log("warn", '[Aiyifan] 解析 injectJson 失败，回退到 pConfig 提取: ' + (error.message || '未知错误'));
+      log("warn", '[Utils] [Aiyifan] 解析 injectJson 失败，回退到 pConfig 提取: ' + (error.message || '未知错误'));
     }
   }
 
@@ -322,7 +322,7 @@ export class AiyifanSigningProvider {
 
     this.signingConfig = signingConfig;
     this.signingConfigFetchedAt = now;
-    log("info", '[Aiyifan] 已更新桌面站签名配置: ' + signingConfig.publicKey.slice(0, 12) + '...');
+    log("info", '[Utils] [Aiyifan] 已更新桌面站签名配置: ' + signingConfig.publicKey.slice(0, 12) + '...');
     return signingConfig;
   }
 

@@ -26,7 +26,7 @@ export default class Kan360Source extends BaseSource {
         );
 
         const data = await response.data;
-        log("info", `360kan zongyi response: ${JSON.stringify(data)}`);
+        log("info", `[360kan] 360kan zongyi response: ${JSON.stringify(data)}`);
 
         const episodeList = data.data.list;
         if (!episodeList) {
@@ -49,7 +49,7 @@ export default class Kan360Source extends BaseSource {
           });
         }
 
-        log("info", `links.length: ${links.length}`);
+        log("info", `[360kan] links.length: ${links.length}`);
       }
       // Sort links by pubdate numerically
       links.sort((a, b) => {
@@ -61,7 +61,7 @@ export default class Kan360Source extends BaseSource {
 
       return links;
     } catch (error) {
-      log("error", "get360Animes error:", {
+      log("error", "[360kan] get360Animes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -85,7 +85,7 @@ export default class Kan360Source extends BaseSource {
         return Number(result.data.allupinfo[site]);
       }
     } catch (error) {
-      log("error", "getNumber error:", error && error.message ? error.message : error);
+      log("error", "[360kan] getNumber error:", error && error.message ? error.message : error);
     }
     return null;
   }
@@ -102,7 +102,7 @@ export default class Kan360Source extends BaseSource {
       });
       return res.data;
     } catch (error) {
-      log("error", "get360Detail error:", error && error.message ? error.message : error);
+      log("error", "[360kan] get360Detail error:", error && error.message ? error.message : error);
     }
     return null;
   }
@@ -159,7 +159,7 @@ export default class Kan360Source extends BaseSource {
         try {
           data = JSON.parse(data);
         } catch (e) {
-          log('error', `getEpisodesV2 JSON parse error: ${e.message}`);
+          log('error', `[360kan] getEpisodesV2 JSON parse error: ${e.message}`);
           return [];
         }
       }
@@ -187,7 +187,7 @@ export default class Kan360Source extends BaseSource {
 
       return [];
     } catch (error) {
-      log('error', 'getEpisodesV2 error:', {
+      log('error', '[360kan] getEpisodesV2 error:', {
         message: error && error.message ? error.message : String(error),
         stack: error && error.stack ? error.stack : undefined,
       });
@@ -208,18 +208,18 @@ export default class Kan360Source extends BaseSource {
       );
 
       const data = response.data;
-      log("info", `360kan response: ${JSON.stringify(data)}`);
+      log("info", `[360kan] 360kan response: ${JSON.stringify(data)}`);
 
       let tmpAnimes = [];
       if ('rows' in data.data.longData) {
         tmpAnimes = data.data.longData.rows;
       }
 
-      log("info", `360kan animes.length: ${tmpAnimes.length}`);
+      log("info", `[360kan] 360kan animes.length: ${tmpAnimes.length}`);
 
       return tmpAnimes;
     } catch (error) {
-      log("error", "get360Animes error:", {
+      log("error", "[360kan] get360Animes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,

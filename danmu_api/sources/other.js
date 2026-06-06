@@ -27,18 +27,18 @@ export default class OtherSource extends BaseSource {
         }
       );
 
-      log("info", `danmu response from ${globals.otherServer}: ↓↓↓`);
+      log("info", `[Other] danmu response from ${globals.otherServer}: ↓↓↓`);
       printFirst200Chars(response.data);
 
       return response.data;
     } catch (error) {
-      log("error", `请求 ${globals.otherServer} 失败:`, error);
+      log("error", `[Other] 请求 ${globals.otherServer} 失败:`, error);
       return [];
     }
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取第三方服务器弹幕分段列表...", id);
+    log("info", "[Other] 获取第三方服务器弹幕分段列表...", id);
 
     return new SegmentListResponse({
       "type": "other_server",

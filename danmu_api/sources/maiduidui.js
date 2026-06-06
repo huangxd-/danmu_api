@@ -103,7 +103,7 @@ class MaiduiduiSource extends BaseSource {
       return animes;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMaiduiduiAnimes error:", {
+      log("error", "[Maiduidui] getMaiduiduiAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -144,7 +144,7 @@ class MaiduiduiSource extends BaseSource {
       return 0;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMaiduiduiDetail error:", {
+      log("error", "[Maiduidui] getMaiduiduiDetail error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -185,7 +185,7 @@ class MaiduiduiSource extends BaseSource {
       return eps;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getMaiduiduiEposides error:", {
+      log("error", "[Maiduidui] getMaiduiduiEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -278,7 +278,7 @@ class MaiduiduiSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求埋堆堆弹幕...", id);
+    log("info", "[Maiduidui] 开始从本地请求埋堆堆弹幕...", id);
     
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -287,7 +287,7 @@ class MaiduiduiSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Maiduidui] 弹幕分段数量: ${segmentList.length}`);
 
     // 并发请求所有弹幕段，限制并发数量为20
     const MAX_CONCURRENT = 20;
@@ -315,7 +315,7 @@ class MaiduiduiSource extends BaseSource {
             allComments.push(...comments);
           }
         } else {
-          log("error", `获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+          log("error", `[Maiduidui] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
       }
       
@@ -326,7 +326,7 @@ class MaiduiduiSource extends BaseSource {
     }
 
     if (allComments.length === 0) {
-      log("info", `埋堆堆: 该视频暂无弹幕数据 (vid=${id})`);
+      log("info", `[Maiduidui] 埋堆堆: 该视频暂无弹幕数据 (vid=${id})`);
       return [];
     }
 
@@ -336,13 +336,13 @@ class MaiduiduiSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取埋堆堆弹幕分段列表...", id);
+    log("info", "[Maiduidui] 获取埋堆堆弹幕分段列表...", id);
 
     const idInfo = this.extractByRegex(id);
     const uuid = idInfo.uuid;
     const duration = await this.getDetail(id);
-    log("info", "uuid:", uuid);
-    log("info", "duration:", duration);
+    log("info", "[Maiduidui] uuid:", uuid);
+    log("info", "[Maiduidui] duration:", duration);
 
     const segmentDuration = 60; // 每个分片1分钟
     const segmentList = [];
@@ -396,7 +396,7 @@ class MaiduiduiSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Maiduidui] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

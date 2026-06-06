@@ -535,12 +535,12 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求腾讯视频弹幕...", id);
+    log("info", "[Tencent] 开始从本地请求腾讯视频弹幕...", id);
 
     // 解析 URL 获取 vid
     let vid = this.extractVid(id);
 
-    log("info", `vid: ${vid}`);
+    log("info", `[Tencent] vid: ${vid}`);
 
     // 获取页面标题
     let res;
@@ -552,14 +552,14 @@ export default class TencentSource extends BaseSource {
         },
       });
     } catch (error) {
-      log("error", "请求页面失败:", error);
+      log("error", "[Tencent] 请求页面失败:", error);
       return [];
     }
 
     // 使用正则表达式提取 <title> 标签内容
     const titleMatch = res.data.match(/<title[^>]*>(.*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
-    log("info", `标题: ${title}`);
+    log("info", `[Tencent] 标题: ${title}`);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -568,7 +568,7 @@ export default class TencentSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Tencent] 弹幕分段数量: ${segmentList.length}`);
 
     // 创建请求Promise数组
     const promises = [];
@@ -604,7 +604,7 @@ export default class TencentSource extends BaseSource {
         contents.push(...data.barrage_list);
       });
     } catch (error) {
-      log("error", "解析弹幕数据失败:", error);
+      log("error", "[Tencent] 解析弹幕数据失败:", error);
       return [];
     }
 
@@ -614,7 +614,7 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取腾讯视频弹幕分段列表...", id);
+    log("info", "[Tencent] 获取腾讯视频弹幕分段列表...", id);
 
     // 弹幕 API 基础地址
     const api_danmaku_base = "https://dm.video.qq.com/barrage/base/";
@@ -622,7 +622,7 @@ export default class TencentSource extends BaseSource {
 
     let vid = this.extractVid(id);
 
-    log("info", `获取弹幕分段列表 - vid: ${vid}`);
+    log("info", `[Tencent] 获取弹幕分段列表 - vid: ${vid}`);
 
     // 获取弹幕基础数据
     let res;
@@ -640,7 +640,7 @@ export default class TencentSource extends BaseSource {
           "segmentList": []
         });
       }
-      log("error", "请求弹幕基础数据失败:", error);
+      log("error", "[Tencent] 请求弹幕基础数据失败:", error);
       return new SegmentListResponse({
         "type": "qq",
         "segmentList": []
@@ -693,7 +693,7 @@ export default class TencentSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Tencent] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

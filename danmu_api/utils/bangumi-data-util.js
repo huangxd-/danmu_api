@@ -137,7 +137,7 @@ async function fetchNpmLatestVersion(packageName) {
         const data = await response.json();
         return data?.version || null;
     } catch (e) {
-        log("warn", `[Bangumi-Data] 查询 ${packageName} 版本号失败: ${e.message}`);
+        log("warn", `[Utils] [Bangumi-Data] 查询 ${packageName} 版本号失败: ${e.message}`);
         return null;
     }
 }
@@ -163,18 +163,18 @@ async function selectBestDataSource() {
         if (officialVer) cachedOfficialVersion = officialVer;
 
         if (!customVer || !officialVer) {
-            log("info", `[Bangumi-Data] 版本检测不完整 (custom=${customVer}, official=${officialVer})，默认使用自定义源`);
+            log("info", `[Utils] [Bangumi-Data] 版本检测不完整 (custom=${customVer}, official=${officialVer})，默认使用自定义源`);
             return 'custom';
         }
 
         const cmp = compareVersions(customVer, officialVer);
         const selected = cmp >= 0 ? 'custom' : 'official';
 
-        log("info", `[Bangumi-Data] 版本对比: @wan0ge/bangumi-data@${customVer} vs bangumi-data@${officialVer} => 使用${selected === 'custom' ? '自定义' : '官方'}源`);
+        log("info", `[Utils] [Bangumi-Data] 版本对比: @wan0ge/bangumi-data@${customVer} vs bangumi-data@${officialVer} => 使用${selected === 'custom' ? '自定义' : '官方'}源`);
 
         return selected;
     } catch (e) {
-        log("warn", `[Bangumi-Data] 数据源选择异常，回退到自定义源: ${e.message}`);
+        log("warn", `[Utils] [Bangumi-Data] 数据源选择异常，回退到自定义源: ${e.message}`);
         return 'custom';
     }
 }
@@ -198,19 +198,19 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         if (fs.existsSync(CACHE_DIR)) {
             cachePath = path.join(CACHE_DIR, CACHE_FILENAME);
         } else if (!hasLoggedCacheWarning) {
-            log("warn", "[Bangumi-Data] 未检测到根目录的 .cache 文件夹！");
-            log("warn", "[Bangumi-Data] 按照项目规范，请手动挂载或创建 .cache 目录以启用持久化。");
-            log("warn", "[Bangumi-Data] 本次运行已退化为纯内存模式 (重启后需重新下载)。");
+            log("warn", "[Utils] [Bangumi-Data] 未检测到根目录的 .cache 文件夹！");
+            log("warn", "[Utils] [Bangumi-Data] 按照项目规范，请手动挂载或创建 .cache 目录以启用持久化。");
+            log("warn", "[Utils] [Bangumi-Data] 本次运行已退化为纯内存模式 (重启后需重新下载)。");
             hasLoggedCacheWarning = true;
         }
     } else if (!hasLoggedCacheWarning) {
-        log("info", `[Bangumi-Data] 检测到 ${deployPlatform} 云环境，当前运行于纯内存加速模式。`);
+        log("info", `[Utils] [Bangumi-Data] 检测到 ${deployPlatform} 云环境，当前运行于纯内存加速模式。`);
         hasLoggedCacheWarning = true;
     }
 
     // 幽灵死锁自愈机制 (针对 Serverless 强杀)
     if (isDownloading && (Date.now() - downloadLockTime > DOWNLOAD_TIMEOUT_MS)) {
-        log("warn", "[Bangumi-Data] 检测到下载状态锁死 (由于 Serverless 进程休眠/强杀导致)，强制释放锁...");
+        log("warn", "[Utils] [Bangumi-Data] 检测到下载状态锁死 (由于 Serverless 进程休眠/强杀导致)，强制释放锁...");
         isDownloading = false;
     }
 
@@ -222,7 +222,7 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
 
         // 当内存过期或配置强制更新时，仅在核心请求触发后台静默更新
         if (isDataDependentRequest && !isDownloading) {
-            log("info", `[Bangumi-Data] 内存数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
+            log("info", `[Utils] [Bangumi-Data] 内存数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
             isDownloading = true;
             downloadLockTime = Date.now();
             downloadAndCache(cachePath).finally(() => { isDownloading = false; });
@@ -255,11 +255,11 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
             const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
             memoryCacheTime = Date.now(); 
 
-            log("info", `[Bangumi-Data] 成功从本地磁盘加载基础数据，条目数: ${memoryCache.items.length}，解析耗时: ${loadTimeMs} ms，约占内存: ${memoryFootprintMB} MB`);
+            log("info", `[Utils] [Bangumi-Data] 成功从本地磁盘加载基础数据，条目数: ${memoryCache.items.length}，解析耗时: ${loadTimeMs} ms，约占内存: ${memoryFootprintMB} MB`);
 
             if (cacheDays === 0 || (Date.now() - stats.mtimeMs >= expireMs)) {
                 if (isDataDependentRequest && !isDownloading) {
-                    log("info", `[Bangumi-Data] 磁盘数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
+                    log("info", `[Utils] [Bangumi-Data] 磁盘数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
                     isDownloading = true;
                     downloadLockTime = Date.now();
                     downloadAndCache(cachePath).finally(() => { isDownloading = false; });
@@ -267,14 +267,14 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
             }
             return;
         } catch (e) {
-            log("error", "[Bangumi-Data] 磁盘缓存解析失败，准备重新下载", e.message);
+            log("error", "[Utils] [Bangumi-Data] 磁盘缓存解析失败，准备重新下载", e.message);
             memoryCache = null; 
         }
     }
 
     // 内存与磁盘均无有效数据时的获取逻辑
     if (!isDownloading) {
-        log("info", `[Bangumi-Data] 未命中任何有效缓存，正在获取基础数据...`);
+        log("info", `[Utils] [Bangumi-Data] 未命中任何有效缓存，正在获取基础数据...`);
         isDownloading = true;
         downloadLockTime = Date.now();
 
@@ -283,18 +283,18 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         if (isDataDependentRequest) {
             await downloadPromise; 
         } else {
-            log("info", `[Bangumi-Data] 当前非核心请求，数据获取转入后台异步执行`);
+            log("info", `[Utils] [Bangumi-Data] 当前非核心请求，数据获取转入后台异步执行`);
             if (ctx && typeof ctx.waitUntil === 'function') {
-                log("info", `[Bangumi-Data] 调用 ctx.waitUntil 延长 Serverless 生命周期`);
+                log("info", `[Utils] [Bangumi-Data] 调用 ctx.waitUntil 延长 Serverless 生命周期`);
                 ctx.waitUntil(downloadPromise);
             }
         }
     } else if (isDataDependentRequest) {
-        log("info", `[Bangumi-Data] 正在等待基础数据下载完成...`);
+        log("info", `[Utils] [Bangumi-Data] 正在等待基础数据下载完成...`);
         let waitCount = 0;
         while (isDownloading) {
             if (waitCount > 150) { // 最多等待 15 秒 (150 * 100ms)
-                log("warn", "[Bangumi-Data] 等待排队超时，放弃等待");
+                log("warn", "[Utils] [Bangumi-Data] 等待排队超时，放弃等待");
                 isDownloading = false;
                 break;
             }
@@ -378,7 +378,7 @@ function pruneBangumiData(rawData) {
  * @returns {Promise<void>}
  */
 async function downloadAndCache(cachePath) {
-    log("info", "[Bangumi-Data] 开始优选节点下载最新数据并执行精简...");
+    log("info", "[Utils] [Bangumi-Data] 开始优选节点下载最新数据并执行精简...");
     try {
         const memBefore = process.memoryUsage().heapUsed;
         const startTime = Date.now();
@@ -457,7 +457,7 @@ async function downloadAndCache(cachePath) {
         }
 
         const downloadTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        log("info", `[Bangumi-Data] 精简数据已成功写入磁盘 (节点: ${new URL(winner.url).hostname} ,阶段耗时: ${downloadTime} 秒)`);
+        log("info", `[Utils] [Bangumi-Data] 精简数据已成功写入磁盘 (节点: ${new URL(winner.url).hostname} ,阶段耗时: ${downloadTime} 秒)`);
 
         // 数据处理流
         memoryCache = winner.resultData;
@@ -472,11 +472,11 @@ async function downloadAndCache(cachePath) {
         const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
         memoryCacheTime = Date.now();
 
-        log("info", `[Bangumi-Data] 加载到内存成功，保留/原始条目数: ${memoryCache.items.length} / ${winner.originalCount}，处理耗时: ${parseTimeMs} ms，全链路总耗时: ${totalTime} 秒，净增内存: ${memoryFootprintMB} MB (当前项目总占用: ${totalMemMB} MB)`);
+        log("info", `[Utils] [Bangumi-Data] 加载到内存成功，保留/原始条目数: ${memoryCache.items.length} / ${winner.originalCount}，处理耗时: ${parseTimeMs} ms，全链路总耗时: ${totalTime} 秒，净增内存: ${memoryFootprintMB} MB (当前项目总占用: ${totalMemMB} MB)`);
     } catch (e) {
         // 提取所有请求均失败时的具体错误信息
         const errorMessage = e instanceof AggregateError ? e.errors.map(err => err.message).join(' | ') : e.message;
-        log("error", "[Bangumi-Data] 下载失败 (所有 CDN 均未响应或报错):", errorMessage);
+        log("error", "[Utils] [Bangumi-Data] 下载失败 (所有 CDN 均未响应或报错):", errorMessage);
     }
 }
 
@@ -746,7 +746,7 @@ export function clearBangumiDataCache(clearDisk = false) {
         queryCache.clear(); // 释放查询缓存
         charInvertedIndex.clear(); // 释放倒排索引内存
         const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
-        log("info", `[Bangumi-Data] 内存缓存已主动释放 (原条目数: ${itemCount}，释放: ${memoryFootprintMB} MB，当前项目总占用: ${totalMemMB} MB)`);
+        log("info", `[Utils] [Bangumi-Data] 内存缓存已主动释放 (原条目数: ${itemCount}，释放: ${memoryFootprintMB} MB，当前项目总占用: ${totalMemMB} MB)`);
         memoryFootprintMB = '0.00'; // 重置探针
         hasLoggedCacheWarning = false; // 重置警告标记
     }
@@ -762,9 +762,9 @@ export function clearBangumiDataCache(clearDisk = false) {
                 const tmpPath = `${cachePath}.tmp${i}`;
                 if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
             }
-            log("info", `[Bangumi-Data] 磁盘缓存已同步清理`);
+            log("info", `[Utils] [Bangumi-Data] 磁盘缓存已同步清理`);
         } catch (e) {
-            log("error", `[Bangumi-Data] 磁盘缓存清理失败: ${e.message}`);
+            log("error", `[Utils] [Bangumi-Data] 磁盘缓存清理失败: ${e.message}`);
         }
     }
 }

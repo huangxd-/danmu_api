@@ -28,7 +28,7 @@ async function doubanApiGet(url) {
 
     return response;
   } catch (error) {
-    log("error", "[DOUBAN] GET API error:", {
+    log("error", "[Utils] [Douban] GET API error:", {
       message: error.message,
       name: error.name,
       stack: error.stack,
@@ -55,7 +55,7 @@ async function doubanApiPost(url, data={}) {
 
     return response;
   } catch (error) {
-    log("error", "[DOUBAN] POST API error:", {
+    log("error", "[Utils] [Douban] POST API error:", {
       message: error.message,
       name: error.name,
       stack: error.stack,

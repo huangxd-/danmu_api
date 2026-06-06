@@ -261,6 +261,51 @@ export const componentsCssContent = /* css */ `
 
 
 
+/* 日志过滤交互面板及标签样式 */
+.log-filters-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.filter-btn {
+    background: transparent;
+    color: #888;
+    border: 1px solid #555;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: capitalize;
+}
+
+.filter-btn:hover {
+    border-color: #999;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn.active {
+    background: rgba(191, 161, 255, 0.1);
+    color: #bfa1ff;
+    border-color: #bfa1ff;
+    text-shadow: 0.3px 0 0 currentColor, -0.3px 0 0 currentColor;
+}
+
+.log-tag {
+    color: #bfa1ff;
+    font-weight: bold;
+    margin-right: 4px;
+    display: inline-block;
+}
+
+.log-entry.error .log-tag {
+    color: #ffb74d;
+}
+
+
+
 /* 表单帮助文本 */
 .form-help {
     font-size: 12px;

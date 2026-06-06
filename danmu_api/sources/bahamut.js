@@ -89,7 +89,7 @@ export default class BahamutSource extends BaseSource {
                 a._searchUsedTitle = traditionalizedKeyword;
               } catch (e) {}
             }
-            log("info", `bahamutSearchresp (original): ${JSON.stringify(anime)}`);
+            log("info", `[Bahamut] bahamutSearchresp (original): ${JSON.stringify(anime)}`);
             log("info", `[Bahamut] 返回 ${anime.length} 条结果 (source: original)`);
             return { success: true, data: anime, source: 'original' };
           }
@@ -148,7 +148,7 @@ export default class BahamutSource extends BaseSource {
                 a._tmdbCnAlias = cnAlias;
               } catch (e) {}
             }
-            log("info", `bahamutSearchresp (TMDB): ${JSON.stringify(anime)}`);
+            log("info", `[Bahamut] bahamutSearchresp (TMDB): ${JSON.stringify(anime)}`);
             log("info", `[Bahamut] 返回 ${anime.length} 条结果 (source: tmdb)`);
             return { success: true, data: anime, source: 'tmdb' };
           }
@@ -216,7 +216,7 @@ export default class BahamutSource extends BaseSource {
       return finalResults;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getBahamutAnimes error:", {
+      log("error", "[Bahamut] getBahamutAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -240,23 +240,23 @@ export default class BahamutSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "getBahamutEposides: 请求失败或无数据返回");
+        log("info", "[Bahamut] getBahamutEposides: 请求失败或无数据返回");
         return [];
       }
 
       // 判断 seriesData 是否存在
       if (!resp.data.data || !resp.data.data.video || !resp.data.data.anime) {
-        log("info", "getBahamutEposides: video 或 anime 不存在");
+        log("info", "[Bahamut] getBahamutEposides: video 或 anime 不存在");
         return [];
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `getBahamutEposides: ${JSON.stringify(resp.data.data)}`);
+      log("info", `[Bahamut] getBahamutEposides: ${JSON.stringify(resp.data.data)}`);
 
       return resp.data.data;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "getBahamutEposides error:", {
+      log("error", "[Bahamut] getBahamutEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -515,7 +515,7 @@ export default class BahamutSource extends BaseSource {
       return danmus;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "fetchBahamutEpisodeDanmu error:", {
+      log("error", "[Bahamut] fetchBahamutEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -525,7 +525,7 @@ export default class BahamutSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取巴哈姆特弹幕分段列表...", id);
+    log("info", "[Bahamut] 获取巴哈姆特弹幕分段列表...", id);
 
     return new SegmentListResponse({
       "type": "bahamut",

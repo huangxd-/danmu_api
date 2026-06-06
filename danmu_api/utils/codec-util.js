@@ -539,7 +539,7 @@ function aesDecryptBase64(cipherB64, keyStr) {
     const unpadded = pkcs7Unpad(decryptedBytes);
     return utf8BytesToString(unpadded);
   } catch (e) {
-    log("error", e);
+    log("error", "[Utils] [Codec]", e);
     return null;
   }
 }

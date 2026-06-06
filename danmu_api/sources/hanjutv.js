@@ -99,7 +99,7 @@ export default class HanjutvSource extends BaseSource {
    * 统一的错误日志格式
    */
   logError(tag, error) {
-    log("error", `${tag}:`, {
+    log("error", `[Hanjutv] ${tag}:`, {
       message: error.message,
       name: error.name,
       stack: error.stack,
@@ -395,7 +395,7 @@ export default class HanjutvSource extends BaseSource {
       }
 
       if (resultList.length === 0) {
-        log("info", "hanjutvSearchresp: s5 与 TV 接口均无有效结果");
+        log("info", "[Hanjutv] hanjutvSearchresp: s5 与 TV 接口均无有效结果");
         return [];
       }
 
@@ -417,7 +417,7 @@ export default class HanjutvSource extends BaseSource {
       const sid = String(id || "").trim();
       if (!sid) return null;
       const detail = await this.tryGet(() => loader(sid), null, errorTag);
-      if (!detail) { log("info", `${missingLogTag}: series 不存在`); return null; }
+      if (!detail) { log("info", `[Hanjutv] ${missingLogTag}: series 不存在`); return null; }
       return detail;
     } catch (error) { this.logError(errorTag, error); return null; }
   }
@@ -482,7 +482,7 @@ export default class HanjutvSource extends BaseSource {
       }
 
       if (episodes.length === 0) {
-        log("info", "getHanjutvHxqEpisodes: episodes 不存在");
+        log("info", "[Hanjutv] getHanjutvHxqEpisodes: episodes 不存在");
         return [];
       }
 
@@ -504,7 +504,7 @@ export default class HanjutvSource extends BaseSource {
       }, [], "getHanjutvTvEpisodes error");
 
       if (episodes.length === 0) {
-        log("info", "getHanjutvTvEpisodes: episodes 不存在");
+        log("info", "[Hanjutv] getHanjutvTvEpisodes: episodes 不存在");
         return [];
       }
 
@@ -833,7 +833,7 @@ export default class HanjutvSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取韩剧TV弹幕分段列表...", id);
+    log("info", "[Hanjutv] 获取韩剧TV弹幕分段列表...", id);
 
     // 韩剧TV 当前没有可复用的分片清单接口，统一走整集拉取。
     return new SegmentListResponse({
