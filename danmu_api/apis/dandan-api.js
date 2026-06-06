@@ -322,10 +322,11 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
     aiyifan: animesAiyifan, animeko: animesAnimeko
   } = resultData;
 
-  // 源Key到handleAnimes调用Promise的映射（每个源使用独立的curAnimes和detailStore）
+  // 仅处理resultData中存在数据的源，避免将undefined传入handleAnimes
+  const activeSourceKeys = globals.sourceOrderArr.filter(key => resultData[key] !== undefined);
   const sourceTasks = [];
 
-  for (const key of globals.sourceOrderArr) {
+  for (const key of activeSourceKeys) {
     const isolatedAnimes = [];
     const isolatedDetailStore = new Map();
 
@@ -585,45 +586,80 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   }
 
   try {
-    // 根据 sourceOrderArr 动态构建请求数组
+    // 根据 sourceOrderArr 动态构建逐源管道：每个源形成独立的 search → handleAnimes 流水线
     log("info", `Search sourceOrderArr: ${globals.sourceOrderArr}`);
-    const requestPromises = globals.sourceOrderArr.map(source => {
-      if (source === "360") return kan360Source.search(queryTitle);
-      if (source === "vod") return vodSource.search(queryTitle, preferAnimeId, preferSource);
-      if (source === "tmdb") return tmdbSource.search(queryTitle);
-      if (source === "douban") return doubanSource.search(queryTitle);
-      if (source === "renren") return renrenSource.search(queryTitle);
-      if (source === "hanjutv") return hanjutvSource.search(queryTitle);
-      if (source === "bahamut") return bahamutSource.search(queryTitle);
-      if (source === "dandan") return dandanSource.search(queryTitle);
-      if (source === "custom") return customSource.search(queryTitle);
-      if (source === "tencent") return tencentSource.search(queryTitle);
-      if (source === "youku") return youkuSource.search(queryTitle);
-      if (source === "iqiyi") return iqiyiSource.search(queryTitle);
-      if (source === "imgo") return mangoSource.search(queryTitle);
-      if (source === "bilibili") return bilibiliSource.search(queryTitle);
-      if (source === "migu") return miguSource.search(queryTitle);
-      if (source === "sohu") return sohuSource.search(queryTitle);
-      if (source === "leshi") return leshiSource.search(queryTitle);
-      if (source === "xigua") return xiguaSource.search(queryTitle);
-      if (source === "maiduidui") return maiduiduiSource.search(queryTitle);
-      if (source === "aiyifan") return aiyifanSource.search(queryTitle);
-      if (source === "animeko") return animekoSource.search(queryTitle);
-    });
 
-    // 执行所有请求并等待结果
-    const results = await Promise.all(requestPromises);
-
-    // 创建一个对象来存储返回的结果
+    // 存储各源搜索结果的容器，供S2+季度扩展逻辑读取
     const resultData = {};
 
-    // 动态根据 sourceOrderArr 顺序将结果赋值给对应的来源
-    globals.sourceOrderArr.forEach((source, index) => {
-      resultData[source] = results[index];  // 根据顺序赋值
+    // 源Key到对应搜索Promise的映射
+    const sourceSearchMap = {};
+    for (const source of globals.sourceOrderArr) {
+      if (source === "360") sourceSearchMap[source] = kan360Source.search(queryTitle);
+      else if (source === "vod") sourceSearchMap[source] = vodSource.search(queryTitle, preferAnimeId, preferSource);
+      else if (source === "tmdb") sourceSearchMap[source] = tmdbSource.search(queryTitle);
+      else if (source === "douban") sourceSearchMap[source] = doubanSource.search(queryTitle);
+      else if (source === "renren") sourceSearchMap[source] = renrenSource.search(queryTitle);
+      else if (source === "hanjutv") sourceSearchMap[source] = hanjutvSource.search(queryTitle);
+      else if (source === "bahamut") sourceSearchMap[source] = bahamutSource.search(queryTitle);
+      else if (source === "dandan") sourceSearchMap[source] = dandanSource.search(queryTitle);
+      else if (source === "custom") sourceSearchMap[source] = customSource.search(queryTitle);
+      else if (source === "tencent") sourceSearchMap[source] = tencentSource.search(queryTitle);
+      else if (source === "youku") sourceSearchMap[source] = youkuSource.search(queryTitle);
+      else if (source === "iqiyi") sourceSearchMap[source] = iqiyiSource.search(queryTitle);
+      else if (source === "imgo") sourceSearchMap[source] = mangoSource.search(queryTitle);
+      else if (source === "bilibili") sourceSearchMap[source] = bilibiliSource.search(queryTitle);
+      else if (source === "migu") sourceSearchMap[source] = miguSource.search(queryTitle);
+      else if (source === "sohu") sourceSearchMap[source] = sohuSource.search(queryTitle);
+      else if (source === "leshi") sourceSearchMap[source] = leshiSource.search(queryTitle);
+      else if (source === "xigua") sourceSearchMap[source] = xiguaSource.search(queryTitle);
+      else if (source === "maiduidui") sourceSearchMap[source] = maiduiduiSource.search(queryTitle);
+      else if (source === "aiyifan") sourceSearchMap[source] = aiyifanSource.search(queryTitle);
+      else if (source === "animeko") sourceSearchMap[source] = animekoSource.search(queryTitle);
+    }
+
+    // 构建逐源管道：每个源 search 完成后，通过 executeSourceHandlers 处理 handleAnimes
+    // 传入仅含当前源数据的 resultData，使 executeSourceHandlers 仅处理该源
+    const pipelineTasks = globals.sourceOrderArr.map(source => {
+      const isolatedAnimes = [];
+      const isolatedDetailStore = new Map();
+      const pipelinePromise = sourceSearchMap[source].then(async searchResult => {
+        resultData[source] = searchResult;
+        await executeSourceHandlers({ [source]: searchResult }, queryTitle, isolatedAnimes, isolatedDetailStore, querySeason, preferAnimeId, preferSource);
+      });
+      return { key: source, animes: isolatedAnimes, detailStore: isolatedDetailStore, promise: pipelinePromise };
     });
 
-    // 优先处理指定的季度（或全量）
-    await executeSourceHandlers(resultData, queryTitle, curAnimes, requestAnimeDetailsMap, querySeason, preferAnimeId, preferSource);
+    // 并发执行所有逐源管道，每个管道内部 search 完成后立即衔接 handleAnimes
+    const pipelineResults = await Promise.allSettled(pipelineTasks.map(task => task.promise));
+
+    // 按SOURCE_ORDER顺序合并各管道的独立结果到目标容器
+    // 先处理的源数据优先保留（animeId去重、detailStore键去重）
+    const existingAnimeIds = new Set(curAnimes.map(a => a.animeId));
+
+    for (let i = 0; i < pipelineTasks.length; i++) {
+      if (pipelineResults[i].status === 'rejected') {
+        log("error", `[searchAnime] 源 ${pipelineTasks[i].key} 管道处理失败: ${pipelineResults[i].reason}`);
+        continue;
+      }
+
+      const { animes: isolatedAnimes, detailStore: isolatedDetailStore } = pipelineTasks[i];
+
+      // 合并动漫结果列表（使用 Set 确保 O(1) 检索，优先源先入为主）
+      for (const anime of isolatedAnimes) {
+        if (!existingAnimeIds.has(anime.animeId)) {
+          curAnimes.push(anime);
+          existingAnimeIds.add(anime.animeId);
+        }
+      }
+
+      // 合并详情缓存（键去重，先到先得）
+      for (const [key, value] of isolatedDetailStore) {
+        if (!requestAnimeDetailsMap.has(key)) {
+          requestAnimeDetailsMap.set(key, value);
+        }
+      }
+    }
 
     // 缓存首季/默认请求结果，剥离附加链接
     if (curAnimes.length > 0) {

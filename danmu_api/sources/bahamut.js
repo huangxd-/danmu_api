@@ -160,8 +160,13 @@ export default class BahamutSource extends BaseSource {
             log("info", "[Bahamut] 原始搜索成功，中断日语原名搜索");
             return { success: false, source: 'tmdb', aborted: true };
           }
-          // 抛出其他错误（例如 httpGet 超时）
-          throw error;
+          // TMDB搜索失败不阻塞原始搜索结果，与originalSearchPromise保持一致的错误处理策略
+          log("error", "[Bahamut] TMDB搜索失败:", {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          });
+          return { success: false, source: 'tmdb' };
         }
       })();
 
@@ -398,6 +403,8 @@ export default class BahamutSource extends BaseSource {
           episodeCache.set(cacheKey, this.getEpisodes(anime.video_sn));
         }
         const epData = await episodeCache.get(cacheKey);
+        // getEpisodes 网络失败时返回空数组而非对象，必须校验结构有效性
+        if (!epData || typeof epData !== 'object' || Array.isArray(epData)) return null;
         const detail = epData.video;
 
         // episodes 可能在不同键中（如 "0"、"1"），电影类内容尤其常见
