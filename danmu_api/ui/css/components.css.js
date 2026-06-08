@@ -1291,9 +1291,11 @@ export const componentsCssContent = /* css */ `
 }
 
 .danmu-call-title span {
+    min-width: 0;
     color: #666;
     font-size: 13px;
     font-weight: normal;
+    overflow-wrap: anywhere;
 }
 
 .danmu-call-title em {
@@ -1349,7 +1351,7 @@ export const componentsCssContent = /* css */ `
     font-size: 14px;
 }
 
-.method-badge {
+.danmu-method-badge {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 10px;
@@ -1358,12 +1360,12 @@ export const componentsCssContent = /* css */ `
     line-height: 1.4;
 }
 
-.method-get {
+.danmu-method-get {
     background: #e3f2fd;
     color: #1976d2;
 }
 
-.method-post {
+.danmu-method-post {
     background: #e8f5e9;
     color: #2e7d32;
 }
@@ -1372,6 +1374,7 @@ export const componentsCssContent = /* css */ `
     color: #666;
     font-size: 13px;
     margin-bottom: 6px;
+    overflow-wrap: anywhere;
 }
 
 .danmu-call-url {
@@ -1397,6 +1400,15 @@ export const componentsCssContent = /* css */ `
     font-size: 12px;
 }
 
+.danmu-call-result span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.danmu-call-result span:last-child {
+    flex-shrink: 0;
+}
+
 /* 弹幕热力图 */
 .danmu-heatmap-container {
     margin-bottom: 15px;
@@ -1405,9 +1417,22 @@ export const componentsCssContent = /* css */ `
     padding: 15px;
 }
 
-.danmu-heatmap-container h3 {
+.danmu-section-title {
     margin: 0 0 10px;
     font-size: 15px;
+}
+
+.danmu-section-title-spaced {
+    margin-top: 15px;
+}
+
+.danmu-empty-text {
+    color: #999;
+}
+
+.danmu-empty-list {
+    text-align: center;
+    padding: 20px;
 }
 
 .heatmap-bars {
@@ -1418,7 +1443,7 @@ export const componentsCssContent = /* css */ `
     padding: 0 2px;
 }
 
-.heatmap-interactive {
+.danmu-heatmap-interactive {
     position: relative;
     padding-top: 34px;
     touch-action: pan-y;
@@ -1483,9 +1508,17 @@ export const componentsCssContent = /* css */ `
 .heatmap-bar {
     flex: 1;
     min-width: 3px;
+    height: var(--heatmap-height, 2%);
+    background: var(--heatmap-color, #667eea);
     border-radius: 2px 2px 0 0;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.12s ease, box-shadow 0.12s ease;
     cursor: pointer;
+}
+
+.heatmap-bar.active {
+    opacity: 0.95;
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.24);
 }
 
 .heatmap-bar:hover {
@@ -1614,6 +1647,7 @@ export const componentsCssContent = /* css */ `
     border-radius: 50%;
     flex-shrink: 0;
     border: 1px solid rgba(0,0,0,0.1);
+    background: var(--danmu-color-dot, #fff);
 }
 
 .danmu-mode-tag {
@@ -1641,6 +1675,7 @@ export const componentsCssContent = /* css */ `
 
 .danmu-text {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1648,7 +1683,43 @@ export const componentsCssContent = /* css */ `
 }
 
 .danmu-load-more {
+    display: none;
+    width: 100%;
     margin-top: 10px;
+}
+
+.jump-to-episode {
+    margin-top: 15px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.jump-episode-input {
+    padding: 8px;
+    width: 90px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.jump-episode-btn {
+    margin-left: 5px;
+    border-radius: 8px;
+}
+
+.jump-episode-total {
+    margin-left: 5px;
+    color: #666;
+    font-size: 14px;
+}
+
+.episode-item.episode-item-highlight {
+    background: #fff3cd;
 }
 
 /* 返回按钮 */
@@ -1726,6 +1797,12 @@ export const componentsCssContent = /* css */ `
 
     .heatmap-bars {
         height: 70px;
+        gap: 1px;
+        padding: 0 1px;
+    }
+
+    .heatmap-bar {
+        min-width: 2px;
     }
 }
 
