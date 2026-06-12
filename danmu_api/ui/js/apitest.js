@@ -640,23 +640,7 @@ function safeDanmuApiPath(path) {
 }
 
 function renderDanmuCallTrace(trace) {
-    if (!trace || !trace.steps || trace.steps.length === 0) return '';
-    const modeText = trace.mode === 'auto' ? '自动匹配' : '手动搜索';
-    const totalElapsed = getDanmuCallTraceTotalMs(trace);
-    let html = '<div class="danmu-call-trace">';
-    html += '<div class="danmu-call-title">调用链路 <span>' + modeText + (trace.inputText ? ' · ' + escapeHtml(trace.inputText) : '') + '</span><em>总耗时 ' + formatCallElapsed(totalElapsed) + '</em></div>';
-    html += '<div class="danmu-call-steps">';
-    trace.steps.forEach((step, index) => {
-        const statusClass = step.status && step.status !== 'success' ? ' danmu-call-step-' + step.status : '';
-        html += '<div class="danmu-call-step' + statusClass + '">';
-        html += '<div class="danmu-call-step-head"><strong>' + (index + 1) + '. ' + escapeHtml(step.name) + '</strong><span class="danmu-method-badge danmu-method-' + String(step.method).toLowerCase() + '">' + escapeHtml(step.method) + '</span></div>';
-        if (step.params) html += '<div class="danmu-call-param">' + escapeHtml(step.params) + '</div>';
-        html += '<code class="danmu-call-url">' + escapeHtml(safeDanmuApiPath(step.url)) + '</code>';
-        html += '<div class="danmu-call-result"><span>' + escapeHtml(step.result || '调用完成') + '</span><span>' + formatCallElapsed(step.elapsed) + '</span></div>';
-        html += '</div>';
-    });
-    html += '</div></div>';
-    return html;
+    return '';
 }
 
 function getDanmuCallTraceTotalMs(trace) {
@@ -1119,7 +1103,7 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase) {
             '</div>';
 
         applyDanmuFilter();
-        renderDanmuStats(data, getDanmuCallTraceTotalSeconds(requestTrace, elapsed), title, durationSeconds, filterCounts);
+        renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts);
         renderDanmuHeatmap(data.comments, durationSeconds);
         renderDanmuList();
 
@@ -1226,7 +1210,7 @@ function renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts) {
             '<div class="danmu-stat-card"><div class="stat-value">' + formatDuration(maxTime) + '</div><div class="stat-label">时长</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + hotMoment + '</div><div class="stat-label">高能时刻</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + avgDensity + ' 条/分</div><div class="stat-label">平均密度</div></div>' +
-            '<div class="danmu-stat-card"><div class="stat-value">' + elapsed + 's</div><div class="stat-label">链路耗时</div></div>' +
+            '<div class="danmu-stat-card"><div class="stat-value">' + elapsed + 's</div><div class="stat-label">请求耗时</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + scrollCount + ' / ' + topCount + ' / ' + bottomCount + '</div><div class="stat-label">滚动 / 顶部 / 底部</div></div>' +
         '</div>';
 }
