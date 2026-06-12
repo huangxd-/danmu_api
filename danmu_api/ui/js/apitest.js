@@ -1197,10 +1197,12 @@ function renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts) {
     const hotStart = hotIdx * segLen;
     const hotMoment = formatDuration(hotStart) + ' - ' + formatDuration(hotStart + segLen);
 
-    const typeCounts = filterCounts || getDanmuFilterCounts(comments);
-    const scrollCount = typeCounts.scroll;
-    const topCount = typeCounts.top;
-    const bottomCount = typeCounts.bottom;
+    const coloredCount = comments.reduce((sum, comment) => {
+        if (!comment || !comment.p) return sum;
+        const color = parseInt(String(comment.p).split(',')[2], 10);
+        return Number.isFinite(color) && color !== 16777215 ? sum + 1 : sum;
+    }, 0);
+    const coloredRatio = count > 0 ? ((coloredCount / count) * 100).toFixed(1) + '%' : '--';
 
     const container = document.getElementById('danmu-stats');
     container.innerHTML =
@@ -1211,7 +1213,7 @@ function renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts) {
             '<div class="danmu-stat-card"><div class="stat-value">' + hotMoment + '</div><div class="stat-label">高能时刻</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + avgDensity + ' 条/分</div><div class="stat-label">平均密度</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + elapsed + 's</div><div class="stat-label">请求耗时</div></div>' +
-            '<div class="danmu-stat-card"><div class="stat-value">' + scrollCount + ' / ' + topCount + ' / ' + bottomCount + '</div><div class="stat-label">滚动 / 顶部 / 底部</div></div>' +
+            '<div class="danmu-stat-card"><div class="stat-value">' + coloredRatio + '</div><div class="stat-label">彩色占比</div></div>' +
         '</div>';
 }
 
