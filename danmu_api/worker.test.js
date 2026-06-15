@@ -5,7 +5,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
@@ -40,6 +40,7 @@ import { addAnime, addEpisode } from "./utils/cache-util.js";
 import { convertToAsciiSum } from "./utils/codec-util.js";
 import { handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
+import { initBangumiData, searchBangumiData, clearBangumiDataCache } from "./utils/bangumi-data-util.js";
 
 // Mock Request class for testing
 class MockRequest {
@@ -178,6 +179,50 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(await handler.delEnv('DANMU_LIMIT'), true);
       assert.equal(await handler.deploy(), true);
     });
+  });
+
+  await t.test('BilibiliSource should resolve b23.tv short links from redirect location', async () => {
+    Globals.init({});
+    const source = new BilibiliSource();
+    const shortUrl = 'https://b23.tv/BV1GJ411x7h7';
+    const targetUrl = 'https://www.bilibili.com/video/BV1GJ411x7h7';
+    let seenRedirectMode;
+
+    await withMockFetch(async (url, options) => {
+      assert.equal(url, shortUrl);
+      seenRedirectMode = options.redirect;
+      return {
+        ok: false,
+        status: 302,
+        url: shortUrl,
+        headers: new Headers({ location: targetUrl }),
+        text: async () => '',
+      };
+    }, async () => {
+      const resolvedUrl = await source.resolveB23Link(shortUrl);
+      assert.equal(resolvedUrl, targetUrl);
+    });
+
+    assert.equal(seenRedirectMode, 'manual');
+  });
+
+  await t.test('buildSearchAnimeUrl should preserve special characters in keyword', async () => {
+    const searchUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/match`, 'Love & Death', 1, 2);
+
+    assert.equal(searchUrl.pathname, '/api/v2/search/anime');
+    assert.equal(searchUrl.searchParams.get('keyword'), 'Love & Death');
+    assert.equal(searchUrl.searchParams.get('season'), '1');
+    assert.equal(searchUrl.searchParams.get('episode'), '2');
+    assert.equal(searchUrl.searchParams.has(' Death'), false);
+  });
+
+  await t.test('buildSearchAnimeUrl should derive /search/anime from /search/episodes requests', async () => {
+    const searchUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/search/episodes?anime=Love%20%26%20Death&episode=2`, 'Love & Death');
+
+    assert.equal(searchUrl.pathname, '/api/v2/search/anime');
+    assert.equal(searchUrl.searchParams.get('keyword'), 'Love & Death');
+    assert.equal(searchUrl.searchParams.has('season'), false);
+    assert.equal(searchUrl.searchParams.has('episode'), false);
   });
 
   // 测试标题解析
@@ -1532,6 +1577,47 @@ test('worker.js API endpoints', async (t) => {
   //   const handler = new EdgeoneHandler();
   //   const res = await handler.deploy();
   //   assert(res, `Expected res is true, but got ${res}`);
+  // });
+
+  // // 测试 Bangumi Data 本地检索功能与数据结构解析
+  // await t.test('searchBangumiData', async () => {
+  //   const originalUseBangumiData = Globals.getConfig().useBangumiData;
+  //   Globals.getConfig().useBangumiData = true;
+  //   try {
+  //     // 确保 Bangumi Data 核心数据源加载至内存
+  //     await initBangumiData('node', true);
+  //     const keyword = '间谍过家家';
+  //     const targetSites = ['gamer', 'gamer_hk'];
+  //     // 执行本地内存级检索
+  //     const results = await searchBangumiData(keyword, targetSites);
+  //     assert(Array.isArray(results), `Expected Array.isArray(results) to be true, but got ${typeof results}`);
+  //     assert(results.length > 0, `Expected results.length > 0, but got ${results.length}`);
+  //     if (results.length > 0) {
+  //       assert(results[0].title !== undefined, `Expected results[0].title !== undefined`);
+  //       assert(results[0].siteId !== undefined, `Expected results[0].siteId !== undefined`);
+  //     }
+  //   } finally {
+  //     clearBangumiDataCache();
+  //     Globals.getConfig().useBangumiData = originalUseBangumiData;
+  //   }
+  // });
+
+  // // 测试带有季度参数的精确拦截与检索机制
+  // await t.test('searchAnimeWithSeason', async () => {
+  //   const config = Globals.getConfig();
+  //   const originalSourceOrderArr = Array.isArray(config.sourceOrderArr) ? [...config.sourceOrderArr] : config.sourceOrderArr;
+  //   config.sourceOrderArr = ['360','iqiyi','dandan','animeko'];
+  //   try {
+  //     // 构造带有 season 参数的 URL 请求对象以模拟 match 接口的内部下发
+  //     const targetUrl = new URL('http://localhost/search/anime?keyword=间谍过家家&season=2');
+  //     const response = await searchAnime(targetUrl);
+  //     const data = await parseResponse(response);
+  //     assert.equal(data.success, true);
+  //     assert(Array.isArray(data.animes), `Expected Array.isArray(data.animes) to be true`);
+  //     assert(data.animes.length > 0, `Expected data.animes.length > 0, but got ${data.animes.length}`);
+  //   } finally {
+  //     config.sourceOrderArr = originalSourceOrderArr;
+  //   }
   // });
 
 });

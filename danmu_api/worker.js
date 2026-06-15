@@ -7,7 +7,8 @@ import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
 import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords } from "./apis/system-api.js";
+import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -29,7 +30,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   const method = req.method;
 
   //  Bangumi Data 辅助函数，用于判断数据更新
-  const isDataDependentRequest = path.includes('/search') || path.includes('/match');
+  const isDataDependentRequest = path.includes('/search') || path.includes('/match') || path.includes('/danmaku');
 
   if (globals.useBangumiData) {
       await initBangumiData(deployPlatform, isDataDependentRequest, ctx);
@@ -56,15 +57,15 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     }
   }
 
-  log("info", `request url: ${JSON.stringify(url)}`);
-  log("info", `request path: ${path}`);
-  log("info", `client ip: ${clientIp}`);
+  log("info", `[system] [Server] request url: ${JSON.stringify(url)}`);
+  log("info", `[system] [Server] request path: ${path}`);
+  log("info", `[system] [Server] client ip: ${clientIp}`);
 
   // --- IP 黑名单拦截 ---
   if (globals.ipBlacklist?.length) {
     const isBlocked = globals.ipBlacklist.some(rule => matchIpBlacklistRule(rule, clientIp));
     if (isBlocked) {
-      log("warn", `[IP Blacklist] Blocked request from IP: ${clientIp}`);
+      log("warn", `[Utils] [IP Blacklist] Blocked request from IP: ${clientIp}`);
       return jsonResponse(
         { errorCode: 403, success: false, errorMessage: "Forbidden" },
         403
@@ -75,7 +76,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
 
-  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment"];
+  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment", "danmaku"];
 
   const firstPart = parts[0] || "";
   const isDefaultToken = globals.token === "87654321";
@@ -103,6 +104,8 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     '/api/v2/search/anime',
     '/api/v2/match',
     '/api/v2/search/episodes',
+    '/api/v2/fongmi/danmaku',
+    '/danmaku',
     '/api/v2/bangumi',
     '/api/v2/comment',
     '/api/v2/segmentcomment'
@@ -117,8 +120,8 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
     if (lastRecord) {
       const lastDate = new Date(lastRecord.timestamp).toDateString();
-      console.log("currentDate: ", currentDate);
-      console.log("lastDate: ", lastDate);
+      log("info", `[system] [Server] currentDate: ${currentDate}`);
+      log("info", `[system] [Server] lastDate: ${lastDate}`);
       if (lastDate !== currentDate) {
         // 新的一天，重置计数
         globals.todayReqNum = 1;
@@ -206,7 +209,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
         }
         // 第一段不是已知的 API 路径，可能是错误的 token
         // 返回 401
-        log("error", `Invalid token in path: ${path}`);
+        log("error", `[system] [Server] Invalid token in path: ${path}`);
         return jsonResponse(
           { errorCode: 401, success: false, errorMessage: "Unauthorized" },
           401
@@ -221,7 +224,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       if (path === "/api/config" && method === "GET") {
         return handleConfig(false); // 无权限
       }
-      log("error", `Invalid or missing token in path: ${path}`);
+      log("error", `[system] [Server] Invalid or missing token in path: ${path}`);
       return jsonResponse(
         { errorCode: 401, success: false, errorMessage: "Unauthorized" },
         401
@@ -229,6 +232,13 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     }
     // 移除 token 部分，剩下的才是真正的路径
     path = "/" + parts.slice(1).join("/");
+  }
+
+  // 兼容部分客户端将自定义弹幕短地址再次拼接官方完整路径的情况
+  // 例如: /danmaku/api/v2/fongmi/danmaku?name=...&episode=...
+  if (path.endsWith("/danmaku/api/v2/fongmi/danmaku")) {
+    log("info", `[Path Fix] Collapsed nested danmaku path: "${path}" -> "/danmaku"`);
+    path = "/danmaku";
   }
 
   // GET /api/config - 获取配置信息 (需要 token)
@@ -241,10 +251,10 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     return handleReqRecords();
   }
 
-  log("info", path);
+  log("info", `[system] [Server] ${path}`);
 
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
-  if (path !== "/" && path !== "/api/logs" && !path.startsWith('/api/env') 
+  if (path !== "/" && path !== "/danmaku" && path !== "/api/logs" && !path.startsWith('/api/env') 
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/ai')) {
@@ -307,6 +317,16 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
     return searchEpisodes(url);
   }
 
+  // GET|POST /api/v2/fongmi/danmaku
+  if (path === "/api/v2/fongmi/danmaku" && (method === "GET" || method === "POST")) {
+    return getFongmiDanmaku(url, req);
+  }
+
+  // GET|POST /danmaku
+  if (path === "/danmaku" && (method === "GET" || method === "POST")) {
+    return getFongmiDanmaku(url, req);
+  }
+
   // GET /api/v2/match
   if (path === "/api/v2/match" && method === "POST") {
     return matchAnime(url, req, clientIp);
@@ -336,7 +356,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       // 先检查缓存
       const cachedComments = getCommentCache(videoUrl);
       if (cachedComments !== null) {
-        log("info", `[Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
+        log("info", `[Utils] [Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
         return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration);
       }
 
@@ -358,7 +378,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
         // 如果最近 1 分钟内的请求次数超过限制，返回 429 错误
         if (recentRequests.length >= globals.rateLimitMaxRequests) {
-          log("warn", `[Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
+          log("warn", `[Utils] [Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
           return jsonResponse(
             { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
             429
@@ -368,7 +388,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
         // 记录本次请求时间戳
         recentRequests.push(currentTime);
         globals.requestHistory.set(clientIp, recentRequests);
-        log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
+        log("info", `[Utils] [Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
       }
 
       // 通过URL获取弹幕
@@ -377,7 +397,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
     // 否则通过commentId获取弹幕
     if (!path.startsWith("/api/v2/comment/")) {
-      log("error", "Missing commentId or url parameter");
+      log("error", "[system] [Server] Missing commentId or url parameter");
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Missing commentId or url parameter" },
         400
@@ -391,7 +411,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       // 检查弹幕缓存 - 缓存命中时直接返回，不计入限流
       const cachedComments = getCommentCache(urlForComment);
       if (cachedComments !== null) {
-        log("info", `[Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
+        log("info", `[Utils] [Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
         return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
       }
     }
@@ -418,7 +438,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
 
       // 如果最近的请求数量大于等于配置的限制次数，则限制请求
       if (recentRequests.length >= globals.rateLimitMaxRequests) {
-        log("warn", `[Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
+        log("warn", `[Utils] [Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
         return jsonResponse(
           { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
           429
@@ -428,7 +448,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       // 记录本次请求时间戳
       recentRequests.push(currentTime);
       globals.requestHistory.set(clientIp, recentRequests);
-      log("info", `[Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
+      log("info", `[Utils] [Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
     }
 
     return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
@@ -446,7 +466,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       try {
         segment = Segment.fromJson(requestBody);
       } catch (e) {
-        log("error", "Invalid JSON in request body for segment");
+        log("error", "[system] [Server] Invalid JSON in request body for segment");
         return jsonResponse(
           { errorCode: 400, success: false, errorMessage: "Invalid JSON in request body" },
           400
@@ -456,7 +476,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       // 通过URL和平台获取分段弹幕
       return getSegmentComment(segment, queryFormat);
     } catch (error) {
-      log("error", `Error processing segmentcomment request: ${error.message}`);
+      log("error", `[system] [Server] Error processing segmentcomment request: ${error.message}`);
       return jsonResponse(
         { errorCode: 500, success: false, errorMessage: "Internal server error" },
         500
@@ -492,6 +512,11 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // POST /api/deploy - 重新部署
   if (path === "/api/deploy" && method === "POST") {
     return handleDeploy();
+  }
+
+  // GET /api/cache/animes - 获取最近 animes 缓存
+  if (path === "/api/cache/animes" && method === "GET") {
+    return handleCacheAnimes();
   }
 
   // POST /api/cache/clear - 清理缓存

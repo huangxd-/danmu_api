@@ -148,7 +148,7 @@ export class Envs {
    * @returns {Array} 源排序数组
    */
   static resolveSourceOrder() {
-    let sourceOrder = this.get('SOURCE_ORDER', '360,vod,renren,hanjutv', 'string');
+    let sourceOrder = this.get('SOURCE_ORDER', 'douban,360,renren,hanjutv', 'string');
 
     const orderArr = sourceOrder
       .split(',')
@@ -157,7 +157,7 @@ export class Envs {
 
     this.accessedEnvVars.set('SOURCE_ORDER', orderArr);
 
-    return orderArr.length > 0 ? orderArr : ['360', 'vod', 'renren', 'hanjutv'];
+    return orderArr.length > 0 ? orderArr : ['douban', '360', 'renren', 'hanjutv'];
   }
 
   /**
@@ -226,6 +226,102 @@ export class Envs {
         return { primary, secondaries: validSecondaries };
       })
       .filter(Boolean);
+  }
+
+  /**
+   * 解析合并映射表
+   * 用于解析用户自定义的剧集/季度级别合并与乱序重排规则，以及阻断特定合并。
+   * 支持从全局强制合并到精确单集的路由干预，解决跨源集数错位问题。
+   * 格式: 
+   * 合并: 副源实体 -> 主源实体 | 路由规则
+   * 阻断: 副源实体 × 主源实体
+   * @returns {Array} 解析后的规则对象列表
+   */
+  static resolveCustomMergeRules() {
+    const raw = this.get('CUSTOM_MERGE_RULES', '', 'string').trim();
+    if (!raw) return [];
+    
+    const rules = [];
+    const ruleStrs = raw.split(';');
+    
+    for (const rStr of ruleStrs) {
+      if (!rStr.trim()) continue;
+      try {
+        const parts = rStr.split('|');
+        const entities = parts[0];
+        const routesStr = parts[1] || '';
+
+        let secStr, primStr;
+        let action = 'merge';
+
+        if (entities.includes('->')) {
+          [secStr, primStr] = entities.split('->').map(s => s.trim());
+        } else if (entities.includes('×')) {
+          [secStr, primStr] = entities.split('×').map(s => s.trim());
+          action = 'block';
+        } else {
+          continue;
+        }
+
+        if (!secStr || !primStr) continue;
+
+        // 解析实体信息：提取标题、季数、来源平台
+        const parseEntity = (str) => {
+          const match = str.match(/^(.+?)(?:\/S(\d+))?@([a-zA-Z0-9_&]+)$/i);
+          if (match) {
+            return {
+              title: match[1].trim(),
+              season: match[2] ? parseInt(match[2], 10) : null,
+              source: match[3].toLowerCase()
+            };
+          }
+          return null;
+        };
+
+        const secEntity = parseEntity(secStr);
+        const primEntity = parseEntity(primStr);
+        if (!secEntity || !primEntity) continue;
+
+        // 解析路由规则：提取对应的单集或区间映射
+        const routes = [];
+        let hasRoutes = false;
+        
+        if (action === 'merge' && routesStr.trim()) {
+          hasRoutes = true;
+          const routeParts = routesStr.split(',');
+          for (const rp of routeParts) {
+            if (!rp.trim()) continue;
+            const [sPart, pPart] = rp.split('>').map(s => s.trim());
+            if (!sPart || !pPart) continue;
+
+            const parseRange = (r) => {
+              const match = r.match(/^E(\d+)(?:~E(\d+))?$/i);
+              if (match) {
+                return {
+                  start: parseInt(match[1], 10),
+                  end: match[2] ? parseInt(match[2], 10) : parseInt(match[1], 10)
+                };
+              }
+              return null;
+            };
+            
+            const sRange = parseRange(sPart);
+            const pRange = parseRange(pPart);
+            
+            if (sRange && pRange) {
+              routes.push({ sec: sRange, prim: pRange });
+            }
+          }
+        }
+        
+        rules.push({ action, secondary: secEntity, primary: primEntity, routes, hasRoutes });
+      } catch (e) {
+        console.warn(`[Envs] 解析合并映射表规则失败: ${rStr}`, e);
+      }
+    }
+    
+    this.accessedEnvVars.set('CUSTOM_MERGE_RULES', raw);
+    return rules;
   }
 
   /**
@@ -496,8 +592,9 @@ export class Envs {
       'RATE_LIMIT_MAX_REQUESTS': { category: 'api', type: 'number', description: '限流配置：1分钟内最大请求次数，0表示不限流，默认3', min: 0, max: 50 },
 
       // 源配置
-      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置，默认360,vod,renren,hanjutv' },
+      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置，默认douban,360,renren,hanjutv' },
       'MERGE_SOURCE_PAIRS': { category: 'source', type: 'multi-select', options: this.MERGE_ALLOWED_SOURCES, description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，允许多组，允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源。\n格式：源1&源2&源3 ，多组用逗号分隔。\n示例：dandan&animeko&bahamut,bilibili&animeko,dandan' },
+      'CUSTOM_MERGE_RULES': { category: 'source', type: 'text', sources: this.MERGE_ALLOWED_SOURCES, description: '合并映射表，用于自定义源合并行为。\n格式1(合并)：副源剧名/S季数@来源 -> 主源剧名/S季数@来源 | E副源集数>E主源集数\n格式2(阻断)：副源剧名/S季数@来源 × 主源剧名/S季数@来源\n说明：[/S季数] 与 [|路由规则] 为可选项，留空则交由程序判断。多个规则用分号隔开，多段路由用逗号分隔。\n示例：\n1. 常规合并：天气之子@bilibili -> 天气之子@dandan\n2. 多集路由：我推的孩子/S01@bahamut -> 我推的孩子/S03@dandan | E25~E35>E25~E35\n3. 阻断合并：辉夜大小姐想让我告白？～天才们的恋爱头脑战～(2020)@bilibili × 辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA(2021)【OVA】@dandan' },
       'OTHER_SERVER': { category: 'source', type: 'text', description: '第三方弹幕服务器，默认https://api.danmu.icu' },
       'CUSTOM_SOURCE_API_URL': { category: 'source', type: 'text', description: '自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源' },
       'VOD_SERVERS': { category: 'source', type: 'text', description: 'VOD站点配置，格式：名称@URL,名称@URL，默认金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top' },
@@ -564,6 +661,7 @@ export class Envs {
       adminToken: this.get('ADMIN_TOKEN', '', 'string', true), // admin token，用于系统管理访问控制
       sourceOrderArr: this.resolveSourceOrder(), // 源排序
       mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
+      customMergeRules: this.resolveCustomMergeRules(), // 合并映射表，用于自定义源合并行为。
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
       customSourceApiUrl: this.get('CUSTOM_SOURCE_API_URL', '', 'string', true), // 自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源
       vodServers: this.resolveVodServers(), // vod站点配置，格式：名称@URL,名称@URL

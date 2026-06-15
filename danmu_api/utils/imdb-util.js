@@ -21,7 +21,7 @@ async function imdbApiGet(url) {
 
     return response;
   } catch (error) {
-    log("error", "[IMDB] API error:", {
+    log("error", "[Utils] [IMDB] API error:", {
       message: error.message,
       name: error.name,
       stack: error.stack,

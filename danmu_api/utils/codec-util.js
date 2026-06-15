@@ -539,7 +539,7 @@ function aesDecryptBase64(cipherB64, keyStr) {
     const unpadded = pkcs7Unpad(decryptedBytes);
     return utf8BytesToString(unpadded);
   } catch (e) {
-    log("error", e);
+    log("error", "[Utils] [Codec]", e);
     return null;
   }
 }
@@ -744,8 +744,15 @@ function fromCodePoint(codePoint) {
    * @returns {string} 转换后的字符串
    */
 export function decodeHtmlEntities(str) {
+  if (!str) return str;
+  const namedEntities = { '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&apos;': "'" };
+
+  // 处理命名HTML实体
+  return str.replace(/&[a-zA-Z]+;/g, match => {
+    return namedEntities[match] || match;
+  })
   // 处理十进制HTML实体 &#12345;
-  return str.replace(/&#(\d+);/g, (match, num) => {
+  .replace(/&#(\d+);/g, (match, num) => {
     return fromCodePoint(parseInt(num, 10));
   })
   // 处理十六进制HTML实体 &#x123A;

@@ -22,7 +22,7 @@ export default class BaseHandler {
     // 重新初始化全局配置
     globals.reInit();
 
-    log("info", `[server] ✓ Environment variable updated successfully: ${key}`);
+    log("info", `[system] [Server] ✓ Environment variable updated successfully: ${key}`);
     return true;
   }
 
@@ -38,7 +38,7 @@ export default class BaseHandler {
     // 重新初始化全局配置
     globals.reInit();
 
-    log("info", `[server] ✓ Environment variable deleted successfully: ${key}`);
+    log("info", `[system] [Server] ✓ Environment variable deleted successfully: ${key}`);
     return true;
   }
 

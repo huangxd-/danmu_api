@@ -522,6 +522,17 @@ function renderValueInput(item) {
                     }).join('')}
                 </div>
             </div>
+
+            \${currentKey === 'MERGE_SOURCE_PAIRS' ? \`
+            <div style="margin-top: 15px; margin-bottom: 8px;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
+                    📊 查看最近数据
+                </button>
+            </div>
+            <div id="recent-data-panel" class="recent-data-panel">
+                <div id="recent-data-list"></div>
+            </div>
+            \` : ''}
         \`;
 
         // 设置拖动事件
@@ -568,6 +579,7 @@ function renderValueInput(item) {
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
         const isDanmuOffset = currentKey === 'DANMU_OFFSET';
+		const isCustomMergeRules = currentKey === 'CUSTOM_MERGE_RULES';
         const offsetSources = item && item.sources ? item.sources : [];
 
         if (isColorPool) {
@@ -613,10 +625,17 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值</label>
                 <textarea id="text-value" placeholder="格式：剧名:秒 或 剧名/S01:秒 或 剧名@来源:秒 或 剧名/S01/E01@来源%:秒" rows="\${rows}" class="text-monospace">\${value}</textarea>
-                <div style="margin-top: 8px;">
+                <div style="margin-top: 8px; display: flex; gap: 10px;">
                     <button type="button" class="btn btn-primary btn-sm" id="offset-rule-toggle" onclick="toggleOffsetRulePanel()">
                         添加规则
                     </button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
+                        📊 查看最近数据
+                    </button>
+                </div>
+                <div id="recent-data-panel" class="recent-data-panel">
+                    <div class="form-help" style="margin: 0 0 8px 0;">点击下方按钮可快捷填入规则表单：</div>
+                    <div id="recent-data-list"></div>
                 </div>
                 <div id="offset-rule-panel" class="offset-rule-panel">
                     <div class="form-help" style="margin: 0 0 8px 0;">季和集不填则对所有季/集生效</div>
@@ -718,6 +737,63 @@ function renderValueInput(item) {
                     });
                 }
             }, 120);
+        } else if (isCustomMergeRules) {
+            // CUSTOM_MERGE_RULES 专用编辑界面
+            const rows = value && value.length > 50 ? Math.min(Math.max(Math.ceil(value.length / 50), 3), 10) : 3;
+            container.innerHTML = \`
+                <label>变量值</label>
+                <textarea id="text-value" placeholder="格式：副源 -> 主源 | 路由规则 或 副源 × 主源" rows="\${rows}" class="text-monospace">\${value || ''}</textarea>
+                <div style="margin-top: 8px; display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-primary btn-sm" id="merge-rule-toggle" onclick="toggleMergeRulePanel()">
+                        添加规则
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="fetchAndShowRecentData()">
+                        📊 查看最近数据
+                    </button>
+                </div>
+                <div id="recent-data-panel" class="recent-data-panel">
+                    <div class="form-help" style="margin: 0 0 8px 0;">点击下方按钮可快捷填入规则表单：</div>
+                    <div id="recent-data-list"></div>
+                </div>
+                <div id="merge-rule-panel" class="offset-rule-panel">
+                    <div class="offset-form-row">
+                        <div style="flex: 1; min-width: 120px;">
+                            <label class="offset-label">副源实体（副源剧名@源）</label>
+                            <input type="text" id="merge-sec-entity" class="offset-input" placeholder="例: 我推的孩子/S01@bahamut" onfocus="setMergeFocus('sec')">
+                        </div>
+                        <div style="width: 60px;">
+                            <label class="offset-label" style="text-align: center; display: block;">关系</label>
+                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; padding: 6px; text-align: center; font-weight: bold; font-size: 14px;">
+                                <option value="->">-&gt;</option>
+                                <option value="×">×</option>
+                            </select>
+                            <div id="merge-action-hint" style="font-size: 11px; color: #666; text-align: center; margin-top: 4px;">合并</div>
+                        </div>
+                        <div style="flex: 1; min-width: 120px;">
+                            <label class="offset-label">主源实体（主源剧名@源）</label>
+                            <input type="text" id="merge-prim-entity" class="offset-input" placeholder="例: 我推的孩子/S03@dandan" onfocus="setMergeFocus('prim')">
+                        </div>
+                    </div>
+                    <div class="offset-form-row" id="merge-route-row">
+                        <div style="flex: 1;">
+                            <label class="offset-label">集数路由规则 (选填，可多组。例如: E01>E01,E25~E35>E25~E35)</label>
+                            <input type="text" id="merge-route-rule" class="offset-input" placeholder="留空则交由系统自动计算偏移">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label class="offset-label">快速追加来源至当前聚焦的输入框 (没有 @ 则追加 @xxx，已存在 @ 则追加 &xxx 合并写法)</label>
+                        <div class="offset-sources">
+                            \${offsetSources.map(src => \`
+                                <div class="offset-source-tag" onclick="appendSourceToMerge('\${src}')">\${src}</div>
+                            \`).join('')}
+                        </div>
+                    </div>
+                    <div class="offset-actions">
+                        <button type="button" class="btn btn-sm" onclick="toggleMergeRulePanel()">取消</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="appendMergeRule()">确认添加</button>
+                    </div>
+                </div>
+            \`;
         } else if (value && value.length > 50) {
             const rows = Math.min(Math.max(Math.ceil(value.length / 50), 3), 10);
             container.innerHTML = \`
@@ -1062,6 +1138,89 @@ function appendOffsetRule() {
         });
     }
     toggleOffsetRulePanel();
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 焦点状态记录
+let currentMergeFocus = 'sec';
+
+function setMergeFocus(type) {
+    currentMergeFocus = type;
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 快捷追加来源
+function appendSourceToMerge(source) {
+    const inputId = currentMergeFocus === 'sec' ? 'merge-sec-entity' : 'merge-prim-entity';
+    const inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+
+    let val = inputEl.value.trim();
+    if (val.includes('@')) {
+        val += '&' + source;
+    } else {
+        val += '@' + source;
+    }
+    inputEl.value = val;
+    inputEl.focus(); // 保持焦点，方便用户连续点击多个来源
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 切换规则面板
+function toggleMergeRulePanel() {
+    const panel = document.getElementById('merge-rule-panel');
+    if (panel) {
+        const isHidden = getComputedStyle(panel).display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        const btn = document.getElementById('merge-rule-toggle');
+        if (btn) btn.textContent = isHidden ? '收起' : '添加规则';
+    }
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 切换操作符联动
+function onMergeActionChange() {
+    const action = document.getElementById('merge-action').value;
+    const routeRow = document.getElementById('merge-route-row');
+    const hint = document.getElementById('merge-action-hint');
+
+    if (action === '×') {
+        if (routeRow) routeRow.style.display = 'none';
+        if (hint) hint.textContent = '阻断';
+    } else {
+        if (routeRow) routeRow.style.display = 'flex';
+        if (hint) hint.textContent = '合并';
+    }
+}
+
+// CUSTOM_MERGE_RULES 快速配置 - 确认添加规则
+function appendMergeRule() {
+    const secEntity = document.getElementById('merge-sec-entity').value.trim();
+    const action = document.getElementById('merge-action').value;
+    const primEntity = document.getElementById('merge-prim-entity').value.trim();
+    const routeRule = document.getElementById('merge-route-rule').value.trim();
+
+    if (!secEntity || !primEntity) {
+        customAlert('副源实体和主源实体不能为空');
+        return;
+    }
+
+    let rule = secEntity + ' ' + action + ' ' + primEntity;
+    if (action === '->' && routeRule) {
+        rule += ' | ' + routeRule;
+    }
+
+    const textarea = document.getElementById('text-value');
+    const current = textarea.value.trim();
+
+    if (current && !current.endsWith(';')) {
+        textarea.value = current + ';' + rule;
+    } else {
+        textarea.value = current ? current + rule : rule;
+    }
+
+    // 清空表单
+    document.getElementById('merge-sec-entity').value = '';
+    document.getElementById('merge-prim-entity').value = '';
+    document.getElementById('merge-route-rule').value = '';
+
+    toggleMergeRulePanel();
 }
 
 // 调整数字
@@ -2314,6 +2473,353 @@ async function verifyAiConnection() {
         // 恢复按钮状态
         btn.innerHTML = originalText;
         btn.disabled = false;
+    }
+}
+
+/* ========================================
+   最近数据与animes缓存面板功能
+   ======================================== */
+
+// 统一切换卡片内的折叠区域
+function toggleCardSection(btnEl, targetSelector, openText, closeText) {
+    if (!btnEl) return;
+    const card = btnEl.closest('.anime-cache-card');
+    if (!card) return;
+    const container = card.querySelector(targetSelector);
+    if (!container) return;
+
+    const isHidden = window.getComputedStyle(container).display === 'none';
+
+    if (isHidden) {
+        container.style.display = 'flex';
+        btnEl.innerHTML = closeText;
+        btnEl.classList.add('active');
+    } else {
+        container.style.display = 'none';
+        btnEl.innerHTML = openText;
+        btnEl.classList.remove('active');
+    }
+}
+
+// 切换子节点内的映射详情
+function toggleMapping(btnEl) {
+    if (!btnEl) return;
+    const parentItem = btnEl.closest('.anime-cache-child-item');
+    if (!parentItem) return;
+    const container = parentItem.querySelector('.child-mapping-container');
+    if (!container) return;
+
+    const isHidden = window.getComputedStyle(container).display === 'none';
+    if (isHidden) {
+        container.style.display = 'flex';
+        btnEl.innerHTML = '📊 收起映射详情';
+        btnEl.classList.add('active');
+    } else {
+        container.style.display = 'none';
+        btnEl.innerHTML = '📊 展开映射详情';
+        btnEl.classList.remove('active');
+    }
+}
+
+// 快捷数据面板业务逻辑
+async function fetchAndShowRecentData() {
+    const panel = document.getElementById('recent-data-panel');
+    const listContainer = document.getElementById('recent-data-list');
+
+    if (!panel || !listContainer) return;
+
+    if (window.getComputedStyle(panel).display !== 'none') {
+        panel.style.display = 'none';
+        return;
+    }
+
+    panel.style.display = 'block';
+    listContainer.innerHTML = '<span class="loading-spinner-small"></span> 数据加载中...';
+
+    try {
+        const response = await fetch(buildApiUrl('/api/cache/animes', true));
+        const result = await response.json();
+
+        if (result.success && result.data && result.data.length > 0) {
+            renderAnimeCachePanel(result.data, listContainer);
+        } else {
+            listContainer.innerHTML = '<div class="text-gray font-size-12" style="padding: 10px 0;">缓存中暂无番剧数据，请先通过客户端请求弹幕接口以生成缓存。</div>';
+        }
+    } catch (error) {
+        listContainer.innerHTML = \`<div class="text-red font-size-12">请求失败: \${error.message}</div>\`;
+    }
+}
+
+// 渲染animes缓存面板 (含集数解析与映射详情)
+function renderAnimeCachePanel(data, listContainer) {
+    const keyInput = document.getElementById('env-key');
+
+    if (!listContainer || !keyInput) return;
+
+    const currentKey = keyInput.value;
+
+    // 内部辅助函数：生成操作按钮
+    const generateButtons = (title, source) => {
+        if (currentKey === 'CUSTOM_MERGE_RULES') {
+            return \`
+                <button type="button" class="btn btn-sm btn-xs" onclick="fillMergeEntity('sec', '\${title}', '\${source}')">设为副</button>
+                <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillMergeEntity('prim', '\${title}', '\${source}')">设为主</button>
+            \`;
+        } else if (currentKey === 'DANMU_OFFSET') {
+            return \`
+                <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillOffsetEntity('\${title}', '\${source}')">填入</button>
+            \`;
+        }
+        return '';
+    };
+
+    // 内部辅助函数：清洗标题
+    const cleanTitleStr = (rawTitle) => rawTitle.replace(/\\s*from\\s+.*$/i, '').trim().replace(/'/g, '&apos;');
+
+    let html = '<div class="anime-cache-list">';
+
+    data.forEach(item => {
+        const cleanTitle = cleanTitleStr(item.animeTitle);
+        const coverStyle = item.imageUrl ? \`background-image: url('\${item.imageUrl}');\` : '';
+
+        // 1. 构建合并子源模块
+        let childrenHtml = '';
+        let childrenCount = 0;
+        if (item.mergedChildren && item.mergedChildren.length > 0) {
+            childrenCount = item.mergedChildren.length;
+            const childItems = item.mergedChildren.map(child => {
+                const childCleanTitle = cleanTitleStr(child.animeTitle);
+
+                const childCoverStyle = child.imageUrl ? \`background-image: url('\${child.imageUrl}');\` : '';
+
+                // 解析映射数据并按匹配状态排序
+                let mappingHtml = '';
+                if (item.links && item.links.length > 0) {
+                    const parsedRows = [];
+
+                    item.links.forEach((link, idx) => {
+                        const urlStr = String(link.url || '');
+                        const hasMainMatch = urlStr.includes(item.source + ':') || !urlStr.includes(':');
+                        const hasChildMatch = urlStr.includes(child.source + ':');
+
+                        if (!hasMainMatch && !hasChildMatch) return;
+
+                        let mainSide = '(主源越界)';
+                        if (hasMainMatch) {
+                            const cleanMainEpTitle = (link.title || '未知剧集').replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+                            mainSide = \`【\${item.source}】\${cleanMainEpTitle}\`;
+                        }
+
+                        let childSide = '(副源缺失)';
+                        let childNum = NaN;
+
+                        if (hasChildMatch) {
+                            const regex = new RegExp(child.source + ':([^$]+)');
+                            const match = urlStr.match(regex);
+                            let childTitleStr = '(源ID未知)';
+
+                            if (match) {
+                                const childId = match[1];
+                                childTitleStr = \`(源ID: \${childId})\`;
+
+                                if (child.links && child.links.length > 0) {
+                                    const childLink = child.links.find(l => String(l.url) === String(childId));
+                                    if (childLink && childLink.title) {
+                                        childTitleStr = childLink.title.replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+                                    }
+                                }
+                            } else {
+                                childTitleStr = (link.title || '').replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+                            }
+                            childSide = \`【\${child.source}】\${childTitleStr}\`;
+                            
+                            const numMatch = childTitleStr.match(/\\d+/);
+                            if (numMatch) {
+                                childNum = parseInt(numMatch[0], 10);
+                            }
+                        }
+
+                        let rowHtml = '';
+                        if (hasMainMatch && hasChildMatch) {
+                            rowHtml = \`<div class="mapping-row"><span class="mapping-status success">✓ 匹配</span> <span class="mapping-text">\${mainSide} ↔ \${childSide}</span></div>\`;
+                        } else {
+                            rowHtml = \`<div class="mapping-row"><span class="mapping-status warning">✗ 落单</span> <span class="mapping-text">\${mainSide} ↔ \${childSide}</span></div>\`;
+                        }
+
+                        parsedRows.push({
+                            originalIndex: idx,
+                            hasChildMatch: hasChildMatch,
+                            childNum: childNum,
+                            html: rowHtml
+                        });
+                    });
+
+                    const matchedRows = parsedRows.filter(r => r.hasChildMatch).sort((a, b) => {
+                        if (!isNaN(a.childNum) && !isNaN(b.childNum)) {
+                            return a.childNum - b.childNum;
+                        }
+                        return a.originalIndex - b.originalIndex;
+                    });
+
+                    const lonelyRows = parsedRows.filter(r => !r.hasChildMatch).sort((a, b) => a.originalIndex - b.originalIndex);
+
+                    const finalRows = [...matchedRows, ...lonelyRows];
+                    const mappingRowsHtml = finalRows.map(r => r.html).join('');
+
+                    if (mappingRowsHtml) {
+                        mappingHtml = \`
+                            <div class="child-mapping-toggle" onclick="toggleMapping(this)">📊 展开映射详情</div>
+                            <div class="child-mapping-container">
+                                \${mappingRowsHtml}
+                            </div>
+                        \`;
+                    }
+                }
+
+                return \`
+                    <div class="anime-cache-child-item">
+                        <div class="anime-cache-child-main">
+                            <div class="anime-cache-child-cover" style="\${childCoverStyle}"></div>
+                            <div class="anime-cache-child-info">
+                                <div class="anime-cache-child-title" title="\${child.animeTitle}">\${childCleanTitle}</div>
+                                <div class="anime-cache-meta">[\${child.source}] (\${child.episodes}集)</div>
+                            </div>
+                            <div class="anime-cache-child-actions">
+                                \${generateButtons(childCleanTitle, child.source)}
+                            </div>
+                        </div>
+                        \${mappingHtml}
+                    </div>
+                \`;
+            }).join('');
+
+            childrenHtml = \`
+                <div class="merged-children-container">
+                    \${childItems}
+                </div>
+            \`;
+        }
+
+        // 2. 构建剧集参考列表模块
+        let episodesHtml = '';
+        let episodesCount = 0;
+        if (item.links && item.links.length > 0) {
+            episodesCount = item.links.length;
+            const epItems = item.links.map(link => {
+                const safeTitle = link.title ? link.title.replace(/'/g, '&apos;').replace(/"/g, '&quot;') : '未知剧集';
+                return \`
+                    <div class="anime-cache-child-item" style="padding: 6px;">
+                        <div class="anime-cache-child-main">
+                            <div class="anime-cache-child-info">
+                                <div class="anime-cache-child-title" title="\${safeTitle}">\${safeTitle}</div>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+
+            episodesHtml = \`
+                <div class="episodes-list-container">
+                    \${epItems}
+                </div>
+            \`;
+        }
+
+        // 3. 构建卡片底部专属切换栏 (Tab Bar)
+        let footerHtml = '';
+        if (childrenCount > 0 || episodesCount > 0) {
+            let badges = '';
+            if (episodesCount > 0) {
+                badges += \`<div class="cache-badge badge-episodes" onclick="toggleCardSection(this, '.episodes-list-container', '📺 \${episodesCount} 个剧集', '📺 收起剧集')">📺 \${episodesCount} 个剧集</div>\`;
+            }
+            if (childrenCount > 0) {
+                badges += \`<div class="cache-badge badge-sources" onclick="toggleCardSection(this, '.merged-children-container', '🔗 \${childrenCount} 个被合并源', '🔗 收起被合并源')">🔗 \${childrenCount} 个被合并源</div>\`;
+            }
+            footerHtml = \`<div class="anime-cache-footer">\${badges}</div>\`;
+        }
+
+        // 4. 组装完整卡片
+        html += \`
+            <div class="anime-cache-card">
+                <div class="anime-cache-card-body">
+                    <div class="anime-cache-cover" style="\${coverStyle}"></div>
+                    <div class="anime-cache-info">
+                        <div class="anime-cache-title" title="\${item.animeTitle}">\${cleanTitle}</div>
+                        <div class="anime-cache-meta">[\${item.source}] (\${item.episodes}集)</div>
+                    </div>
+                    <div class="anime-cache-actions">
+                        \${generateButtons(cleanTitle, item.source)}
+                    </div>
+                </div>
+                \${footerHtml}
+                \${childrenHtml}
+                \${episodesHtml}
+            </div>
+        \`;
+    });
+
+    html += '</div>';
+    listContainer.innerHTML = html;
+}
+
+/* ========================================
+   表单填充快捷操作功能
+   ======================================== */
+
+// 内部辅助函数：输入框视觉反馈统一处理
+function applyInputFeedback(inputEl) {
+    if (!inputEl) return;
+    const oldBorder = inputEl.style.borderColor;
+    inputEl.style.borderColor = '#28a745';
+    setTimeout(() => inputEl.style.borderColor = oldBorder, 800);
+    inputEl.focus();
+}
+
+// 表单填充逻辑：合并映射表
+function fillMergeEntity(type, title, source) {
+    const panel = document.getElementById('merge-rule-panel');
+    if (panel && window.getComputedStyle(panel).display === 'none') {
+        toggleMergeRulePanel();
+    }
+
+    const inputId = type === 'sec' ? 'merge-sec-entity' : 'merge-prim-entity';
+    const inputEl = document.getElementById(inputId);
+
+    if (inputEl) {
+        inputEl.value = \`\${title}@\${source}\`;
+        applyInputFeedback(inputEl);
+        setMergeFocus(type);
+    }
+}
+
+// 表单填充逻辑：弹幕偏移
+function fillOffsetEntity(title, source) {
+    const panel = document.getElementById('offset-rule-panel');
+    if (panel && window.getComputedStyle(panel).display === 'none') {
+        toggleOffsetRulePanel();
+    }
+
+    // 视图层数据清洗：去除年份和类型后缀
+    const cleanTitle = title
+        .replace(/[\\u200B-\\u200F\\uFEFF]/g, '')
+        .replace(/\\s*[（(〔\\[]\\s*[0-9０-９]{4}\\s*年?\\s*[）)〕\\]]/g, '') 
+        .replace(/(.+?)\\s*【[^】]+】$/, '$1')
+        .trim();
+
+    const inputEl = document.getElementById('offset-anime');
+
+    if (inputEl) {
+        inputEl.value = cleanTitle;
+
+        // 基于 data-value 属性匹配并选中对应来源标签
+        const sourceTags = document.querySelectorAll('#offset-sources .offset-source-tag');
+        if (sourceTags.length > 0) {
+            sourceTags.forEach(el => el.classList.remove('selected'));
+            const targetTag = Array.from(sourceTags).find(el => el.dataset.value === source);
+            if (targetTag) targetTag.classList.add('selected');
+        }
+
+        applyInputFeedback(inputEl);
     }
 }
 `;

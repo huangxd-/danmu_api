@@ -67,7 +67,16 @@ let danmuTestState = {
     pageSize: 100,
     currentEpisodeId: null,
     currentTitle: '',
-    currentDuration: 0
+    currentDuration: 0,
+    currentCallTrace: null,
+    currentManualSearchCallTraceBase: null,
+    currentManualEpisodeCallTraceBase: null,
+    nextDanmuRequestId: 0,
+    activeDanmuRequestId: 0,
+    nextDanmuFlowRequestId: 0,
+    activeDanmuFlowRequestId: 0,
+    nextManualBangumiRequestId: 0,
+    activeManualBangumiRequestId: 0
 };
 
 // 初始化接口调试界面
@@ -565,6 +574,152 @@ function backBtnHtml(text, onclick) {
     return '<button class="btn btn-back" onclick="' + onclick + '">&larr; ' + escapeHtml(text) + '</button>';
 }
 
+function inlineJsString(value) {
+    return escapeHtml(JSON.stringify(String(value || '')));
+}
+
+function createDanmuCallTrace(mode, inputText) {
+    return {
+        mode: mode || 'manual',
+        inputText: inputText || '',
+        steps: [],
+        startedAt: performance.now()
+    };
+}
+
+function cloneDanmuCallTrace(trace) {
+    if (!trace) return null;
+    return {
+        mode: trace.mode,
+        inputText: trace.inputText,
+        startedAt: performance.now(),
+        steps: (trace.steps || []).map(step => Object.assign({}, step))
+    };
+}
+
+function createDanmuCallStep(step) {
+    return Object.assign({
+        name: '',
+        method: 'GET',
+        url: '',
+        params: '',
+        result: '',
+        elapsed: 0,
+        status: 'success'
+    }, step);
+}
+
+function addDanmuCallStep(trace, step) {
+    if (!trace) return;
+    trace.steps.push(createDanmuCallStep(step));
+}
+
+function finishDanmuCallStep(trace, startedAt, step) {
+    addDanmuCallStep(trace, Object.assign({}, step, {
+        elapsed: performance.now() - startedAt
+    }));
+}
+
+function finishDanmuCallFailure(trace, startedAt, step, error) {
+    const message = error && error.message ? error.message : String(error || '未知错误');
+    finishDanmuCallStep(trace, startedAt, Object.assign({
+        status: 'error',
+        result: '失败：' + message
+    }, step));
+}
+
+function finishDanmuCallEmpty(trace, startedAt, step, message) {
+    finishDanmuCallStep(trace, startedAt, Object.assign({
+        status: 'empty',
+        result: message || '无结果'
+    }, step));
+}
+
+function safeDanmuApiPath(path) {
+    return String(path || '').replace(new RegExp('^/[^/]+/api/'), '/<TOKEN>/api/');
+}
+
+function renderDanmuCallTrace(trace) {
+    return '';
+}
+
+function getDanmuCallTraceTotalMs(trace) {
+    if (!trace || !Array.isArray(trace.steps) || trace.steps.length === 0) return 0;
+    return trace.steps.reduce((sum, step) => sum + (Number(step.elapsed) || 0), 0);
+}
+
+function renderDanmuCallFailure(trace, title, message, source) {
+    let html = '<div class="danmu-result-toolbar">';
+    if (source === 'manual-episode') {
+        html += backBtnHtml('返回列表', 'backToEpisodeList()');
+    } else if (source === 'manual-anime') {
+        html += backBtnHtml('返回搜索结果', 'backToManualSearch()');
+    }
+    html += '</div>';
+    html += '<div class="danmu-result-error">' + escapeHtml(title || '调用失败') + '：' + escapeHtml(message || '请求失败') + '</div>';
+    html += renderDanmuCallTrace(trace);
+    return html;
+}
+
+function showDanmuCallTraceFailure(trace, title, message, source) {
+    const resultArea = document.getElementById('danmu-result-area');
+    if (!resultArea) return;
+    resultArea.innerHTML = renderDanmuCallFailure(trace, title, message, source);
+    resultArea.style.display = 'block';
+}
+
+function getDanmuCallTraceTotalSeconds(trace, fallbackSeconds) {
+    const totalMs = getDanmuCallTraceTotalMs(trace);
+    if (totalMs > 0) return (totalMs / 1000).toFixed(2);
+    return fallbackSeconds || '0.00';
+}
+
+function formatCallElapsed(ms) {
+    if (!Number.isFinite(ms)) return '--';
+    return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : Math.round(ms) + 'ms';
+}
+
+function startDanmuFlowRequest() {
+    const requestId = ++danmuTestState.nextDanmuFlowRequestId;
+    danmuTestState.activeDanmuFlowRequestId = requestId;
+    danmuTestState.activeManualBangumiRequestId = 0;
+    invalidateActiveDanmuRequest();
+    return requestId;
+}
+
+function isCurrentDanmuFlowRequest(requestId) {
+    return danmuTestState.activeDanmuFlowRequestId === requestId;
+}
+
+function startManualBangumiRequest() {
+    const requestId = ++danmuTestState.nextManualBangumiRequestId;
+    danmuTestState.activeManualBangumiRequestId = requestId;
+    danmuTestState.activeDanmuFlowRequestId = 0;
+    invalidateActiveDanmuRequest();
+    return requestId;
+}
+
+function isCurrentManualBangumiRequest(requestId) {
+    return danmuTestState.activeManualBangumiRequestId === requestId;
+}
+
+function invalidateActiveDanmuRequest() {
+    danmuTestState.activeDanmuRequestId = 0;
+}
+
+function setDanmuFlowButtonLoading(btn, requestId, loading) {
+    if (!btn) return;
+    if (loading) {
+        btn._danmuFlowRequestId = requestId;
+        setBtnLoading(btn, true);
+        return;
+    }
+    if (btn._danmuFlowRequestId === requestId) {
+        setBtnLoading(btn, false);
+        btn._danmuFlowRequestId = 0;
+    }
+}
+
 // =====================
 // 自动匹配测试
 // =====================
@@ -572,12 +727,19 @@ async function autoMatchTest() {
     const fileName = document.getElementById('auto-match-filename').value.trim();
     if (!fileName) { customAlert('请输入文件名'); return; }
 
+    const flowRequestId = startDanmuFlowRequest();
     const btn = document.getElementById('auto-match-btn');
-    setBtnLoading(btn, true);
+    setDanmuFlowButtonLoading(btn, flowRequestId, true);
     document.getElementById('danmu-result-area').style.display = 'none';
     addLog('自动匹配测试: ' + fileName, 'info');
+    const trace = createDanmuCallTrace('auto', fileName);
+    danmuTestState.currentCallTrace = trace;
+    danmuTestState.currentManualSearchCallTraceBase = null;
+    danmuTestState.currentManualEpisodeCallTraceBase = null;
 
+    let matchStartedAt = 0;
     try {
+        matchStartedAt = performance.now();
         const resp = await fetch(buildApiUrl('/api/v2/match'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -585,23 +747,46 @@ async function autoMatchTest() {
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
+        if (!isCurrentDanmuFlowRequest(flowRequestId)) return;
 
         if (data.isMatched && data.matches && data.matches.length > 0) {
             const best = data.matches[0];
             const title = (best.animeTitle || '') + ' ' + (best.episodeTitle || '');
+            finishDanmuCallStep(trace, matchStartedAt, {
+                name: '匹配',
+                method: 'POST',
+                url: '/api/v2/match',
+                params: '文件名：' + fileName,
+                result: '命中 ' + data.matches.length + ' 个结果，episodeId: ' + best.episodeId
+            });
             addLog('自动匹配命中: ' + title + ' (共' + data.matches.length + '个结果，取第1个)', 'success');
-            setBtnLoading(btn, false);
-            fetchDanmuForTest(best.episodeId, title, 'auto');
+            setDanmuFlowButtonLoading(btn, flowRequestId, false);
+            fetchDanmuForTest(best.episodeId, title, 'auto', trace);
             return;
         } else {
+            finishDanmuCallEmpty(trace, matchStartedAt, {
+                name: '匹配',
+                method: 'POST',
+                url: '/api/v2/match',
+                params: '文件名：' + fileName
+            }, '未匹配到任何结果');
             customAlert('未匹配到任何结果');
             addLog('自动匹配无结果', 'warn');
+            showDanmuCallTraceFailure(trace, '自动匹配无结果', '未匹配到任何结果', 'auto');
         }
     } catch (e) {
+        if (!isCurrentDanmuFlowRequest(flowRequestId)) return;
+        finishDanmuCallFailure(trace, matchStartedAt || performance.now(), {
+            name: '匹配',
+            method: 'POST',
+            url: '/api/v2/match',
+            params: '文件名：' + fileName
+        }, e);
         customAlert('匹配失败: ' + e.message);
         addLog('自动匹配失败: ' + e.message, 'error');
+        showDanmuCallTraceFailure(trace, '自动匹配失败', e.message, 'auto');
     } finally {
-        setBtnLoading(btn, false);
+        setDanmuFlowButtonLoading(btn, flowRequestId, false);
     }
 }
 
@@ -612,39 +797,74 @@ async function manualSearchAnime() {
     const keyword = document.getElementById('manual-search-keyword').value.trim();
     if (!keyword) { customAlert('请输入搜索关键字'); return; }
 
+    const flowRequestId = startDanmuFlowRequest();
     const btn = document.getElementById('manual-search-btn');
-    setBtnLoading(btn, true);
+    setDanmuFlowButtonLoading(btn, flowRequestId, true);
     document.getElementById('manual-anime-list').style.display = 'none';
     document.getElementById('manual-episode-list').style.display = 'none';
     document.getElementById('danmu-result-area').style.display = 'none';
     addLog('手动搜索: ' + keyword, 'info');
+    const trace = createDanmuCallTrace('manual', keyword);
+    danmuTestState.currentCallTrace = trace;
+    danmuTestState.currentManualSearchCallTraceBase = null;
+    danmuTestState.currentManualEpisodeCallTraceBase = null;
 
+    let searchStartedAt = 0;
+    let searchUrl = '';
     try {
-        const resp = await fetch(buildApiUrl('/api/v2/search/anime?keyword=' + encodeURIComponent(keyword)));
+        searchUrl = '/api/v2/search/anime?keyword=' + encodeURIComponent(keyword);
+        searchStartedAt = performance.now();
+        const resp = await fetch(buildApiUrl(searchUrl));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
+        if (!isCurrentDanmuFlowRequest(flowRequestId)) return;
 
         if (data.success && data.animes && data.animes.length > 0) {
+            finishDanmuCallStep(trace, searchStartedAt, {
+                name: '搜索',
+                method: 'GET',
+                url: searchUrl,
+                params: '关键词：' + keyword,
+                result: '找到 ' + data.animes.length + ' 个动漫'
+            });
+            danmuTestState.currentManualSearchCallTraceBase = cloneDanmuCallTrace(trace);
             displayManualAnimeList(data.animes);
             addLog('搜索到 ' + data.animes.length + ' 个动漫', 'success');
         } else {
+            finishDanmuCallEmpty(trace, searchStartedAt, {
+                name: '搜索',
+                method: 'GET',
+                url: searchUrl,
+                params: '关键词：' + keyword
+            }, '未找到相关动漫');
             customAlert('未找到相关动漫');
             addLog('搜索无结果', 'warn');
+            showDanmuCallTraceFailure(trace, '搜索无结果', '未找到相关动漫', 'manual-search');
         }
     } catch (e) {
+        if (!isCurrentDanmuFlowRequest(flowRequestId)) return;
+        finishDanmuCallFailure(trace, searchStartedAt || performance.now(), {
+            name: '搜索',
+            method: 'GET',
+            url: searchUrl || '/api/v2/search/anime',
+            params: '关键词：' + keyword
+        }, e);
         customAlert('搜索失败: ' + e.message);
         addLog('搜索失败: ' + e.message, 'error');
+        showDanmuCallTraceFailure(trace, '搜索失败', e.message, 'manual-search');
     } finally {
-        setBtnLoading(btn, false);
+        setDanmuFlowButtonLoading(btn, flowRequestId, false);
     }
 }
 
 function displayManualAnimeList(animes) {
     const container = document.getElementById('manual-anime-list');
-    let html = '<h3 style="margin:15px 0 10px;">搜索结果</h3><div class="anime-grid">';
+    let html = '<h3 class="danmu-section-title danmu-section-title-spaced">搜索结果</h3><div class="anime-grid">';
     animes.forEach(anime => {
-        const img = anime.imageUrl || 'https://placehold.co/150x200?text=No+Image';
-        html += '<div class="anime-item" onclick="manualGetBangumi(' + anime.animeId + ')">';
+        const animeId = Number.parseInt(anime.animeId, 10);
+        if (!Number.isFinite(animeId)) return;
+        const img = escapeHtml(anime.imageUrl || 'https://placehold.co/150x200?text=No+Image');
+        html += '<div class="anime-item" onclick="manualGetBangumi(' + animeId + ')">';
         html += '<img src="' + img + '" alt="' + escapeHtml(anime.animeTitle) + '" referrerpolicy="no-referrer" class="anime-item-img">';
         html += '<h4 class="anime-title">' + escapeHtml(anime.animeTitle) + ' - 共' + (anime.episodeCount || '?') + '集</h4>';
         html += '</div>';
@@ -655,26 +875,59 @@ function displayManualAnimeList(animes) {
 }
 
 async function manualGetBangumi(animeId) {
+    const detailRequestId = startManualBangumiRequest();
+    const requestTrace = danmuTestState.currentManualSearchCallTraceBase
+        ? cloneDanmuCallTrace(danmuTestState.currentManualSearchCallTraceBase)
+        : createDanmuCallTrace('manual', String(animeId || ''));
+    danmuTestState.currentCallTrace = requestTrace;
     addLog('获取番剧详情: ' + animeId, 'info');
     // 隐藏搜索结果，显示剧集列表区域
     showDanmuView(['manual-episode-list'], ['manual-anime-list', 'danmu-result-area']);
 
+    let bangumiStartedAt = 0;
+    const bangumiUrl = '/api/v2/bangumi/' + animeId;
     try {
-        const resp = await fetch(buildApiUrl('/api/v2/bangumi/' + animeId));
+        bangumiStartedAt = performance.now();
+        const resp = await fetch(buildApiUrl(bangumiUrl));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
+        if (!isCurrentManualBangumiRequest(detailRequestId)) return;
 
-        if (data.success && data.bangumi && data.bangumi.episodes) {
-            displayManualEpisodeList(data.bangumi.animeTitle, data.bangumi.episodes);
-            addLog('获取到 ' + data.bangumi.episodes.length + ' 个剧集', 'success');
+        const episodes = data && data.bangumi && Array.isArray(data.bangumi.episodes) ? data.bangumi.episodes : [];
+        if (data.success && data.bangumi && episodes.length > 0) {
+            finishDanmuCallStep(requestTrace, bangumiStartedAt, {
+                name: '番剧详情',
+                method: 'GET',
+                url: bangumiUrl,
+                params: 'animeId: ' + animeId,
+                result: '获取到 ' + episodes.length + ' 个剧集'
+            });
+            danmuTestState.currentManualEpisodeCallTraceBase = cloneDanmuCallTrace(requestTrace);
+            displayManualEpisodeList(data.bangumi.animeTitle, episodes);
+            addLog('获取到 ' + episodes.length + ' 个剧集', 'success');
         } else {
+            finishDanmuCallEmpty(requestTrace, bangumiStartedAt, {
+                name: '番剧详情',
+                method: 'GET',
+                url: bangumiUrl,
+                params: 'animeId: ' + animeId
+            }, '该动漫暂无剧集信息');
             customAlert('该动漫暂无剧集信息');
+            showDanmuCallTraceFailure(requestTrace, '番剧详情无剧集', '该动漫暂无剧集信息', 'manual-anime');
             // 恢复搜索结果
             showDanmuView(['manual-anime-list'], ['manual-episode-list']);
         }
     } catch (e) {
+        if (!isCurrentManualBangumiRequest(detailRequestId)) return;
+        finishDanmuCallFailure(requestTrace, bangumiStartedAt || performance.now(), {
+            name: '番剧详情',
+            method: 'GET',
+            url: bangumiUrl,
+            params: 'animeId: ' + animeId
+        }, e);
         customAlert('获取番剧详情失败: ' + e.message);
         addLog('获取番剧详情失败: ' + e.message, 'error');
+        showDanmuCallTraceFailure(requestTrace, '获取番剧详情失败', e.message, 'manual-anime');
         showDanmuView(['manual-anime-list'], ['manual-episode-list']);
     }
 }
@@ -682,25 +935,28 @@ async function manualGetBangumi(animeId) {
 function displayManualEpisodeList(animeTitle, episodes) {
     const container = document.getElementById('manual-episode-list');
     let html = backBtnHtml('返回搜索结果', 'backToManualSearch()');
-    html += '<h3 style="margin:15px 0 10px;">剧集列表</h3>';
+    html += '<h3 class="danmu-section-title danmu-section-title-spaced">剧集列表</h3>';
     html += '<h4 class="text-yellow-gold">' + escapeHtml(animeTitle) + '</h4>';
     
     // 添加跳转到指定集数的功能
     html += \`
-    <div class="jump-to-episode" style="margin-top: 15px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 12px; display: flex; align-items: center; gap: 10px;">
+    <div class="jump-to-episode">
         <span>跳转到第</span>
-        <input type="number" id="jump-episode-input" placeholder="输入集数" min="1" style="padding: 8px; width: 90px; border: 1px solid #ccc; border-radius: 8px;">
+        <input type="number" id="jump-episode-input" class="jump-episode-input" placeholder="输入集数" min="1">
         <span>集</span>
-        <button class="btn btn-primary btn-sm" onclick="jumpToEpisode()" style="margin-left: 5px; border-radius: 8px;">跳转</button>
-        <span style="margin-left: 5px; color: #666; font-size: 14px;">共\${episodes.length}集</span>
+        <button class="btn btn-primary btn-sm jump-episode-btn" onclick="jumpToEpisode()">跳转</button>
+        <span class="jump-episode-total">共\${episodes.length}集</span>
     </div>\`;
     
     html += '<div class="episode-list-container">';
     episodes.forEach(ep => {
-        const title = escapeHtml(animeTitle) + ' 第' + ep.episodeNumber + '集';
-        html += '<div class="episode-item" id="episode-item-' + ep.episodeNumber + '">';
-        html += '<div class="episode-item-content"><strong>第' + ep.episodeNumber + '集</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
-        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + ep.episodeId + ', \\'' + title + '\\', \\'manual\\')">获取弹幕</button>';
+        const episodeId = Number.parseInt(ep.episodeId, 10);
+        const episodeNumber = Number.parseInt(ep.episodeNumber, 10);
+        if (!Number.isFinite(episodeId) || !Number.isFinite(episodeNumber)) return;
+        const title = String(animeTitle || '') + ' 第' + episodeNumber + '集';
+        html += '<div class="episode-item" id="episode-item-' + episodeNumber + '">';
+        html += '<div class="episode-item-content"><strong>第' + episodeNumber + '集</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
+        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + episodeId + ', ' + inlineJsString(title) + ', \\'manual\\')">获取弹幕</button>';
         html += '</div>';
     });
     html += '</div>';
@@ -735,20 +991,37 @@ function jumpToEpisode() {
         // 滚动到指定元素位置
         episodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         // 添加高亮效果以便识别
-        episodeElement.style.backgroundColor = '#fff3cd'; // 黄色背景高亮
+        episodeElement.classList.add('episode-item-highlight');
         setTimeout(() => {
-            episodeElement.style.backgroundColor = ''; // 恢复原色
+            episodeElement.classList.remove('episode-item-highlight');
         }, 2000);
     } else {
         customAlert('找不到第' + episodeNumber + '集');
     }
 }
 
+function isCurrentDanmuRequest(requestId) {
+    return danmuTestState.activeDanmuRequestId === requestId;
+}
+
 // =====================
 // 获取弹幕并展示结果
 // =====================
-async function fetchDanmuForTest(episodeId, title, source) {
+async function fetchDanmuForTest(episodeId, title, source, traceBase) {
     addLog('获取弹幕: ' + episodeId + ' (' + title + ')', 'info');
+    const requestId = ++danmuTestState.nextDanmuRequestId;
+    danmuTestState.activeDanmuRequestId = requestId;
+    let requestTrace = null;
+    if (traceBase) {
+        requestTrace = cloneDanmuCallTrace(traceBase);
+        danmuTestState.currentCallTrace = requestTrace;
+    } else if (source === 'manual' && danmuTestState.currentManualEpisodeCallTraceBase) {
+        danmuTestState.currentCallTrace = cloneDanmuCallTrace(danmuTestState.currentManualEpisodeCallTraceBase);
+        requestTrace = danmuTestState.currentCallTrace;
+    } else {
+        requestTrace = cloneDanmuCallTrace(danmuTestState.currentCallTrace);
+        danmuTestState.currentCallTrace = requestTrace;
+    }
     danmuTestState.currentEpisodeId = episodeId;
     danmuTestState.currentTitle = title;
     danmuTestState.currentDuration = 0;
@@ -767,21 +1040,38 @@ async function fetchDanmuForTest(episodeId, title, source) {
 
     const startTime = performance.now();
     try {
-        const data = await fetch(buildApiUrl('/api/v2/comment/' + episodeId + "?format=json&duration=true"))
+        const commentUrl = '/api/v2/comment/' + episodeId + '?format=json&duration=true';
+        const data = await fetch(buildApiUrl(commentUrl))
             .then(resp => {
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 return resp.json();
             });
+        if (!isCurrentDanmuRequest(requestId)) return;
         const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
         const durationSeconds = Number((data && data.videoDuration) || 0);
 
         if (!data.comments || data.comments.length === 0) {
+            finishDanmuCallEmpty(requestTrace, startTime, {
+                name: '弹幕',
+                method: 'GET',
+                url: commentUrl,
+                params: 'episodeId: ' + episodeId + '，format=json，duration=true'
+            }, '该剧集暂无弹幕数据');
             customAlert('该剧集暂无弹幕数据');
             addLog('无弹幕数据', 'warn');
-            resultArea.style.display = 'none';
-            if (source === 'manual') backToEpisodeList();
+            const failureSource = source === 'manual' ? 'manual-episode' : source;
+            resultArea.innerHTML = renderDanmuCallFailure(requestTrace, '无弹幕数据', '该剧集暂无弹幕数据', failureSource);
+            resultArea.style.display = 'block';
             return;
         }
+
+        finishDanmuCallStep(requestTrace, startTime, {
+            name: '弹幕',
+            method: 'GET',
+            url: commentUrl,
+            params: 'episodeId: ' + episodeId + '，format=json，duration=true',
+            result: data.comments.length + ' 条弹幕'
+        });
 
         addLog('获取到 ' + data.comments.length + ' 条弹幕, 耗时 ' + elapsed + 's', 'success');
 
@@ -800,32 +1090,38 @@ async function fetchDanmuForTest(episodeId, title, source) {
                 '<button class="btn btn-sm btn-primary" onclick="exportDanmu(\\'xml\\')">导出 XML</button>' +
             '</div></div>';
 
+        const filterCounts = getDanmuFilterCounts(data.comments);
         resultArea.innerHTML =
             toolbarHtml +
             '<div class="danmu-stats" id="danmu-stats"></div>' +
-            '<div class="danmu-heatmap-container"><h3 style="margin:0 0 10px;">弹幕热力图</h3><div class="danmu-heatmap" id="danmu-heatmap"></div></div>' +
-            '<div class="danmu-list-area"><h3 style="margin:0 0 10px;">弹幕列表</h3>' +
-                '<div class="danmu-filter-tabs">' +
-                    '<button class="danmu-filter-tab active" onclick="filterDanmuList(\\'all\\', event)">全部</button>' +
-                    '<button class="danmu-filter-tab" onclick="filterDanmuList(\\'scroll\\', event)">滚动</button>' +
-                    '<button class="danmu-filter-tab" onclick="filterDanmuList(\\'top\\', event)">顶部</button>' +
-                    '<button class="danmu-filter-tab" onclick="filterDanmuList(\\'bottom\\', event)">底部</button>' +
-                '</div>' +
+            renderDanmuCallTrace(requestTrace) +
+            '<div class="danmu-heatmap-container"><h3 class="danmu-section-title">弹幕热力图</h3><div class="danmu-heatmap" id="danmu-heatmap"></div></div>' +
+            '<div class="danmu-list-area"><h3 class="danmu-section-title">弹幕列表</h3>' +
+                renderDanmuFilterTabs(filterCounts) +
                 '<div class="danmu-list" id="danmu-list"></div>' +
-                '<button class="btn btn-primary danmu-load-more" id="danmu-load-more" onclick="loadMoreDanmu()" style="display:none;width:100%;margin-top:10px;">加载更多</button>' +
+                '<button class="btn btn-primary danmu-load-more" id="danmu-load-more" onclick="loadMoreDanmu()">加载更多</button>' +
             '</div>';
 
         applyDanmuFilter();
-        renderDanmuStats(data, elapsed, title, durationSeconds);
+        renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts);
         renderDanmuHeatmap(data.comments, durationSeconds);
         renderDanmuList();
 
         setTimeout(() => resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
     } catch (e) {
+        if (!isCurrentDanmuRequest(requestId)) return;
+        const commentUrl = '/api/v2/comment/' + episodeId + '?format=json&duration=true';
+        finishDanmuCallFailure(requestTrace, startTime, {
+            name: '弹幕',
+            method: 'GET',
+            url: commentUrl,
+            params: 'episodeId: ' + episodeId + '，format=json，duration=true'
+        }, e);
         customAlert('获取弹幕失败: ' + e.message);
         addLog('获取弹幕失败: ' + e.message, 'error');
-        resultArea.style.display = 'none';
-        if (source === 'manual') backToEpisodeList();
+        const failureSource = source === 'manual' ? 'manual-episode' : source;
+        resultArea.innerHTML = renderDanmuCallFailure(requestTrace, '获取弹幕失败', e.message, failureSource);
+        resultArea.style.display = 'block';
     }
 }
 
@@ -874,7 +1170,7 @@ async function exportDanmu(format) {
 // =====================
 // 弹幕统计
 // =====================
-function renderDanmuStats(data, elapsed, title, durationSeconds) {
+function renderDanmuStats(data, elapsed, title, durationSeconds, filterCounts) {
     const comments = data.comments;
     const count = comments.length;
 
@@ -901,14 +1197,12 @@ function renderDanmuStats(data, elapsed, title, durationSeconds) {
     const hotStart = hotIdx * segLen;
     const hotMoment = formatDuration(hotStart) + ' - ' + formatDuration(hotStart + segLen);
 
-    // 统计各类型数量
-    let scrollCount = 0, topCount = 0, bottomCount = 0;
-    comments.forEach(c => {
-        const mode = parseDanmuMode(c.p);
-        if (mode === 5) topCount++;
-        else if (mode === 4) bottomCount++;
-        else scrollCount++;
-    });
+    const coloredCount = comments.reduce((sum, comment) => {
+        if (!comment || !comment.p) return sum;
+        const color = parseInt(String(comment.p).split(',')[2], 10);
+        return Number.isFinite(color) && color !== 16777215 ? sum + 1 : sum;
+    }, 0);
+    const coloredRatio = count > 0 ? ((coloredCount / count) * 100).toFixed(1) + '%' : '--';
 
     const container = document.getElementById('danmu-stats');
     container.innerHTML =
@@ -918,8 +1212,8 @@ function renderDanmuStats(data, elapsed, title, durationSeconds) {
             '<div class="danmu-stat-card"><div class="stat-value">' + formatDuration(maxTime) + '</div><div class="stat-label">时长</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + hotMoment + '</div><div class="stat-label">高能时刻</div></div>' +
             '<div class="danmu-stat-card"><div class="stat-value">' + avgDensity + ' 条/分</div><div class="stat-label">平均密度</div></div>' +
-            '<div class="danmu-stat-card"><div class="stat-value">' + elapsed + 's</div><div class="stat-label">匹配时长</div></div>' +
-            '<div class="danmu-stat-card"><div class="stat-value">' + scrollCount + ' / ' + topCount + ' / ' + bottomCount + '</div><div class="stat-label">滚动 / 顶部 / 底部</div></div>' +
+            '<div class="danmu-stat-card"><div class="stat-value">' + elapsed + 's</div><div class="stat-label">请求耗时</div></div>' +
+            '<div class="danmu-stat-card"><div class="stat-value">' + coloredRatio + '</div><div class="stat-label">彩色占比</div></div>' +
         '</div>';
 }
 
@@ -929,7 +1223,7 @@ function renderDanmuStats(data, elapsed, title, durationSeconds) {
 function renderDanmuHeatmap(comments, durationSeconds) {
     const container = document.getElementById('danmu-heatmap');
     const maxTime = getEffectiveDuration(comments, durationSeconds);
-    if (maxTime === 0) { container.innerHTML = '<p style="color:#999;">无数据</p>'; return; }
+    if (maxTime === 0) { container.innerHTML = '<p class="danmu-empty-text">无数据</p>'; return; }
 
     const barCount = Math.min(60, Math.max(20, Math.ceil(maxTime / 30)));
     const segLen = maxTime / barCount;
@@ -942,7 +1236,8 @@ function renderDanmuHeatmap(comments, durationSeconds) {
     });
 
     const maxSeg = Math.max(...segs, 1);
-    let html = '<div class="heatmap-bars">';
+    let html = '<div class="danmu-heatmap-interactive">';
+    html += '<div class="heatmap-bars">';
     for (let i = 0; i < barCount; i++) {
         const pct = Math.max(2, (segs[i] / maxSeg) * 100);
         const intensity = segs[i] / maxSeg;
@@ -950,12 +1245,121 @@ function renderDanmuHeatmap(comments, durationSeconds) {
         const r = Math.round(66 + intensity * 189);
         const g = Math.round(126 - intensity * 80);
         const b = Math.round(234 - intensity * 180);
-        const timeLabel = formatDuration(i * segLen);
-        html += '<div class="heatmap-bar" style="height:' + pct + '%;background:rgb(' + r + ',' + g + ',' + b + ');" title="' + timeLabel + ' | ' + segs[i] + '条弹幕"></div>';
+        const start = i * segLen;
+        const end = Math.min((i + 1) * segLen, maxTime);
+        const timeLabel = formatDuration(start) + ' - ' + formatDuration(end);
+        html += '<div class="heatmap-bar" data-index="' + i + '" data-count="' + segs[i] + '" style="--heatmap-height:' + pct + '%;--heatmap-color:rgb(' + r + ',' + g + ',' + b + ');" aria-label="' + timeLabel + ' | ' + segs[i] + '条弹幕"></div>';
     }
+    html += '</div>';
+    html += '<div class="danmu-heatmap-indicator"></div><div class="danmu-heatmap-tooltip"></div>';
     html += '</div>';
     html += '<div class="heatmap-axis"><span>00:00</span><span>' + formatDuration(maxTime / 2) + '</span><span>' + formatDuration(maxTime) + '</span></div>';
     container.innerHTML = html;
+    bindDanmuHeatmapScrub(container, segs, segLen, maxTime);
+}
+
+function bindDanmuHeatmapScrub(container, segs, segLen, maxTime) {
+    const interactive = container.querySelector('.danmu-heatmap-interactive');
+    const bars = container.querySelector('.heatmap-bars');
+    const tooltip = container.querySelector('.danmu-heatmap-tooltip');
+    const indicator = container.querySelector('.danmu-heatmap-indicator');
+    if (!interactive || !bars || !tooltip || !indicator) return;
+
+    let rafId = null;
+    let latestEvent = null;
+    const scheduleUpdate = event => {
+        latestEvent = event;
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (!latestEvent) return;
+            updateDanmuHeatmapTooltip(latestEvent, interactive, bars, tooltip, indicator, segs, segLen, maxTime);
+        });
+    };
+
+    const hideTooltip = () => hideDanmuHeatmapTooltip(bars, tooltip, indicator, () => {
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        latestEvent = null;
+    });
+
+    interactive.addEventListener('pointermove', scheduleUpdate, { passive: true });
+    interactive.addEventListener('pointerdown', scheduleUpdate, { passive: true });
+    interactive.addEventListener('pointerup', hideTooltip, { passive: true });
+    interactive.addEventListener('pointercancel', hideTooltip, { passive: true });
+    interactive.addEventListener('pointerleave', hideTooltip);
+}
+
+function hideDanmuHeatmapTooltip(bars, tooltip, indicator, beforeHide) {
+    if (beforeHide) beforeHide();
+    tooltip.classList.remove('active');
+    indicator.classList.remove('active');
+    const activeBar = bars.querySelector('.heatmap-bar.active');
+    if (activeBar) activeBar.classList.remove('active');
+}
+
+function updateDanmuHeatmapTooltip(event, interactive, bars, tooltip, indicator, segs, segLen, maxTime) {
+    if (!event) return;
+    const rect = bars.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const index = Math.max(0, Math.min(segs.length - 1, Math.floor(ratio * segs.length)));
+    const start = index * segLen;
+    const end = Math.min((index + 1) * segLen, maxTime);
+    const leftPct = ((index + 0.5) / segs.length) * 100;
+
+    const activeBar = bars.querySelector('.heatmap-bar.active');
+    if (activeBar) activeBar.classList.remove('active');
+    const currentBar = bars.querySelector('.heatmap-bar[data-index="' + index + '"]');
+    if (currentBar) currentBar.classList.add('active');
+
+    tooltip.innerHTML = '<strong>' + segs[index] + '</strong><span>条弹幕</span><em>' + formatDuration(start) + ' - ' + formatDuration(end) + '</em>';
+    tooltip.classList.add('active');
+    indicator.classList.add('active');
+
+    const clampedLeft = clampHeatmapTooltipLeft(interactive, tooltip, leftPct);
+    tooltip.style.left = clampedLeft + 'px';
+    indicator.style.left = leftPct + '%';
+}
+
+function clampHeatmapTooltipLeft(interactive, tooltip, leftPct) {
+    const width = interactive.clientWidth || 0;
+    const tooltipWidth = tooltip.offsetWidth || 0;
+    const padding = 8;
+    const rawLeft = (leftPct / 100) * width;
+    const minLeft = (tooltipWidth / 2) + padding;
+    const maxLeft = width - (tooltipWidth / 2) - padding;
+    if (width <= tooltipWidth + padding * 2) return width / 2;
+    return Math.max(minLeft, Math.min(maxLeft, rawLeft));
+}
+
+function getDanmuFilterCounts(comments) {
+    const counts = { all: comments.length, scroll: 0, top: 0, bottom: 0 };
+    comments.forEach(c => {
+        const mode = parseDanmuMode(c.p);
+        if (mode === 5) counts.top++;
+        else if (mode === 4) counts.bottom++;
+        else counts.scroll++;
+    });
+    return counts;
+}
+
+function renderDanmuFilterTabs(counts) {
+    const items = [
+        { key: 'all', label: '全部' },
+        { key: 'scroll', label: '滚动' },
+        { key: 'top', label: '顶部' },
+        { key: 'bottom', label: '底部' }
+    ];
+    let html = '<div class="danmu-filter-tabs">';
+    items.forEach(item => {
+        const active = item.key === 'all' ? ' active' : '';
+        html += '<button class="danmu-filter-tab' + active + '" data-count="' + counts[item.key] + '" onclick="filterDanmuList(\\'' + item.key + '\\', event)">' + item.label + '<span class="danmu-filter-count">' + counts[item.key] + '</span></button>';
+    });
+    html += '</div>';
+    return html;
 }
 
 // =====================
@@ -979,7 +1383,8 @@ function applyDanmuFilter() {
 
 function filterDanmuList(type, event) {
     document.querySelectorAll('.danmu-filter-tab').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    const tab = event.currentTarget || event.target.closest('.danmu-filter-tab');
+    if (tab) tab.classList.add('active');
     danmuTestState.currentFilter = type;
     applyDanmuFilter();
     renderDanmuList();
@@ -1000,7 +1405,7 @@ function renderDanmuList() {
 
         html += '<div class="danmu-item">' +
             '<span class="danmu-time">' + formatDuration(time) + '</span>' +
-            '<span class="danmu-color-dot" style="background:' + hexColor + ';" title="' + hexColor + '"></span>' +
+            '<span class="danmu-color-dot" style="--danmu-color-dot:' + hexColor + ';" title="' + hexColor + '"></span>' +
             '<span class="danmu-mode-tag danmu-mode-' + (mode === 5 ? 'top' : mode === 4 ? 'bottom' : 'scroll') + '">' + modeLabel + '</span>' +
             '<span class="danmu-text">' + escapeHtml(c.m) + '</span>' +
             '</div>';
@@ -1008,7 +1413,7 @@ function renderDanmuList() {
 
     const container = document.getElementById('danmu-list');
     if (danmuTestState.displayedCount === 0) {
-        container.innerHTML = html || '<p style="color:#999;text-align:center;padding:20px;">无弹幕数据</p>';
+        container.innerHTML = html || '<p class="danmu-empty-text danmu-empty-list">无弹幕数据</p>';
     } else {
         container.insertAdjacentHTML('beforeend', html);
     }

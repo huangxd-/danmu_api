@@ -8,6 +8,8 @@ on:
 jobs:
   sync-to-huggingface:
     runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_HF_SYNC == 'true' }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,4 +31,6 @@ jobs:
           HF_SPACE_NAME: ${{ vars.HF_SPACE_NAME }}
         run: |
           git remote add hf "https://${{ vars.HF_USERNAME }}:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ vars.HF_USERNAME }}/${{ vars.HF_SPACE_NAME }}"
+          git push --force hf HEAD:main
+          git remote add hf "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
           git push --force hf HEAD:main

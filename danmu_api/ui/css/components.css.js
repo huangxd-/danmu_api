@@ -261,6 +261,51 @@ export const componentsCssContent = /* css */ `
 
 
 
+/* 日志过滤交互面板及标签样式 */
+.log-filters-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.filter-btn {
+    background: transparent;
+    color: #888;
+    border: 1px solid #555;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: capitalize;
+}
+
+.filter-btn:hover {
+    border-color: #999;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn.active {
+    background: rgba(191, 161, 255, 0.1);
+    color: #bfa1ff;
+    border-color: #bfa1ff;
+    text-shadow: 0.3px 0 0 currentColor, -0.3px 0 0 currentColor;
+}
+
+.log-tag {
+    color: #bfa1ff;
+    font-weight: bold;
+    margin-right: 4px;
+    display: inline-block;
+}
+
+.log-entry.error .log-tag {
+    color: #ffb74d;
+}
+
+
+
 /* 表单帮助文本 */
 .form-help {
     font-size: 12px;
@@ -691,6 +736,13 @@ export const componentsCssContent = /* css */ `
 .anime-title {
     margin: 8px 0 5px;
     font-size: 12px;
+    word-break: normal;            /* 保持正常的单词换行规则，优先在空格处断句以保证可读性 */
+    overflow-wrap: break-word;     /* 当长字符串（如多源合并后缀）超出容器时，允许在其内部强制换行 */
+    display: -webkit-box;          /* 启用 WebKit 特有的弹性伸缩盒模型 */
+    -webkit-line-clamp: 5;         /* 限制文本块最多显示的行数为5行 */
+    -webkit-box-orient: vertical;  /* 设置弹性盒子的子元素垂直排列 */
+    overflow: hidden;              /* 隐藏超出容器设定高度范围的文本内容 */
+    text-overflow: ellipsis;       /* 文本溢出时使用省略号(...)进行截断展示 */
 }
 
 .episode-list-container {
@@ -1217,6 +1269,16 @@ export const componentsCssContent = /* css */ `
     color: #999;
 }
 
+.danmu-result-error {
+    margin-bottom: 15px;
+    background: #fff8f8;
+    border: 1px solid #ffcdd2;
+    color: #c62828;
+    border-radius: 10px;
+    padding: 12px 15px;
+    font-size: 13px;
+}
+
 /* 弹幕热力图 */
 .danmu-heatmap-container {
     margin-bottom: 15px;
@@ -1225,9 +1287,22 @@ export const componentsCssContent = /* css */ `
     padding: 15px;
 }
 
-.danmu-heatmap-container h3 {
+.danmu-section-title {
     margin: 0 0 10px;
     font-size: 15px;
+}
+
+.danmu-section-title-spaced {
+    margin-top: 15px;
+}
+
+.danmu-empty-text {
+    color: #999;
+}
+
+.danmu-empty-list {
+    text-align: center;
+    padding: 20px;
 }
 
 .heatmap-bars {
@@ -1238,12 +1313,82 @@ export const componentsCssContent = /* css */ `
     padding: 0 2px;
 }
 
+.danmu-heatmap-interactive {
+    position: relative;
+    padding-top: 34px;
+    touch-action: pan-y;
+    user-select: none;
+}
+
+.danmu-heatmap-tooltip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translateX(-50%) translateY(-4px);
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(51, 51, 51, 0.92);
+    color: white;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 2;
+}
+
+.danmu-heatmap-tooltip.active {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.danmu-heatmap-tooltip strong {
+    font-size: 15px;
+}
+
+.danmu-heatmap-tooltip em {
+    color: rgba(255,255,255,0.72);
+    font-style: normal;
+    margin-left: 3px;
+}
+
+.danmu-heatmap-indicator {
+    position: absolute;
+    top: 34px;
+    bottom: 0;
+    width: 2px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: rgba(102, 126, 234, 0.88);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 1;
+}
+
+.danmu-heatmap-indicator.active {
+    opacity: 1;
+}
+
 .heatmap-bar {
     flex: 1;
     min-width: 3px;
+    height: var(--heatmap-height, 2%);
+    background: var(--heatmap-color, #667eea);
     border-radius: 2px 2px 0 0;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.12s ease, box-shadow 0.12s ease;
     cursor: pointer;
+}
+
+.heatmap-bar.active {
+    opacity: 0.95;
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.24);
 }
 
 .heatmap-bar:hover {
@@ -1261,12 +1406,27 @@ export const componentsCssContent = /* css */ `
 /* 弹幕过滤标签 */
 .danmu-filter-tabs {
     display: flex;
+    flex-wrap: nowrap;
     gap: 8px;
     margin-bottom: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.danmu-filter-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .danmu-filter-tab {
-    padding: 6px 16px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 6px 12px;
     background: #f0f0f0;
     border: 1px solid #ddd;
     border-radius: 15px;
@@ -1284,6 +1444,25 @@ export const componentsCssContent = /* css */ `
     background: #667eea;
     color: white;
     border-color: #667eea;
+}
+
+.danmu-filter-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.08);
+    color: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.danmu-filter-tab.active .danmu-filter-count {
+    background: rgba(255,255,255,0.22);
 }
 
 /* 弹幕列表 */
@@ -1338,6 +1517,7 @@ export const componentsCssContent = /* css */ `
     border-radius: 50%;
     flex-shrink: 0;
     border: 1px solid rgba(0,0,0,0.1);
+    background: var(--danmu-color-dot, #fff);
 }
 
 .danmu-mode-tag {
@@ -1365,6 +1545,7 @@ export const componentsCssContent = /* css */ `
 
 .danmu-text {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1372,7 +1553,43 @@ export const componentsCssContent = /* css */ `
 }
 
 .danmu-load-more {
+    display: none;
+    width: 100%;
     margin-top: 10px;
+}
+
+.jump-to-episode {
+    margin-top: 15px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.jump-episode-input {
+    padding: 8px;
+    width: 90px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.jump-episode-btn {
+    margin-left: 5px;
+    border-radius: 8px;
+}
+
+.jump-episode-total {
+    margin-left: 5px;
+    color: #666;
+    font-size: 14px;
+}
+
+.episode-item.episode-item-highlight {
+    background: #fff3cd;
 }
 
 /* 返回按钮 */
@@ -1450,6 +1667,12 @@ export const componentsCssContent = /* css */ `
 
     .heatmap-bars {
         height: 70px;
+        gap: 1px;
+        padding: 0 1px;
+    }
+
+    .heatmap-bar {
+        min-width: 2px;
     }
 }
 
@@ -1726,4 +1949,201 @@ export const componentsCssContent = /* css */ `
     gap: 8px;
     justify-content: flex-end;
 }
+
+/* 最近数据与animes缓存面板样式 */
+
+/* 面板容器 */
+.recent-data-panel {
+    display: none;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.anime-cache-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.anime-cache-card {
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #eaeaea;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
+}
+
+.anime-cache-card-body {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 10px;
+}
+
+.anime-cache-cover {
+    width: 44px;
+    height: 60px;
+    border-radius: 4px;
+    background-color: #e2e3e5;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.anime-cache-info,
+.anime-cache-child-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.anime-cache-title {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+}
+
+.anime-cache-meta {
+    color: #888;
+    font-size: 11px;
+}
+
+.anime-cache-actions,
+.anime-cache-child-actions {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.anime-cache-actions { gap: 6px; }
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 11px;
+}
+
+/* 卡片底部标签切换栏(Tab 风格) */
+.anime-cache-footer {
+    display: flex;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #fdfdfd;
+    border-top: 1px solid #f0f0f0;
+}
+
+.cache-badge {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.cache-badge.badge-sources { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; }
+.cache-badge.badge-episodes { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; }
+.cache-badge.active { filter: brightness(0.9); box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+
+/* 折叠列表容器 */
+.merged-children-container,
+.episodes-list-container {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border-top: 1px solid #f0f0f0;
+}
+
+.episodes-list-container {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* 子节点卡片 */
+.anime-cache-child-item {
+    display: flex;
+    flex-direction: column; 
+    background: #fff;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px dashed #ccc;
+}
+
+.anime-cache-child-main {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+}
+
+.anime-cache-child-cover {
+    width: 33px;
+    height: 45px;
+    border-radius: 3px;
+    background-color: #e2e3e5;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.anime-cache-child-title {
+    font-weight: 500;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.anime-cache-child-actions { gap: 4px; }
+
+/* 合并映射详情 */
+.child-mapping-toggle {
+    font-size: 10px;
+    color: #666;
+    cursor: pointer;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #eee;
+    text-align: center;
+}
+
+.child-mapping-toggle:hover {
+    color: #0066cc;
+}
+
+.child-mapping-container {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    background: #fdfdfd;
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid #f0f0f0;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.mapping-row {
+    font-size: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.mapping-status { flex-shrink: 0; font-weight: bold; }
+.mapping-status.success { color: #28a745; }
+.mapping-status.warning { color: #d39e00; }
+.mapping-text { color: #555; word-break: break-all; }
 `;

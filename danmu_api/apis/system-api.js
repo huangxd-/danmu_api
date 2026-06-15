@@ -3,6 +3,7 @@ import { jsonResponse } from "../utils/http-util.js";
 import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
+import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-util.js";
 
 export function handleUI() {
   return new Response(HTML_TEMPLATE.replace("globals.currentToken", globals.currentToken), {
@@ -88,32 +89,32 @@ export function handleConfig(hasPermission = false) {
 export async function handleDeploy() {
   try {
     const deployPlatform = globals.deployPlatform;
-    log("info", `[server] Deployment request received for platform: ${deployPlatform}`);
+    log("info", `[system] [Server] Deployment request received for platform: ${deployPlatform}`);
     
     // 如果是 Node 部署，直接返回成功，因为 Node 环境不需要重新部署
     if (deployPlatform.toLowerCase() === 'node') {
-      log("info", `[server] Node/Docker deployment - no redeployment needed, config changes take effect automatically`);
+      log("info", `[system] [Server] Node/Docker deployment - no redeployment needed, config changes take effect automatically`);
       return jsonResponse({ success: true, message: "Node/Docker deployment - configuration changes take effect automatically" }, 200);
     }
     
     // 对于其他平台（如 Cloudflare、Vercel、Netlify 等），使用相应的 Handler 触发部署
     const handler = await HandlerFactory.getHandler(deployPlatform);
     if (!handler) {
-      log("error", `[server] No handler found for platform: ${deployPlatform}`);
+      log("error", `[system] [Server] No handler found for platform: ${deployPlatform}`);
       return jsonResponse({ success: false, message: `No handler found for platform: ${deployPlatform}` }, 400);
     }
     
     // 调用 handler 的 deploy 方法
     const deployResult = await handler.deploy();
     if (deployResult) {
-      log("info", `[server] Deployment triggered successfully for platform: ${deployPlatform}`);
+      log("info", `[system] [Server] Deployment triggered successfully for platform: ${deployPlatform}`);
       return jsonResponse({ success: true, message: "Deployment triggered successfully" }, 200);
     } else {
-      log("error", `[server] Failed to trigger deployment for platform: ${deployPlatform}`);
+      log("error", `[system] [Server] Failed to trigger deployment for platform: ${deployPlatform}`);
       return jsonResponse({ success: false, message: "Failed to trigger deployment" }, 500);
     }
   } catch (error) {
-    log("error", `[server] Deployment error: ${error.message}`);
+    log("error", `[system] [Server] Deployment error: ${error.message}`);
     return jsonResponse({ success: false, message: `Deployment failed: ${error.message}` }, 500);
   }
 }
@@ -171,8 +172,22 @@ export async function handleClearCache() {
     globals.searchCache = new Map();
     globals.commentCache = new Map();
     globals.requestHistory = new Map();
+
+    try {
+      // 清理 Bangumi-Data 内存与磁盘缓存
+      clearBangumiDataCache(true);
+      
+      // 触发异步数据重载
+      if (globals.useBangumiData) {
+        initBangumiData(globals.deployPlatform, false).catch(e => {
+          log("warn", `[system] [Server] Bangumi-Data background reload failed: ${e.message}`);
+        });
+      }
+    } catch (e) {
+      log("error", `[system] [Server] Failed to clear Bangumi-Data cache: ${e.message}`);
+    }
     
-    log("info", `[server] Memory cache cleared successfully`);
+    log("info", `[system] [Server] Memory cache cleared successfully`);
     
     // 同步清理本地缓存和Redis缓存
     try {
@@ -180,10 +195,10 @@ export async function handleClearCache() {
       if (globals.localCacheValid) {
         const { updateLocalCaches } = await import("../utils/cache-util.js");
         await updateLocalCaches();
-        log("info", `[server] Local cache cleared successfully`);
+        log("info", `[system] [Server] Local cache cleared successfully`);
       }
     } catch (localError) {
-      log("warn", `[server] Local cache may not be available: ${localError.message}`);
+      log("warn", `[system] [Server] Local cache may not be available: ${localError.message}`);
     }
     
     try {
@@ -191,10 +206,10 @@ export async function handleClearCache() {
       if (globals.redisValid) {
         const { updateRedisCaches } = await import("../utils/redis-util.js");
         await updateRedisCaches();
-        log("info", `[server] Redis cache cleared successfully`);
+        log("info", `[system] [Server] Redis cache cleared successfully`);
       }
     } catch (redisError) {
-      log("warn", `[server] Redis may not be available: ${redisError.message}`);
+      log("warn", `[system] [Server] Redis may not be available: ${redisError.message}`);
     }
 
     try {
@@ -202,13 +217,13 @@ export async function handleClearCache() {
       if (globals.localRedisValid) {
         const { updateLocalRedisCaches } = await import("../utils/local-redis-util.js");
         await updateLocalRedisCaches();
-        log("info", `[server] LocalRedis cache cleared successfully`);
+        log("info", `[system] [Server] LocalRedis cache cleared successfully`);
       }
     } catch (redisError) {
-      log("warn", `[server] LocalRedis may not be available: ${redisError.message}`);
+      log("warn", `[system] [Server] LocalRedis may not be available: ${redisError.message}`);
     }
     
-    log("info", `[server] All caches cleared successfully`);
+    log("info", `[system] [Server] All caches cleared successfully`);
     return jsonResponse({ success: true, message: "Cache cleared successfully", clearedItems: {
       animes: 0,
       episodeIds: 0,
@@ -221,7 +236,7 @@ export async function handleClearCache() {
       todayReqNum: 0
     }}, 200);
   } catch (error) {
-    log("error", `[server] Cache clear failed: ${error.message}`);
+    log("error", `[system] [Server] Cache clear failed: ${error.message}`);
     return jsonResponse({ success: false, message: `Cache clear failed: ${error.message}` }, 500);
   }
 }
@@ -251,3 +266,51 @@ export function handleReqRecords() {
   return jsonResponse({ records, todayReqNum }, 200);
 }
 
+/**
+ * 处理获取最近 animes 缓存列表的请求
+ * @returns {Response} 包含格式化后番剧及子源集数的 JSON 响应
+ */
+export function handleCacheAnimes() {
+  try {
+    const localAnimes = [...(globals.animes || [])].reverse();
+
+    // 1. 预构建一个全局映射字典，提升查找效率
+    const fullAnimeMap = new Map();
+    localAnimes.forEach(a => {
+      if (a?.source && a?.animeId) {
+        fullAnimeMap.set(`${a.source}_${a.animeId}`, a);
+      }
+    });
+
+    // 2. 视图层数据适配
+    const formattedData = localAnimes
+      .filter(anime => !anime.isHiddenChild)
+      .map(anime => {
+        // 兼容实体类与普通对象
+        const animeJson = typeof anime.toJson === 'function' ? anime.toJson() : { ...anime };
+        const { links = [], mergedChildren = [], ...rest } = animeJson;
+
+        return {
+          ...rest,
+          episodes: rest.episodeCount || rest.episodes || 1,
+          links,
+          mergedChildren: mergedChildren.map(child => {
+            const fullChild = fullAnimeMap.get(`${child.source}_${child.animeId}`);
+            const fullChildJson = typeof fullChild?.toJson === 'function' ? fullChild.toJson() : fullChild;
+            const fullLinks = (fullChildJson?.links?.length > 0) ? fullChildJson.links : (child.links || []);
+
+            return {
+              ...child,
+              episodes: child.episodeCount || child.episodes || 1,
+              links: fullLinks 
+            };
+          })
+        };
+      });
+
+    return jsonResponse({ success: true, data: formattedData }, 200);
+  } catch (error) {
+    log("error", `[system] [Server] Fetch cache animes failed: ${error.message}`);
+    return jsonResponse({ success: false, message: `获取缓存失败: ${error.message}` }, 500);
+  }
+}

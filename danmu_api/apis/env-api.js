@@ -1,4 +1,5 @@
 import { jsonResponse } from '../utils/http-util.js';
+import { log } from '../utils/log-util.js';
 import { HandlerFactory } from '../configs/handlers/handler-factory.js';
 import { globals } from '../configs/globals.js';
 import AIClient from '../utils/ai-util.js';
@@ -29,7 +30,7 @@ export async function handleSetEnv(request) {
       return jsonResponse({ success: false, message: `环境变量 ${key} 设置失败` }, 500);
     }
   } catch (error) {
-    console.error('设置环境变量失败:', error);
+    log("error", "[system] [Server] 设置环境变量失败:", error);
     return jsonResponse({ success: false, message: `设置环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -60,7 +61,7 @@ export async function handleAddEnv(request) {
       return jsonResponse({ success: false, message: `环境变量 ${key} 添加失败` }, 500);
     }
   } catch (error) {
-    console.error('添加环境变量失败:', error);
+    log("error", "[system] [Server] 添加环境变量失败:", error);
     return jsonResponse({ success: false, message: `添加环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -91,7 +92,7 @@ export async function handleDelEnv(request) {
       return jsonResponse({ success: false, message: `环境变量 ${key} 删除失败` }, 500);
     }
   } catch (error) {
-    console.error('删除环境变量失败:', error);
+    log("error", "[system] [Server] 删除环境变量失败:", error);
     return jsonResponse({ success: false, message: `删除环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -141,7 +142,7 @@ export async function handleAiVerify(request) {
       }, 200);
     }
   } catch (error) {
-    console.error('AI 连通性验证失败:', error);
+    log("error", "[system] [Server] AI 连通性验证失败:", error);
     return jsonResponse({ 
       success: false, 
       ok: false,

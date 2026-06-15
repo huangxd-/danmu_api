@@ -300,16 +300,16 @@ export function convertToDanmakuJson(contents, platform) {
         // 去除两边的 `/` 并转化为正则
         return new RegExp(pattern.slice(1, -1));
       } catch (e) {
-        log("error", `无效的正则表达式: ${pattern}`, e);
+        log("error", `[Utils] [Danmu] 无效的正则表达式: ${pattern}`, e);
         return null;
       }
     }
     return null; // 如果不是有效的正则格式则返回 null
   }).filter(regex => regex !== null); // 过滤掉无效的项
 
-  log("info", `原始屏蔽词字符串: ${globals.blockedWords}`);
+  log("info", `[Utils] [Danmu] 原始屏蔽词字符串: ${globals.blockedWords}`);
   const regexArrayToString = array => Array.isArray(array) ? array.map(regex => regex.toString()).join('\n') : String(array);
-  log("info", `屏蔽词列表: ${regexArrayToString(regexArray)}`);
+  log("info", `[Utils] [Danmu] 屏蔽词列表: ${regexArrayToString(regexArray)}`);
 
   // 过滤列表
   const filteredDanmus = danmus.filter(item => {
@@ -317,7 +317,7 @@ export function convertToDanmakuJson(contents, platform) {
   });
 
   // 按n分钟内去重
-  log("info", `去重分钟数: ${globals.groupMinute}`);
+  log("info", `[Utils] [Danmu] 去重分钟数: ${globals.groupMinute}`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource);
 
   // 处理点赞数
@@ -369,10 +369,10 @@ export function convertToDanmakuJson(contents, platform) {
 
     // 统计输出转换结果
     if (topBottomCount > 0) {
-      log("info", `[danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
+      log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
     }
     if (colorCount > 0) {
-      log("info", `[danmu convert] 转换了 ${colorCount} 条弹幕颜色`);
+      log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色`);
     }
   }
 
@@ -382,15 +382,15 @@ export function convertToDanmakuJson(contents, platform) {
       ...danmu,
       m: traditionalized(danmu.m)
     }));
-    log("info", `[danmu convert] 转换了 ${convertedDanmus.length} 条弹幕为繁体字`);
+    log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${convertedDanmus.length} 条弹幕为繁体字`);
   }
 
-  log("info", `danmus_original: ${danmus.length}`);
-  log("info", `danmus_filter: ${filteredDanmus.length}`);
-  log("info", `danmus_group: ${groupedDanmus.length}`);
-  log("info", `danmus_limit: ${convertedDanmus.length}`);
+  log("info", `[Utils] [Danmu] danmus_original: ${danmus.length}`);
+  log("info", `[Utils] [Danmu] danmus_filter: ${filteredDanmus.length}`);
+  log("info", `[Utils] [Danmu] danmus_group: ${groupedDanmus.length}`);
+  log("info", `[Utils] [Danmu] danmus_limit: ${convertedDanmus.length}`);
   // 输出前五条弹幕
-  log("info", "Top 5 danmus:", JSON.stringify(convertedDanmus.slice(0, 5), null, 2));
+  log("info", "[Utils] [Danmu] Top 5 danmus:", JSON.stringify(convertedDanmus.slice(0, 5), null, 2));
   return convertedDanmus;
 }
 
@@ -494,14 +494,14 @@ export function formatDanmuResponse(danmuData, queryFormat) {
   let format = queryFormat || globals.danmuOutputFormat;
   format = format.toLowerCase();
 
-  log("info", `[Format] Using format: ${format}`);
+  log("info", `[Utils] [Danmu] [Format] Using format: ${format}`);
 
   if (format === 'xml') {
     try {
       const xmlData = convertDanmuToXml(danmuData);
       return xmlResponse(xmlData);
     } catch (error) {
-      log("error", `Failed to convert to XML: ${error.message}`);
+      log("error", `[Utils] [Danmu] Failed to convert to XML: ${error.message}`);
       // 转换失败时回退到 JSON
       return jsonResponse(danmuData);
     }

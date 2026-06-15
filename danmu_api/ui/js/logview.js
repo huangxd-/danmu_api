@@ -1,5 +1,60 @@
 // language=JavaScript
 export const logviewJsContent = /* javascript */ `
+// 日志全局过滤状态
+let currentLogFilter = 'ALL';
+
+// 获取日志的严格归属分类
+function getLogCategory(message) {
+    // 匹配行首的连续方括号标签 (需双重转义)
+    const prefixMatch = message.match(/^(?:\\s*\\[[^\\]]+\\])+/);
+    if (!prefixMatch) {
+        // 无标签行作为续行继承上一行的分类
+        return '_inherit_';
+    }
+    
+    const tags = prefixMatch[0].match(/\\[([^\\]]+)\\]/g).map(t => t.replace(/[\\[\\]]/g, '').trim());
+    
+    // 归类合并工具日志
+    // 只要行首包含 Merge，或者包含合并映射独有的子标签，强行将其收束至 Merge 专属分类
+    if (tags.some(t => t.toLowerCase() === 'merge' || ['匹配', '落单', '补全', '合集', '略过', 'Merge-Check'].some(key => t.includes(key)))) {
+        return 'merge';
+    }
+    
+    // 排除时间戳和底层无意义标签，抓取真正的业务源
+    const validTags = tags.filter(t => 
+        !/^\\d{4}-\\d{2}-\\d{2}[T ]/.test(t) && // 排除 ISO 时间戳格式（YYYY-MM-DDTHH:MM:SS）
+        !/^\\d{2}:\\d{2}(:\\d{2})?$/.test(t) &&  // 排除 HH:MM:SS 时间格式（JSON 续行）
+        !t.includes('08:00') &&
+        t !== '请求模拟' && 
+        t !== '网络请求'
+    );
+    
+    if (validTags.length === 0) {
+        // 全部标签被时间戳等过滤规则排除，作为续行继承上一行的分类
+        return '_inherit_';
+    }
+    
+    // 统一转换为小写，确保大小写变体(如 Bahamut 和 bahamut)收束至同一内部标识符
+    let category = validTags[0].toLowerCase();
+    
+    // 标签归一化：将变体标签映射到标准分类
+    const normalizationMap = {
+        'vod fastest mode': 'vod',
+        'custom source': 'custom',
+        'bilibili-proxy': 'bilibili',
+        'tmdb-source': 'tmdb',
+        'path check': 'system',
+        'path fix': 'system',
+        'base': 'system',
+        'fongmi': 'system',
+    };
+    if (normalizationMap[category]) {
+        category = normalizationMap[category];
+    }
+    
+    return category;
+}
+
 // 日志相关
 function addLog(message, type = 'info') {
     const timestamp = new Date().toLocaleTimeString();
@@ -10,11 +65,93 @@ function addLog(message, type = 'info') {
 
 function renderLogs() {
     const container = document.getElementById('log-container');
-    container.innerHTML = logs.map(log =>
-        \`<div class="log-entry \${log.type}">[\${log.timestamp}] \${log.message}</div>\`
-    ).join('');
+    const filterContainer = document.getElementById('log-filters') || createFilterContainer();
+    
+    let filteredLogs = logs;
+    if (currentLogFilter !== 'ALL') {
+        // 采用严格归属校验，同时支持续行上下文继承
+        let lastCategory = 'system';
+        filteredLogs = logs.filter(log => {
+            let category = getLogCategory(log.message);
+            if (category === '_inherit_') {
+                // 续行继承上一个明确分类行
+                category = lastCategory;
+            } else {
+                lastCategory = category;
+            }
+            return category === currentLogFilter;
+        });
+    }
+
+    container.innerHTML = filteredLogs.map(log => {
+        let highlightedMessage = log.message;
+        
+        // 行首连续标签高亮 (需双重转义)
+        const prefixMatch = log.message.match(/^(?:\\s*\\[[^\\]]+\\])+/);
+        if (prefixMatch) {
+            const prefix = prefixMatch[0];
+            const rest = log.message.slice(prefix.length);
+            const coloredPrefix = prefix.replace(/\\[([^\\]]+)\\]/g, '<span class="log-tag">[$1]</span>');
+            highlightedMessage = coloredPrefix + rest;
+        }
+        
+        return \`<div class="log-entry \${log.type}">[\${log.timestamp}] \${highlightedMessage}</div>\`;
+    }).join('');
     container.scrollTop = container.scrollHeight;
+    
+    updateFilterUI();
 }
+
+function createFilterContainer() {
+    const controls = document.querySelector('.log-controls');
+    const filterDiv = document.createElement('div');
+    filterDiv.id = 'log-filters';
+    filterDiv.className = 'log-filters-container';
+    controls.parentNode.insertBefore(filterDiv, document.getElementById('log-container'));
+    return filterDiv;
+}
+
+// 标签显示顺序：ALL → 系统 → 工具 → 源，组内字母序
+const tagGroupOrder = [
+    ['system', 'ai'],
+    ['utils', 'cache', 'merge'],
+    ['360kan', 'aiyifan', 'animeko', 'bahamut', 'bilibili', 'custom', 'dandan', 'douban', 'hanjutv', 'iqiyi', 'leshi', 'maiduidui', 'mango', 'migu', 'other', 'renren', 'sohu', 'tencent', 'tmdb', 'vod', 'xigua', 'youku'],
+];
+const tagOrderMap = {};
+tagGroupOrder.forEach((group, gi) => group.forEach((tag, ti) => tagOrderMap[tag] = gi * 1000 + ti));
+
+function updateFilterUI() {
+    const filterContainer = document.getElementById('log-filters');
+    let html = \`<button class="filter-btn \${currentLogFilter === 'ALL' ? 'active' : ''}" onclick="setLogFilter('ALL')">ALL</button>\`;
+    
+    const currentTags = new Set();
+    let lastCategory = 'system';
+    logs.forEach(log => {
+        let category = getLogCategory(log.message);
+        // 续行继承上一个明确分类行
+        if (category === '_inherit_') {
+            category = lastCategory;
+        } else {
+            lastCategory = category;
+        }
+        // 所有分类标签均生成筛选按钮
+        currentTags.add(category);
+    });
+
+    [...currentTags].sort((a, b) => {
+        const ai = tagOrderMap[a] ?? 99999, bi = tagOrderMap[b] ?? 99999;
+        return ai !== bi ? ai - bi : a.localeCompare(b);
+    }).forEach(tag => {
+        html += \`<button class="filter-btn \${currentLogFilter === tag ? 'active' : ''}" onclick="setLogFilter('\${tag}')">\${tag}</button>\`;
+    });
+    
+    filterContainer.innerHTML = html;
+}
+
+window.setLogFilter = function(tag) {
+    currentLogFilter = tag;
+    renderLogs();
+};
 
 // 从API获取真实日志数据
 async function fetchRealLogs() {

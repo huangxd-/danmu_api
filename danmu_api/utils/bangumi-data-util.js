@@ -4,7 +4,7 @@ import { pipeline } from 'stream/promises';
 import fetch from 'node-fetch';
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
-import { titleMatches } from './common-util.js';
+import { titleMatches, normalizeSpaces, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from './common-util.js';
 import { simplized, traditionalized } from './zh-util.js';
 
 // =====================
@@ -17,11 +17,167 @@ let isDownloading = false;
 let downloadLockTime = 0;
 let memoryFootprintMB = '0.00';
 let hasLoggedCacheWarning = false;
+let charInvertedIndex = new Map();
 
-// 定义缓存目录和文件名
+// 当前生效的数据源标识 ('custom' | 'official')
+let activeDataSource = 'custom';
+// 缓存已解析的版本号（进程内有效）
+let cachedCustomVersion = null;
+let cachedOfficialVersion = null;
+
+// 定义缓存目录/文件名
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILENAME = 'bangumi-data-cache.json';
 const DOWNLOAD_TIMEOUT_MS = 20000;
+const queryCache = new Map();
+
+// CDN 节点配置：自定义优先，官方备用
+const CDN_SOURCES = {
+  custom: [
+    "https://cdn.jsdelivr.net/npm/@wan0ge/bangumi-data@0.3/dist/data.json",
+    "https://unpkg.com/@wan0ge/bangumi-data@0.3/dist/data.json"
+  ],
+  official: [
+    "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
+    "https://unpkg.com/bangumi-data@0.3/dist/data.json"
+  ]
+};
+
+const CUSTOM_PACKAGE = '@wan0ge/bangumi-data';
+const OFFICIAL_PACKAGE = 'bangumi-data';
+
+// 预编译全局正则表达式
+const VALID_DUB_REGEX = /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/;
+const SUFFIX_CLEAN_REGEX = /(?:\s+|^)(?:第?\s*(?:\d+|[一二三四五六七八九十]+)\s*[季期部]|season\s*\d+|s\d+|part\s*\d+|act\s*\d+|phase\s*\d+|the\s+final\s+season|(?:movie|film|ova|oad|sp|剧场版|劇場版|续[篇集]|外传)(?![a-z]))|[:：~～]|\s+.*?篇|(?<=\s|^)\d+$/gi;
+const WHITESPACE_REGEX = /\s+/g;
+const COMMA_SPLIT_REGEX = /[,，]/;
+const COLON_SPLIT_REGEX = /[:：]/;
+
+/**
+ * 构建内存级倒排特征索引字典
+ * 提取每个条目的指纹字符，映射至该字符关联的条目数组序号中
+ * @param {Array<Object>} items - 已精简的条目数组
+ */
+function buildInvertedIndex(items) {
+    const newCharIndex = new Map();
+    const len = items.length;
+
+    for (let i = 0; i < len; i++) {
+        const flatText = items[i]._flatText;
+        if (!flatText) continue;
+
+        const uniqueChars = new Set(flatText);
+        for (const char of uniqueChars) {
+            if (char.trim() === '') continue; 
+
+            let idArray = newCharIndex.get(char);
+            if (!idArray) {
+                idArray = []; 
+                newCharIndex.set(char, idArray);
+            }
+            idArray.push(i);
+        }
+    }
+
+    charInvertedIndex = newCharIndex;
+}
+
+/**
+ * 解析语义化版本号
+ * 支持标准 semver 格式 (major.minor.patch)
+ * @param {string} versionStr 版本字符串（如 "0.3.208", "0.3.209"）
+ * @returns {{major:number, minor:number, patch:number}|null} 解析结果
+ */
+function parseSemanticVersion(versionStr) {
+    if (!versionStr || typeof versionStr !== 'string') return null;
+
+    const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return null;
+
+    return {
+        major: parseInt(match[1], 10),
+        minor: parseInt(match[2], 10),
+        patch: parseInt(match[3], 10)
+    };
+}
+
+/**
+ * 比较两个语义化版本号
+ * 标准-semver 逐段数值比较
+ * @param {string} verA 版本A
+ * @param {string} verB 版本B
+ * @returns {number} 正数表示 A>B, 负数表示 A<B, 0 表示相等
+ */
+function compareVersions(verA, verB) {
+    const a = parseSemanticVersion(verA);
+    const b = parseSemanticVersion(verB);
+    if (!a || !b) return 0;
+
+    if (a.major !== b.major) return a.major - b.major;
+    if (a.minor !== b.minor) return a.minor - b.minor;
+    if (a.patch !== b.patch) return a.patch - b.patch;
+
+    return 0;
+}
+
+/**
+ * 从 npm registry 查询包的最新版本号
+ * @param {string} packageName npm 包名
+ * @returns {Promise<string|null>} 版本号或 null
+ */
+async function fetchNpmLatestVersion(packageName) {
+    try {
+        const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`;
+        log("info", `[请求模拟] HTTP GET: ${url}`);
+        const response = await fetch(url, {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data?.version || null;
+    } catch (e) {
+        log("warn", `[Utils] [Bangumi-Data] 查询 ${packageName} 版本号失败: ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * 智能选择数据源：比较自定义构建与官方版本的版本号决定使用哪个
+ *
+ * 切换规则：
+ * - 自定义版本 >= 官方版本 → 使用自定义源（正常维护状态）
+ * - 官方版本 > 自定义版本 → 切换到官方源（自定义已停止维护）
+ * - 版本查询失败 → 默认使用自定义源
+ *
+ * @returns {Promise<'custom'|'official'>} 应使用的数据源标识
+ */
+async function selectBestDataSource() {
+    try {
+        const [customVer, officialVer] = await Promise.all([
+            cachedCustomVersion || fetchNpmLatestVersion(CUSTOM_PACKAGE),
+            cachedOfficialVersion || fetchNpmLatestVersion(OFFICIAL_PACKAGE)
+        ]);
+
+        if (customVer) cachedCustomVersion = customVer;
+        if (officialVer) cachedOfficialVersion = officialVer;
+
+        if (!customVer || !officialVer) {
+            log("info", `[Utils] [Bangumi-Data] 版本检测不完整 (custom=${customVer}, official=${officialVer})，默认使用自定义源`);
+            return 'custom';
+        }
+
+        const cmp = compareVersions(customVer, officialVer);
+        const selected = cmp >= 0 ? 'custom' : 'official';
+
+        log("info", `[Utils] [Bangumi-Data] 版本对比: @wan0ge/bangumi-data@${customVer} vs bangumi-data@${officialVer} => 使用${selected === 'custom' ? '自定义' : '官方'}源`);
+
+        return selected;
+    } catch (e) {
+        log("warn", `[Utils] [Bangumi-Data] 数据源选择异常，回退到自定义源: ${e.message}`);
+        return 'custom';
+    }
+}
 
 /**
  * 初始化 Bangumi Data 数据源
@@ -42,19 +198,19 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         if (fs.existsSync(CACHE_DIR)) {
             cachePath = path.join(CACHE_DIR, CACHE_FILENAME);
         } else if (!hasLoggedCacheWarning) {
-            log("warn", "[Bangumi-Data] 未检测到根目录的 .cache 文件夹！");
-            log("warn", "[Bangumi-Data] 按照项目规范，请手动挂载或创建 .cache 目录以启用持久化。");
-            log("warn", "[Bangumi-Data] 本次运行已退化为纯内存模式 (重启后需重新下载)。");
+            log("warn", "[Utils] [Bangumi-Data] 未检测到根目录的 .cache 文件夹！");
+            log("warn", "[Utils] [Bangumi-Data] 按照项目规范，请手动挂载或创建 .cache 目录以启用持久化。");
+            log("warn", "[Utils] [Bangumi-Data] 本次运行已退化为纯内存模式 (重启后需重新下载)。");
             hasLoggedCacheWarning = true;
         }
     } else if (!hasLoggedCacheWarning) {
-        log("info", `[Bangumi-Data] 检测到 ${deployPlatform} 云环境，当前运行于纯内存加速模式。`);
+        log("info", `[Utils] [Bangumi-Data] 检测到 ${deployPlatform} 云环境，当前运行于纯内存加速模式。`);
         hasLoggedCacheWarning = true;
     }
 
     // 幽灵死锁自愈机制 (针对 Serverless 强杀)
     if (isDownloading && (Date.now() - downloadLockTime > DOWNLOAD_TIMEOUT_MS)) {
-        log("warn", "[Bangumi-Data] 检测到下载状态锁死 (由于 Serverless 进程休眠/强杀导致)，强制释放锁...");
+        log("warn", "[Utils] [Bangumi-Data] 检测到下载状态锁死 (由于 Serverless 进程休眠/强杀导致)，强制释放锁...");
         isDownloading = false;
     }
 
@@ -66,7 +222,7 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
 
         // 当内存过期或配置强制更新时，仅在核心请求触发后台静默更新
         if (isDataDependentRequest && !isDownloading) {
-            log("info", `[Bangumi-Data] 内存数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
+            log("info", `[Utils] [Bangumi-Data] 内存数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
             isDownloading = true;
             downloadLockTime = Date.now();
             downloadAndCache(cachePath).finally(() => { isDownloading = false; });
@@ -83,17 +239,27 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
 
             memoryCache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
 
+            // 兼容旧版缓存：静默热升级，应用预处理规则生成特征指纹并更新磁盘文件
+            if (memoryCache?.items?.length > 0 && memoryCache.items[0]._flatText === undefined) {
+                memoryCache = pruneBangumiData(memoryCache);
+                fs.writeFileSync(cachePath, JSON.stringify(memoryCache), 'utf-8');
+				buildInvertedIndex(memoryCache.items);
+            } else if (memoryCache?.items?.length > 0) {
+                // 内存读取流程：倒排索引结构非持久化存储，需依据内存数据触发重建
+                buildInvertedIndex(memoryCache.items);
+            }
+
             const memAfter = process.memoryUsage().heapUsed;
             const loadTimeMs = Date.now() - startTime; 
             memoryFootprintMB = Math.max(0, (memAfter - memBefore) / 1024 / 1024).toFixed(2);
             const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
             memoryCacheTime = Date.now(); 
 
-            log("info", `[Bangumi-Data] 成功从本地磁盘加载基础数据，条目数: ${memoryCache.items.length}，解析耗时: ${loadTimeMs} ms，约占内存: ${memoryFootprintMB} MB`);
+            log("info", `[Utils] [Bangumi-Data] 成功从本地磁盘加载基础数据，条目数: ${memoryCache.items.length}，解析耗时: ${loadTimeMs} ms，约占内存: ${memoryFootprintMB} MB`);
 
             if (cacheDays === 0 || (Date.now() - stats.mtimeMs >= expireMs)) {
                 if (isDataDependentRequest && !isDownloading) {
-                    log("info", `[Bangumi-Data] 磁盘数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
+                    log("info", `[Utils] [Bangumi-Data] 磁盘数据${cacheDays === 0 ? '强制更新' : '已过期'}，保留老数据服务本次请求，启动后台静默更新...`);
                     isDownloading = true;
                     downloadLockTime = Date.now();
                     downloadAndCache(cachePath).finally(() => { isDownloading = false; });
@@ -101,14 +267,14 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
             }
             return;
         } catch (e) {
-            log("error", "[Bangumi-Data] 磁盘缓存解析失败，准备重新下载", e.message);
+            log("error", "[Utils] [Bangumi-Data] 磁盘缓存解析失败，准备重新下载", e.message);
             memoryCache = null; 
         }
     }
 
     // 内存与磁盘均无有效数据时的获取逻辑
     if (!isDownloading) {
-        log("info", `[Bangumi-Data] 未命中任何有效缓存，正在获取基础数据...`);
+        log("info", `[Utils] [Bangumi-Data] 未命中任何有效缓存，正在获取基础数据...`);
         isDownloading = true;
         downloadLockTime = Date.now();
 
@@ -117,18 +283,18 @@ export async function initBangumiData(deployPlatform, isDataDependentRequest = f
         if (isDataDependentRequest) {
             await downloadPromise; 
         } else {
-            log("info", `[Bangumi-Data] 当前非核心请求，数据获取转入后台异步执行`);
+            log("info", `[Utils] [Bangumi-Data] 当前非核心请求，数据获取转入后台异步执行`);
             if (ctx && typeof ctx.waitUntil === 'function') {
-                log("info", `[Bangumi-Data] 调用 ctx.waitUntil 延长 Serverless 生命周期`);
+                log("info", `[Utils] [Bangumi-Data] 调用 ctx.waitUntil 延长 Serverless 生命周期`);
                 ctx.waitUntil(downloadPromise);
             }
         }
     } else if (isDataDependentRequest) {
-        log("info", `[Bangumi-Data] 正在等待基础数据下载完成...`);
+        log("info", `[Utils] [Bangumi-Data] 正在等待基础数据下载完成...`);
         let waitCount = 0;
         while (isDownloading) {
             if (waitCount > 150) { // 最多等待 15 秒 (150 * 100ms)
-                log("warn", "[Bangumi-Data] 等待排队超时，放弃等待");
+                log("warn", "[Utils] [Bangumi-Data] 等待排队超时，放弃等待");
                 isDownloading = false;
                 break;
             }
@@ -146,14 +312,16 @@ const ALLOWED_SITES = new Set([
 
 /**
  * 精简 Bangumi Data 数据结构
- * 提取搜索逻辑必须的字段，并过滤掉不包含目标站点标识的动漫条目，控制常驻内存占用
- * * @param {Object} rawData - 原始完整版 Bangumi Data JSON 对象
+ * 提取检索与渲染必需的字段，过滤无关站点，并在此时提取倒排特征文本
+ * 预处理后的数据会随主流程落盘，消除运行时的冷启动开销
+ * @param {Object} rawData - 原始完整版 Bangumi Data JSON 对象
  * @returns {Object} 包含精简后 items 数组的对象
  */
 function pruneBangumiData(rawData) {
     if (!rawData || !rawData.items) return { items: [] };
 
     const prunedItems = [];
+
     for (const item of rawData.items) {
         // 筛选当前条目下属于允许列表的站点信息
         const validSites = [];
@@ -161,7 +329,12 @@ function pruneBangumiData(rawData) {
             for (const s of item.sites) {
                 if (ALLOWED_SITES.has(s.site)) {
                     const prunedSite = { site: s.site, id: s.id };
+                    // 提取 bilibili 系列站点的 season_id 字段
+                    if (s.season_id) prunedSite.season_id = String(s.season_id);
+                    // 提取 gamer/gamer_hk 站点的 video_sn 字段
+                    if (s.video_sn) prunedSite.video_sn = String(s.video_sn);
                     if (s.comment) prunedSite.comment = s.comment;
+                    if (s.related) prunedSite.related = s.related;
                     validSites.push(prunedSite);
                 }
             }
@@ -170,7 +343,7 @@ function pruneBangumiData(rawData) {
         // 丢弃不包含任何目标站点的条目，避免占用内存
         if (validSites.length === 0) continue;
 
-        // 构建精简版条目，仅保留核心检索字段
+        // 构建精简版条目，保留核心数据
         const prunedItem = {
             title: item.title,
             type: item.type,
@@ -179,8 +352,22 @@ function pruneBangumiData(rawData) {
         if (item.begin) prunedItem.begin = item.begin;
         if (item.titleTranslate) prunedItem.titleTranslate = item.titleTranslate;
 
+        // 构建聚合特征指纹：合并所有标题，强制转换为简体，并进行统一字符集规范化及小写转换
+        let str = item.title;
+        if (item.titleTranslate) {
+            for (const lang in item.titleTranslate) {
+                const transArr = item.titleTranslate[lang];
+                for (let j = 0; j < transArr.length; j++) {
+                    str += transArr[j];
+                }
+            }
+        }
+
+        const normalizedStr = simplized(str);
+        prunedItem._flatText = normalizeSpaces(normalizedStr).toLowerCase().replace(SUFFIX_CLEAN_REGEX, '');
         prunedItems.push(prunedItem);
     }
+
     return { items: prunedItems };
 }
 
@@ -191,27 +378,23 @@ function pruneBangumiData(rawData) {
  * @returns {Promise<void>}
  */
 async function downloadAndCache(cachePath) {
-    log("info", "[Bangumi-Data] 开始优选节点下载最新数据并执行精简...");
+    log("info", "[Utils] [Bangumi-Data] 开始优选节点下载最新数据并执行精简...");
     try {
         const memBefore = process.memoryUsage().heapUsed;
-        const startTime = Date.now(); 
+        const startTime = Date.now();
 
         let parseTimeMs = 0;
 
-        // 备选 CDN 节点列表
-        const CDNS = [
-            "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
-            "https://unpkg.com/bangumi-data@0.3/dist/data.json"
-        ];
+        // 每次重新下载时检测版本号以选择数据源
+        activeDataSource = await selectBestDataSource();
+        const CDNS = CDN_SOURCES[activeDataSource] || CDN_SOURCES.custom;
 
-        // 声明压缩头，提升传输效率
         const fetchOptions = {
             headers: {
                 'Accept-Encoding': 'br, gzip, deflate'
             }
         };
 
-        // 为每个请求分配独立的终止控制器
         const controllers = CDNS.map(() => new AbortController());
 
         CDNS.forEach(url => {
@@ -229,6 +412,8 @@ async function downloadAndCache(cachePath) {
             const resultData = await response.json();
             const originalCount = resultData.items ? resultData.items.length : 0;
 
+            if (controller.signal.aborted) throw new Error('Aborted before parsing');
+
             // 立即执行数据裁剪以释放内存
             const localParseStartTime = Date.now();
             const prunedData = pruneBangumiData(resultData);
@@ -236,7 +421,7 @@ async function downloadAndCache(cachePath) {
 
             let tempFilePath = null;
 
-            if (cachePath) {
+            if (cachePath && !controller.signal.aborted) {
                 // 物理磁盘模式：为每个并发流生成独立的临时文件，写入精简后的数据
                 tempFilePath = `${cachePath}.tmp${index}`;
                 fs.writeFileSync(tempFilePath, JSON.stringify(prunedData), 'utf-8');
@@ -272,11 +457,13 @@ async function downloadAndCache(cachePath) {
         }
 
         const downloadTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        log("info", `[Bangumi-Data] 精简数据已成功写入磁盘 (节点: ${new URL(winner.url).hostname} ,阶段耗时: ${downloadTime} 秒)`);
+        log("info", `[Utils] [Bangumi-Data] 精简数据已成功写入磁盘 (节点: ${new URL(winner.url).hostname} ,阶段耗时: ${downloadTime} 秒)`);
 
         // 数据处理流
         memoryCache = winner.resultData;
         parseTimeMs = winner.pruneCost;
+		buildInvertedIndex(memoryCache.items);
+        queryCache.clear();
 
         const memAfter = process.memoryUsage().heapUsed;
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(2); 
@@ -285,136 +472,299 @@ async function downloadAndCache(cachePath) {
         const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
         memoryCacheTime = Date.now();
 
-        log("info", `[Bangumi-Data] 加载到内存成功，保留/原始条目数: ${memoryCache.items.length} / ${winner.originalCount}，处理耗时: ${parseTimeMs} ms，全链路总耗时: ${totalTime} 秒，净增内存: ${memoryFootprintMB} MB (当前项目总占用: ${totalMemMB} MB)`);
+        log("info", `[Utils] [Bangumi-Data] 加载到内存成功，保留/原始条目数: ${memoryCache.items.length} / ${winner.originalCount}，处理耗时: ${parseTimeMs} ms，全链路总耗时: ${totalTime} 秒，净增内存: ${memoryFootprintMB} MB (当前项目总占用: ${totalMemMB} MB)`);
     } catch (e) {
         // 提取所有请求均失败时的具体错误信息
         const errorMessage = e instanceof AggregateError ? e.errors.map(err => err.message).join(' | ') : e.message;
-        log("error", "[Bangumi-Data] 下载失败 (所有 CDN 均未响应或报错):", errorMessage);
+        log("error", "[Utils] [Bangumi-Data] 下载失败 (所有 CDN 均未响应或报错):", errorMessage);
     }
 }
 
 /**
  * 在 Bangumi Data 中搜索匹配的动漫条目
+ * 采用倒排索引结合特征词清洗逻辑进行初筛，随后执行精准匹配
  * 支持多语言标题检索、特定站点过滤以及配音/区域版本解析
  * @param {string} keyword - 搜索关键词
  * @param {Array<string>} siteKeys - 需要匹配的源站点标识数组
- * @returns {Array<Object>} 匹配的动漫条目数组，包含解析后的展示标题、ID及类型等元数据
+ * @returns {Array<Object>} 匹配的动漫条目数组
  */
-export function searchBangumiData(keyword, siteKeys) {
+export async function searchBangumiData(keyword, siteKeys) {
     if (!memoryCache || !memoryCache.items) return [];
 
-    const validDubRegex = /(?:普通[话話]|[国國][语語]|中文配音|中配|中文|[粤粵][语語]配音|[粤粵]配|[粤粵][语語]|[台臺]配|[台臺][语語]|港配|港[语語]|字幕|助[听聽]|日[语語]|日配|原版|原[声聲])(?:版)?/;
-    const results = [];
+    let searchPromise = queryCache.get(keyword);
 
-    // 简繁转换搜索关键词
-    let searchTerms = [keyword];
-    try {
-        searchTerms = [...new Set([keyword, simplized(keyword), traditionalized(keyword)])];
-    } catch (e) {
-    }
+    if (!searchPromise) {
+        searchPromise = (async () => {
+            const matched = [];
 
-    for (const item of memoryCache.items) {
-        // 构建完整的搜索标题池
-        const titles = [item.title];
-        if (item.titleTranslate) {
-            for (const lang in item.titleTranslate) {
-                titles.push(...item.titleTranslate[lang]);
+            // 保留完整的繁简变体数组用于最终的精准校验阶段
+            let searchTerms = [keyword];
+            try {
+                searchTerms = [...new Set([keyword, simplized(keyword), traditionalized(keyword)])];
+            } catch (e) {}
+
+            // 提取核心检索词：基于底层指纹的简体单向收束特性，仅提取简体核心词用于极速初筛
+            const unifiedKeyword = simplized(keyword);
+            const coreKws = [unifiedKeyword].map(kw => {
+                let core = kw.replace(SUFFIX_CLEAN_REGEX, '');
+                core = normalizeSpaces(core).toLowerCase();
+                // 当规范化后字符过短时，降级使用仅规范化的原始词作为初筛条件
+                return core.length >= 2 ? core : normalizeSpaces(kw).toLowerCase();
+            }).filter(k => k.length > 0);
+
+            let candidateIndices = null; 
+
+            // 倒排索引初筛逻辑
+            if (typeof charInvertedIndex !== 'undefined' && charInvertedIndex.size > 0 && coreKws.length > 0) {
+                const globalCandidates = new Set(); 
+
+                for (const kw of coreKws) {
+                    // 剔除空格后，获取当前搜索词的所有去重单字
+                    const chars = Array.from(new Set(kw.replace(WHITESPACE_REGEX, '')));
+                    if (chars.length === 0) continue;
+
+                    // 按字在库中出现的频率从小到大排序，优先处理包含条目最少的字以减少运算量
+                    chars.sort((a, b) => {
+                        const lenA = charInvertedIndex.get(a)?.length || 0;
+                        const lenB = charInvertedIndex.get(b)?.length || 0;
+                        return lenA - lenB;
+                    });
+
+                    // 如果出现频率最低的字不存在，表明该词无对应条目
+                    const rarestCharArr = charInvertedIndex.get(chars[0]);
+                    if (!rarestCharArr || rarestCharArr.length === 0) {
+                        continue; 
+                    }
+
+                    // 初始化当前词的候选池
+                    let localCandidates = new Set(rarestCharArr);
+
+                    // 依次与后续字的集合求交集
+                    for (let i = 1; i < chars.length; i++) {
+                        const nextCharArr = charInvertedIndex.get(chars[i]);
+                        if (!nextCharArr) {
+                            localCandidates.clear(); break;
+                        }
+
+                        const nextCharSet = new Set(nextCharArr);
+                        for (const idx of localCandidates) {
+                            if (!nextCharSet.has(idx)) {
+                                localCandidates.delete(idx);
+                            }
+                        }
+                        if (localCandidates.size === 0) break;
+                    }
+
+                    // 合并到全局候选池
+                    for (const idx of localCandidates) {
+                        globalCandidates.add(idx);
+                    }
+                }
+                
+                candidateIndices = Array.from(globalCandidates);
+            } 
+            else {
+                // 索引未就绪时，降级使用全量扫描
+                candidateIndices = memoryCache.items.map((_, i) => i);
             }
-        }
 
-        const isMatch = titles.some(t => t && searchTerms.some(kw => titleMatches(t, kw)));
+            const items = memoryCache.items;
+            const termsLen = searchTerms.length;
 
-        if (isMatch && item.sites) {
-            // 捕获所有符合条件的站点记录，支持同源多区域版本（如大陆版和港澳台版共存）
-            const matchedSites = item.sites.filter(s => siteKeys.includes(s.site));
+            // 核心匹配逻辑：校验候选项的主标题及所有多语言翻译版本
+            for (let i = 0; i < candidateIndices.length; i++) {
+                const item = items[candidateIndices[i]];
 
-            for (const matchedSite of matchedSites) {
-                // 标准化媒体类型映射
-                let typeStr = "TV动画";
-                let typeId = "tvseries";
-                if (item.type === 'movie') { typeStr = "剧场版"; typeId = "movie"; }
-                else if (item.type === 'tv') { typeStr = "TV动画"; typeId = "tvseries"; }
-                else if (item.type === 'ova') { typeStr = "OVA"; typeId = "ova"; }
-                else if (item.type === 'web') { typeStr = "WEB动画"; typeId = "web"; }
+                let isMatch = false;
+                for (let k = 0; k < termsLen; k++) {
+                    const kw = searchTerms[k];
 
-                // 提取区域版本基础后缀
-                let baseSuffix = "";
-                if (['bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw'].includes(matchedSite.site)) {
-                    baseSuffix = "（港澳台）";
+                    if (titleMatches(item.title, kw)) {
+                        isMatch = true; break;
+                    }
+
+                    if (item.titleTranslate) {
+                        for (const lang in item.titleTranslate) {
+                            const transArr = item.titleTranslate[lang];
+                            for (let j = 0; j < transArr.length; j++) {
+                                if (transArr[j] && titleMatches(transArr[j], kw)) {
+                                    isMatch = true; break;
+                                }
+                            }
+                            if (isMatch) break;
+                        }
+                    }
+                    if (isMatch) break;
                 }
 
-                // 解析衍生配音版本与当前主条目的附加描述
-                let additionalDubs = []; 
-                let mainItemDubs = [];   
-
-                if (matchedSite.comment) {
-                    const dubs = matchedSite.comment.split(/[,，]/);
-                    for (const dub of dubs) {
-                        const parts = dub.split(/[:：]/);
-                        if (parts.length >= 2) {
-                            const dubName = parts[0].trim();
-                            const dubId = parts[1].trim();
-                            if (dubId && validDubRegex.test(dubName)) {
-                                additionalDubs.push({
-                                    title: item.title,
-                                    titles: [...titles],
-                                    begin: item.begin,
-                                    siteId: dubId, 
-                                    matchedSiteKey: matchedSite.site,
-                                    type: item.type,
-                                    typeStr: typeStr,
-                                    typeId: typeId,
-                                    titleSuffix: ` ${dubName}${baseSuffix}`
-                                });
-                            }
-                        } else if (parts.length === 1 && parts[0].trim()) {
-                            const dubName = parts[0].trim();
-                            if (validDubRegex.test(dubName)) {
-                                mainItemDubs.push(dubName);
+                // 装载匹配结果及其全量标题上下文
+                if (isMatch) {
+                    const titles = [item.title];
+                    if (item.titleTranslate) {
+                        for (const lang in item.titleTranslate) {
+                            const transArr = item.titleTranslate[lang];
+                            for (let j = 0; j < transArr.length; j++) {
+                                titles.push(transArr[j]);
                             }
                         }
                     }
+                    matched.push({ item, titles });
                 }
-
-                // 组装当前主条目的最终后缀标签
-                let currentItemSuffix = "";
-                if (mainItemDubs.length > 0) {
-                    currentItemSuffix += ` ${mainItemDubs.join(' ')}`;
-                }
-                currentItemSuffix += baseSuffix;
-
-                results.push({
-                    title: item.title,
-                    titles: [...titles],
-                    begin: item.begin,
-                    siteId: matchedSite.id,
-                    matchedSiteKey: matchedSite.site,
-                    type: item.type,
-                    typeStr: typeStr,
-                    typeId: typeId,
-                    titleSuffix: currentItemSuffix 
-                });
-
-                // 推送提取出的衍生条目
-                results.push(...additionalDubs);
             }
+            return matched;
+        })();
+
+        // 维护缓存容量池，基于 LRU 策略淘汰旧任务
+        if (queryCache.size > 100) {
+            const firstKey = queryCache.keys().next().value;
+            queryCache.delete(firstKey);
+        }
+        queryCache.set(keyword, searchPromise);
+    }
+
+    const matchedItems = await searchPromise;
+    let finalItems = matchedItems;
+
+    // 基于搜索词提取明确的季度信息并执行结果精准过滤
+    const querySeason = getExplicitSeasonNumber(keyword);
+    if (querySeason !== null) {
+        const tempFiltered = matchedItems.filter(({ item }) => {
+            let itemSeason = extractSeasonNumberFromAnimeTitle(item.title).season;
+            if (itemSeason === null && item.titleTranslate) {
+                for (const lang in item.titleTranslate) {
+                    const transArr = item.titleTranslate[lang];
+                    for (let j = 0; j < transArr.length; j++) {
+                        const s = extractSeasonNumberFromAnimeTitle(transArr[j]).season;
+                        if (s !== null) { itemSeason = s; break; }
+                    }
+                    if (itemSeason !== null) break;
+                }
+            }
+
+            // 搜索指定续作(>1)时，标题必须明确包含该季度标识
+            if (querySeason > 1) {
+                return (itemSeason || 1) === querySeason;
+            } 
+            // 搜索第1季时，拦截明确标明为其他季度(如第2季、第3季)的结果
+            else if (querySeason === 1) {
+                return itemSeason === null || itemSeason === 1;
+            }
+            return true;
+        });
+
+        // 仅当过滤后结果不为空时应用，防止由于解析缺失导致结果被误杀清空
+        if (tempFiltered.length > 0) {
+            finalItems = tempFiltered;
+        }
+    }
+
+    const validDubRegex = VALID_DUB_REGEX;
+    const results = [];
+
+    // 特定站点分发与区域版本/配音版本构建
+    for (const { item, titles } of finalItems) {
+        if (!item.sites) continue;
+
+        const matchedSites = item.sites.filter(s => siteKeys.includes(s.site));
+        for (const matchedSite of matchedSites) {
+            let typeStr = "TV动画"; let typeId = "tvseries";
+            if (item.type === 'movie') { typeStr = "剧场版"; typeId = "movie"; }
+            else if (item.type === 'tv') { typeStr = "TV动画"; typeId = "tvseries"; }
+            else if (item.type === 'ova') { typeStr = "OVA"; typeId = "ova"; }
+            else if (item.type === 'web') { typeStr = "WEB动画"; typeId = "web"; }
+
+            let baseSuffix = "";
+            if (['bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw'].includes(matchedSite.site)) {
+                baseSuffix = "（港澳台）";
+            }
+
+            let additionalDubs = []; 
+            let mainItemDubs = [];   
+
+            if (matchedSite.comment) {
+                const dubs = matchedSite.comment.split(COMMA_SPLIT_REGEX);
+                // 从 related 数组建立 id → season_id 查找表，供衍生配音条目使用
+                const relatedMap = new Map();
+                if (matchedSite.related && Array.isArray(matchedSite.related)) {
+                    for (const r of matchedSite.related) {
+                        if (r.id) relatedMap.set(String(r.id), r.season_id || null);
+                    }
+                }
+                for (const dub of dubs) {
+                    const parts = dub.split(COLON_SPLIT_REGEX);
+                    if (parts.length >= 2) {
+                        const dubName = parts[0].trim(); const dubId = parts[1].trim();
+                        if (dubId && validDubRegex.test(dubName)) {
+                            additionalDubs.push({
+                                title: item.title, titles: [...titles], begin: item.begin,
+                                siteId: dubId, matchedSiteKey: matchedSite.site,
+                                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: ` ${dubName}${baseSuffix}`,
+                                season_id: relatedMap.get(dubId) || null
+                            });
+                        }
+                    } else if (parts.length === 1 && parts[0].trim()) {
+                        const dubName = parts[0].trim();
+                        if (validDubRegex.test(dubName)) {
+                            mainItemDubs.push(dubName);
+                        }
+                    }
+                }
+            }
+
+            // 组装当前主条目的最终后缀标签
+            let currentItemSuffix = "";
+            if (mainItemDubs.length > 0) { currentItemSuffix += ` ${mainItemDubs.join(' ')}`; }
+            currentItemSuffix += baseSuffix;
+
+            results.push({
+                title: item.title, titles: [...titles], begin: item.begin,
+                siteId: matchedSite.id, matchedSiteKey: matchedSite.site,
+                type: item.type, typeStr: typeStr, typeId: typeId, titleSuffix: currentItemSuffix,
+                // 传递 bilibili 系列站点的 season_id 供直接构建分集请求
+                season_id: matchedSite.season_id || null,
+                // 传递 gamer/gamer_hk 站点的 video_sn 供直接获取详情
+                video_sn: matchedSite.video_sn || null
+            });
+
+            // 推送提取出的衍生条目
+            results.push(...additionalDubs);
         }
     }
     return results;
 }
 
 /**
- * 释放本地数据内存缓存
- * 当动态关闭本地数据开关时调用，协助 V8 引擎进行垃圾回收
+ * 释放本地数据内存缓存与磁盘缓存
+ * 当动态关闭本地数据开关或主动清理缓存时调用，协助 V8 引擎进行垃圾回收并释放物理磁盘空间
+ * @param {boolean} clearDisk - 是否同步清理物理磁盘文件
  */
-export function clearBangumiDataCache() {
+export function clearBangumiDataCache(clearDisk = false) {
     if (memoryCache !== null) {
         const itemCount = memoryCache.items ? memoryCache.items.length : 0;
         memoryCache = null; // 切断引用，等待 GC 回收
         memoryCacheTime = 0; // 重置寿命时钟
+        queryCache.clear(); // 释放查询缓存
+        charInvertedIndex.clear(); // 释放倒排索引内存
         const totalMemMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(2);
-        log("info", `[Bangumi-Data] 内存缓存已主动释放 (原条目数: ${itemCount}，释放: ${memoryFootprintMB} MB，当前项目总占用: ${totalMemMB} MB)`);
+        log("info", `[Utils] [Bangumi-Data] 内存缓存已主动释放 (原条目数: ${itemCount}，释放: ${memoryFootprintMB} MB，当前项目总占用: ${totalMemMB} MB)`);
         memoryFootprintMB = '0.00'; // 重置探针
         hasLoggedCacheWarning = false; // 重置警告标记
+    }
+
+    // 同步清理物理磁盘缓存文件及其并发临时文件
+    if (clearDisk && fs.existsSync(CACHE_DIR)) {
+        try {
+            const cachePath = path.join(CACHE_DIR, CACHE_FILENAME);
+            if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
+            
+            // 清理可能存在的并发流临时文件
+            for (let i = 0; i < 5; i++) {
+                const tmpPath = `${cachePath}.tmp${i}`;
+                if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+            }
+            log("info", `[Utils] [Bangumi-Data] 磁盘缓存已同步清理`);
+        } catch (e) {
+            log("error", `[Utils] [Bangumi-Data] 磁盘缓存清理失败: ${e.message}`);
+        }
     }
 }

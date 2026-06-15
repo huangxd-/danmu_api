@@ -17,11 +17,11 @@ export function printFirst200Chars(data) {
   } else if (typeof data === 'object') {
     dataToPrint = JSON.stringify(data);  // 如果是对象，转为字符串
   } else {
-    log("error", "Unsupported data type");
+    log("error", "[Utils] [Common] Unsupported data type");
     return;
   }
 
-  log("info", dataToPrint.slice(0, 200));  // 打印前200个字符
+  log("info", "[Utils] [Common]", dataToPrint.slice(0, 200));  // 打印前200个字符
 }
 
 // 正则表达式：提取episode标题中的内容
@@ -172,7 +172,7 @@ export function createDynamicPlatformOrder(preferredPlatform) {
 
   // 验证平台是否有效
   if (!globals.allowedPlatforms.includes(preferredPlatform)) {
-    log("warn", `Invalid platform: ${preferredPlatform}, using default order`);
+    log("warn", `[Utils] [Common] Invalid platform: ${preferredPlatform}, using default order`);
     return [...globals.platformOrderArr];
   }
 
@@ -260,9 +260,10 @@ export function getExplicitSeasonNumber(text) {
  * 标题匹配路由函数：支持严格模式，或 宽松模式下的"包含+相似度"混合策略
  * @param {string} title - 动漫标题
  * @param {string} query - 搜索关键词
+ * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-export function titleMatches(title, query) {
+export function titleMatches(title, query, parsedSeason = null) {
   // 策略1：严格模式仅允许头部或完全匹配
   if (globals.strictTitleMatch) return strictTitleMatch(title, query);
 
@@ -281,7 +282,7 @@ export function titleMatches(title, query) {
   if (qList.some(kw => t.includes(kw))) return true;
 
   // 季度特征校验 (针对策略3的宽松相似度，防止字符集混淆导致季度错乱)
-  const querySeason = getExplicitSeasonNumber(query);
+  const querySeason = parsedSeason !== null ? parsedSeason : getExplicitSeasonNumber(query);
   if (querySeason !== null) {
     const titleSeason = getExplicitSeasonNumber(title);
 
@@ -295,18 +296,25 @@ export function titleMatches(title, query) {
   }
 
   // 策略3：相似度匹配 (阈值0.8)
-  const tSet = new Set(t); // 提取到循环外，避免重复创建
-
   return qList.some(kw => {
-    // 长度差异过大，或纯英文/数字时，禁止使用字符打散策略
+    // 长度差异过大，或纯英文/数字时，禁止使用相似度计算策略
     if (Math.abs(t.length - kw.length) > Math.max(t.length, kw.length) * 0.7 || /^[a-zA-Z0-9]+$/.test(kw)) {
-      return false; 
+      return false;
     }
-    // 核心相似度计算：解决"和/与"等翻译差异
-    const qSet = new Set(kw);
-    const matchCount = [...qSet].reduce((acc, char) => acc + (tSet.has(char) ? 1 : 0), 0);
 
-    return (matchCount / qSet.size) > 0.8;
+    // 核心相似度计算：解决"和/与"等翻译差异
+    let matchCount = 0;
+    let tIndex = 0;
+
+    for (const char of kw) {
+      const foundIdx = t.indexOf(char, tIndex);
+      if (foundIdx !== -1) {
+        matchCount++;
+        tIndex = foundIdx + 1;
+      }
+    }
+
+    return (matchCount / kw.length) > 0.8;
   });
 }
 

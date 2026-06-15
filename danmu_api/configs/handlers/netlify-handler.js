@@ -35,7 +35,7 @@ export class NetlifyHandler extends BaseHandler {
 
       return this.updateLocalEnv(key, value);
     } catch (error) {
-      log("error", '[server] ✗ Failed to set environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to set environment variable:', error.message);
     }
   }
 
@@ -56,7 +56,7 @@ export class NetlifyHandler extends BaseHandler {
 
       return this.updateLocalEnv(key, value);
     } catch (error) {
-      log("error", '[server] ✗ Failed to add environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to add environment variable:', error.message);
     }
   }
 
@@ -71,7 +71,7 @@ export class NetlifyHandler extends BaseHandler {
 
       return this.delLocalEnv(key);
     } catch (error) {
-      log("error", '[server] ✗ Failed to add environment variable:', error.message);
+      log("error", '[system] [Server] ✗ Failed to add environment variable:', error.message);
     }
   }
 
@@ -80,7 +80,7 @@ export class NetlifyHandler extends BaseHandler {
       await this._getAllEnvs(accountId, projectId, token);
       return true;
     } catch (error) {
-      log("error", 'checkParams failed! accountId, projectId or token is not valid:', error.message);
+      log("error", '[system] [Server] checkParams failed! accountId, projectId or token is not valid:', error.message);
       return false;
     }
   }
@@ -97,12 +97,12 @@ export class NetlifyHandler extends BaseHandler {
       const res = await httpPost(url, JSON.stringify(data), options);
 
       if (!res?.data?.id) {
-        log("error", '[server] ✗ Failed to deploy:', JSON.stringify(res?.data));
+        log("error", '[system] [Server] ✗ Failed to deploy:', JSON.stringify(res?.data));
         return false;
       }
       return true;
     } catch (error) {
-      log("error", '[server] ✗ Failed to deploy:', error.message);
+      log("error", '[system] [Server] ✗ Failed to deploy:', error.message);
       return false;
     }
   }

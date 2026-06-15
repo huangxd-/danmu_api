@@ -5,7 +5,7 @@ import { httpGet, httpPost } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
@@ -31,9 +31,9 @@ export default class TencentSource extends BaseSource {
     return aliases;
   }
 
-  titleOrAliasMatches(anime, queryTitle) {
-    if (titleMatches(anime.title, queryTitle)) return true;
-    return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle));
+  titleOrAliasMatches(anime, queryTitle, querySeason = null) {
+    if (titleMatches(anime.title, queryTitle, querySeason)) return true;
+    return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason));
   }
 
   /**
@@ -415,7 +415,15 @@ export default class TencentSource extends BaseSource {
     }
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  /**
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map|null} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
+   */
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -424,10 +432,28 @@ export default class TencentSource extends BaseSource {
       return [];
     }
 
+    // 基础标题、别名与季度匹配过滤
+    let filteredAnimes = sourceAnimes.filter(s => this.titleOrAliasMatches(s, queryTitle, querySeason));
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const s = extractSeasonNumberFromAnimeTitle(anime.title).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[Tencent] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
     // 使用 map 和 async 时需要返回 Promise 数组，并等待所有 Promise 完成
-    const processTencentAnimes = await Promise.all(sourceAnimes
-      .filter(s => this.titleOrAliasMatches(s, queryTitle))
-      .map(async (anime) => {
+    const processTencentAnimes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
           const eps = await this.getEpisodes(anime.mediaId);
           let links = [];
@@ -509,12 +535,12 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求腾讯视频弹幕...", id);
+    log("info", "[Tencent] 开始从本地请求腾讯视频弹幕...", id);
 
     // 解析 URL 获取 vid
     let vid = this.extractVid(id);
 
-    log("info", `vid: ${vid}`);
+    log("info", `[Tencent] vid: ${vid}`);
 
     // 获取页面标题
     let res;
@@ -526,14 +552,14 @@ export default class TencentSource extends BaseSource {
         },
       });
     } catch (error) {
-      log("error", "请求页面失败:", error);
+      log("error", "[Tencent] 请求页面失败:", error);
       return [];
     }
 
     // 使用正则表达式提取 <title> 标签内容
     const titleMatch = res.data.match(/<title[^>]*>(.*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
-    log("info", `标题: ${title}`);
+    log("info", `[Tencent] 标题: ${title}`);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -542,7 +568,7 @@ export default class TencentSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Tencent] 弹幕分段数量: ${segmentList.length}`);
 
     // 创建请求Promise数组
     const promises = [];
@@ -578,7 +604,7 @@ export default class TencentSource extends BaseSource {
         contents.push(...data.barrage_list);
       });
     } catch (error) {
-      log("error", "解析弹幕数据失败:", error);
+      log("error", "[Tencent] 解析弹幕数据失败:", error);
       return [];
     }
 
@@ -588,7 +614,7 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取腾讯视频弹幕分段列表...", id);
+    log("info", "[Tencent] 获取腾讯视频弹幕分段列表...", id);
 
     // 弹幕 API 基础地址
     const api_danmaku_base = "https://dm.video.qq.com/barrage/base/";
@@ -596,7 +622,7 @@ export default class TencentSource extends BaseSource {
 
     let vid = this.extractVid(id);
 
-    log("info", `获取弹幕分段列表 - vid: ${vid}`);
+    log("info", `[Tencent] 获取弹幕分段列表 - vid: ${vid}`);
 
     // 获取弹幕基础数据
     let res;
@@ -614,7 +640,7 @@ export default class TencentSource extends BaseSource {
           "segmentList": []
         });
       }
-      log("error", "请求弹幕基础数据失败:", error);
+      log("error", "[Tencent] 请求弹幕基础数据失败:", error);
       return new SegmentListResponse({
         "type": "qq",
         "segmentList": []
@@ -667,7 +693,7 @@ export default class TencentSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Tencent] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

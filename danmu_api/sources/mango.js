@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet} from "../utils/http-util.js";
-import { printFirst200Chars, titleMatches } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
@@ -217,13 +217,13 @@ export default class MangoSource extends BaseSource {
 
         // 过滤掉预告片 (isnew === "2")
         if (ep.isnew === "2") {
-          log("debug", `[Mango] 过滤预告片: ${fullTitle}`);
+          log("info", `[Mango] 过滤预告片: ${fullTitle}`);
           return false;
         }
 
         // 使用专属黑名单过滤
         if (mangoBlacklist.test(fullTitle)) {
-          log("debug", `[Mango] 黑名单过滤: ${fullTitle}`);
+          log("info", `[Mango] 黑名单过滤: ${fullTitle}`);
           return false;
         }
 
@@ -306,7 +306,7 @@ export default class MangoSource extends BaseSource {
       return [];
     }
 
-    log("debug", `[Mango] 综艺处理开始，原始分集数: ${rawEpisodes.length}`);
+    log("info", `[Mango] 综艺处理开始，原始分集数: ${rawEpisodes.length}`);
 
     // 检查是否有"第N期"格式
     const hasQiFormat = rawEpisodes.some(ep => {
@@ -314,7 +314,7 @@ export default class MangoSource extends BaseSource {
       return /第\d+期/.test(fullTitle);
     });
 
-    log("debug", `[Mango] 综艺格式分析: 有期数格式=${hasQiFormat}`);
+    log("info", `[Mango] 综艺格式分析: 有期数格式=${hasQiFormat}`);
 
     const episodeInfos = [];
     const qiInfoMap = new Map(); // 存储期数信息的映射
@@ -339,28 +339,28 @@ export default class MangoSource extends BaseSource {
           if (!hasInvalidSuffix) {
             qiInfoMap.set(ep, [parseInt(qiNum), upMidDown]);
             episodeInfos.push(ep);
-            log("debug", `[Mango] 综艺保留上中下格式: ${fullTitle}`);
+            log("info", `[Mango] 综艺保留上中下格式: ${fullTitle}`);
           } else {
-            log("debug", `[Mango] 综艺过滤上中下格式+后缀: ${fullTitle}`);
+            log("info", `[Mango] 综艺过滤上中下格式+后缀: ${fullTitle}`);
           }
         } else if (qiPureMatch && !hasUpMidDown && !/会员版|纯享版|特别版|独家版|加更|Plus|\+|花絮|预告|彩蛋|抢先|精选|未播|回顾|特辑|幕后|访谈|采访|混剪|合集|盘点|总结|删减|未播放|NG|番外|片段|看点|精彩|制作|导演|演员|拍摄|片尾曲|插曲|主题曲|背景音乐|OST|音乐|歌曲/.test(fullTitle)) {
           // 匹配纯粹的"第N期"格式
           const qiNum = qiPureMatch[1];
           qiInfoMap.set(ep, [parseInt(qiNum), '']);
           episodeInfos.push(ep);
-          log("debug", `[Mango] 综艺保留标准期数: ${fullTitle}`);
+          log("info", `[Mango] 综艺保留标准期数: ${fullTitle}`);
         } else {
-          log("debug", `[Mango] 综艺过滤非标准期数格式: ${fullTitle}`);
+          log("info", `[Mango] 综艺过滤非标准期数格式: ${fullTitle}`);
         }
       } else {
         // 没有任何"第N期"格式时：全部保留（除了明显的广告）
         if (fullTitle.includes('广告') || fullTitle.includes('推广')) {
-          log("debug", `[Mango] 跳过广告内容: ${fullTitle}`);
+          log("info", `[Mango] 跳过广告内容: ${fullTitle}`);
           continue;
         }
 
         episodeInfos.push(ep);
-        log("debug", `[Mango] 综艺保留原始标题: ${fullTitle}`);
+        log("info", `[Mango] 综艺保留原始标题: ${fullTitle}`);
       }
     }
 
@@ -403,11 +403,19 @@ export default class MangoSource extends BaseSource {
       });
     }
 
-    log("debug", `[Mango] 综艺处理完成，过滤后分集数: ${episodeInfos.length}`);
+    log("info", `[Mango] 综艺处理完成，过滤后分集数: ${episodeInfos.length}`);
     return episodeInfos;
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null) {
+  /**
+   * 处理搜索结果
+   * @param {Array} sourceAnimes 原始数据
+   * @param {string} queryTitle 关键词
+   * @param {Array} curAnimes 结果池
+   * @param {Map|null} detailStore 详情缓存
+   * @param {number|null} querySeason 目标季度
+   */
+  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     const tmpAnimes = [];
 
     // 添加错误处理，确保sourceAnimes是数组
@@ -416,9 +424,26 @@ export default class MangoSource extends BaseSource {
       return [];
     }
 
-    const processMangoAnimes = await Promise.all(sourceAnimes
-      .filter(s => titleMatches(s.title, queryTitle))
-      .map(async (anime) => {
+    let filteredAnimes = sourceAnimes.filter(s => titleMatches(s.title, queryTitle, querySeason));
+
+    // 提取搜索词中的明确季度信息或使用传入的季度参数
+    const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);
+
+    // 初始列表预过滤机制：若用户指定了季度，优先检查初始结果中是否已包含匹配项
+    if (resolvedQuerySeason !== null) {
+      const seasonFiltered = filteredAnimes.filter(anime => {
+        const s = extractSeasonNumberFromAnimeTitle(anime.title).season;
+        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+      });
+
+      // 如果已命中目标，减少详情请求量
+      if (seasonFiltered.length > 0) {
+        filteredAnimes = seasonFiltered;
+        log("info", `[Mango] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+      }
+    }
+
+    const processMangoAnimes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
           // 电影类型专门处理
           if (anime.type === "电影") {
@@ -506,7 +531,7 @@ export default class MangoSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "开始从本地请求芒果TV弹幕...", id);
+    log("info", "[Mango] 开始从本地请求芒果TV弹幕...", id);
 
     // 获取弹幕分段列表
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -515,7 +540,7 @@ export default class MangoSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `弹幕分段数量: ${segmentList.length}`);
+    log("info", `[Mango] 弹幕分段数量: ${segmentList.length}`);
 
     // 创建请求Promise数组
     const promises = [];
@@ -553,7 +578,7 @@ export default class MangoSource extends BaseSource {
         }
       });
     } catch (error) {
-      log("error", "解析弹幕数据失败:", error);
+      log("error", "[Mango] 解析弹幕数据失败:", error);
       return [];
     }
 
@@ -563,7 +588,7 @@ export default class MangoSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "获取芒果TV弹幕分段列表...", id);
+    log("info", "[Mango] 获取芒果TV弹幕分段列表...", id);
 
     // 弹幕和视频信息 API 基础地址
     const api_video_info = "https://pcweb.api.mgtv.com/video/info";
@@ -578,7 +603,7 @@ export default class MangoSource extends BaseSource {
     if (match) {
       path = match[2].split('/').filter(Boolean);  // 分割路径并去掉空字符串
     } else {
-      log("error", 'Invalid URL');
+      log("error", '[Mango] Invalid URL');
       return new SegmentListResponse({
         "type": "imgo",
         "segmentList": []
@@ -587,7 +612,7 @@ export default class MangoSource extends BaseSource {
     const cid = path[path.length - 2];
     const vid = path[path.length - 1].split(".")[0];
 
-    log("info", `获取弹幕分段列表 - cid: ${cid}, vid: ${vid}`);
+    log("info", `[Mango] 获取弹幕分段列表 - cid: ${cid}, vid: ${vid}`);
 
     // 获取视频信息
     let res;
@@ -606,7 +631,7 @@ export default class MangoSource extends BaseSource {
           "segmentList": []
         });
       }
-      log("error", "请求视频信息失败:", error);
+      log("error", "[Mango] 请求视频信息失败:", error);
       return new SegmentListResponse({
         "type": "imgo",
         "segmentList": []
@@ -630,7 +655,7 @@ export default class MangoSource extends BaseSource {
 
       // 检查数据结构
       if (!ctlBarrage.data || !ctlBarrage.data.cdn_list || !ctlBarrage.data.cdn_version) {
-        log("warn", `新API缺少必要字段，返回空分段列表`);
+        log("warn", `[Mango] 新API缺少必要字段，返回空分段列表`);
         useNewApi = false;
       }
 
@@ -667,7 +692,7 @@ export default class MangoSource extends BaseSource {
         "segmentList": segmentList
       });
     } catch (error) {
-      log("error", "请求弹幕分段数据失败:", error);
+      log("error", "[Mango] 请求弹幕分段数据失败:", error);
       return new SegmentListResponse({
         "type": "imgo",
         "segmentList": []
@@ -696,7 +721,7 @@ export default class MangoSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "请求分片弹幕失败:", error);
+      log("error", "[Mango] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

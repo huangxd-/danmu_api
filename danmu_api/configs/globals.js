@@ -13,7 +13,7 @@ export const Globals = {
   accessedEnvVars: {},
 
   // 静态常量
-  VERSION: '1.19.1',
+  VERSION: '1.19.11',
   MAX_LOGS: 1000, // 日志存储，最多保存 1000 行
   MAX_RECORDS: 100, // 请求记录最大数量
 
@@ -104,6 +104,9 @@ export const Globals = {
          break;
       } else if (conf.startsWith('bilibili@') && hostname.includes('bilibili')) {
          specificProxy = conf.substring(9);
+         break;
+      } else if (conf.startsWith('animeko@') && (hostname.includes('animeko') || hostname.includes('bgm.tv'))) {
+         specificProxy = conf.substring(8);
          break;
       } else if (conf.startsWith('@') && !universalProxy) {
          universalProxy = conf.substring(1);
