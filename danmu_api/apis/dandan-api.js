@@ -854,8 +854,8 @@ function extractPlatformFromTitle(title) {
     return match ? match[1] : null;
 }
 
-// 根据集数匹配episode（优先使用集标题中的集数，其次使用episodeNumber，最后使用数组索引）
-function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform = null) {
+// 根据集数匹配episode（优先使用结构化episodeNumber，其次使用集标题中的集数，最后使用数组索引）
+export function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform = null) {
   if (!filteredEpisodes || filteredEpisodes.length === 0) {
     return null;
   }
@@ -873,31 +873,41 @@ function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform 
   if (platformEpisodes.length === 0) {
     return null;
   }
+
+  const target = parseInt(targetEpisode, 10);
+  let hasStructuredEpisodeNumber = false;
+  let hasTitleEpisodeNumber = false;
   
-  // 策略1：从集标题中提取集数进行匹配
+  // 策略1：使用episodeNumber字段匹配
+  for (const ep of platformEpisodes) {
+    if (ep.episodeNumber !== undefined && ep.episodeNumber !== null && ep.episodeNumber !== '') {
+      hasStructuredEpisodeNumber = true;
+      if (parseInt(ep.episodeNumber, 10) === target) {
+        log("info", `Found episode by episodeNumber: ${ep.episodeTitle} (episodeNumber: ${ep.episodeNumber})`);
+        return ep;
+      }
+    }
+  }
+
+  // 策略2：从集标题中提取集数进行匹配
   for (const ep of platformEpisodes) {
     const extractedNumber = extractEpisodeNumberFromTitle(ep.episodeTitle);
-    if (episode === targetEpisode && extractedNumber === targetEpisode) {
+    if (extractedNumber !== null) {
+      hasTitleEpisodeNumber = true;
+    }
+    if (extractedNumber === target) {
       log("info", `Found episode by title number: ${ep.episodeTitle} (extracted: ${extractedNumber})`);
       return ep;
     }
   }
 
-  // 策略2：使用数组索引
-  if (platformEpisodes.length >= targetEpisode) {
-    const fallbackEp = platformEpisodes[targetEpisode - 1];
+  // 策略3：仅在没有任何结构化集数时使用数组索引兜底
+  if (!hasStructuredEpisodeNumber && !hasTitleEpisodeNumber && platformEpisodes.length >= target) {
+    const fallbackEp = platformEpisodes[target - 1];
     log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
     return fallbackEp;
   }
-  
-  // 策略3：使用episodeNumber字段匹配
-  for (const ep of platformEpisodes) {
-    if (ep.episodeNumber && parseInt(ep.episodeNumber, 10) === targetEpisode) {
-      log("info", `Found episode by episodeNumber: ${ep.episodeTitle} (episodeNumber: ${ep.episodeNumber})`);
-      return ep;
-    }
-  }
-  
+
   return null;
 }
 
@@ -1390,6 +1400,47 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, tit
   return {resEpisode, resAnime, isSpillover};
 }
 
+function cleanReleaseTitle(title) {
+  return String(title || '')
+    .replace(/^(?:\[[^\]]+\]\s*)+/, '')
+    .replace(/[._]+/g, ' ')
+    .replace(/\s*[\[(（]?(?:19|20)\d{2}[\])）]?\s*$/i, '')
+    .replace(/[-_\s.]+$/g, '')
+    .trim();
+}
+
+function parseReleaseEpisodeName(cleanFileName) {
+  const noExt = String(cleanFileName || '')
+    .trim()
+    .replace(/\.(?:mkv|mp4|avi|mov|wmv|flv|webm|ts|m2ts)$/i, '');
+
+  const yearMatch = noExt.match(/(?:\.|\s|\(|（)((?:19|20)\d{2})(?:\)|）|\.|\s|$)/);
+  const patterns = [
+    /^(.+?)\s*-\s*(\d{1,3})(?:v\d+)?(?=\s*(?:$|[\[(（]))/i,
+    /^(.+?)\s*\[(\d{1,3})(?:v\d+)?\](?=\s*(?:$|\[))/i,
+    /^(.+?)\s+第\s*(\d{1,3})\s*[集话話]/,
+    /^(.+?)\s+(?:[Ee][Pp]?|#)\s*(\d{1,3})(?:v\d+)?(?=\s*(?:$|[\[(（]))/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = noExt.match(pattern);
+    if (!match) continue;
+
+    const title = cleanReleaseTitle(match[1]);
+    const episode = parseInt(match[2], 10);
+    if (!title || Number.isNaN(episode)) continue;
+
+    return {
+      title,
+      season: 1,
+      episode,
+      year: yearMatch ? parseInt(yearMatch[1], 10) : undefined,
+    };
+  }
+
+  return null;
+}
+
 export async function extractTitleSeasonEpisode(cleanFileName) {
   const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
   const match = cleanFileName.match(regex);
@@ -1439,7 +1490,12 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
 
     // 最后再保险清理一次常见的年份尾巴（防止漏网）
     title = title.replace(/\.\d{4}$/i, '').trim();
+    title = cleanReleaseTitle(title);
   } else {
+    const releaseMatch = parseReleaseEpisodeName(cleanFileName);
+    if (releaseMatch) {
+      ({ title, season, episode, year } = releaseMatch);
+    } else {
     // 没有 S##E## 格式，尝试提取第一个片段作为标题
     // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
     const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|E\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
@@ -1453,6 +1509,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
     if (yearMatch) {
       year = parseInt(yearMatch[1], 10);
+    }
     }
   }
 
