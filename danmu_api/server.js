@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import https from 'https';
 import zlib from 'zlib';
+import dns from 'dns';
+import net from 'net';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import dotenv from 'dotenv';
 import { Request as NodeFetchRequest } from 'node-fetch';
@@ -364,11 +366,125 @@ function createServer() {
 }
 
 /**
+ * 判断给定 IP 字符串是否属于不允许通过本地代理转发的内网/保留范围 (SSRF 防护)。
+ * 覆盖：环回、链路本地、RFC1918、CGNAT、广播/多播、未指定地址，以及对应的 IPv6 范围
+ * (含 IPv4 映射 ::ffff:0:0/96 与 IPv4 兼容 ::/96)。
+ * @param {string} ip 已解析的 IP 字符串 (IPv4 或 IPv6)
+ * @returns {boolean}
+ */
+function isDisallowedProxyTargetIp(ip) {
+  if (!ip || typeof ip !== 'string') return true;
+  const family = net.isIP(ip);
+  if (family === 0) return true;
+
+  if (family === 4) {
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return true;
+    const [a, b] = parts;
+    if (a === 0) return true;                               // 0.0.0.0/8 (含未指定地址)
+    if (a === 10) return true;                              // 10.0.0.0/8
+    if (a === 127) return true;                             // 127.0.0.0/8 环回
+    if (a === 169 && b === 254) return true;               // 169.254.0.0/16 链路本地 (含 cloud metadata 169.254.169.254)
+    if (a === 172 && b >= 16 && b <= 31) return true;      // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;                // 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true;     // 100.64.0.0/10 CGNAT
+    if (a === 192 && b === 0 && parts[2] === 0) return true; // 192.0.0.0/24 IETF 协议保留
+    if (a === 198 && (b === 18 || b === 19)) return true;  // 198.18.0.0/15 基准测试
+    if (a >= 224 && a <= 239) return true;                 // 224.0.0.0/4 多播
+    if (a >= 240) return true;                             // 240.0.0.0/4 保留 + 255.255.255.255 广播
+    return false;
+  }
+
+  // IPv6 - 先做范围规则；再处理 IPv4 映射/兼容并复用上面的判定
+  const lower = ip.toLowerCase();
+  if (lower === '::' || lower === '::1') return true;       // 未指定 / 环回
+  if (lower.startsWith('fe80:') || lower.startsWith('fe80::')) return true; // 链路本地 fe80::/10
+  if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true;        // 唯一本地 fc00::/7
+  if (/^ff[0-9a-f]{2}:/.test(lower)) return true;            // 多播 ff00::/8
+
+  // ::ffff:a.b.c.d 或 ::ffff:HHHH:HHHH 形式的 IPv4 映射地址
+  const mappedMatch = lower.match(/^::ffff:([0-9a-f.:]+)$/);
+  if (mappedMatch) {
+    let inner = mappedMatch[1];
+    if (!inner.includes('.')) {
+      // ::ffff:HHHH:HHHH → 拼出点分十进制
+      const groups = inner.split(':');
+      if (groups.length === 2 && groups.every(g => /^[0-9a-f]{1,4}$/.test(g))) {
+        const hi = parseInt(groups[0], 16);
+        const lo = parseInt(groups[1], 16);
+        inner = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+      }
+    }
+    if (net.isIP(inner) === 4) return isDisallowedProxyTargetIp(inner);
+    return true;
+  }
+
+  // ::a.b.c.d (deprecated IPv4-compatible)
+  if (lower.startsWith('::') && lower.includes('.')) {
+    const inner = lower.slice(2);
+    if (net.isIP(inner) === 4) return isDisallowedProxyTargetIp(inner);
+  }
+
+  return false;
+}
+
+/**
+ * 校验代理目标 URL：协议必须是 http(s)，并将主机名解析为 IP，拒绝任何指向
+ * 本机/内网/链路本地/云元数据等不安全范围的目标 (SSRF 防护)。
+ * 返回 `{ ok: true, ip, family }` 或 `{ ok: false, status, reason }`。
+ * @param {URL} urlObj 目标 URL 对象
+ */
+async function validateProxyTarget(urlObj) {
+  const protocol = urlObj.protocol;
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    return { ok: false, status: 400, reason: `Unsupported protocol: ${protocol}` };
+  }
+
+  // 去掉 IPv6 字面量的方括号
+  const hostname = urlObj.hostname.replace(/^\[|\]$/g, '');
+  if (!hostname) {
+    return { ok: false, status: 400, reason: 'Empty hostname' };
+  }
+
+  // 如果用户直接写了 IP，则不走 DNS
+  if (net.isIP(hostname)) {
+    if (isDisallowedProxyTargetIp(hostname)) {
+      return { ok: false, status: 403, reason: `Target IP not allowed: ${hostname}` };
+    }
+    return { ok: true, ip: hostname, family: net.isIP(hostname) };
+  }
+
+  // 主机名 → DNS 解析所有 A/AAAA，任意一条命中保留范围即拒绝
+  let addresses;
+  try {
+    addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+  } catch (err) {
+    return { ok: false, status: 502, reason: `DNS lookup failed: ${err.message}` };
+  }
+  if (!addresses || addresses.length === 0) {
+    return { ok: false, status: 502, reason: 'No DNS records resolved' };
+  }
+  for (const addr of addresses) {
+    if (isDisallowedProxyTargetIp(addr.address)) {
+      return {
+        ok: false,
+        status: 403,
+        reason: `Target host ${hostname} resolves to disallowed address ${addr.address}`
+      };
+    }
+  }
+
+  // 用解析出的首个地址直连，避免后续 protocol.request 再次 DNS (防 TOCTOU/DNS rebinding)
+  const first = addresses[0];
+  return { ok: true, ip: first.address, family: first.family };
+}
+
+/**
  * 创建代理服务器 (端口 5321)
  * 处理通用代理请求，支持配置正向代理和请求熔断
  */
 function createProxyServer() {
-  return http.createServer((req, res) => {
+  return http.createServer(async (req, res) => {
     // 使用 new URL 解析参数，逻辑与 url.parse 保持一致
     const reqUrlObj = new URL(req.url, `http://${req.headers.host}`);
     const queryObject = Object.fromEntries(reqUrlObj.searchParams);
@@ -396,19 +512,58 @@ function createProxyServer() {
       }
       const targetUrl = queryObject.url;
       console.log('[Proxy Server] Target URL:', targetUrl);
-      
-      const originalUrlObj = new URL(targetUrl);
+
+      let originalUrlObj;
+      try {
+        originalUrlObj = new URL(targetUrl);
+      } catch (e) {
+        res.statusCode = 400;
+        res.end('Bad Request: Invalid url parameter');
+        return;
+      }
+
+      // SSRF 防护：只允许 http/https，且目标主机不得指向本机/内网/链路本地
+      // 注意：仅在直连模式下校验。若用户显式配置了 PROXY_URL 正向代理，则由
+      // 外部代理负责出站连接，本机不会直接访问目标 IP。
+      let resolvedIp = null;
+      let resolvedFamily = null;
+      if (!forwardProxy) {
+        const check = await validateProxyTarget(originalUrlObj);
+        if (!check.ok) {
+          console.warn('[Proxy Server] Refused SSRF target:', check.reason);
+          res.statusCode = check.status;
+          res.end(`Proxy target not allowed: ${check.reason}`);
+          return;
+        }
+        resolvedIp = check.ip;
+        resolvedFamily = check.family;
+      }
+
       let options = {
-        hostname: originalUrlObj.hostname,
+        hostname: resolvedIp || originalUrlObj.hostname,
         port: originalUrlObj.port || (originalUrlObj.protocol === 'https:' ? 443 : 80),
         path: originalUrlObj.pathname + originalUrlObj.search,
         method: 'GET',
         headers: { ...req.headers } // 传递原始请求头
       };
-      
-      // Host 头必须被移除，以便 protocol.request 根据 options.hostname 设置正确的值
-      delete options.headers.host; 
-      
+
+      // 使用已解析的 IP 直连时，仍需把原始主机名带入 Host 头与 TLS SNI，
+      // 否则虚拟主机站点 / HTTPS 校验会失败。
+      if (resolvedIp && resolvedIp !== originalUrlObj.hostname) {
+        options.headers.host = originalUrlObj.host;
+        if (originalUrlObj.protocol === 'https:') {
+          options.servername = originalUrlObj.hostname;
+        }
+        if (resolvedFamily === 6) {
+          options.family = 6;
+        } else if (resolvedFamily === 4) {
+          options.family = 4;
+        }
+      } else {
+        // Host 头必须被移除，以便 protocol.request 根据 options.hostname 设置正确的值
+        delete options.headers.host;
+      }
+
       let protocol = originalUrlObj.protocol === 'https:' ? https : http;
 
       // 处理正向代理逻辑
@@ -485,10 +640,14 @@ async function startServer() {
     console.log(`Server running on http://0.0.0.0:${mainPort}`);
   });
 
-  // 启动5321端口的代理服务
+  // 启动 5321 端口的内部代理服务
+  // 该代理仅供本进程通过 127.0.0.1:5321 调用（见 configs/globals.js makeProxyUrl），
+  // 默认绑定环回地址以避免被外部探测/滥用为开放 SSRF 中继。
+  // 如需在其它接口监听，可通过 PROXY_SERVER_HOST 覆盖（不建议公网暴露）。
   proxyServer = createProxyServer();
-  proxyServer.listen(5321, '0.0.0.0', () => {
-    console.log('Proxy server running on http://0.0.0.0:5321');
+  const proxyHost = process.env.PROXY_SERVER_HOST || '127.0.0.1';
+  proxyServer.listen(5321, proxyHost, () => {
+    console.log(`Proxy server running on http://${proxyHost}:5321`);
 
     // 异步初始化 Bangumi Data 缓存
     setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
