@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
-import { md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { globals } from '../configs/globals.js';
@@ -901,7 +901,7 @@ export default class IqiyiSource extends BaseSource {
         return [];
       }
 
-      const compressed = this._base64ToUint8Array(response.data);
+      const compressed = base64ToBytes(response.data);
       const payload = await this._decompressBrotli(compressed);
 
       if (payload[0] === 60) {
@@ -913,23 +913,6 @@ export default class IqiyiSource extends BaseSource {
       log("error", "[iQiyi] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
-  }
-
-  _base64ToUint8Array(base64) {
-    if (typeof atob === "function") {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-
-    if (typeof Buffer !== "undefined") {
-      return new Uint8Array(Buffer.from(base64, "base64"));
-    }
-
-    throw new Error("当前环境不支持 base64 解码");
   }
 
   async _decompressBrotli(bytes) {

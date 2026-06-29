@@ -2004,7 +2004,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   let animeTitle = findAnimeTitleById(commentId);
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
-  let plat = title ? (title.match(/【(.*?)】/) || [null])[0]?.replace(/[【】]/g, '') : null;
+  let plat = title ? extractEpisodeTitle(title) : null;
   const shouldAttachDuration = shouldIncludeVideoDuration(queryFormat, includeDuration);
   log("info", "[system] [LogVar-API] comment url...", url);
   log("info", "[system] [LogVar-API] comment title...", title);
