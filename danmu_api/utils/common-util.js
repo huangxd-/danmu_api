@@ -278,11 +278,19 @@ export function titleMatches(title, query, parsedSeason = null) {
       .map(kw => normalizeSpaces(kw).toLowerCase()).filter(Boolean);
   } catch (e) {}
 
-  // 策略2：包含匹配优先 (性能最优且准确，只要完整包含任意变种即匹配)
-  if (qList.some(kw => t.includes(kw))) return true;
-
-  // 季度特征校验 (针对策略3的宽松相似度，防止字符集混淆导致季度错乱)
+  // 季度特征提取：提前提取季数以支撑策略2的去季包含匹配
   const querySeason = parsedSeason !== null ? parsedSeason : getExplicitSeasonNumber(query);
+
+  // 查询词含季号时，将去季后的干净查询词加入候选池
+  // 避免如"间谍过家家 第一季"因"第一季"三字不存在于源标题而导致包含匹配失败
+  if (querySeason !== null && parsedSeason === null) {
+    const seasonStripped = query.replace(/(?:season|s|第)\s*[0-9一二三四五六七八九十]+\s*(?:季|期|部(?!分))?/gi, '').trim();
+    if (seasonStripped && seasonStripped !== query) {
+      qList = [...new Set([...qList, normalizeSpaces(seasonStripped).toLowerCase()])];
+    }
+  }
+
+  // 季度特征校验：先于包含匹配执行，确保错误季度的标题不会因干净查询词误通过
   if (querySeason !== null) {
     const titleSeason = getExplicitSeasonNumber(title);
 
@@ -294,6 +302,9 @@ export function titleMatches(title, query, parsedSeason = null) {
       if (titleSeason !== null && titleSeason !== 1) return false;
     }
   }
+
+  // 策略2：包含匹配优先 (性能最优且准确，只要完整包含任意变种即匹配)
+  if (qList.some(kw => t.includes(kw))) return true;
 
   // 策略3：相似度匹配 (阈值0.8)
   return qList.some(kw => {
