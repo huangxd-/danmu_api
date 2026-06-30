@@ -56,24 +56,43 @@ export default class IqiyiSource extends BaseSource {
       const queryString = buildQueryString(params);
       const url = `https://mesh.if.iqiyi.com/portal/lw/search/homePageV3?${queryString}`;
 
-      const response = await httpGet(url, {
-        headers: {
-          'accept': '*/*',
-          'origin': 'https://www.iqiyi.com',
-          'referer': 'https://www.iqiyi.com/',
-          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
+      const doSearch = async () => {
+        const resp = await httpGet(url, {
+          headers: {
+            'accept': '*/*',
+            'origin': 'https://www.iqiyi.com',
+            'referer': 'https://www.iqiyi.com/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (!resp || !resp.data) return null;
+        return typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
+      };
 
-      if (!response || !response.data) {
+      // 搜索接口风控时延迟重试，最多重试两次
+      const MAX_RETRIES = 2;
+      let data = await doSearch();
+      for (let attempt = 0; attempt < MAX_RETRIES && (!data || data.code === "-1"); attempt++) {
+        const reason = !data ? "搜索响应为空" : `搜索接口风控 (code=${data.code})`;
+        log("info", `[iQiyi] ${reason}，等待 1.5 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 1500));
+        data = await doSearch();
+      }
+
+      if (!data) {
         log("info", "[iQiyi] 搜索响应为空");
         return [];
       }
 
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      if (data.code === "-1") {
+        log("info", "[iQiyi] 搜索接口风控 (code=-1)，重试后仍失败");
+        log("info", `[iQiyi] 搜索原始数据: ${JSON.stringify(data)}`);
+        return [];
+      }
 
       if (!data.data || !data.data.templates) {
         log("info", "[iQiyi] 搜索无结果");
+        log("info", `[iQiyi] 搜索原始数据: ${JSON.stringify(data)}`);
         return [];
       }
 
