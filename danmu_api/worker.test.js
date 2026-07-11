@@ -1207,6 +1207,30 @@ test('worker.js API endpoints', async (t) => {
     }
   });
 
+  await t.test('Hanjutv should merge only exact titles and disambiguate duplicate names', async () => {
+    const source = new HanjutvSource();
+    const taxi = source.mergeSearchCandidates('模范出租车', [
+      { sid: 's3', name: '模范出租车3' },
+      { sid: 's2', name: '模范出租车2' },
+    ], [
+      { sid: 't2', name: '模范出租车2' },
+      { sid: 't3', name: '模范出租车3' },
+    ]).resultList.filter(item => item._variant === 'merged');
+    assert.deepEqual(taxi.map(item => [item.name, item.tvSid]), [
+      ['模范出租车3', 't3'],
+      ['模范出租车2', 't2'],
+    ]);
+
+    const duplicate = source.mergeSearchCandidates('配对游戏', [
+      { sid: 's-new', name: '配对游戏', playMode: 100, publishTime: '2025-01-01', lastSerialNo: 6 },
+      { sid: 's-old', name: '配对游戏', playMode: 101, publishTime: '2024-01-01', lastSerialNo: 63 },
+    ], [
+      { sid: 't-old', name: '配对游戏', playMode: 101, publishTime: '2024-01-01', lastSerialNo: 63 },
+      { sid: 't-new', name: '配对游戏', playMode: 100, publishTime: '2025-01-01', lastSerialNo: 6 },
+    ]).resultList.filter(item => item._variant === 'merged');
+    assert.deepEqual(duplicate.map(item => item.tvSid), ['t-new', 't-old']);
+  });
+
   // await t.test('GET hanjutv search', async () => {
   //   const res = await hanjutvSource.search("犯罪现场Zero");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);

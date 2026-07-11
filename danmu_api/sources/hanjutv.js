@@ -212,13 +212,84 @@ export default class HanjutvSource extends BaseSource {
     return Array.from(map.values());
   }
 
-  isMergeableSearchPair(leftItem, rightItem, keyword = "") {
-    if (!leftItem?.name || !rightItem?.name) return false;
-    if (keyword) {
-      if (!titleMatches(leftItem.name, keyword) || !titleMatches(rightItem.name, keyword)) return false;
+  // 双端身份键只做 Unicode 兼容归一与首尾去空白，不使用模糊标题清洗。
+  normalizeSearchPairTitle(name = "") {
+    return String(name || "").normalize("NFKC").trim();
+  }
+
+  getSearchPairYear(item) {
+    const rawYear = item?.publishTime ?? item?.releaseTime ?? item?.year ?? null;
+    const yearText = String(rawYear ?? "").trim();
+    if (/^(?:19|20)\d{2}$/.test(yearText)) return Number(yearText);
+
+    if (rawYear !== null && rawYear !== "") {
+      const numericValue = Number(rawYear);
+      const dateValue = Number.isFinite(numericValue) && numericValue > 0 && numericValue < 1_000_000_000_000
+        ? numericValue * 1000
+        : rawYear;
+      const parsed = new Date(dateValue);
+      const year = parsed.getUTCFullYear();
+      if (Number.isFinite(year) && year > 1900) return year;
     }
 
-    return titleMatches(leftItem.name, rightItem.name) && titleMatches(rightItem.name, leftItem.name);
+    const memoMatch = String(item?.searchMemo || "").match(/(?:19|20)\d{2}/);
+    return memoMatch ? Number(memoMatch[0]) : null;
+  }
+
+  getSearchPairEpisodeCount(item) {
+    const value = Number(item?.lastSerialNo ?? item?.totalEpisode ?? item?.episodeCount);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  getSearchPairMetadata(item) {
+    const normalizeValue = value => value === undefined || value === null || value === "" ? null : String(value);
+    return {
+      playMode: normalizeValue(item?.playMode),
+      year: normalizeValue(this.getSearchPairYear(item)),
+      episodeCount: normalizeValue(this.getSearchPairEpisodeCount(item)),
+      category: normalizeValue(item?.category),
+    };
+  }
+
+  // titleMatches 只负责关键词相关性；S5↔TV 是否为同一实体必须满足精确标题与强元数据约束。
+  isMergeableSearchPair(leftItem, rightItem) {
+    const leftTitle = this.normalizeSearchPairTitle(leftItem?.name);
+    const rightTitle = this.normalizeSearchPairTitle(rightItem?.name);
+    if (!leftTitle || !rightTitle || leftTitle !== rightTitle) return false;
+
+    const leftMeta = this.getSearchPairMetadata(leftItem);
+    const rightMeta = this.getSearchPairMetadata(rightItem);
+    for (const field of ["playMode", "year", "category"]) {
+      if (leftMeta[field] !== null && rightMeta[field] !== null && leftMeta[field] !== rightMeta[field]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // 同名只有一个兼容候选时直接使用；同名多条目必须被元数据收敛为唯一结果，否则不合并。
+  selectMergeableTvCandidate(leftItem, tvCandidates = [], usedTvSids = new Set()) {
+    let candidates = tvCandidates
+      .filter(candidate => !usedTvSids.has(String(candidate?.sid || "")))
+      .filter(candidate => this.isMergeableSearchPair(leftItem, candidate))
+      .map(candidate => ({ candidate, metadata: this.getSearchPairMetadata(candidate) }));
+
+    if (candidates.length <= 1) return candidates[0]?.candidate || null;
+
+    const leftMeta = this.getSearchPairMetadata(leftItem);
+    for (const field of ["playMode", "year", "episodeCount", "category"]) {
+      if (leftMeta[field] === null) continue;
+
+      const comparable = candidates.filter(item => item.metadata[field] !== null);
+      if (comparable.length === 0) continue;
+
+      const matched = comparable.filter(item => item.metadata[field] === leftMeta[field]);
+      if (matched.length === 0) return null;
+      candidates = matched;
+    }
+
+    return candidates.length === 1 ? candidates[0].candidate : null;
   }
 
   buildSearchCandidate(item, variant, linkedSid = "") {
@@ -259,7 +330,7 @@ export default class HanjutvSource extends BaseSource {
     const usedTvSids = new Set();
 
     for (const item of s5.matched) {
-      const pairedTv = tv.matched.find(candidate => !usedTvSids.has(String(candidate.sid)) && this.isMergeableSearchPair(item, candidate, keyword));
+      const pairedTv = this.selectMergeableTvCandidate(item, tv.matched, usedTvSids);
       if (pairedTv) {
         usedTvSids.add(String(pairedTv.sid));
         resultList.push(this.buildSearchCandidate(item, HANJUTV_VARIANTS.MERGED, pairedTv.sid));
