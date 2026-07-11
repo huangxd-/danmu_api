@@ -1148,6 +1148,65 @@ test('worker.js API endpoints', async (t) => {
   //   assert(res.length > 2, `Expected res.length > 2, but got ${res.length}`);
   // });
 
+  await t.test('Hanjutv warmup should retry after failure and share concurrent promise', async () => {
+    const source = new HanjutvSource();
+    let attempts = 0;
+    let finishFirst;
+    source.buildMobileHeaders = async () => ({ uid: 'stable-uid', headers: {} });
+    source.warmupMobileIdentity = async () => {
+      attempts++;
+      if (attempts === 1) return new Promise(resolve => { finishFirst = resolve; });
+      return true;
+    };
+
+    const concurrent = [source.ensureMobileIdentityWarmed(), source.ensureMobileIdentityWarmed()];
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(attempts, 1);
+    finishFirst(false);
+    await Promise.all(concurrent);
+    await source.ensureMobileIdentityWarmed();
+    await source.ensureMobileIdentityWarmed();
+    assert.equal(attempts, 2);
+  });
+
+  await t.test('Hanjutv details should stay fully parallel and preserve candidate order', async () => {
+    const source = new HanjutvSource();
+    const candidates = Array.from({ length: 6 }, (_, index) => ({ sid: `sid-${index}`, name: `顺序测试剧${index}` }));
+    const resolvers = new Map();
+    const started = [];
+    const previous = { animes: Globals.animes, episodeIds: Globals.episodeIds, episodeNum: Globals.episodeNum };
+    Globals.animes = [];
+    Globals.episodeIds = [];
+    Globals.episodeNum = 10001;
+    source.buildAnimePayload = anime => new Promise(resolve => {
+      started.push(anime.sid);
+      resolvers.set(anime.sid, resolve);
+    });
+    source.sortAndPushAnimesByYear = (items, target) => target.push(...items);
+
+    try {
+      const current = [];
+      const task = source.handleAnimes(candidates, '顺序测试剧', current, new Map());
+      await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(started, candidates.map(item => item.sid));
+      [...candidates].reverse().forEach(anime => {
+        const index = candidates.indexOf(anime);
+        resolvers.get(anime.sid)({
+          summary: { animeId: 900000 + index, bangumiId: String(900000 + index), animeTitle: anime.name, type: '韩剧', typeDescription: '韩剧', imageUrl: '', startDate: '2025-01-01T00:00:00Z', episodeCount: 1, rating: 0, isFavorited: true, source: 'hanjutv' },
+          links: [{ name: '第1集', url: `hxq:${anime.sid}`, title: '【hanjutv】 第1集' }],
+        });
+      });
+      const expected = candidates.map(item => item.name);
+      assert.deepEqual((await task).map(item => item.animeTitle), expected);
+      assert.deepEqual(current.map(item => item.animeTitle), expected);
+      assert.deepEqual(Globals.animes.map(item => item.animeTitle), expected);
+    } finally {
+      Globals.animes = previous.animes;
+      Globals.episodeIds = previous.episodeIds;
+      Globals.episodeNum = previous.episodeNum;
+    }
+  });
+
   // await t.test('GET hanjutv search', async () => {
   //   const res = await hanjutvSource.search("犯罪现场Zero");
   //   assert(res.length > 0, `Expected res.length > 0, but got ${res.length}`);

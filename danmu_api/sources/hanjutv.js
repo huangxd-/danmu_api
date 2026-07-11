@@ -39,7 +39,7 @@ export default class HanjutvSource extends BaseSource {
     this._mobileMakeHeaders = null;
     this._tvMakeHeaders = null;
     this._mobileWarmupPromise = null;
-    this._mobileWarmupAttempted = false;
+    this._mobileWarmedUid = null;
   }
 
   getDanmuHeaders() {
@@ -332,24 +332,34 @@ export default class HanjutvSource extends BaseSource {
   async warmupMobileIdentity(headers) {
     try {
       await httpGet(`${this.appHost}/api/common/configs`, { headers, timeout: 8000, retries: 0 });
+      return true;
     } catch (_) {
-      // 暖身失败不阻断搜索
+      // 暖身失败不阻断搜索，下一次搜索会再次尝试。
+      return false;
     }
   }
 
   async ensureMobileIdentityWarmed() {
-    if (this._mobileWarmupAttempted) {
-      await this._mobileWarmupPromise;
-      return;
-    }
+    if (this._mobileWarmedUid) return true;
+    if (this._mobileWarmupPromise) return this._mobileWarmupPromise;
 
-    this._mobileWarmupAttempted = true;
-    this._mobileWarmupPromise = (async () => {
+    const warmupPromise = (async () => {
       const headerInfo = await this.buildMobileHeaders();
-      await this.warmupMobileIdentity(headerInfo.headers);
+      if (this._mobileWarmedUid === headerInfo.uid) return true;
+
+      const warmed = await this.warmupMobileIdentity(headerInfo.headers);
+      if (warmed) this._mobileWarmedUid = headerInfo.uid;
+      return warmed;
     })();
 
-    await this._mobileWarmupPromise;
+    this._mobileWarmupPromise = warmupPromise;
+    try {
+      return await warmupPromise;
+    } finally {
+      if (this._mobileWarmupPromise === warmupPromise) {
+        this._mobileWarmupPromise = null;
+      }
+    }
   }
 
   async searchWithS5Api(keyword) {
@@ -698,20 +708,29 @@ export default class HanjutvSource extends BaseSource {
       }
     }
 
-    await Promise.all(
+    const payloads = await Promise.all(
       filteredAnimes.map(async (anime) => {
-          try {
-            const payload = await this.buildAnimePayload(anime);
-            if (!payload || !payload.summary || !Array.isArray(payload.links) || payload.links.length === 0) return;
-
-            tmpAnimes.push(payload.summary);
-            addAnime({ ...payload.summary, links: payload.links }, detailStore);
-            if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
-          } catch (error) {
-            log("error", `[Hanjutv] Error processing anime: ${error.message}`);
-          }
-        })
+        try {
+          const payload = await this.buildAnimePayload(anime);
+          if (!payload || !payload.summary || !Array.isArray(payload.links) || payload.links.length === 0) return null;
+          return payload;
+        } catch (error) {
+          log("error", `[Hanjutv] Error processing anime: ${error.message}`);
+          return null;
+        }
+      })
     );
+
+    for (const payload of payloads) {
+      if (!payload) continue;
+      try {
+        tmpAnimes.push(payload.summary);
+        addAnime({ ...payload.summary, links: payload.links }, detailStore);
+        if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
+      } catch (error) {
+        log("error", `[Hanjutv] Error processing anime: ${error.message}`);
+      }
+    }
 
     this.sortAndPushAnimesByYear(tmpAnimes, curAnimes);
     return tmpAnimes;
