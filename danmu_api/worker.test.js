@@ -1209,6 +1209,13 @@ test('worker.js API endpoints', async (t) => {
 
   await t.test('Hanjutv should merge only exact titles and disambiguate duplicate names', async () => {
     const source = new HanjutvSource();
+    const getMergedPairs = (keyword, s5Items, tvItems) => source
+      .mergeSearchCandidates(keyword, s5Items, tvItems)
+      .resultList
+      .filter(item => item._variant === 'merged')
+      .map(item => [item.sid, item.tvSid])
+      .sort((left, right) => left[0].localeCompare(right[0]));
+
     const taxi = source.mergeSearchCandidates('模范出租车', [
       { sid: 's3', name: '模范出租车3' },
       { sid: 's2', name: '模范出租车2' },
@@ -1229,6 +1236,63 @@ test('worker.js API endpoints', async (t) => {
       { sid: 't-new', name: '配对游戏', playMode: 100, publishTime: '2025-01-01', lastSerialNo: 6 },
     ]).resultList.filter(item => item._variant === 'merged');
     assert.deepEqual(duplicate.map(item => item.tvSid), ['t-new', 't-old']);
+
+    const partialS5 = [
+      { sid: 's-unknown', name: '同名剧', playMode: 100, category: 1 },
+      { sid: 's-2025', name: '同名剧', playMode: 100, publishTime: '2025-01-01', category: 1 },
+    ];
+    const datedTv = [
+      { sid: 't-2025', name: '同名剧', playMode: 100, publishTime: '2025-01-01', category: 1 },
+    ];
+    for (const s5Order of [partialS5, [...partialS5].reverse()]) {
+      assert.deepEqual(getMergedPairs('同名剧', s5Order, datedTv), [['s-2025', 't-2025']]);
+    }
+
+    const ambiguousS5 = [
+      { sid: 's-a', name: '歧义剧', playMode: 100, category: 1 },
+      { sid: 's-b', name: '歧义剧', playMode: 100, category: 1 },
+    ];
+    const ambiguousTv = [{ sid: 't-only', name: '歧义剧', playMode: 100, category: 1 }];
+    assert.deepEqual(getMergedPairs('歧义剧', ambiguousS5, ambiguousTv), []);
+    assert.deepEqual(getMergedPairs('歧义剧', [...ambiguousS5].reverse(), ambiguousTv), []);
+
+    assert.deepEqual(getMergedPairs('待播剧', [
+      { sid: 's-upcoming', name: '待播剧', playMode: 100, category: 1 },
+    ], [
+      { sid: 't-upcoming', name: '待播剧', playMode: 100, category: 1 },
+    ]), [['s-upcoming', 't-upcoming']]);
+
+    const eliminationS5 = [
+      { sid: 's-known', name: '排除剧', playMode: 100, publishTime: '2025-01-01', category: 1 },
+      { sid: 's-left', name: '排除剧', playMode: 100, category: 1 },
+    ];
+    const eliminationTv = [
+      { sid: 't-left', name: '排除剧', playMode: 100, category: 1 },
+      { sid: 't-known', name: '排除剧', playMode: 100, publishTime: '2025-01-01', category: 1 },
+    ];
+    const expectedEliminationPairs = [['s-known', 't-known'], ['s-left', 't-left']];
+    for (const s5Order of [eliminationS5, [...eliminationS5].reverse()]) {
+      for (const tvOrder of [eliminationTv, [...eliminationTv].reverse()]) {
+        assert.deepEqual(getMergedPairs('排除剧', s5Order, tvOrder), expectedEliminationPairs);
+      }
+    }
+  });
+
+  await t.test('Hanjutv should parse search-pair years without confusing seconds and milliseconds', () => {
+    const source = new HanjutvSource();
+    assert.equal(source.getSearchPairYear({ publishTime: 888768000000 }), 1998);
+    assert.equal(source.getSearchPairYear({ publishTime: '956678400000' }), 2000);
+    assert.equal(source.getSearchPairYear({ publishTime: 1735689600 }), 2025);
+    assert.equal(source.getSearchPairYear({ publishTime: '20250101' }), 2025);
+    assert.equal(source.getSearchPairYear({ releaseTime: '2025-07-11T00:00:00Z' }), 2025);
+    assert.equal(source.getSearchPairYear({ publishTime: 0, searchMemo: '1998·韩剧·敬请期待' }), 1998);
+    assert.equal(source.getSearchPairYear({ publishTime: 'not-a-date' }), null);
+    assert.equal(source.getSearchPairYear({ publishTime: 253402300800000 }), null);
+
+    assert.equal(source.isMergeableSearchPair(
+      { name: '千禧剧', publishTime: 974788882000 },
+      { name: '千禧剧', publishTime: 974820151000 },
+    ), true);
   });
 
   // await t.test('GET hanjutv search', async () => {

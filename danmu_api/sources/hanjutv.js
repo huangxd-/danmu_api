@@ -220,16 +220,37 @@ export default class HanjutvSource extends BaseSource {
   getSearchPairYear(item) {
     const rawYear = item?.publishTime ?? item?.releaseTime ?? item?.year ?? null;
     const yearText = String(rawYear ?? "").trim();
+    const isReasonableYear = year => Number.isInteger(year) && year >= 1900 && year <= 2100;
+    const parseDateYear = value => {
+      const parsed = new Date(value);
+      const year = parsed.getUTCFullYear();
+      return isReasonableYear(year) ? year : null;
+    };
+
     if (/^(?:19|20)\d{2}$/.test(yearText)) return Number(yearText);
+
+    const compactDateMatch = yearText.match(/^((?:19|20)\d{2})\d{4}$/);
+    if (compactDateMatch) return Number(compactDateMatch[1]);
 
     if (rawYear !== null && rawYear !== "") {
       const numericValue = Number(rawYear);
-      const dateValue = Number.isFinite(numericValue) && numericValue > 0 && numericValue < 1_000_000_000_000
-        ? numericValue * 1000
-        : rawYear;
-      const parsed = new Date(dateValue);
-      const year = parsed.getUTCFullYear();
-      if (Number.isFinite(year) && year > 1900) return year;
+      if (Number.isFinite(numericValue)) {
+        if (numericValue !== 0) {
+          const absoluteValue = Math.abs(numericValue);
+          let timestamp = null;
+          if (absoluteValue >= 10_000_000_000) {
+            timestamp = numericValue;
+          } else if (absoluteValue >= 100_000_000) {
+            timestamp = numericValue * 1000;
+          }
+
+          const year = timestamp === null ? null : parseDateYear(timestamp);
+          if (year !== null) return year;
+        }
+      } else if (yearText) {
+        const year = parseDateYear(yearText);
+        if (year !== null) return year;
+      }
     }
 
     const memoMatch = String(item?.searchMemo || "").match(/(?:19|20)\d{2}/);
@@ -242,7 +263,11 @@ export default class HanjutvSource extends BaseSource {
   }
 
   getSearchPairMetadata(item) {
-    const normalizeValue = value => value === undefined || value === null || value === "" ? null : String(value);
+    const normalizeValue = value => {
+      if (value === undefined || value === null) return null;
+      const normalized = String(value).trim();
+      return normalized || null;
+    };
     return {
       playMode: normalizeValue(item?.playMode),
       year: normalizeValue(this.getSearchPairYear(item)),
@@ -268,28 +293,99 @@ export default class HanjutvSource extends BaseSource {
     return true;
   }
 
-  // 同名只有一个兼容候选时直接使用；同名多条目必须被元数据收敛为唯一结果，否则不合并。
-  selectMergeableTvCandidate(leftItem, tvCandidates = [], usedTvSids = new Set()) {
-    let candidates = tvCandidates
-      .filter(candidate => !usedTvSids.has(String(candidate?.sid || "")))
-      .filter(candidate => this.isMergeableSearchPair(leftItem, candidate))
-      .map(candidate => ({ candidate, metadata: this.getSearchPairMetadata(candidate) }));
-
-    if (candidates.length <= 1) return candidates[0]?.candidate || null;
-
+  getSearchPairMatchScore(leftItem, rightItem) {
+    if (!this.isMergeableSearchPair(leftItem, rightItem)) return null;
     const leftMeta = this.getSearchPairMetadata(leftItem);
-    for (const field of ["playMode", "year", "episodeCount", "category"]) {
-      if (leftMeta[field] === null) continue;
+    const rightMeta = this.getSearchPairMetadata(rightItem);
+    const weights = { year: 8, playMode: 4, category: 2, episodeCount: 1 };
+    let score = 0;
 
-      const comparable = candidates.filter(item => item.metadata[field] !== null);
-      if (comparable.length === 0) continue;
-
-      const matched = comparable.filter(item => item.metadata[field] === leftMeta[field]);
-      if (matched.length === 0) return null;
-      candidates = matched;
+    for (const [field, weight] of Object.entries(weights)) {
+      if (leftMeta[field] !== null && rightMeta[field] !== null && leftMeta[field] === rightMeta[field]) {
+        score += weight;
+      }
     }
 
-    return candidates.length === 1 ? candidates[0].candidate : null;
+    return score;
+  }
+
+  selectUniqueBestSearchCandidate(item, candidates = []) {
+    const scored = candidates
+      .map(candidate => ({ candidate, score: this.getSearchPairMatchScore(item, candidate) }))
+      .filter(entry => entry.score !== null);
+    if (scored.length === 0) return null;
+
+    const bestScore = Math.max(...scored.map(entry => entry.score));
+    const best = scored.filter(entry => entry.score === bestScore);
+    return best.length === 1 ? best[0].candidate : null;
+  }
+
+  pairSearchCandidateGroup(s5Items = [], tvItems = []) {
+    const remainingS5 = new Map(s5Items.map(item => [String(item.sid), item]));
+    const remainingTv = new Map(tvItems.map(item => [String(item.sid), item]));
+    const pairedTvByS5Sid = new Map();
+
+    while (remainingS5.size > 0 && remainingTv.size > 0) {
+      const currentS5 = Array.from(remainingS5.values());
+      const currentTv = Array.from(remainingTv.values());
+      const bestTvByS5Sid = new Map();
+      const bestS5ByTvSid = new Map();
+
+      for (const s5Item of currentS5) {
+        const bestTv = this.selectUniqueBestSearchCandidate(s5Item, currentTv);
+        if (bestTv) bestTvByS5Sid.set(String(s5Item.sid), bestTv);
+      }
+      for (const tvItem of currentTv) {
+        const bestS5 = this.selectUniqueBestSearchCandidate(tvItem, currentS5);
+        if (bestS5) bestS5ByTvSid.set(String(tvItem.sid), bestS5);
+      }
+
+      const mutualPairs = [];
+      for (const [s5Sid, tvItem] of bestTvByS5Sid) {
+        const tvSid = String(tvItem.sid);
+        const bestS5 = bestS5ByTvSid.get(tvSid);
+        if (bestS5 && String(bestS5.sid) === s5Sid) {
+          mutualPairs.push({ s5Sid, tvSid, tvItem });
+        }
+      }
+
+      if (mutualPairs.length === 0) break;
+      for (const pair of mutualPairs) {
+        pairedTvByS5Sid.set(pair.s5Sid, pair.tvItem);
+        remainingS5.delete(pair.s5Sid);
+        remainingTv.delete(pair.tvSid);
+      }
+    }
+
+    return pairedTvByS5Sid;
+  }
+
+  pairSearchCandidates(s5Items = [], tvItems = []) {
+    const groupByTitle = items => {
+      const groups = new Map();
+      for (const item of items) {
+        const title = this.normalizeSearchPairTitle(item?.name);
+        if (!title) continue;
+        if (!groups.has(title)) groups.set(title, []);
+        groups.get(title).push(item);
+      }
+      return groups;
+    };
+
+    const s5Groups = groupByTitle(s5Items);
+    const tvGroups = groupByTitle(tvItems);
+    const pairedTvByS5Sid = new Map();
+
+    for (const [title, s5Group] of s5Groups) {
+      const tvGroup = tvGroups.get(title);
+      if (!tvGroup) continue;
+      const groupPairs = this.pairSearchCandidateGroup(s5Group, tvGroup);
+      for (const [s5Sid, tvItem] of groupPairs) {
+        pairedTvByS5Sid.set(s5Sid, tvItem);
+      }
+    }
+
+    return pairedTvByS5Sid;
   }
 
   buildSearchCandidate(item, variant, linkedSid = "") {
@@ -327,12 +423,12 @@ export default class HanjutvSource extends BaseSource {
     const hasMatched = s5.matched.length + tv.matched.length > 0;
 
     const resultList = [];
-    const usedTvSids = new Set();
+    const pairedTvByS5Sid = this.pairSearchCandidates(s5.matched, tv.matched);
+    const usedTvSids = new Set(Array.from(pairedTvByS5Sid.values(), item => String(item.sid)));
 
     for (const item of s5.matched) {
-      const pairedTv = this.selectMergeableTvCandidate(item, tv.matched, usedTvSids);
+      const pairedTv = pairedTvByS5Sid.get(String(item.sid));
       if (pairedTv) {
-        usedTvSids.add(String(pairedTv.sid));
         resultList.push(this.buildSearchCandidate(item, HANJUTV_VARIANTS.MERGED, pairedTv.sid));
       } else {
         resultList.push(this.buildSearchCandidate(item, HANJUTV_VARIANTS.HXQ));
