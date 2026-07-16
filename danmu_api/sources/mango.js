@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
@@ -82,14 +83,22 @@ export default class MangoSource extends BaseSource {
     try {
       log("info", `[Mango] 开始搜索: ${keyword}`);
 
+      // 生成设备ID（session内持久化）
+      if (!this._deviceId) {
+        this._deviceId = createHash('md5').update(`danmu-api-mango-${Date.now()}`).digest('hex');
+      }
+
+      // 生成签名 seqId = md5(deviceId + "." + timestamp)
+      const timestamp = Date.now();
+      const seqId = createHash('md5').update(this._deviceId + "." + timestamp).digest('hex');
+
       const encodedKeyword = encodeURIComponent(keyword);
-      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?q=${encodedKeyword}&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000`;
+      const searchUrl = `https://mobileso.bz.mgtv.com/aphone/search/rebirth/v2?q=${encodedKeyword}&_support=10100001&device=23127PN0CC&osVersion=16&appVersion=9.3.3&did=${this._deviceId}&mac=${this._deviceId}&seqId=${seqId}&ticket=&userId=0&osType=android&type=10&abroad=0`;
 
       const response = await httpGet(searchUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 16; 23127PN0CC Build/AP1A.240505.003)',
           'Accept': 'application/json',
-          'Referer': 'https://www.mgtv.com/'
         }
       });
 
@@ -108,33 +117,33 @@ export default class MangoSource extends BaseSource {
       // 处理搜索结果
       const results = [];
       for (const content of data.data.contents) {
-        if (content.type !== "media") {
+        if (content.type !== "mediaRebirthV2") {
           continue;
         }
 
         for (const item of content.data) {
-          // 只处理芒果TV自有内容 (source为'imgo')
-          if (item.source !== "imgo") {
+          // 只处理芒果TV自有内容 (新版API中source为空或'imgo')
+          if (item.source && item.source !== "imgo") {
             continue;
           }
 
-          // 从URL中提取 collection_id
-          const urlMatch = item.url ? item.url.match(/\/b\/(\d+)/) : null;
-          if (!urlMatch) {
+          // 新版API使用clipId作为媒体ID
+          if (!item.clipId) {
             continue;
           }
 
-          const mediaId = urlMatch[1];
+          const mediaId = String(item.clipId);
 
           // 清理标题 (移除HTML标签)
           const cleanedTitle = item.title ? item.title.replace(/<[^>]+>/g, '').replace(/:/g, '：') : '';
 
-          // 提取年份
-          const yearMatch = item.desc && item.desc[0] ? item.desc[0].match(/[12][890][0-9][0-9]/) : null;
+          // 提取年份 (desc始终为数组)
+          const descText = Array.isArray(item.desc) ? (item.desc[0] || '') : (item.desc || '');
+          const yearMatch = descText.match(/[12][890][0-9][0-9]/);
           const year = yearMatch ? parseInt(yearMatch[0]) : null;
 
-          // 提取媒体类型（参考优化后的 youku.js 和 bilibili.js）
-          const typeMatch = item.desc && item.desc[0] ? item.desc[0].split('/')[0].replace("类型:", "").trim() : '';
+          // 提取媒体类型
+          const typeMatch = descText.split('/')[0].replace("类型:", "").trim();
           const mediaType = this._extractMediaType(typeMatch);
 
           results.push({
