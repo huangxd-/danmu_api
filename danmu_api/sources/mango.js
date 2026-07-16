@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import BaseSource from './base.js';
 import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
@@ -6,7 +5,7 @@ import { httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
-import { convertToAsciiSum } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
@@ -85,12 +84,12 @@ export default class MangoSource extends BaseSource {
 
       // 生成设备ID（session内持久化）
       if (!this._deviceId) {
-        this._deviceId = createHash('md5').update(`danmu-api-mango-${Date.now()}`).digest('hex');
+        this._deviceId = md5(`danmu-api-mango-${Date.now()}`);
       }
 
       // 生成签名 seqId = md5(deviceId + "." + timestamp)
       const timestamp = Date.now();
-      const seqId = createHash('md5').update(this._deviceId + "." + timestamp).digest('hex');
+      const seqId = md5(this._deviceId + "." + timestamp);
 
       const encodedKeyword = encodeURIComponent(keyword);
       const searchUrl = `https://mobileso.bz.mgtv.com/aphone/search/rebirth/v2?q=${encodedKeyword}&_support=10100001&device=23127PN0CC&osVersion=16&appVersion=9.3.3&did=${this._deviceId}&mac=${this._deviceId}&seqId=${seqId}&ticket=&userId=0&osType=android&type=10&abroad=0`;
