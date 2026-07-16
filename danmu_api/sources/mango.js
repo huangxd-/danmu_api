@@ -5,7 +5,7 @@ import { httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { time_to_second, generateValidStartDate } from "../utils/time-util.js";
 import { rgbToInt } from "../utils/danmu-util.js";
-import { convertToAsciiSum } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum } from "../utils/codec-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
@@ -78,16 +78,163 @@ export default class MangoSource extends BaseSource {
     return "电视剧";
   }
 
+  /**
+   * 生成 UUID v4 字符串
+   * @returns {string} UUID v4
+   */
+  _generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * 获取芒果TV API 签名密钥
+   * 从移动端搜索页面的 JS bundle 中动态提取，失败时回退到固定密钥
+   * @returns {Promise<string>} 签名密钥
+   */
+  async _getSecret() {
+    const FALLBACK_SECRET = "xHAa3YZflWLogZUOzl";
+    const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+    try {
+      // 步骤1: 获取搜索页面，提取 JS bundle 哈希
+      const pageResp = await httpGet("https://m.mgtv.com/so/?k=test", {
+        headers: { 'User-Agent': UA },
+        timeout: 8000
+      });
+
+      if (!pageResp || !pageResp.data) {
+        log("warn", "[Mango] _getSecret: 搜索页面响应为空，使用回退密钥");
+        return FALLBACK_SECRET;
+      }
+
+      const pageText = typeof pageResp.data === "string" ? pageResp.data : JSON.stringify(pageResp.data);
+      const hashMatch = pageText.match(/imgotv-mobile-so\/static\/js\/result\.([a-f0-9]+)\.js/);
+      if (!hashMatch || !hashMatch[1]) {
+        log("warn", "[Mango] _getSecret: 未找到 JS bundle 哈希，使用回退密钥");
+        return FALLBACK_SECRET;
+      }
+
+      // 步骤2: 获取 JS 文件，提取 ut 变量值
+      const jsUrl = `https://m.mgtv.com/imgotv-mobile-so/static/js/result.${hashMatch[1]}.js`;
+      const jsResp = await httpGet(jsUrl, {
+        headers: {
+          'User-Agent': UA,
+          'Referer': 'https://m.mgtv.com/',
+        },
+        timeout: 8000
+      });
+
+      if (!jsResp || !jsResp.data) {
+        log("warn", "[Mango] _getSecret: JS bundle 响应为空，使用回退密钥");
+        return FALLBACK_SECRET;
+      }
+
+      const jsText = typeof jsResp.data === "string" ? jsResp.data : JSON.stringify(jsResp.data);
+      const secretMatch = jsText.match(/\but\s*=\s*"([^"]{10,40})"/);
+      if (secretMatch && secretMatch[1]) {
+        const secret = secretMatch[1];
+        log("info", `[Mango] _getSecret: 成功获取签名密钥 (len=${secret.length})`);
+        return secret;
+      }
+
+      log("warn", "[Mango] _getSecret: JS bundle 中未找到密钥，使用回退密钥");
+      return FALLBACK_SECRET;
+
+    } catch (error) {
+      log("warn", `[Mango] _getSecret: 网络错误 (${error.message})，使用回退密钥`);
+      return FALLBACK_SECRET;
+    }
+  }
+
+  /**
+   * 为搜索参数构建签名
+   * 算法: md5(secret + encodeURI(sorted_query_string) + secret)
+   * @param {Object} params - 基础查询参数
+   * @returns {Promise<Object>} 含签名参数的完整对象
+   */
+  async _buildSignature(params) {
+    const secret = await this._getSecret();
+
+    // 克隆参数并添加签名元数据
+    const result = { ...params };
+    result["timestamp"] = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    result["signVersion"] = "1";
+    result["signNonce"] = this._generateUUID();
+
+    // 过滤: 排除 signature 键、null/undefined 值、空字符串
+    const filtered = {};
+    for (const [key, value] of Object.entries(result)) {
+      if (key === "signature") continue;
+      if (value === null || value === undefined) continue;
+      if (String(value).trim() === "") continue;
+      filtered[key] = String(value);
+    }
+
+    // 按 key 排序，用 encodeURI 编码（匹配 Python encode_uri）
+    const sortedKeys = Object.keys(filtered).sort();
+    const parts = sortedKeys.map(k =>
+      `${encodeURI(k)}=${encodeURI(filtered[k])}`
+    );
+    const queryString = parts.join("&");
+
+    // 签名: md5(secret + queryString + secret)
+    const signInput = secret + queryString + secret;
+    result["signature"] = md5(signInput);
+
+    return result;
+  }
+
+  /**
+   * 剥离 JSONP 包装（如果存在）
+   * @param {string} text - 原始响应文本
+   * @returns {string} 去包装后的 JSON 字符串
+   */
+  _stripJsonp(text) {
+    if (typeof text !== "string") return text;
+    const trimmed = text.trim();
+    const jsonpMatch = trimmed.match(/^[a-zA-Z_$][a-zA-Z0-9_.$]*\((.+)\);?\s*$/s);
+    if (jsonpMatch && jsonpMatch[1]) {
+      return jsonpMatch[1];
+    }
+    return trimmed;
+  }
+
   async search(keyword) {
     try {
       log("info", `[Mango] 开始搜索: ${keyword}`);
 
-      const encodedKeyword = encodeURIComponent(keyword);
-      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?q=${encodedKeyword}&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000`;
+      // 构建搜索参数（匹配 Python 实现）
+      const params = {
+        q: keyword,
+        pc: "30",
+        pn: "1",
+        sort: "0",
+        ty: "0",
+        du: "0",
+        pt: "0",
+        corr: "1",
+        abroad: "0",
+        _support: "10000000000000000",
+        callback: `jsonp_${this._generateUUID().replace(/-/g, "").substring(0, 15)}`
+      };
+
+      // 签名
+      const signedParams = await this._buildSignature(params);
+
+      // 构建查询字符串
+      const queryParts = [];
+      for (const [k, v] of Object.entries(signedParams)) {
+        queryParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+      }
+      const searchUrl = `https://mobileso.bz.mgtv.com/msite/search/v2?${queryParts.join("&")}`;
 
       const response = await httpGet(searchUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
           'Accept': 'application/json',
           'Referer': 'https://www.mgtv.com/'
         }
@@ -98,7 +245,11 @@ export default class MangoSource extends BaseSource {
         return [];
       }
 
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      // 处理可能的 JSONP 包装
+      const rawData = typeof response.data === "string"
+        ? this._stripJsonp(response.data)
+        : response.data;
+      const data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
 
       if (!data.data || !data.data.contents) {
         log("info", "[Mango] 搜索无结果");
