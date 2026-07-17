@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
-import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes, decompressBrotli, utf8BytesToString } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { globals } from '../configs/globals.js';
@@ -949,7 +949,7 @@ export default class IqiyiSource extends BaseSource {
       const payload = await this._decompressBrotli(compressed);
 
       if (payload[0] === 60) {
-        return this._parseIqiyiXmlDanmu(new TextDecoder("utf-8").decode(payload));
+        return this._parseIqiyiXmlDanmu(utf8BytesToString(payload));
       }
 
       return this._parseIqiyiProtoDanmu(payload);
@@ -960,17 +960,7 @@ export default class IqiyiSource extends BaseSource {
   }
 
   async _decompressBrotli(bytes) {
-    if (typeof DecompressionStream !== "undefined") {
-      try {
-        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("brotli"));
-        return new Uint8Array(await new Response(stream).arrayBuffer());
-      } catch {
-        log("info", "[iQiyi] DecompressionStream Brotli 解压失败，尝试 Node zlib");
-      }
-    }
-
-    const { brotliDecompressSync } = await import("node:zlib");
-    return new Uint8Array(brotliDecompressSync(bytes));
+    return decompressBrotli(bytes);
   }
 
   _parseIqiyiXmlDanmu(xml) {
@@ -1024,7 +1014,6 @@ export default class IqiyiSource extends BaseSource {
   _parseIqiyiProtoFields(bytes) {
     const fields = [];
     let offset = 0;
-    const decoder = new TextDecoder("utf-8");
 
     while (offset < bytes.length) {
       const keyResult = this._readIqiyiVarint(bytes, offset);
@@ -1050,7 +1039,7 @@ export default class IqiyiSource extends BaseSource {
         if (end > bytes.length) break;
 
         const raw = bytes.subarray(offset, end);
-        fields.push({ number, wireType, bytes: raw, value: decoder.decode(raw) });
+        fields.push({ number, wireType, bytes: raw, value: utf8BytesToString(raw) });
         offset = end;
       } else if (wireType === 5) {
         fields.push({ number, wireType });

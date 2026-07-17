@@ -1,4 +1,5 @@
 import { log } from "./log-util.js";
+import brotliDecompress from "brotli/decompress.js";
 
 // =====================
 // 通用编码/解码工具
@@ -449,6 +450,21 @@ export function base64ToBytes(b64) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+// 纯 JavaScript Brotli 解压，兼容不提供原生解压 API 的沙箱。
+export function decompressBrotli(bytes) {
+  if (bytes == null) {
+    throw new TypeError("Brotli 输入不能为空");
+  }
+
+  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const output = brotliDecompress(input);
+  if (!output) {
+    throw new Error("Brotli 解压失败");
+  }
+
+  return output instanceof Uint8Array ? output : new Uint8Array(output);
 }
 
 // 自定义 Base64 解码函数

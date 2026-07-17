@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs';
+import path from 'node:path';
 
 // 动态获取版本号
 import { Globals } from './danmu_api/configs/globals.js';
@@ -38,6 +39,50 @@ const uiModules = [
 
 let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8');
 
+// ForwardWidget runs in a browser-like JS runtime, so Node built-ins must not
+// leak into the bundle. The server still imports the native implementations.
+const forwardRuntimeCompatPlugin = {
+  name: 'forward-runtime-compat',
+  setup(build) {
+    build.onResolve({ filter: /^node:async_hooks$/ }, () => ({
+      path: 'async-hooks',
+      namespace: 'forward-node-builtins'
+    }));
+
+    // brotli ships a compressed dictionary specifically for browser bundles.
+    build.onResolve({ filter: /^\.\/dictionary-data$/ }, (args) => {
+      if (/[\\/]node_modules[\\/]brotli[\\/]dec[\\/]dictionary\.js$/.test(args.importer)) {
+        return { path: path.resolve('node_modules/brotli/dec/dictionary-browser.js') };
+      }
+    });
+
+    build.onLoad({ filter: /^async-hooks$/, namespace: 'forward-node-builtins' }, () => ({
+      loader: 'js',
+      contents: `
+        export class AsyncLocalStorage {
+          constructor() {
+            this.store = undefined;
+          }
+
+          getStore() {
+            return this.store;
+          }
+
+          run(store, callback, ...args) {
+            const previousStore = this.store;
+            this.store = store;
+            try {
+              return callback(...args);
+            } finally {
+              this.store = previousStore;
+            }
+          }
+        }
+      `
+    }));
+  }
+};
+
 (async () => {
   try {
     await esbuild.build({
@@ -51,6 +96,7 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
       format: 'esm', // 保持ES模块格式
       external: ['redis', 'fs', 'path', 'stream/promises', 'node-fetch'],
       plugins: [
+        forwardRuntimeCompatPlugin,
         // 插件：排除UI相关模块
         {
           name: 'exclude-ui-modules',
