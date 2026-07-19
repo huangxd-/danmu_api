@@ -93,7 +93,7 @@ function getActiveSearchCacheEntries() {
 
         if (cacheAgeMinutes > globals.searchCacheMinutes) {
             globals.searchCache.delete(keyword);
-            log("info", `[Cache] Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+            log("info", `[cache] Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
             continue;
         }
 
@@ -119,7 +119,7 @@ function sweepExpiredCache(cacheMap, cacheMinutes, cacheName) {
     }
 
     if (sweptCount > 0) {
-        log("info", `[Cache] ${cacheName} TTL 扫描完毕，已移除 ${sweptCount} 个过期条目，剩余 ${cacheMap.size} 个`);
+        log("info", `[cache] ${cacheName} TTL 扫描完毕，已移除 ${sweptCount} 个过期条目，剩余 ${cacheMap.size} 个`);
     }
 }
 
@@ -270,7 +270,7 @@ export function isSearchCacheValid(keyword) {
     if (cacheAgeMinutes > globals.searchCacheMinutes) {
         // 缓存已过期，删除它
         globals.searchCache.delete(keyword);
-        log("info", `[Cache] Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        log("info", `[cache] Search cache for "${keyword}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
         return false;
     }
 
@@ -280,7 +280,7 @@ export function isSearchCacheValid(keyword) {
 // 获取搜索缓存
 export function getSearchCache(keyword, detailsMap = null) {
     if (isSearchCacheValid(keyword)) {
-        log("info", `[Cache] Using search cache for "${keyword}"`);
+        log("info", `[cache] Using search cache for "${keyword}"`);
         const cached = globals.searchCache.get(keyword);
 
         if (detailsMap instanceof Map && Array.isArray(cached.details)) {
@@ -311,10 +311,10 @@ export function setSearchCache(keyword, results, detailsMap = null) {
     if (globals.searchCache.size > 500) {
         const oldestKey = globals.searchCache.keys().next().value;
         globals.searchCache.delete(oldestKey);
-        log("info", `[Cache] searchCache TTL清理后仍达上限，已移除最早条目: ${oldestKey}`);
+        log("info", `[cache] searchCache TTL清理后仍达上限，已移除最早条目: ${oldestKey}`);
     }
 
-    log("info", `[Cache] Cached search results for "${keyword}" (${results.length} animes)`);
+    log("info", `[cache] Cached search results for "${keyword}" (${results.length} animes)`);
 }
 
 // 检查弹幕缓存是否有效（未过期）
@@ -330,7 +330,7 @@ export function isCommentCacheValid(videoUrl) {
     if (cacheAgeMinutes > globals.commentCacheMinutes) {
         // 缓存已过期，删除它
         globals.commentCache.delete(videoUrl);
-        log("info", `[Cache] Comment cache for "${videoUrl}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
+        log("info", `[cache] Comment cache for "${videoUrl}" expired after ${cacheAgeMinutes.toFixed(2)} minutes`);
         return false;
     }
 
@@ -340,7 +340,7 @@ export function isCommentCacheValid(videoUrl) {
 // 获取弹幕缓存
 export function getCommentCache(videoUrl) {
     if (isCommentCacheValid(videoUrl)) {
-        log("info", `[Cache] Using comment cache for "${videoUrl}"`);
+        log("info", `[cache] Using comment cache for "${videoUrl}"`);
         return globals.commentCache.get(videoUrl).comments;
     }
     return null;
@@ -360,10 +360,10 @@ export function setCommentCache(videoUrl, comments) {
     if (globals.commentCache.size > 500) {
         const oldestKey = globals.commentCache.keys().next().value;
         globals.commentCache.delete(oldestKey);
-        log("info", `[Cache] commentCache TTL清理后仍达上限，已移除最早条目: ${oldestKey}`);
+        log("info", `[cache] commentCache TTL清理后仍达上限，已移除最早条目: ${oldestKey}`);
     }
 
-    log("info", `[Cache] Cached comments for "${videoUrl}" (${comments.length} comments)`);
+    log("info", `[cache] Cached comments for "${videoUrl}" (${comments.length} comments)`);
 }
 
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
@@ -371,7 +371,7 @@ export function addEpisode(url, title) {
     // 检查是否已存在相同的 url 和 title
     const existingEpisode = globals.episodeIds.find(episode => episode.url === url && episode.title === title);
     if (existingEpisode) {
-        log("info", `[Cache] Episode with URL ${url} and title ${title} already exists in episodeIds, returning existing episode.`);
+        log("info", `[cache] Episode with URL ${url} and title ${title} already exists in episodeIds, returning existing episode.`);
         return existingEpisode; // 返回已存在的 episode
     }
 
@@ -382,7 +382,7 @@ export function addEpisode(url, title) {
     // 添加新对象
     globals.episodeIds.push(newEpisode);
 
-    log("info", `[Cache] Added to episodeIds: ${JSON.stringify(newEpisode)}`);
+    log("info", `[cache] Added to episodeIds: ${JSON.stringify(newEpisode)}`);
     return newEpisode; // 返回新添加的对象
 }
 
@@ -392,10 +392,10 @@ export function removeEpisodeByUrl(url) {
     globals.episodeIds = globals.episodeIds.filter(episode => episode.url !== url);
     const removedCount = initialLength - globals.episodeIds.length;
     if (removedCount > 0) {
-        log("info", `[Cache] Removed ${removedCount} episode(s) from episodeIds with URL: ${url}`);
+        log("info", `[cache] Removed ${removedCount} episode(s) from episodeIds with URL: ${url}`);
         return true;
     }
-    log("error", `[Cache] No episode found in episodeIds with URL: ${url}`);
+    log("error", `[cache] No episode found in episodeIds with URL: ${url}`);
     return false;
 }
 
@@ -403,17 +403,17 @@ export function removeEpisodeByUrl(url) {
 export function findUrlById(id) {
     const episode = globals.episodeIds.find(episode => episode.id === id);
     if (episode) {
-        log("info", `[Cache] Found URL for ID ${id}: ${episode.url}`);
+        log("info", `[cache] Found URL for ID ${id}: ${episode.url}`);
         return episode.url;
     }
 
     const resolved = resolveEpisodeContextById(id);
     if (resolved?.link?.url) {
-        log("info", `[Cache] Found URL for ID ${id} via cached anime details: ${resolved.link.url}`);
+        log("info", `[cache] Found URL for ID ${id} via cached anime details: ${resolved.link.url}`);
         return resolved.link.url;
     }
 
-    log("error", `[Cache] No URL found for ID: ${id}`);
+    log("error", `[cache] No URL found for ID: ${id}`);
     return null;
 }
 
@@ -421,17 +421,17 @@ export function findUrlById(id) {
 export function findIndexById(id) {
     const index = globals.episodeIds.findIndex(episode => episode.id === id);
     if (index !== -1) {
-        log("info", `[Cache] Found index for ID ${id}: ${index}`);
+        log("info", `[cache] Found index for ID ${id}: ${index}`);
         return index;
     }
 
     const resolved = resolveEpisodeContextById(id);
     if (resolved) {
-        log("info", `[Cache] Found index for ID ${id} via cached anime details: ${resolved.index}`);
+        log("info", `[cache] Found index for ID ${id} via cached anime details: ${resolved.index}`);
         return resolved.index;
     }
 
-    log("error", `[Cache] No index found for ID: ${id}`);
+    log("error", `[cache] No index found for ID: ${id}`);
     return -1;
 }
 
@@ -439,17 +439,17 @@ export function findIndexById(id) {
 export function findTitleById(id) {
     const episode = globals.episodeIds.find(episode => episode.id === id);
     if (episode) {
-        log("info", `[Cache] Found TITLE for ID ${id}: ${episode.title}`);
+        log("info", `[cache] Found TITLE for ID ${id}: ${episode.title}`);
         return episode.title;
     }
 
     const resolved = resolveEpisodeContextById(id);
     if (resolved?.link?.title) {
-        log("info", `[Cache] Found TITLE for ID ${id} via cached anime details: ${resolved.link.title}`);
+        log("info", `[cache] Found TITLE for ID ${id} via cached anime details: ${resolved.link.title}`);
         return resolved.link.title;
     }
 
-    log("error", `[Cache] No TITLE found for ID: ${id}`);
+    log("error", `[cache] No TITLE found for ID: ${id}`);
     return null;
 }
 
@@ -457,11 +457,11 @@ export function findTitleById(id) {
 export function findAnimeTitleById(id) {
     const resolved = resolveEpisodeContextById(id);
     if (resolved?.anime?.animeTitle) {
-        log("info", `[Cache] Found animeTitle for ID ${id}: ${resolved.anime.animeTitle}`);
+        log("info", `[cache] Found animeTitle for ID ${id}: ${resolved.anime.animeTitle}`);
         return resolved.anime.animeTitle;
     }
 
-    log("error", `[Cache] No animeTitle found for ID: ${id}`);
+    log("error", `[cache] No animeTitle found for ID: ${id}`);
     return null;
 }
 
@@ -471,7 +471,7 @@ export function addAnime(anime, detailStore = null) {
     try {
         // 确保 anime 有 links 属性且是数组
         if (!anime.links || !Array.isArray(anime.links)) {
-            log("error", `[Cache] Invalid or missing links in anime: ${JSON.stringify(anime)}`);
+            log("error", `[cache] Invalid or missing links in anime: ${JSON.stringify(anime)}`);
             return false;
         }
 
@@ -484,7 +484,7 @@ export function addAnime(anime, detailStore = null) {
                     newLinks.push(episode); // 仅添加成功添加的 episode
                 }
             } else {
-                log("error", `[Cache] Invalid link in anime, missing url: ${JSON.stringify(link)}`);
+                log("error", `[cache] Invalid link in anime, missing url: ${JSON.stringify(link)}`);
             }
         });
 
@@ -500,22 +500,22 @@ export function addAnime(anime, detailStore = null) {
         if (existingAnimeIndex !== -1) {
             // 如果存在，先删除旧的
             globals.animes.splice(existingAnimeIndex, 1);
-            log("info", `[Cache] Removed old anime at index: ${existingAnimeIndex}`);
+            log("info", `[cache] Removed old anime at index: ${existingAnimeIndex}`);
         }
 
         // 将新的添加到数组末尾（最新位置）
         globals.animes.push(animeCopy);
-        log("info", `[Cache] Added anime to latest position: ${anime.animeId}`);
+        log("info", `[cache] Added anime to latest position: ${anime.animeId}`);
 
         // 检查是否超过 MAX_ANIMES，超过则删除最早的
         if (globals.animes.length > globals.MAX_ANIMES) {
             const removeSuccess = removeEarliestAnime();
             if (!removeSuccess) {
-                log("error", "[Cache] Failed to remove earliest anime, but continuing");
+                log("error", "[cache] Failed to remove earliest anime, but continuing");
             }
         }
 
-        log("info", `[Cache] animes: ${JSON.stringify(
+        log("info", `[cache] animes: ${JSON.stringify(
           globals.animes.map(anime => ({
             links: anime.links,
             animeId: anime.animeId,
@@ -527,20 +527,20 @@ export function addAnime(anime, detailStore = null) {
 
         return true;
     } catch (error) {
-        log("error", `[Cache] addAnime failed: ${error.message}`);
+        log("error", `[cache] addAnime failed: ${error.message}`);
         return false;
     }
 }
 // 删除最早添加的 anime，并从 episodeIds 删除其 links 中的 url
 export function removeEarliestAnime() {
     if (globals.animes.length === 0) {
-        log("error", "[Cache] No animes to remove.");
+        log("error", "[cache] No animes to remove.");
         return false;
     }
 
     // 移除最早的 anime（第一个元素）
     const removedAnime = globals.animes.shift();
-    log("info", `[Cache] Removed earliest anime: ${JSON.stringify(removedAnime)}`);
+    log("info", `[cache] Removed earliest anime: ${JSON.stringify(removedAnime)}`);
 
     // 从 episodeIds 删除该 anime 的所有 links 中的 url
     if (removedAnime.links && Array.isArray(removedAnime.links)) {
@@ -605,7 +605,7 @@ export function storeAnimeIdsToMap(curAnimes, key) {
     if (globals.lastSelectMap.size > globals.MAX_LAST_SELECT_MAP) {
         const firstKey = globals.lastSelectMap.keys().next().value;
         globals.lastSelectMap.delete(firstKey);
-        log("info", `[Cache] Removed earliest entry from lastSelectMap: ${firstKey}`);
+        log("info", `[cache] Removed earliest entry from lastSelectMap: ${firstKey}`);
     }
 }
 
@@ -667,14 +667,14 @@ export function cleanupExpiredIPs(currentTime) {
     if (validTimestamps.length === 0) {
       globals.requestHistory.delete(ip);
       cleanedCount++;
-      log("info", `[Utils] [Rate Limit] Cleaned up expired IP record: ${ip}`);
+      log("info", `[system] [Rate Limit] Cleaned up expired IP record: ${ip}`);
     } else if (validTimestamps.length < timestamps.length) {
       globals.requestHistory.set(ip, validTimestamps);
     }
   }
 
   if (cleanedCount > 0) {
-    log("info", `[Utils] [Rate Limit] Cleanup completed: removed ${cleanedCount} expired IP records`);
+    log("info", `[system] [Rate Limit] Cleanup completed: removed ${cleanedCount} expired IP records`);
   }
 }
 
@@ -709,7 +709,7 @@ export function writeCacheToFile(key, value) {
 export async function getLocalCaches() {
   if (!globals.localCacheInitialized) {
     try {
-      log("info", '[Cache] getLocalCaches start.');
+      log("info", '[cache] getLocalCaches start.');
 
       // 从本地缓存文件读取数据并恢复到 globals 中
       globals.animes = JSON.parse(readCacheFromFile('animes')) || globals.animes;
@@ -722,7 +722,7 @@ export async function getLocalCaches() {
       const lastSelectMapData = readCacheFromFile('lastSelectMap');
       if (lastSelectMapData) {
         globals.lastSelectMap = new Map(Object.entries(JSON.parse(lastSelectMapData)));
-        log("info", `[Cache] Restored lastSelectMap from local cache with ${globals.lastSelectMap.size} entries`);
+        log("info", `[cache] Restored lastSelectMap from local cache with ${globals.lastSelectMap.size} entries`);
       }
 
       // 更新哈希值
@@ -734,9 +734,9 @@ export async function getLocalCaches() {
       globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
 
       globals.localCacheInitialized = true;
-      log("info", '[Cache] getLocalCaches completed successfully.');
+      log("info", '[cache] getLocalCaches completed successfully.');
     } catch (error) {
-      log("error", `[Cache] getLocalCaches failed: ${error.message}`, error.stack);
+      log("error", `[cache] getLocalCaches failed: ${error.message}`, error.stack);
       globals.localCacheInitialized = true; // 标记为已初始化，避免重复尝试
     }
   }
@@ -745,7 +745,7 @@ export async function getLocalCaches() {
 // 更新本地缓存
 export async function updateLocalCaches() {
   try {
-    log("info", '[Cache] updateLocalCaches start.');
+    log("info", '[cache] updateLocalCaches start.');
     const updates = [];
 
     // 检查每个变量的哈希值
@@ -770,17 +770,17 @@ export async function updateLocalCaches() {
 
     // 输出更新日志
     if (updates.length > 0) {
-      log("info", `[Cache] Updated local caches for keys: ${updates.map(u => u.key).join(', ')}`);
+      log("info", `[cache] Updated local caches for keys: ${updates.map(u => u.key).join(', ')}`);
       updates.forEach(({ key, hash }) => {
         globals.lastHashes[key] = hash; // 更新本地哈希
       });
     } else {
-      log("info", '[Cache] No changes detected, skipping local cache update.');
+      log("info", '[cache] No changes detected, skipping local cache update.');
     }
 
   } catch (error) {
-    log("error", `[Cache] updateLocalCaches failed: ${error.message}`, error.stack);
-    log("error", `[Cache] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
+    log("error", `[cache] updateLocalCaches failed: ${error.message}`, error.stack);
+    log("error", `[cache] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
   }
 }
 
@@ -801,7 +801,7 @@ export async function judgeLocalCacheValid(urlPath, deployPlatform) {
         }
       }
     } catch (error) {
-      log("warn", "[Cache] Node.js modules not available:", error.message);
+      log("warn", "[cache] Node.js modules not available:", error.message);
       globals.localCacheValid = false;
     }
   }

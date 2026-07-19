@@ -58,7 +58,7 @@ function getLogCategory(message) {
 // 日志相关
 function addLog(message, type = 'info') {
     const timestamp = new Date().toLocaleTimeString();
-    logs.push({ timestamp, message, type });
+    logs.push({ timestamp, message, type, _category: getLogCategory(message) });
     if (logs.length > 100) logs.shift();
     renderLogs();
 }
@@ -72,10 +72,8 @@ function renderLogs() {
         // 采用严格归属校验，同时支持续行上下文继承
         let lastCategory = 'system';
         filteredLogs = logs.filter(log => {
-            let category = getLogCategory(log.message);
+            let category = log._category;
             if (category === '_inherit_') {
-                // 续行继承上一个明确分类行
-                category = lastCategory;
             } else {
                 lastCategory = category;
             }
@@ -114,7 +112,7 @@ function createFilterContainer() {
 // 标签显示顺序：ALL → 系统 → 工具 → 源，组内字母序
 const tagGroupOrder = [
     ['system', 'ai'],
-    ['utils', 'cache', 'merge'],
+    ['cache', 'merge'],
     ['360kan', 'aiyifan', 'animeko', 'bahamut', 'bilibili', 'custom', 'dandan', 'douban', 'hanjutv', 'iqiyi', 'leshi', 'maiduidui', 'mango', 'migu', 'other', 'renren', 'sohu', 'tencent', 'tmdb', 'vod', 'xigua', 'youku'],
 ];
 const tagOrderMap = {};
@@ -127,8 +125,7 @@ function updateFilterUI() {
     const currentTags = new Set();
     let lastCategory = 'system';
     logs.forEach(log => {
-        let category = getLogCategory(log.message);
-        // 续行继承上一个明确分类行
+        let category = log._category;
         if (category === '_inherit_') {
             category = lastCategory;
         } else {
@@ -168,19 +165,14 @@ async function fetchRealLogs() {
         logs = logLines.map(line => {
             // 解析日志行，提取时间戳、级别和消息
             const match = line.match(/\\[([^\\]]+)\\] (\\w+): (.*)/);
-            if (match) {
-                return {
-                    timestamp: match[1],
-                    type: match[2],
-                    message: match[3]
-                };
-            }
-            // 如果无法解析，返回原始行
-            return {
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'info',
-                message: line
+            const message = match ? match[3] : line;
+            const entry = {
+                timestamp: match ? match[1] : new Date().toLocaleTimeString(),
+                type: match ? match[2] : 'info',
+                message: message
             };
+            entry._category = getLogCategory(message);
+            return entry;
         });
         renderLogs();
     } catch (error) {

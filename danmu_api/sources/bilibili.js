@@ -33,7 +33,7 @@ export default class BilibiliSource extends BaseSource {
   async resolveB23Link(shortUrl) {
     let timeoutId;
     try {
-      log("info", `[Bilibili] 正在解析 b23.tv 短链接: ${shortUrl}`);
+      log("info", `[bilibili] 正在解析 b23.tv 短链接: ${shortUrl}`);
 
       // b23.tv 第一跳会在 Location 中给出真实 B 站地址。
       // 只读取第一跳，避免继续访问最终页面时被 B 站页面风控返回 412。
@@ -53,14 +53,14 @@ export default class BilibiliSource extends BaseSource {
       const location = response.headers?.get?.('location') || response.headers?.get?.('Location');
       const finalUrl = location ? new URL(location, shortUrl).toString() : response.url;
       if (finalUrl && finalUrl !== shortUrl) {
-        log("info", `[Bilibili] b23.tv 短链接已解析为: ${finalUrl}`);
+        log("info", `[bilibili] b23.tv 短链接已解析为: ${finalUrl}`);
         return finalUrl;
       }
 
-      log("error", "[Bilibili] 无法解析 b23.tv 短链接");
+      log("error", "[bilibili] 无法解析 b23.tv 短链接");
       return shortUrl; // 如果解析失败，返回原 URL
     } catch (error) {
-      log("error", "[Bilibili] 解析 b23.tv 短链接失败:", error);
+      log("error", "[bilibili] 解析 b23.tv 短链接失败:", error);
       return shortUrl; // 如果出错，返回原 URL
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
@@ -78,7 +78,7 @@ export default class BilibiliSource extends BaseSource {
       return cache.key;
     }
 
-    log("info", "[Bilibili] WBI mixin key 已过期或不存在，正在获取新的...");
+    log("info", "[bilibili] WBI mixin key 已过期或不存在，正在获取新的...");
 
     try {
       const navResp = await httpGet("https://api.bilibili.com/x/web-interface/nav", {
@@ -92,7 +92,7 @@ export default class BilibiliSource extends BaseSource {
       const data = typeof navResp.data === "string" ? JSON.parse(navResp.data) : navResp.data;
 
       if (data.code !== 0) {
-        log("error", "[Bilibili] 获取 WBI 密钥失败:", data.message);
+        log("error", "[bilibili] 获取 WBI 密钥失败:", data.message);
         return "dba4a5925b345b4598b7452c75070bca"; // Fallback
       }
 
@@ -111,10 +111,10 @@ export default class BilibiliSource extends BaseSource {
       cache.key = mixinKey;
       cache.timestamp = now;
 
-      log("info", "[Bilibili] 成功获取新的 WBI mixin key");
+      log("info", "[bilibili] 成功获取新的 WBI mixin key");
       return mixinKey;
     } catch (error) {
-      log("error", "[Bilibili] 获取 WBI 密钥失败:", error.message);
+      log("error", "[bilibili] 获取 WBI 密钥失败:", error.message);
       return "dba4a5925b345b4598b7452c75070bca"; // Fallback
     }
   }
@@ -146,7 +146,7 @@ export default class BilibiliSource extends BaseSource {
    */
   async _searchByType(keyword, searchType, mixinKey) {
     try {
-      log("info", `[Bilibili] 搜索类型 '${searchType}'，关键词 '${keyword}'`);
+      log("info", `[bilibili] 搜索类型 '${searchType}'，关键词 '${keyword}'`);
 
       const searchParams = { keyword, search_type: searchType };
       const signedParams = this._getWbiSignedParams(searchParams, mixinKey);
@@ -168,7 +168,7 @@ export default class BilibiliSource extends BaseSource {
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
       if (data.code !== 0 || !data.data?.result) {
-        log("info", `[Bilibili] 类型 '${searchType}' 无结果 (Code: ${data.code})`);
+        log("info", `[bilibili] 类型 '${searchType}' 无结果 (Code: ${data.code})`);
         return [];
       }
 
@@ -226,10 +226,10 @@ export default class BilibiliSource extends BaseSource {
         results.push(resultItem);
       }
 
-      log("info", `[Bilibili] 类型 '${searchType}' 找到 ${results.length} 个结果`);
+      log("info", `[bilibili] 类型 '${searchType}' 找到 ${results.length} 个结果`);
       return results;
     } catch (error) {
-      log("error", `[Bilibili] 搜索类型 '${searchType}' 失败:`, error.message);
+      log("error", `[bilibili] 搜索类型 '${searchType}' 失败:`, error.message);
       return [];
     }
   }
@@ -281,7 +281,7 @@ export default class BilibiliSource extends BaseSource {
       localMatches = await searchBangumiData(keyword, [
         'bilibili', 'bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw'
       ]);
-      log("info", `[Bilibili] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
+      log("info", `[bilibili] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
     }
 
     // 筛选出港澳台相关的本地匹配项
@@ -290,7 +290,7 @@ export default class BilibiliSource extends BaseSource {
     );
 
     try {
-      log("info", `[Bilibili] 开始搜索: ${keyword}`);
+      log("info", `[bilibili] 开始搜索: ${keyword}`);
       const mixinKey = await this._getWbiMixinKey();
 
       // 执行并行网络搜索任务
@@ -299,7 +299,7 @@ export default class BilibiliSource extends BaseSource {
 
       let t3 = Promise.resolve([]);
       if (this._hasBilibiliProxy()) {
-        log("info", `[Bilibili] 检测到代理配置，启用港澳台并行搜索`);
+        log("info", `[bilibili] 检测到代理配置，启用港澳台并行搜索`);
         // 如果本地存在港澳台数据，则完全代替海外番剧搜索请求(Type 7)
         t3 = this._searchOversea(keyword, localOverseas.length > 0);
       }
@@ -332,7 +332,7 @@ export default class BilibiliSource extends BaseSource {
             item.isLocalPriority = true;
 
             consumedLocalMdIds.add(`md${matchedLocal.siteId}`);
-            log("info", `[Bilibili] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
+            log("info", `[bilibili] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
         }
 
         const idKey = item.mediaId || (item.season_id ? `ss${item.season_id}` : null);
@@ -350,7 +350,7 @@ export default class BilibiliSource extends BaseSource {
           const missingWithoutSeason = missingLocalMatches.filter(m => !m.season_id);
 
           if (missingWithSeason.length > 0) {
-              log("info", `[Bilibili] 从本地 Bangumi-Data 补充 ${missingWithSeason.length} 条缺漏记录并请求详情....（包含 season_id ）`);
+              log("info", `[bilibili] 从本地 Bangumi-Data 补充 ${missingWithSeason.length} 条缺漏记录并请求详情....（包含 season_id ）`);
 
               for (const m of missingWithSeason) {
                   const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
@@ -380,7 +380,7 @@ export default class BilibiliSource extends BaseSource {
 
           // 无 season_id 的条目回退到原流程：请求详情接口完成 md → season_id 转换
           if (missingWithoutSeason.length > 0) {
-              log("info", `[Bilibili] 从本地 Bangumi-Data 补充 ${missingWithoutSeason.length} 条缺漏记录并请求详情...`);
+              log("info", `[bilibili] 从本地 Bangumi-Data 补充 ${missingWithoutSeason.length} 条缺漏记录并请求详情...`);
 
               const missingPromises = missingWithoutSeason.map(async (m) => {
                   const mediaInfo = await this._resolveMediaInfo(m.siteId);
@@ -416,11 +416,11 @@ export default class BilibiliSource extends BaseSource {
           }
       }
 
-      log("info", `[Bilibili] 搜索完成，找到 ${finalResults.length} 个有效结果`);
+      log("info", `[bilibili] 搜索完成，找到 ${finalResults.length} 个有效结果`);
       return finalResults;
 
     } catch (error) {
-      log("error", "[Bilibili] 搜索出错:", error.message);
+      log("error", "[bilibili] 搜索出错:", error.message);
       return [];
     }
   }
@@ -442,7 +442,7 @@ export default class BilibiliSource extends BaseSource {
         };
       }
     } catch (e) {
-      log("error", `[Bilibili] 获取媒体信息失败 (md${mediaId}):`, e.message);
+      log("error", `[bilibili] 获取媒体信息失败 (md${mediaId}):`, e.message);
     }
     return { seasonId: null, cover: "" };
   }
@@ -483,7 +483,7 @@ export default class BilibiliSource extends BaseSource {
     }
 
     if (rawEpisodes.length === 0) {
-        log("error", `[Bilibili] 获取番剧分集失败 (season_id=${seasonId}): 所有接口均无数据`);
+        log("error", `[bilibili] 获取番剧分集失败 (season_id=${seasonId}): 所有接口均无数据`);
         return [];
     }
 
@@ -512,7 +512,7 @@ export default class BilibiliSource extends BaseSource {
     // 将详情接口封面转移到返回数组（.map() 产生新数组，不会继承原数组属性）
     if (rawEpisodes._cover) episodes._cover = rawEpisodes._cover;
 
-    log("info", `[Bilibili] 获取到 ${episodes.length} 个番剧分集`);
+    log("info", `[bilibili] 获取到 ${episodes.length} 个番剧分集`);
     return episodes;
   }
 
@@ -534,14 +534,14 @@ export default class BilibiliSource extends BaseSource {
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
       if (data.code !== 0 || !data.data) {
-        log("error", `[Bilibili] 获取视频分集失败 (bvid=${bvid}):`, data.message);
+        log("error", `[bilibili] 获取视频分集失败 (bvid=${bvid}):`, data.message);
         return [];
       }
 
       const pages = data.data.pages || [];
 
       if (pages.length === 0) {
-        log("info", `[Bilibili] 视频 bvid=${bvid} 无分集数据`);
+        log("info", `[bilibili] 视频 bvid=${bvid} 无分集数据`);
         return [];
       }
 
@@ -552,10 +552,10 @@ export default class BilibiliSource extends BaseSource {
         link: `https://www.bilibili.com/video/${bvid}?p=${page.page}`
       }));
 
-      log("info", `[Bilibili] 获取到 ${episodes.length} 个视频分集`);
+      log("info", `[bilibili] 获取到 ${episodes.length} 个视频分集`);
       return episodes;
     } catch (error) {
-      log("error", `[Bilibili] 获取视频分集出错 (bvid=${bvid}):`, error.message);
+      log("error", `[bilibili] 获取视频分集出错 (bvid=${bvid}):`, error.message);
       return [];
     }
   }
@@ -580,7 +580,7 @@ export default class BilibiliSource extends BaseSource {
       return await this._getUgcEpisodes(bvid);
     }
 
-    log("error", `[Bilibili] 不支持的 ID 格式: ${id}`);
+    log("error", `[bilibili] 不支持的 ID 格式: ${id}`);
     return [];
   }
 
@@ -597,7 +597,7 @@ export default class BilibiliSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Bilibili] sourceAnimes is not a valid array");
+      log("error", "[bilibili] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -638,7 +638,7 @@ export default class BilibiliSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Bilibili] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[bilibili] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -688,11 +688,11 @@ export default class BilibiliSource extends BaseSource {
                links.sort((a, b) => a._id - b._id);
              }
 
-             log("info", `[Bilibili] 直接使用搜索结果中的 ${links.length} 集分集`);
+             log("info", `[bilibili] 直接使用搜索结果中的 ${links.length} 集分集`);
           } else {
              const eps = await this.getEpisodes(anime.mediaId);
              if (eps.length === 0) {
-               log("info", `[Bilibili] ${anime.title} 无分集，跳过`);
+               log("info", `[bilibili] ${anime.title} 无分集，跳过`);
                return;
              }
              // 使用详情接口返回的番剧主封面填充搜索结果未提供的 imageUrl
@@ -742,7 +742,7 @@ export default class BilibiliSource extends BaseSource {
             removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Bilibili] 处理 ${anime.title} 失败:`, error.message);
+          log("error", `[bilibili] 处理 ${anime.title} 失败:`, error.message);
         }
       });
 
@@ -754,7 +754,7 @@ export default class BilibiliSource extends BaseSource {
 
   // 提取视频信息的公共方法
   async _extractVideoInfo(id) {
-    log("info", "[Bilibili] 提取B站视频信息...", id);
+    log("info", "[bilibili] 提取B站视频信息...", id);
 
     const api_video_info = "https://api.bilibili.com/x/web-interface/view";
     const api_epid_cid = "https://api.bilibili.com/pgc/view/web/season";
@@ -767,9 +767,9 @@ export default class BilibiliSource extends BaseSource {
     if (match) {
       path = match[2].split('/').filter(Boolean);  // 分割路径并去掉空字符串
       path.unshift("");
-      log("info", "[Bilibili] ", path);
+      log("info", "[bilibili] ", path);
     } else {
-      log("error", '[Bilibili] Invalid URL');
+      log("error", '[bilibili] Invalid URL');
       return null;
     }
 
@@ -792,7 +792,7 @@ export default class BilibiliSource extends BaseSource {
               }
             }
         }
-        log("info", `[Bilibili] p: ${p}`);
+        log("info", `[bilibili] p: ${p}`);
 
         let videoInfoUrl;
         if (id.includes("BV")) {
@@ -811,14 +811,14 @@ export default class BilibiliSource extends BaseSource {
 
         const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
         if (data.code !== 0) {
-          log("error", "[Bilibili] 获取普通投稿视频信息失败:", data.message);
+          log("error", "[bilibili] 获取普通投稿视频信息失败:", data.message);
           return null;
         }
 
         duration = data.data.duration;
         cid = data.data.pages[p - 1].cid;
       } catch (error) {
-        log("error", "[Bilibili] 请求普通投稿视频信息失败:", error);
+        log("error", "[bilibili] 请求普通投稿视频信息失败:", error);
         return null;
       }
 
@@ -877,7 +877,7 @@ export default class BilibiliSource extends BaseSource {
         }
 
         if (!cid) {
-          log("error", "[Bilibili] 未找到匹配的番剧集信息");
+          log("error", "[bilibili] 未找到匹配的番剧集信息");
           return null;
         }
 
@@ -885,7 +885,7 @@ export default class BilibiliSource extends BaseSource {
         if (!duration && duration !== 0) duration = 0;
 
       } catch (error) {
-        log("error", "[Bilibili] 请求番剧视频信息失败:", error);
+        log("error", "[bilibili] 请求番剧视频信息失败:", error);
         return null;
       }
 
@@ -895,7 +895,7 @@ export default class BilibiliSource extends BaseSource {
         const ssid = path.slice(-1)[0].slice(2).split('?')[0]; // 移除可能的查询参数
         const ssInfoUrl = `${api_epid_cid}?season_id=${ssid}`;
 
-        log("info", `[Bilibili] 获取番剧信息: season_id=${ssid}`);
+        log("info", `[bilibili] 获取番剧信息: season_id=${ssid}`);
 
         const res = await httpGet(ssInfoUrl, {
           headers: {
@@ -906,13 +906,13 @@ export default class BilibiliSource extends BaseSource {
 
         const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
         if (data.code !== 0) {
-          log("error", "[Bilibili] 获取番剧视频信息失败:", data.message);
+          log("error", "[bilibili] 获取番剧视频信息失败:", data.message);
           return null;
         }
 
         // 检查是否有episodes数据
         if (!data.result.episodes || data.result.episodes.length === 0) {
-          log("error", "[Bilibili] 番剧没有可用的集数");
+          log("error", "[bilibili] 番剧没有可用的集数");
           return null;
         }
 
@@ -922,25 +922,25 @@ export default class BilibiliSource extends BaseSource {
         duration = firstEpisode.duration / 1000;
         title = firstEpisode.share_copy;
 
-        log("info", `[Bilibili] 使用第一集: ${title}, cid=${cid}`);
+        log("info", `[bilibili] 使用第一集: ${title}, cid=${cid}`);
 
       } catch (error) {
-        log("error", "[Bilibili] 请求番剧视频信息失败:", error);
+        log("error", "[bilibili] 请求番剧视频信息失败:", error);
         return null;
       }
 
     } else {
-      log("error", "[Bilibili] 不支持的B站视频网址，仅支持普通视频(av,bv)、剧集视频(ep,ss)");
+      log("error", "[bilibili] 不支持的B站视频网址，仅支持普通视频(av,bv)、剧集视频(ep,ss)");
       return null;
     }
 
-    log("info", `[Bilibili] 提取视频信息完成: cid=${cid}, aid=${aid}, duration=${duration}`);
+    log("info", `[bilibili] 提取视频信息完成: cid=${cid}, aid=${aid}, duration=${duration}`);
 
     return { cid, aid, duration, title };
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "[Bilibili] 开始从本地请求B站弹幕...", id);
+    log("info", "[bilibili] 开始从本地请求B站弹幕...", id);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -949,7 +949,7 @@ export default class BilibiliSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `[Bilibili] 弹幕分段数量: ${segmentList.length}`);
+    log("info", `[bilibili] 弹幕分段数量: ${segmentList.length}`);
 
     // 分批并发请求，防止请求过多
     const BATCH_SIZE = 6;
@@ -967,7 +967,7 @@ export default class BilibiliSource extends BaseSource {
                 contents.push(...res.value);
             } else {
                 // 请求失败视为视频结束（熔断机制）
-                log("info", "[Bilibili] 捕获到分段请求出错，说明请求完毕，停止后续请求");
+                log("info", "[bilibili] 捕获到分段请求出错，说明请求完毕，停止后续请求");
                 stop = true;
             }
         }
@@ -982,7 +982,7 @@ export default class BilibiliSource extends BaseSource {
    * 对于合并分P，将其拆解为标准分段任务队列并注入时间轴平移元数据
    */
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Bilibili] 获取B站弹幕分段列表...", id);
+    log("info", "[bilibili] 获取B站弹幕分段列表...", id);
 
     // 解析合并分P请求，直接转化为标准分段列表返回，由后续并发池统一处理
     if (typeof id === 'string' && id.includes('/combine?')) {
@@ -1036,16 +1036,16 @@ export default class BilibiliSource extends BaseSource {
     }
 
     const { cid, aid, duration } = videoInfo;
-    log("info", `[Bilibili] 视频信息: cid=${cid}, aid=${aid}, duration=${duration}`);
+    log("info", `[bilibili] 视频信息: cid=${cid}, aid=${aid}, duration=${duration}`);
 
     // [提示] 无时长时的默认分段策略提示
     if (duration <= 0) {
-        log("info", "[Bilibili] 未获取到精准时长，使用预设 36 分段");
+        log("info", "[bilibili] 未获取到精准时长，使用预设 36 分段");
     }
 
     // 计算视频的分片数量
     const maxLen = (duration > 0) ? Math.ceil(duration / 360) : 36;
-    log("info", `[Bilibili] maxLen: ${maxLen}`);
+    log("info", `[bilibili] maxLen: ${maxLen}`);
 
     const segmentList = [];
     for (let i = 0; i < maxLen; i += 1) {
@@ -1176,7 +1176,7 @@ export default class BilibiliSource extends BaseSource {
 
     // 1. 尝试 App 接口
     if (akMatch) {
-        log("info", `[Bilibili-Proxy][${label}] 检测到 Access Key，启用 APP 端接口模式 (Type: ${appType})...`);
+        log("info", `[bilibili][${label}] 检测到 Access Key，启用 APP 端接口模式 (Type: ${appType})...`);
         try {
             const params = { keyword, type: appType, area: 'tw', mobi_app: 'android', platform: 'android', build: '8140200', ts: Math.floor(Date.now()/1000), appkey: BilibiliSource.APP_KEY, access_key: akMatch[1], disable_rcmd: 1 };
             const qs = Object.keys(params).sort().map(k => `${k}=${this._javaUrlEncode(String(params[k]))}`).join('&');
@@ -1205,14 +1205,14 @@ export default class BilibiliSource extends BaseSource {
                         isOversea: true
                     })).filter(i => i.mediaId);
             }
-            if (data && data.code !== 0) log("warn", `[Bilibili-Proxy] App 接口返回错误 Code ${data.code}: ${data.message}`);
+            if (data && data.code !== 0) log("warn", `[bilibili] App 接口返回错误 Code ${data.code}: ${data.message}`);
         } catch(e) {
             if (e.name === 'AbortError') throw e;
-            log("error", `[Bilibili-Proxy] App 接口请求异常: ${e.message}`);
+            log("error", `[bilibili] App 接口请求异常: ${e.message}`);
         }
-        log("info", `[Bilibili-Proxy] App 接口请求失败，自动降级至 Web 接口...`);
+        log("info", `[bilibili] App 接口请求失败，自动降级至 Web 接口...`);
     } else {
-        log("info", `[Bilibili-Proxy][${label}] 未检测到 Access Key，启用 Web 端接口模式 (Type: ${webSearchType})...`);
+        log("info", `[bilibili][${label}] 未检测到 Access Key，启用 Web 端接口模式 (Type: ${webSearchType})...`);
     }
 
     // 2. Web 接口兜底
@@ -1230,7 +1230,7 @@ export default class BilibiliSource extends BaseSource {
         const data = typeof res.data==="string"?JSON.parse(res.data):res.data;
 
         if (data.code !== 0) {
-            log("warn", `[Bilibili-Proxy] Web 接口返回错误 Code ${data.code}: ${data.message}`);
+            log("warn", `[bilibili] Web 接口返回错误 Code ${data.code}: ${data.message}`);
             return [];
         }
         if(data.data?.result) {
@@ -1251,7 +1251,7 @@ export default class BilibiliSource extends BaseSource {
         }
     } catch(e) {
         if (e.name === 'AbortError') throw e;
-        log("error", `[Bilibili-Proxy] Web 接口请求异常: ${e.message}（如果是-500/-502说明只是风控）`);
+        log("error", `[bilibili] Web 接口请求异常: ${e.message}（如果是-500/-502说明只是风控）`);
     }
     return [];
   }
@@ -1321,7 +1321,7 @@ export default class BilibiliSource extends BaseSource {
     }, (chunk) => {
         if (trusted) return true;
         if (chunk.includes('"goto":"recommend_tips"') || chunk.includes('暂无搜索结果')) {
-            log("info", `[Bilibili-Proxy][${label}] 嗅探到无效数据，中断`); 
+            log("info", `[bilibili][${label}] 嗅探到无效数据，中断`); 
             isNoResult = true; // 标记为无结果
             return false;
         }

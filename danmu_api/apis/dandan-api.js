@@ -143,7 +143,7 @@ async function resolveUrlDuration(url) {
 
     return extractDurationFromSegments(segmentResult);
   } catch (error) {
-    log('warn', `[system] [Duration] 获取时长失败: ${error.message}`);
+    log('warn', `[system] [duration] 获取时长失败: ${error.message}`);
     return 0;
   }
 }
@@ -167,7 +167,7 @@ async function resolveMergedDuration(url) {
     const durations = await Promise.all(targetUrls.map(resolveUrlDuration));
     return durations.reduce((maxValue, currentValue) => Math.max(maxValue, currentValue || 0), 0);
   } catch (error) {
-    log('warn', `[system] [Duration] 获取时长失败: ${error.message}`);
+    log('warn', `[system] [duration] 获取时长失败: ${error.message}`);
     return 0;
   }
 }
@@ -1136,7 +1136,7 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
   // 仅在当前季集三种匹配策略均未命中时才启动相对顺延溢出机制
   if (!season || !episode) return { resEpisode: null, resAnime: null };
 
-  log("info", `[system] [Spillover] 当前季集匹配策略失败 (S${season}E${episode})，正在进行跨季集数映射匹配...`);
+  log("info", `[system] [spillover] 当前季集匹配策略失败 (S${season}E${episode})，正在进行跨季集数映射匹配...`);
   const normalizedTitle = normalizeSpaces(title);
   const seasonMap = new Map();
 
@@ -1201,7 +1201,7 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
       if (platform && getPlatformMatchScore(extractEpisodeTitle(absoluteMatch.episodeTitle), platform) === 0) {
           break;
       }
-      log("info", `[system] [Spillover] 跨季溢出查找命中 (按绝对标题数字) -> 所在季：S${currentSeason} 集标题：${absoluteMatch.episodeTitle}`);
+      log("info", `[system] [spillover] 跨季溢出查找命中 (按绝对标题数字) -> 所在季：S${currentSeason} 集标题：${absoluteMatch.episodeTitle}`);
       bestRes = {
         anime: seasonData.anime,
         episode: absoluteMatch,
@@ -1215,7 +1215,7 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
       if (platform && getPlatformMatchScore(extractEpisodeTitle(targetEp.episodeTitle), platform) === 0) {
           break;
       }
-      log("info", `[system] [Spillover] 跨季溢出查找命中 (按相对排位计算) -> 所在季：S${currentSeason} 集标题：${targetEp.episodeTitle}`);
+      log("info", `[system] [spillover] 跨季溢出查找命中 (按相对排位计算) -> 所在季：S${currentSeason} 集标题：${targetEp.episodeTitle}`);
       bestRes = {
         anime: seasonData.anime,
         episode: targetEp,
@@ -1224,7 +1224,7 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
       break;
     }
 
-    log("info", `[system] [Spillover] S${currentSeason} 共有 ${allEps.length} 集(已过滤番外)，剩余目标集数为 ${currentTargetEpisode}，映射至 S${currentSeason + 1} 继续查找`);
+    log("info", `[system] [spillover] S${currentSeason} 共有 ${allEps.length} 集(已过滤番外)，剩余目标集数为 ${currentTargetEpisode}，映射至 S${currentSeason + 1} 继续查找`);
     currentTargetEpisode -= allEps.length;
     currentSeason++;
   }
@@ -1340,7 +1340,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
 
         // 如果当前是用户的优选偏好，但由于平台配置限制导致未命中目标平台，则放宽条件无视平台限制提取集数
         if (!matchedEpisode && isPreferredAnime) {
-            log("info", `[system] [Match] 优选剧集未命中目标平台 ${platform}，放宽条件提取集数`);
+            log("info", `[system] [match] 优选剧集未命中目标平台 ${platform}，放宽条件提取集数`);
             matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null);
         }
     } else {
@@ -1356,7 +1356,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
                 if (targetEp) {
                     matchedEpisode = targetEp;
                 } else if (isPreferredAnime) {
-                    log("info", `[system] [Match] 优选电影未命中目标平台 ${platform}，放宽条件提取资源`);
+                    log("info", `[system] [match] 优选电影未命中目标平台 ${platform}，放宽条件提取资源`);
                     matchedEpisode = bangumiData.bangumi.episodes[0];
                 }
             } else {
@@ -1592,7 +1592,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
   }
 
-  log("info", "[system] [Match] Parsed title, season, episode, year", {title, season, episode, year});
+  log("info", "[system] [match] Parsed title, season, episode, year", {title, season, episode, year});
   return {title, season, episode, year};
 }
 
@@ -1619,7 +1619,7 @@ export async function matchAnime(url, req, clientIp) {
 
     // 验证请求体是否有效
     if (!body) {
-      log("error", "[system] [Match] Request body is empty");
+      log("error", "[system] [match] Request body is empty");
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Empty request body" },
         400
@@ -1630,7 +1630,7 @@ export async function matchAnime(url, req, clientIp) {
     // 假设请求体包含一个字段，比如 { query: "anime name" }
     const { fileName } = body;
     if (!fileName) {
-      log("error", "[system] [Match] Missing fileName parameter in request body");
+      log("error", "[system] [match] Missing fileName parameter in request body");
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Missing fileName parameter" },
         400
@@ -1639,8 +1639,8 @@ export async function matchAnime(url, req, clientIp) {
 
     // 解析fileName，提取平台偏好
     const { cleanFileName, preferredPlatform } = parseFileName(fileName);
-    log("info", `[system] [Match] Processing anime match for query: ${fileName}`);
-    log("info", `[system] [Match] Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
+    log("info", `[system] [match] Processing anime match for query: ${fileName}`);
+    log("info", `[system] [match] Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
 
     let {title, season, episode, year} = await extractTitleSeasonEpisode(cleanFileName);
 
@@ -1649,14 +1649,14 @@ export async function matchAnime(url, req, clientIp) {
       const mappedTitle = globals.titleMappingTable.get(title);
       if (mappedTitle) {
         title = mappedTitle;
-        log("info", `[system] [Match] Title mapped from original: ${url.searchParams.get("keyword")} to: ${title}`);
+        log("info", `[system] [match] Title mapped from original: ${url.searchParams.get("keyword")} to: ${title}`);
       }
     }
 
     // 如果启用了搜索关键字繁转简，则进行转换
     if (globals.animeTitleSimplified) {
       const simplifiedTitle = simplized(title);
-      log("info", `[system] [Match] matchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
+      log("info", `[system] [match] matchAnime converted traditional to simplified: ${title} -> ${simplifiedTitle}`);
       title = simplifiedTitle;
     }
 
@@ -1667,7 +1667,7 @@ export async function matchAnime(url, req, clientIp) {
 
     // 获取 prefer animeId（按 season 维度）
     const [preferAnimeId, preferSource, offsets] = getPreferAnimeId(title, season);
-    log("info", `[system] [Match] prefer animeId: ${preferAnimeId} from ${preferSource}`);
+    log("info", `[system] [match] prefer animeId: ${preferAnimeId} from ${preferSource}`);
 
     // 根据指定平台创建动态平台顺序
     const dynamicPlatformOrder = createDynamicPlatformOrder(preferredPlatform);
@@ -1677,7 +1677,7 @@ export async function matchAnime(url, req, clientIp) {
     let originSearchUrl = buildSearchAnimeUrl(req.url, title, season, episode);
     const searchRes = await searchAnime(originSearchUrl, preferAnimeId, preferSource, requestAnimeDetailsMap, targetPlatform);
     const searchData = await searchRes.json();
-    log("info", `[system] [Match] searchData: ${searchData.animes}`);
+    log("info", `[system] [match] searchData: ${searchData.animes}`);
 
     let resAnime;
     let resEpisode;
@@ -1691,9 +1691,9 @@ export async function matchAnime(url, req, clientIp) {
       "matches": []
     };
 
-    log("info", `[system] [Match] Original platformOrderArr: ${globals.platformOrderArr}`);
-    log("info", `[system] [Match] Dynamic platformOrder: ${dynamicPlatformOrder}`);
-    log("info", `[system] [Match] Preferred platform: ${preferredPlatform || 'none'}`);
+    log("info", `[system] [match] Original platformOrderArr: ${globals.platformOrderArr}`);
+    log("info", `[system] [match] Dynamic platformOrder: ${dynamicPlatformOrder}`);
+    log("info", `[system] [match] Preferred platform: ${preferredPlatform || 'none'}`);
 
     // 尝试使用AI进行匹配
     const aiMatchResult = await matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, requestAnimeDetailsMap);
@@ -1701,7 +1701,7 @@ export async function matchAnime(url, req, clientIp) {
       resAnime = aiMatchResult.resAnime;
       resEpisode = aiMatchResult.resEpisode;
       resData["isMatched"] = true;
-      log("info", `[system] [Match] AI match found: ${resAnime.animeTitle}; episode: ${resEpisode.episodeTitle}`);
+      log("info", `[system] [match] AI match found: ${resAnime.animeTitle}; episode: ${resEpisode.episodeTitle}`);
     } else {
       // AI匹配失败或未配置，使用传统匹配方式
       for (const platform of dynamicPlatformOrder) {
@@ -1711,7 +1711,7 @@ export async function matchAnime(url, req, clientIp) {
 
         if (resAnime) {
           resData["isMatched"] = true;
-          log("info", `[system] [Match] Found match with platform: ${platform || 'default'}`);
+          log("info", `[system] [match] Found match with platform: ${platform || 'default'}`);
           break;
         }
       }
@@ -1744,13 +1744,13 @@ export async function matchAnime(url, req, clientIp) {
       ]
     }
 
-    log("info", `[system] [Match] resMatchData: ${resData}`);
+    log("info", `[system] [match] resMatchData: ${resData}`);
 
     // 示例返回
     return jsonResponse(resData);
   } catch (error) {
     // 处理 JSON 解析错误或其他异常
-    log("error", `[system] [Match] Failed to parse request body: ${error.message}`);
+    log("error", `[system] [match] Failed to parse request body: ${error.message}`);
     return jsonResponse(
       { errorCode: 400, success: false, errorMessage: "Invalid JSON body" },
       400
@@ -1766,14 +1766,14 @@ export async function searchEpisodes(url) {
   // 如果启用了搜索关键字繁转简，则进行转换
   if (globals.animeTitleSimplified) {
     const simplifiedTitle = simplized(anime);
-    log("info", `[system] [Episodes] searchEpisodes converted traditional to simplified: ${anime} -> ${simplifiedTitle}`);
+    log("info", `[system] [episodes] searchEpisodes converted traditional to simplified: ${anime} -> ${simplifiedTitle}`);
     anime = simplifiedTitle;
   }
 
-  log("info", `[system] [Episodes] Search episodes with anime: ${anime}, episode: ${episode}`);
+  log("info", `[system] [episodes] Search episodes with anime: ${anime}, episode: ${episode}`);
 
   if (!anime) {
-    log("error", "[system] [Episodes] Missing anime parameter");
+    log("error", "[system] [episodes] Missing anime parameter");
     return jsonResponse(
       { errorCode: 400, success: false, errorMessage: "Missing anime parameter" },
       400
@@ -1788,7 +1788,7 @@ export async function searchEpisodes(url) {
   const searchData = await searchRes.json();
 
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
-    log("info", "[system] [Episodes] No anime found for the given title");
+    log("info", "[system] [episodes] No anime found for the given title");
     return jsonResponse({
       errorCode: 0,
       success: true,
@@ -1855,7 +1855,7 @@ export async function searchEpisodes(url) {
     }
   }
 
-  log("info", `[system] [Episodes] Found ${resultAnimes.length} animes with filtered episodes`);
+  log("info", `[system] [episodes] Found ${resultAnimes.length} animes with filtered episodes`);
 
   return jsonResponse({
     errorCode: 0,
@@ -1873,7 +1873,7 @@ export async function getBangumi(path, detailStore = null, source = null) {
     resolveAnimeById(idParam);
 
   if (!anime) {
-    log("error", `[system] [Bangumi] Anime with ID ${idParam} not found`);
+    log("error", `[system] [bangumi] Anime with ID ${idParam} not found`);
     return jsonResponse(
       { errorCode: 404, success: false, errorMessage: "Anime not found", bangumi: null },
       404
@@ -1883,7 +1883,7 @@ export async function getBangumi(path, detailStore = null, source = null) {
 }
 
 function buildBangumiData(anime, idParam = "") {
-  log("info", `[system] [Bangumi] Fetched details for anime ID: ${idParam || anime.bangumiId}`);
+  log("info", `[system] [bangumi] Fetched details for anime ID: ${idParam || anime.bangumiId}`);
 
   // 构建 episodes 列表
   let episodesList = [];
@@ -2011,12 +2011,12 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   const realIds = partMetas.map(meta => meta.realId);
   const sourceTag = partMetas.map(meta => meta.sourceLabel).filter(Boolean).join('＆');
 
-  log("info", `[Merge] 开始获取 [${sourceTag}] 聚合弹幕...`);
+  log("info", `[merge] 开始获取 [${sourceTag}] 聚合弹幕...`);
 
   // 1. 检查聚合缓存
   const cached = getCommentCache(url);
   if (cached) {
-    log("info", `[Merge] 命中缓存 [${sourceTag}]，返回 ${cached.length} 条`);
+    log("info", `[merge] 命中缓存 [${sourceTag}]，返回 ${cached.length} 条`);
     return cached;
   }
 
@@ -2035,7 +2035,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
 
     // 检查是否有正在进行的相同请求（请求合并）
     if (PENDING_DANMAKU_REQUESTS.has(pendingKey)) {
-        log("info", `[Merge] 复用正在进行的请求: ${pendingKey}`);
+        log("info", `[merge] 复用正在进行的请求: ${pendingKey}`);
         try {
             const list = await PENDING_DANMAKU_REQUESTS.get(pendingKey);
             return list || [];
@@ -2100,7 +2100,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
             stats[sourceLabel] = formatted.length;
             return formatted;
           } catch (e) {
-            log("error", `[Merge] 获取 ${sourceLabel} 失败: ${e.message}`);
+            log("error", `[merge] 获取 ${sourceLabel} 失败: ${e.message}`);
             stats[sourceLabel] = 0;
             return [];
           }
@@ -2147,7 +2147,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
           const targetUrl = realIds[idx];
           const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(targetUrl) : 0;
           const offsetMode = offsetRule?.usePercent ? '%' : 's';
-          log("info", `[Merge] 应用偏移 ${offset}${offsetMode} -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
+          log("info", `[merge] 应用偏移 ${offset}${offsetMode} -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
           results[idx] = applyOffset(list, offset, {
             usePercent: offsetRule?.usePercent,
             videoDuration
@@ -2164,7 +2164,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   });
 
   const statDetails = Object.entries(stats).map(([k, v]) => `${k}: ${v}`).join(', ');
-  log("info", `[Merge] 聚合原始数据完成: 总计 ${mergedList.length} 条 (${statDetails})`);
+  log("info", `[merge] 聚合原始数据完成: 总计 ${mergedList.length} 条 (${statDetails})`);
 
   // 4. 统一处理（去重、过滤、转JSON）
   return convertToDanmakuJson(mergedList, sourceTag);
@@ -2483,7 +2483,7 @@ export async function getSegmentComment(segment, queryFormat) {
 
     // 验证URL参数
     if (!url || typeof url !== 'string') {
-      log("error", "[system] [SegmentComment] Missing or invalid url parameter");
+      log("error", "[system] [segmentcomment] Missing or invalid url parameter");
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Missing or invalid url parameter", count: 0, comments: [] },
         400
@@ -2492,7 +2492,7 @@ export async function getSegmentComment(segment, queryFormat) {
 
     url = url.trim();
 
-    log("info", `[system] [SegmentComment] Processing segment comment request for URL: ${url}`);
+    log("info", `[system] [segmentcomment] Processing segment comment request for URL: ${url}`);
 
     // 检查弹幕缓存
     const cachedComments = getCommentCache(url);
@@ -2507,7 +2507,7 @@ export async function getSegmentComment(segment, queryFormat) {
       return formatDanmuResponse(responseData, queryFormat);
     }
 
-    log("info", `[system] [SegmentComment] 开始从本地请求分段弹幕... URL: ${url}`);
+    log("info", `[system] [segmentcomment] 开始从本地请求分段弹幕... URL: ${url}`);
     let danmus = [];
 
     // 根据平台调用相应的分段弹幕获取方法
@@ -2549,7 +2549,7 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await sourceLogContext.run('other', () => otherSource.getSegmentComments(segment));
     }
 
-    log("info", `[system] [SegmentComment] Successfully fetched ${danmus.length} segment comments from URL`);
+    log("info", `[system] [segmentcomment] Successfully fetched ${danmus.length} segment comments from URL`);
 
     // 缓存弹幕结果
     if (danmus.length > 0) {
@@ -2566,7 +2566,7 @@ export async function getSegmentComment(segment, queryFormat) {
     return formatDanmuResponse(responseData, queryFormat);
   } catch (error) {
     // 处理异常
-    log("error", `[system] [SegmentComment] Failed to process segment comment request: ${error.message}`);
+    log("error", `[system] [segmentcomment] Failed to process segment comment request: ${error.message}`);
     return jsonResponse(
       { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
       500

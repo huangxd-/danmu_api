@@ -99,7 +99,7 @@ export default class HanjutvSource extends BaseSource {
    * 统一的错误日志格式
    */
   logError(tag, error) {
-    log("error", `[Hanjutv] ${tag}:`, {
+    log("error", `[hanjutv] ${tag}:`, {
       message: error.message,
       name: error.name,
       stack: error.stack,
@@ -559,26 +559,26 @@ export default class HanjutvSource extends BaseSource {
       if (!key) return [];
 
       const [s5List, tvList] = await Promise.all([
-        this.tryGet(() => this.searchWithS5Api(key), [], `[Hanjutv] s5 搜索失败`),
-        this.tryGet(() => this.searchWithTvApi(key), [], `[Hanjutv] TV 搜索失败`),
+        this.tryGet(() => this.searchWithS5Api(key), [], `[hanjutv] s5 搜索失败`),
+        this.tryGet(() => this.searchWithTvApi(key), [], `[hanjutv] TV 搜索失败`),
       ]);
 
       const { resultList, stats } = this.mergeSearchCandidates(key, s5List, tvList);
       const totalMatched = stats.s5Matched + stats.tvMatched;
 
       if (resultList.length > 0 && totalMatched === 0) {
-        log("warn", `[Hanjutv] 所有候选均未命中关键词，丢弃疑似推荐流结果: ${key}`);
+        log("warn", `[hanjutv] 所有候选均未命中关键词，丢弃疑似推荐流结果: ${key}`);
         return [];
       }
 
       if (resultList.length === 0) {
-        log("info", "[Hanjutv] hanjutvSearchresp: s5 与 TV 接口均无有效结果");
+        log("info", "[hanjutv] hanjutvSearchresp: s5 与 TV 接口均无有效结果");
         return [];
       }
 
-      log("info", `[Hanjutv] 搜索候选统计 s5MatchedList=${JSON.stringify(stats.s5MatchedList)}, s5UnmatchedList=${JSON.stringify(stats.s5UnmatchedList)}, tvMatchedList=${JSON.stringify(stats.tvMatchedList)}, tvUnmatchedList=${JSON.stringify(stats.tvUnmatchedList)}`);
-      log("info", `[Hanjutv] 搜索候选统计 s5=${stats.s5Total}(命中${stats.s5Matched}), tv=${stats.tvTotal}(命中${stats.tvMatched}), merged=${stats.mergedCount}`);
-      log("info", `[Hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
+      log("info", `[hanjutv] 搜索候选统计 s5MatchedList=${JSON.stringify(stats.s5MatchedList)}, s5UnmatchedList=${JSON.stringify(stats.s5UnmatchedList)}, tvMatchedList=${JSON.stringify(stats.tvMatchedList)}, tvUnmatchedList=${JSON.stringify(stats.tvUnmatchedList)}`);
+      log("info", `[hanjutv] 搜索候选统计 s5=${stats.s5Total}(命中${stats.s5Matched}), tv=${stats.tvTotal}(命中${stats.tvMatched}), merged=${stats.mergedCount}`);
+      log("info", `[hanjutv] 搜索找到 ${resultList.length} 个有效结果`);
 
       return resultList.filter(Boolean);
     } catch (error) {
@@ -594,7 +594,7 @@ export default class HanjutvSource extends BaseSource {
       const sid = String(id || "").trim();
       if (!sid) return null;
       const detail = await this.tryGet(() => loader(sid), null, errorTag);
-      if (!detail) { log("info", `[Hanjutv] ${missingLogTag}: series 不存在`); return null; }
+      if (!detail) { log("info", `[hanjutv] ${missingLogTag}: series 不存在`); return null; }
       return detail;
     } catch (error) { this.logError(errorTag, error); return null; }
   }
@@ -659,7 +659,7 @@ export default class HanjutvSource extends BaseSource {
       }
 
       if (episodes.length === 0) {
-        log("info", "[Hanjutv] getHanjutvHxqEpisodes: episodes 不存在");
+        log("info", "[hanjutv] getHanjutvHxqEpisodes: episodes 不存在");
         return [];
       }
 
@@ -681,7 +681,7 @@ export default class HanjutvSource extends BaseSource {
       }, [], "getHanjutvTvEpisodes error");
 
       if (episodes.length === 0) {
-        log("info", "[Hanjutv] getHanjutvTvEpisodes: episodes 不存在");
+        log("info", "[hanjutv] getHanjutvTvEpisodes: episodes 不存在");
         return [];
       }
 
@@ -849,7 +849,7 @@ export default class HanjutvSource extends BaseSource {
    */
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     if (!Array.isArray(sourceAnimes)) {
-      log("error", "[Hanjutv] sourceAnimes is not a valid array");
+      log("error", "[hanjutv] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -871,7 +871,7 @@ export default class HanjutvSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Hanjutv] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[hanjutv] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -882,7 +882,7 @@ export default class HanjutvSource extends BaseSource {
           if (!payload || !payload.summary || !Array.isArray(payload.links) || payload.links.length === 0) return null;
           return payload;
         } catch (error) {
-          log("error", `[Hanjutv] Error processing anime: ${error.message}`);
+          log("error", `[hanjutv] Error processing anime: ${error.message}`);
           return null;
         }
       })
@@ -895,7 +895,7 @@ export default class HanjutvSource extends BaseSource {
         addAnime({ ...payload.summary, links: payload.links }, detailStore);
         if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
       } catch (error) {
-        log("error", `[Hanjutv] Error processing anime: ${error.message}`);
+        log("error", `[hanjutv] Error processing anime: ${error.message}`);
       }
     }
 
@@ -1019,7 +1019,7 @@ export default class HanjutvSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Hanjutv] 获取韩剧TV弹幕分段列表...", id);
+    log("info", "[hanjutv] 获取韩剧TV弹幕分段列表...", id);
 
     // 韩剧TV 当前没有可复用的分片清单接口，统一走整集拉取。
     return new SegmentListResponse({

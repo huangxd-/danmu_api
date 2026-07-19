@@ -9,7 +9,7 @@ import { simpleHash, serializeValue } from "./codec-util.js";
 // 使用 GET 发送简单命令（如 PING 检查连接）
 export async function pingRedis() {
   const url = `${globals.redisUrl}/ping`;
-  log("info", `[Utils] [Redis] 开始发送 PING 请求:`, url);
+  log("info", `[system] [redis] 开始发送 PING 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -19,11 +19,11 @@ export async function pingRedis() {
     });
     return await response.json(); // 预期: ["PONG"]
   } catch (error) {
-    log("error", `[Utils] [Redis] 请求失败:`, error.message);
-    log("error", '- [Utils] [Redis] 错误类型:', error.name);
+    log("error", `[system] [redis] 请求失败:`, error.message);
+    log("error", '- [system] [redis] 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- [Utils] [Redis] 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- [Utils] [Redis] 原因:', error.cause.message);
+      log("error", '- [system] [redis] 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- [system] [redis] 原因:', error.cause.message);
     }
   }
 }
@@ -31,7 +31,7 @@ export async function pingRedis() {
 // 使用 GET 发送 GET 命令（读取键值）
 export async function getRedisKey(key) {
   const url = `${globals.redisUrl}/get/${key}`;
-  log("info", `[Utils] [Redis] 开始发送 GET 请求:`, url);
+  log("info", `[system] [redis] 开始发送 GET 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -41,11 +41,11 @@ export async function getRedisKey(key) {
     });
     return await response.json(); // 预期: ["value"] 或 null
   } catch (error) {
-    log("error", `[Utils] [Redis] 请求失败:`, error.message);
-    log("error", '- [Utils] [Redis] 错误类型:', error.name);
+    log("error", `[system] [redis] 请求失败:`, error.message);
+    log("error", '- [system] [redis] 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- [Utils] [Redis] 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
-      log("error", '- [Utils] [Redis] 原因:', error.cause.message);
+      log("error", '- [system] [redis] 码:', error.cause.code);  // e.g., 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'
+      log("error", '- [system] [redis] 原因:', error.cause.message);
     }
   }
 }
@@ -57,12 +57,12 @@ export async function setRedisKey(key, value) {
 
   // 检查值是否变化
   if (globals.lastHashes[key] === currentHash) {
-    log("info", `[Utils] [Redis] 键 ${key} 无变化，跳过 SET 请求`);
+    log("info", `[system] [redis] 键 ${key} 无变化，跳过 SET 请求`);
     return { result: "OK" }; // 模拟成功响应
   }
 
   const url = `${globals.redisUrl}/set/${key}`;
-  log("info", `[Utils] [Redis] 开始发送 SET 请求:`, url);
+  log("info", `[system] [redis] 开始发送 SET 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -74,14 +74,14 @@ export async function setRedisKey(key, value) {
     });
     const result = await response.json();
     globals.lastHashes[key] = currentHash; // 更新哈希值
-    log("info", `[Utils] [Redis] 键 ${key} 更新成功`);
+    log("info", `[system] [redis] 键 ${key} 更新成功`);
     return result; // 预期: ["OK"]
   } catch (error) {
-    log("error", `[Utils] [Redis] SET 请求失败:`, error.message);
-    log("error", '- [Utils] [Redis] 错误类型:', error.name);
+    log("error", `[system] [redis] SET 请求失败:`, error.message);
+    log("error", '- [system] [redis] 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- [Utils] [Redis] 码:', error.cause.code);
-      log("error", '- [Utils] [Redis] 原因:', error.cause.message);
+      log("error", '- [system] [redis] 码:', error.cause.code);
+      log("error", '- [system] [redis] 原因:', error.cause.message);
     }
   }
 }
@@ -93,12 +93,12 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
 
   // 检查值是否变化
   if (globals.lastHashes[key] === currentHash) {
-    log("info", `[Utils] [Redis] 键 ${key} 无变化，跳过 SETEX 请求`);
+    log("info", `[system] [redis] 键 ${key} 无变化，跳过 SETEX 请求`);
     return { result: "OK" }; // 模拟成功响应
   }
 
   const url = `${globals.redisUrl}/set/${key}?EX=${expirySeconds}`;
-  log("info", `[Utils] [Redis] 开始发送 SETEX 请求:`, url);
+  log("info", `[system] [redis] 开始发送 SETEX 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -110,14 +110,14 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
     });
     const result = await response.json();
     globals.lastHashes[key] = currentHash; // 更新哈希值
-    log("info", `[Utils] [Redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
+    log("info", `[system] [redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
     return result;
   } catch (error) {
-    log("error", `[Utils] [Redis] SETEX 请求失败:`, error.message);
-    log("error", '- [Utils] [Redis] 错误类型:', error.name);
+    log("error", `[system] [redis] SETEX 请求失败:`, error.message);
+    log("error", '- [system] [redis] 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- [Utils] [Redis] 码:', error.cause.code);
-      log("error", '- [Utils] [Redis] 原因:', error.cause.message);
+      log("error", '- [system] [redis] 码:', error.cause.code);
+      log("error", '- [system] [redis] 原因:', error.cause.message);
     }
   }
 }
@@ -125,7 +125,7 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
 // 通用的 pipeline 请求函数
 export async function runPipeline(commands) {
   const url = `${globals.redisUrl}/pipeline`;
-  log("info", `[Utils] [Redis] 开始发送 PIPELINE 请求:`, url);
+  log("info", `[system] [redis] 开始发送 PIPELINE 请求:`, url);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -138,11 +138,11 @@ export async function runPipeline(commands) {
     const result = await response.json();
     return result; // 返回结果数组，按命令顺序
   } catch (error) {
-    log("error", `[Utils] [Redis] Pipeline 请求失败:`, error.message);
-    log("error", '- [Utils] [Redis] 错误类型:', error.name);
+    log("error", `[system] [redis] Pipeline 请求失败:`, error.message);
+    log("error", '- [system] [redis] 错误类型:', error.name);
     if (error.cause) {
-      log("error", '- [Utils] [Redis] 码:', error.cause.code);
-      log("error", '- [Utils] [Redis] 原因:', error.cause.message);
+      log("error", '- [system] [redis] 码:', error.cause.code);
+      log("error", '- [system] [redis] 原因:', error.cause.message);
     }
   }
 }
@@ -151,7 +151,7 @@ export async function runPipeline(commands) {
 export async function getRedisCaches() {
   if (!globals.redisCacheInitialized) {
     try {
-      log("info", '[Utils] [Redis] getRedisCaches start.');
+      log("info", '[system] [redis] getRedisCaches start.');
       const keys = ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'];
       const commands = keys.map(key => ['GET', key]); // 构造 pipeline 命令
       const results = await runPipeline(commands);
@@ -166,7 +166,7 @@ export async function getRedisCaches() {
       const lastSelectMapData = results[4].result ? JSON.parse(results[4].result) : null;
       if (lastSelectMapData && typeof lastSelectMapData === 'object') {
         globals.lastSelectMap = new Map(Object.entries(lastSelectMapData));
-        log("info", `[Utils] [Redis] Restored lastSelectMap from Redis with ${globals.lastSelectMap.size} entries`);
+        log("info", `[system] [redis] Restored lastSelectMap from Redis with ${globals.lastSelectMap.size} entries`);
       }
       globals.todayReqNum = results[5].result ? parseInt(results[5].result, 10) : globals.todayReqNum;
 
@@ -179,9 +179,9 @@ export async function getRedisCaches() {
       globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
 
       globals.redisCacheInitialized = true;
-      log("info", '[Utils] [Redis] getRedisCaches completed successfully.');
+      log("info", '[system] [redis] getRedisCaches completed successfully.');
     } catch (error) {
-      log("error", `[Utils] [Redis] getRedisCaches failed: ${error.message}`, error.stack);
+      log("error", `[system] [redis] getRedisCaches failed: ${error.message}`, error.stack);
       globals.redisCacheInitialized = true; // 标记为已初始化，避免重复尝试
     }
   }
@@ -190,7 +190,7 @@ export async function getRedisCaches() {
 // 优化后的 updateRedisCaches，仅更新有变化的变量
 export async function updateRedisCaches() {
   try {
-    log("info", '[Utils] [Redis] updateCaches start.');
+    log("info", '[system] [redis] updateCaches start.');
     const commands = [];
     const updates = [];
 
@@ -216,7 +216,7 @@ export async function updateRedisCaches() {
 
     // 如果有需要更新的键，执行 pipeline
     if (commands.length > 0) {
-      log("info", `[Utils] [Redis] Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
+      log("info", `[system] [redis] Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
       const results = await runPipeline(commands);
 
       // 检查每个操作的结果
@@ -229,7 +229,7 @@ export async function updateRedisCaches() {
             successCount++;
           } else {
             failureCount++;
-            log("warn", `[Utils] [Redis] Failed to update Redis key: ${updates[index]?.key}, result: ${JSON.stringify(result)}`);
+            log("warn", `[system] [redis] Failed to update Redis key: ${updates[index]?.key}, result: ${JSON.stringify(result)}`);
           }
         });
       }
@@ -239,16 +239,16 @@ export async function updateRedisCaches() {
         updates.forEach(({ key, hash }) => {
           globals.lastHashes[key] = hash;
         });
-        log("info", `[Utils] [Redis] Redis update completed successfully: ${successCount} keys updated`);
+        log("info", `[system] [redis] Redis update completed successfully: ${successCount} keys updated`);
       } else {
-        log("warn", `[Utils] [Redis] Redis update partially failed: ${successCount} succeeded, ${failureCount} failed`);
+        log("warn", `[system] [redis] Redis update partially failed: ${successCount} succeeded, ${failureCount} failed`);
       }
     } else {
-      log("info", '[Utils] [Redis] No changes detected, skipping Redis update.');
+      log("info", '[system] [redis] No changes detected, skipping Redis update.');
     }
   } catch (error) {
-    log("error", `[Utils] [Redis] updateRedisCaches failed: ${error.message}`, error.stack);
-    log("error", `[Utils] [Redis] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
+    log("error", `[system] [redis] updateRedisCaches failed: ${error.message}`, error.stack);
+    log("error", `[system] [redis] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
   }
 }
 

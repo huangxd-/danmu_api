@@ -66,7 +66,7 @@ export default class AiyifanSource extends BaseSource {
       "Accept": "application/json"
     };
 
-    log("info", `[Aiyifan] [搜索] 关键词: ${keyword}, 页码: ${page}`);
+    log("info", `[aiyifan] [搜索] 关键词: ${keyword}, 页码: ${page}`);
     
     try {
       const urlWithParams = updateQueryString(this.SEARCH_API, params);
@@ -75,7 +75,7 @@ export default class AiyifanSource extends BaseSource {
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
       return data;
     } catch (error) {
-      log("error", `[Aiyifan] [搜索失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [搜索失败] 错误: ${error.message}`);
       return null;
     }
   }
@@ -90,7 +90,7 @@ export default class AiyifanSource extends BaseSource {
     const infoList = searchResult?.data?.info || [];
 
     if (!infoList.length) {
-      log("warn", "[Aiyifan] [警告] 搜索结果为空");
+      log("warn", "[aiyifan] [警告] 搜索结果为空");
       return dramas;
     }
 
@@ -111,7 +111,7 @@ export default class AiyifanSource extends BaseSource {
           title: title,
           ...dramaInfo
         });
-        log("info", `[Aiyifan] [发现剧目] ${title}  vid=${vid}`);
+        log("info", `[aiyifan] [发现剧目] ${title}  vid=${vid}`);
       }
     }
 
@@ -137,7 +137,7 @@ export default class AiyifanSource extends BaseSource {
       "Accept": "application/json"
     };
 
-    log("info", `[Aiyifan] [播放列表] 请求 vid: ${vid}`);
+    log("info", `[aiyifan] [播放列表] 请求 vid: ${vid}`);
     
     try {
       const { data } = await this.signingProvider.signedGetJson(this.PLAYLIST_API, baseParams, headers, "播放列表");
@@ -150,10 +150,10 @@ export default class AiyifanSource extends BaseSource {
         }
       }
 
-      log("info", `[Aiyifan] [播放列表] 共获取到 ${episodes.length} 集`);
+      log("info", `[aiyifan] [播放列表] 共获取到 ${episodes.length} 集`);
       return episodes;
     } catch (error) {
-      log("error", `[Aiyifan] [播放列表失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [播放列表失败] 错误: ${error.message}`);
       return [];
     }
   }
@@ -182,14 +182,14 @@ export default class AiyifanSource extends BaseSource {
     };
 
     const epInfo = epId ? `(ID:${epId})` : "";
-    log("info", `[Aiyifan] [视频信息] 请求 key: ${epKey} ${epInfo}`);
+    log("info", `[aiyifan] [视频信息] 请求 key: ${epKey} ${epInfo}`);
 
     try {
       const { data, vv } = await this.signingProvider.signedGetJson(this.VIDEO_API, baseParams, headers, "视频信息");
-      log("info", `[Aiyifan] [视频信息] vv签名: ${vv.substring(0, 16)}...`);
+      log("info", `[aiyifan] [视频信息] vv签名: ${vv.substring(0, 16)}...`);
       return data.data || {};
     } catch (error) {
-      log("error", `[Aiyifan] [视频信息失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [视频信息失败] 错误: ${error.message}`);
       return null;
     }
   }
@@ -203,7 +203,7 @@ export default class AiyifanSource extends BaseSource {
     const info = videoInfo.info?.[0] || {};
     const uniqueKey = info.uniqueKey;
     if (uniqueKey) {
-      log("info", `[Aiyifan] [视频信息] 获取到 uniqueKey: ${uniqueKey}`);
+      log("info", `[aiyifan] [视频信息] 获取到 uniqueKey: ${uniqueKey}`);
     }
     return uniqueKey;
   }
@@ -227,17 +227,17 @@ export default class AiyifanSource extends BaseSource {
       "User-Agent": this.USER_AGENT,
     };
 
-    log("info", `[Aiyifan] [弹幕] 请求 uniqueKey: ${uniqueKey}`);
+    log("info", `[aiyifan] [弹幕] 请求 uniqueKey: ${uniqueKey}`);
 
     try {
       const { data, vv } = await this.signingProvider.signedGetJson(this.DANMU_API, baseParams, headers, "弹幕");
-      log("info", `[Aiyifan] [弹幕] vv签名: ${vv.substring(0, 16)}...`);
+      log("info", `[aiyifan] [弹幕] vv签名: ${vv.substring(0, 16)}...`);
 
       const danmuList = data.data?.info || [];
-      log("info", `[Aiyifan] [弹幕] 获取到 ${danmuList.length} 条弹幕`);
+      log("info", `[aiyifan] [弹幕] 获取到 ${danmuList.length} 条弹幕`);
       return danmuList;
     } catch (error) {
-      log("error", `[Aiyifan] [弹幕失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [弹幕失败] 错误: ${error.message}`);
       return [];
     }
   }
@@ -248,18 +248,18 @@ export default class AiyifanSource extends BaseSource {
    * @returns {Promise<Array>} 搜索结果
    */
   async search(keyword) {
-    log("info", `[Aiyifan] 开始搜索: ${keyword}`);
+    log("info", `[aiyifan] 开始搜索: ${keyword}`);
 
     // Step 1: 搜索，拿到剧目列表
     const searchResult = await this.searchDrama(keyword);
     if (!searchResult) {
-      log("error", "[Aiyifan] 搜索失败，退出");
+      log("error", "[aiyifan] 搜索失败，退出");
       return [];
     }
 
     const dramas = this.extractDramaList(searchResult);
     if (!dramas.length) {
-      log("warn", "[Aiyifan] 未找到剧目信息，退出");
+      log("warn", "[aiyifan] 未找到剧目信息，退出");
       return [];
     }
 
@@ -276,7 +276,7 @@ export default class AiyifanSource extends BaseSource {
       };
     });
 
-    log("info", `[Aiyifan] 搜索完成，找到 ${results.length} 个结果`);
+    log("info", `[aiyifan] 搜索完成，找到 ${results.length} 个结果`);
     return results;
   }
 
@@ -286,12 +286,12 @@ export default class AiyifanSource extends BaseSource {
    * @returns {Promise<Array>} 剧集列表
    */
   async getEpisodes(id) {
-    log("info", `[Aiyifan] 获取剧集详情: ${id}`);
+    log("info", `[aiyifan] 获取剧集详情: ${id}`);
 
     // 获取播放列表
     const episodes = await this.getPlaylist(id);
     if (!episodes.length) {
-      log("error", "[Aiyifan] 获取播放列表失败");
+      log("error", "[aiyifan] 获取播放列表失败");
       return [];
     }
 
@@ -303,7 +303,7 @@ export default class AiyifanSource extends BaseSource {
       link: `${this.DOMAIN_API}/${id}?id=${ep.key}`
     }));
 
-    log("info", `[Aiyifan] 获取到 ${result.length} 个剧集`);
+    log("info", `[aiyifan] 获取到 ${result.length} 个剧集`);
     return result;
   }
 
@@ -319,7 +319,7 @@ export default class AiyifanSource extends BaseSource {
     const tmpAnimes = [];
 
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Aiyifan] sourceAnimes is not a valid array");
+      log("error", "[aiyifan] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -339,7 +339,7 @@ export default class AiyifanSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Aiyifan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[aiyifan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -348,7 +348,7 @@ export default class AiyifanSource extends BaseSource {
           // 获取剧集列表
           const eps = await this.getEpisodes(anime.mediaId);
           if (eps.length === 0) {
-            log("info", `[Aiyifan] ${anime.title} 无分集，跳过`);
+            log("info", `[aiyifan] ${anime.title} 无分集，跳过`);
             return;
           }
 
@@ -386,7 +386,7 @@ export default class AiyifanSource extends BaseSource {
             removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Aiyifan] 处理 ${anime.title} 失败:`, error.message);
+          log("error", `[aiyifan] 处理 ${anime.title} 失败:`, error.message);
         }
       });
 
@@ -402,12 +402,12 @@ export default class AiyifanSource extends BaseSource {
    * @returns {Promise<Array>} 弹幕列表
    */
   async getEpisodeDanmu(id) {
-    log("info", `[Aiyifan] 获取弹幕: ${id}`);
+    log("info", `[aiyifan] 获取弹幕: ${id}`);
 
     const requestKey = this.extractEpisodeRequestKey(id);
     const inflightRequest = this.inflightDanmuRequests.get(requestKey);
     if (inflightRequest) {
-      log("info", `[Aiyifan] 复用进行中的弹幕请求: ${requestKey}`);
+      log("info", `[aiyifan] 复用进行中的弹幕请求: ${requestKey}`);
       return await inflightRequest;
     }
 
@@ -418,28 +418,28 @@ export default class AiyifanSource extends BaseSource {
       // 获取视频信息
       const videoInfo = await this.getVideoInfo(videoId);
       if (!videoInfo) {
-        log("error", "[Aiyifan] 获取视频信息失败");
+        log("error", "[aiyifan] 获取视频信息失败");
         return [];
       }
 
       // 提取uniqueKey
       const uniqueKey = this.extractUniqueKey(videoInfo);
       if (!uniqueKey) {
-        log("error", "[Aiyifan] 未获取到uniqueKey");
+        log("error", "[aiyifan] 未获取到uniqueKey");
         return [];
       }
 
       // 获取弹幕
       const danmuList = await this.fetchBarrage(uniqueKey);
       if (danmuList.length === 0) {
-        log("info", "[Aiyifan] 未获取到弹幕");
+        log("info", "[aiyifan] 未获取到弹幕");
         return [];
       }
 
       // 按时间排序
       danmuList.sort((a, b) => (a.second || 0) - (b.second || 0));
 
-      log("info", `[Aiyifan] 获取到 ${danmuList.length} 条弹幕`);
+      log("info", `[aiyifan] 获取到 ${danmuList.length} 条弹幕`);
       return danmuList;
     })();
 

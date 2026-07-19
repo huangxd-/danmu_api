@@ -22,7 +22,7 @@ export default class BahamutSource extends BaseSource {
       // 提前获取本地匹配结果
       if (globals.useBangumiData) {
         localMatches = await searchBangumiData(keyword, ['gamer', 'gamer_hk']);
-        log("info", `[Bahamut] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
+        log("info", `[bahamut] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
       }
 
       // 筛选出含有 video_sn 的本地匹配项
@@ -30,7 +30,7 @@ export default class BahamutSource extends BaseSource {
 
       // 数据源直通模式：Bangumi-Data 本地数据完全覆盖时，跳过巴哈姆特搜索接口（零网络请求）
       if (localMatches.length > 0 && localMatches.length === localWithVideoSn.length) {
-        log("info", `[Bahamut] Bangumi-Data 本地命中均含 video_sn，启用数据源直通模式（跳过搜索接口）`);
+        log("info", `[bahamut] Bangumi-Data 本地命中均含 video_sn，启用数据源直通模式（跳过搜索接口）`);
         return localMatches.map(m => {
           const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
           const finalTitle = displayTitle + (m.titleSuffix || '');
@@ -54,8 +54,8 @@ export default class BahamutSource extends BaseSource {
       const tmdbSearchKeyword = keyword;
       const encodedKeyword = encodeURIComponent(traditionalizedKeyword);
 
-      log("info", `[Bahamut] 原始搜索词: ${keyword}`);
-      log("info", `[Bahamut] 巴哈使用搜索词: ${traditionalizedKeyword}`);
+      log("info", `[bahamut] 原始搜索词: ${keyword}`);
+      log("info", `[bahamut] 巴哈使用搜索词: ${traditionalizedKeyword}`);
 
       // 创建一个 AbortController 用于取消 TMDB 流程
       const tmdbAbortController = new AbortController();
@@ -89,16 +89,16 @@ export default class BahamutSource extends BaseSource {
                 a._searchUsedTitle = traditionalizedKeyword;
               } catch (e) {}
             }
-            log("info", `[Bahamut] bahamutSearchresp (original): ${JSON.stringify(anime)}`);
-            log("info", `[Bahamut] 返回 ${anime.length} 条结果 (source: original)`);
+            log("info", `[bahamut] bahamutSearchresp (original): ${JSON.stringify(anime)}`);
+            log("info", `[bahamut] 返回 ${anime.length} 条结果 (source: original)`);
             return { success: true, data: anime, source: 'original' };
           }
 
-          log("info", `[Bahamut] 原始搜索成功，但未返回任何结果 (source: original)`);
+          log("info", `[bahamut] 原始搜索成功，但未返回任何结果 (source: original)`);
           return { success: false, source: 'original' };
         } catch (error) {
           // ️捕获原始搜索错误，但不阻塞 TMDB 搜索
-          log("error", "[Bahamut] 原始搜索失败:", {
+          log("error", "[bahamut] 原始搜索失败:", {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -118,14 +118,14 @@ export default class BahamutSource extends BaseSource {
 
           // 如果没有结果或者没有标题，则停止
           if (!tmdbResult || !tmdbResult.title) {
-            log("info", "[Bahamut] TMDB转换未返回结果，取消日语原名搜索");
+            log("info", "[bahamut] TMDB转换未返回结果，取消日语原名搜索");
             return { success: false, source: 'tmdb' };
           }
 
           // 解构出日语原名和中文别名
           const { title: tmdbTitle, cnAlias } = tmdbResult;
 
-          log("info", `[Bahamut] 使用日语原名进行搜索: ${tmdbTitle}`);
+          log("info", `[bahamut] 使用日语原名进行搜索: ${tmdbTitle}`);
           const encodedTmdbTitle = encodeURIComponent(tmdbTitle);
           const targetUrl = `https://api.gamer.com.tw/mobile_app/anime/v1/search.php?kw=${encodedTmdbTitle}`;
           const tmdbSearchUrl = globals.makeProxyUrl(targetUrl);
@@ -148,20 +148,20 @@ export default class BahamutSource extends BaseSource {
                 a._tmdbCnAlias = cnAlias;
               } catch (e) {}
             }
-            log("info", `[Bahamut] bahamutSearchresp (TMDB): ${JSON.stringify(anime)}`);
-            log("info", `[Bahamut] 返回 ${anime.length} 条结果 (source: tmdb)`);
+            log("info", `[bahamut] bahamutSearchresp (TMDB): ${JSON.stringify(anime)}`);
+            log("info", `[bahamut] 返回 ${anime.length} 条结果 (source: tmdb)`);
             return { success: true, data: anime, source: 'tmdb' };
           }
-          log("info", `[Bahamut] 日语原名搜索成功，但未返回任何结果 (source: tmdb)`);
+          log("info", `[bahamut] 日语原名搜索成功，但未返回任何结果 (source: tmdb)`);
           return { success: false, source: 'tmdb' };
         } catch (error) {
           // 捕获被中断的错误
           if (error.name === 'AbortError') {
-            log("info", "[Bahamut] 原始搜索成功，中断日语原名搜索");
+            log("info", "[bahamut] 原始搜索成功，中断日语原名搜索");
             return { success: false, source: 'tmdb', aborted: true };
           }
           // TMDB搜索失败不阻塞原始搜索结果，与originalSearchPromise保持一致的错误处理策略
-          log("error", "[Bahamut] TMDB搜索失败:", {
+          log("error", "[bahamut] TMDB搜索失败:", {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -182,7 +182,7 @@ export default class BahamutSource extends BaseSource {
       } else if (tmdbResult.success) {
         finalResults = tmdbResult.data;
       } else {
-        log("info", "[Bahamut] 原始搜索和基于TMDB的搜索均未返回任何结果");
+        log("info", "[bahamut] 原始搜索和基于TMDB的搜索均未返回任何结果");
       }
 
       // 对齐 Bangumi Data 进行信息强化
@@ -213,7 +213,7 @@ export default class BahamutSource extends BaseSource {
 
               item._typeStr = matchedLocal.typeStr; 
 
-              log("info", `[Bahamut] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
+              log("info", `[bahamut] 网络结果 [${item.title}] 成功对齐本地 Bangumi-Data 数据`);
           }
         }
       }
@@ -221,7 +221,7 @@ export default class BahamutSource extends BaseSource {
       return finalResults;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Bahamut] getBahamutAnimes error:", {
+      log("error", "[bahamut] getBahamutAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -245,26 +245,26 @@ export default class BahamutSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "[Bahamut] getBahamutEposides: 请求失败或无数据返回");
+        log("info", "[bahamut] getBahamutEposides: 请求失败或无数据返回");
         return [];
       }
 
       // 判断 seriesData 是否存在
       if (!resp.data.data || !resp.data.data.video || !resp.data.data.anime) {
-        log("info", "[Bahamut] getBahamutEposides: video 或 anime 不存在");
+        log("info", "[bahamut] getBahamutEposides: video 或 anime 不存在");
         return [];
       }
 
       // 正常情况下输出调试所需的关键字段，对齐其他源做法避免全量输出 contentHtml 等冗余数据
       const { video: vData, anime: aData } = resp.data.data;
-      log("info", `[Bahamut] getBahamutEposides: videoSn=${vData.videoSn}, ` +
+      log("info", `[bahamut] getBahamutEposides: videoSn=${vData.videoSn}, ` +
         `animeSn=${aData.animeSn}, title=${aData.title}, ` +
         `totalEpisode=${aData.totalEpisode}, episodes=${JSON.stringify(aData.episodes)}`);
 
       return resp.data.data;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Bahamut] getBahamutEposides error:", {
+      log("error", "[bahamut] getBahamutEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -358,7 +358,7 @@ export default class BahamutSource extends BaseSource {
 
       // 如果搜索词是日语，或者该结果是基于TMDB转换得来的，则直接跳过匹配规则放行
       if (isJapaneseKeyword || (item._searchUsedTitle && item._searchUsedTitle !== queryTitle)) {
-        log("info", `[Bahamut] 命中日语关键词或TMDB结果，绕过匹配规则直接保留: ${itemTitle}`);
+        log("info", `[bahamut] 命中日语关键词或TMDB结果，绕过匹配规则直接保留: ${itemTitle}`);
         return true;
       }
 
@@ -392,7 +392,7 @@ export default class BahamutSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         matchedAnimes = seasonFiltered;
-        log("info", `[Bahamut] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[bahamut] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -493,7 +493,7 @@ export default class BahamutSource extends BaseSource {
           if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
         }
       } catch (error) {
-        log("error", `[Bahamut] Error processing anime: ${error.message}`);
+        log("error", `[bahamut] Error processing anime: ${error.message}`);
       }
     }));
 
@@ -525,7 +525,7 @@ export default class BahamutSource extends BaseSource {
       return danmus;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Bahamut] fetchBahamutEpisodeDanmu error:", {
+      log("error", "[bahamut] fetchBahamutEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -535,7 +535,7 @@ export default class BahamutSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Bahamut] 获取巴哈姆特弹幕分段列表...", id);
+    log("info", "[bahamut] 获取巴哈姆特弹幕分段列表...", id);
 
     return new SegmentListResponse({
       "type": "bahamut",

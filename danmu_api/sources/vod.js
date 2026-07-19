@@ -28,17 +28,17 @@ export default class VodSource extends BaseSource {
       );
       // 检查 response.data.list 是否存在且长度大于 0
       if (response && response.data && response.data.list && response.data.list.length > 0) {
-        log("info", `[VOD] 请求 ${serverName}(${server}) 成功`);
+        log("info", `[vod] 请求 ${serverName}(${server}) 成功`);
         const data = response.data;
-        log("info", `[VOD] ${serverName} response: ↓↓↓`);
+        log("info", `[vod] ${serverName} response: ↓↓↓`);
         printFirst200Chars(data);
         return { serverName, list: data.list };
       } else {
-        log("info", `[VOD] 请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
+        log("info", `[vod] 请求 ${serverName}(${server}) 成功，但 response.data.list 为空`);
         return { serverName, list: [] };
       }
     } catch (error) {
-      log("error", `[VOD] 请求 ${serverName}(${server}) 失败:`, {
+      log("error", `[vod] 请求 ${serverName}(${server}) 失败:`, {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -157,7 +157,7 @@ export default class VodSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[VOD] sourceAnimes is not a valid array");
+      log("error", "[vod] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -177,7 +177,7 @@ export default class VodSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[VOD] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[vod] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -231,7 +231,7 @@ export default class VodSource extends BaseSource {
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[VOD] Error processing anime: ${error.message}`);
+          log("error", `[vod] Error processing anime: ${error.message}`);
         }
       }));
 

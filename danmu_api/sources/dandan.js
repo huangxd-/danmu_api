@@ -39,7 +39,7 @@ export default class DandanSource extends BaseSource {
     if (globals.useBangumiData && !isFallback) {
       const localMatches = await searchBangumiData(keyword, ['anidb']);
       if (localMatches.length > 0) {
-        log("info", `[Dandan] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
+        log("info", `[dandan] Bangumi-Data 本地命中 ${localMatches.length} 条数据（检索词：${keyword}）`);
         return localMatches.map(m => {
           const displayTitle = m.titles.find(t => t && t.includes(keyword)) || m.titles[1] || m.title;
           const finalTitle = displayTitle + (m.titleSuffix || '');
@@ -59,7 +59,7 @@ export default class DandanSource extends BaseSource {
     }
 
     try {
-      log("info", `[Dandan] 原始搜索词: ${keyword}`);
+      log("info", `[dandan] 原始搜索词: ${keyword}`);
 
       // 创建 AbortController 用于取消 TMDB 流程
       const tmdbAbortController = new AbortController();
@@ -77,25 +77,25 @@ export default class DandanSource extends BaseSource {
 
           // 判断 resp 和 resp.data 是否存在
           if (!resp || !resp.data) {
-            log("info", "[Dandan] 原始搜索请求失败或无数据返回 (source: original)");
+            log("info", "[dandan] 原始搜索请求失败或无数据返回 (source: original)");
             return { success: false, source: 'original' };
           }
 
           // 判断 animes 是否存在且有结果
           if (!resp.data.animes || resp.data.animes.length === 0) {
-            log("info", "[Dandan] 原始搜索成功，但未返回任何结果 (source: original)");
+            log("info", "[dandan] 原始搜索成功，但未返回任何结果 (source: original)");
             return { success: false, source: 'original' };
           }
 
           // 原始搜索有结果，中断 TMDB 流程
           tmdbAbortController.abort();
           const animes = resp.data.animes;
-          log("info", `[Dandan] dandanSearchresp (original): ${JSON.stringify(animes)}`);
-          log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: original)`);
+          log("info", `[dandan] dandanSearchresp (original): ${JSON.stringify(animes)}`);
+          log("info", `[dandan] 返回 ${animes.length} 条结果 (source: original)`);
           return { success: true, data: animes, source: 'original' };
         } catch (error) {
           // 捕获原始搜索错误，但不阻塞 TMDB 搜索
-          log("error", "[Dandan] getDandanAnimes error:", {
+          log("error", "[dandan] getDandanAnimes error:", {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -115,12 +115,12 @@ export default class DandanSource extends BaseSource {
 
           // 如果没有结果或者没有标题，则停止
           if (!tmdbResult || !tmdbResult.title) {
-            log("info", "[Dandan] TMDB转换未返回结果，取消日语原名搜索");
+            log("info", "[dandan] TMDB转换未返回结果，取消日语原名搜索");
             return { success: false, source: 'tmdb' };
           }
 
           const { title: tmdbTitle, cnAlias } = tmdbResult;
-          log("info", `[Dandan] 使用日语原名通过 episodes 接口进行搜索: ${tmdbTitle}`);
+          log("info", `[dandan] 使用日语原名通过 episodes 接口进行搜索: ${tmdbTitle}`);
 
           // episodes 接口对日语原名的支持更好，使用其进行 TMDB 原名搜索
           const resp = await httpGet(`https://api.danmaku.weeblify.app/ddp/v1?path=/v2/search/episodes?anime=${encodeURIComponent(tmdbTitle)}`, {
@@ -134,13 +134,13 @@ export default class DandanSource extends BaseSource {
 
           // 判断 resp 和 resp.data 是否存在
           if (!resp || !resp.data) {
-            log("info", "[Dandan] 日语原名搜索请求失败或无数据返回 (source: tmdb)");
+            log("info", "[dandan] 日语原名搜索请求失败或无数据返回 (source: tmdb)");
             return { success: false, source: 'tmdb' };
           }
 
           // 判断 animes 是否存在且有结果
           if (!resp.data.animes || resp.data.animes.length === 0) {
-            log("info", "[Dandan] 日语原名搜索成功，但未返回任何结果 (source: tmdb)");
+            log("info", "[dandan] 日语原名搜索成功，但未返回任何结果 (source: tmdb)");
             return { success: false, source: 'tmdb' };
           }
 
@@ -152,13 +152,13 @@ export default class DandanSource extends BaseSource {
             anime._tmdbCnAlias = cnAlias;
           }
 
-          log("info", `[Dandan] dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
-          log("info", `[Dandan] 返回 ${animes.length} 条结果 (source: tmdb)`);
+          log("info", `[dandan] dandanSearchresp (tmdb): ${JSON.stringify(animes)}`);
+          log("info", `[dandan] 返回 ${animes.length} 条结果 (source: tmdb)`);
           return { success: true, data: animes, source: 'tmdb' };
         } catch (error) {
           // 捕获被中断的错误
           if (error.name === 'AbortError') {
-            log("info", "[Dandan] 原始搜索成功，中断日语原名搜索");
+            log("info", "[dandan] 原始搜索成功，中断日语原名搜索");
             return { success: false, source: 'tmdb', aborted: true };
           }
           // 抛出其他错误（例如 httpGet 超时）
@@ -182,14 +182,14 @@ export default class DandanSource extends BaseSource {
         return tmdbResult.data;
       }
 
-      log("info", `[Dandan] 原始搜索和基于TMDB的搜索均未返回任何结果 (当前搜索词: ${keyword})`);
+      log("info", `[dandan] 原始搜索和基于TMDB的搜索均未返回任何结果 (当前搜索词: ${keyword})`);
 
       // 当搜索无结果且包含季度信息时，尝试剥离季度信息后重新搜索
       if (!isFallback) {
         const strippedKeyword = keyword.replace(/(?:第\s*[0-9一二三四五六七八九十百千万]+\s*[季期部])|(?:S(?:eason)?\s*\d+)|(?:Part\s*\d+)/gi, '').trim();
 
         if (strippedKeyword && strippedKeyword !== keyword) {
-          log("info", `[Dandan] 尝试去除季度信息进行降级搜索: ${strippedKeyword}`);
+          log("info", `[dandan] 尝试去除季度信息进行降级搜索: ${strippedKeyword}`);
           return await this.search(strippedKeyword, true);
         }
       }
@@ -197,7 +197,7 @@ export default class DandanSource extends BaseSource {
       return [];
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Dandan] getDandanAnimes error:", {
+      log("error", "[dandan] getDandanAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -219,13 +219,13 @@ export default class DandanSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "[Dandan] getDandanEposides: 请求失败或无数据返回");
+        log("info", "[dandan] getDandanEposides: 请求失败或无数据返回");
         return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null };
       }
 
       // 判断 bangumi 数据是否存在
       if (!resp.data.bangumi) {
-        log("info", "[Dandan] getDandanEposides: bangumi 数据不存在");
+        log("info", "[dandan] getDandanEposides: bangumi 数据不存在");
         return { episodes: [], titles: [], relateds: [], type: null, typeDescription: null };
       }
 
@@ -264,14 +264,14 @@ export default class DandanSource extends BaseSource {
       const imageUrl = bangumiData.imageUrl || null;
 
       // 正常情况下输出 JSON 字符串
-      log("info", `[Dandan] getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
+      log("info", `[dandan] getDandanEposides: ${JSON.stringify(resp.data.bangumi.episodes)}`);
 
       // 返回包含剧集、别名、相关作品、类型及封面信息的完整对象
       return { episodes, titles, relateds, type, typeDescription, imageUrl };
 
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Dandan] getDandanEposides error:", {
+      log("error", "[dandan] getDandanEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -303,7 +303,7 @@ export default class DandanSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Dandan] sourceAnimes is not a valid array");
+      log("error", "[dandan] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -339,7 +339,7 @@ export default class DandanSource extends BaseSource {
       if (filtered.length > 0) {
         matchedAnimes = filtered;
         isTargetFoundInInitial = true;
-        log("info", `[Dandan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[dandan] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -474,7 +474,7 @@ export default class DandanSource extends BaseSource {
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Dandan] Error processing anime: ${error.message}`);
+          log("error", `[dandan] Error processing anime: ${error.message}`);
         }
       }));
     }
@@ -498,7 +498,7 @@ export default class DandanSource extends BaseSource {
           "User-Agent": DandanUserAgent,
         },
         retries: 1,
-      }).catch(e => { log('error', `[Dandan] dandan base comments error: ${e.message}`); return null; });
+      }).catch(e => { log('error', `[dandan] dandan base comments error: ${e.message}`); return null; });
 
       const resp = await dandanPromise;
 
@@ -510,7 +510,7 @@ export default class DandanSource extends BaseSource {
       }
 
     } catch (error) {
-      log("error", "[Dandan] getEpisodeDanmu error:", {
+      log("error", "[dandan] getEpisodeDanmu error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -521,7 +521,7 @@ export default class DandanSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Dandan] 获取弹弹play弹幕分段列表...", id);
+    log("info", "[dandan] 获取弹弹play弹幕分段列表...", id);
 
     return new SegmentListResponse({
       "type": "dandan",

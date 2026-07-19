@@ -89,7 +89,7 @@ export async function httpGet(url, options = {}) {
       // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
       let response;
       if (typeof WebAssembly === 'undefined') {
-        log("info", "[Utils] [HTTP] iOS环境降级使用node-fetch");
+        log("info", "[system] [http] iOS环境降级使用node-fetch");
         const fetch = (await import('node-fetch')).default;
         response = await fetch(url, {
           method: 'GET',
@@ -119,7 +119,7 @@ export async function httpGet(url, options = {}) {
       let data;
 
       if (options.base64Data) {
-        log("info", "[Utils] [HTTP] base64模式");
+        log("info", "[system] [http] base64模式");
 
         // 先拿二进制
         const arrayBuffer = await response.arrayBuffer();
@@ -135,7 +135,7 @@ export async function httpGet(url, options = {}) {
         data = btoa(binary); // 得到 base64 字符串
 
       } else if (options.zlibMode) {
-        log("info", "[Utils] [HTTP] zlib模式")
+        log("info", "[system] [http] zlib模式")
 
         // 获取 ArrayBuffer
         const arrayBuffer = await response.arrayBuffer();
@@ -156,7 +156,7 @@ export async function httpGet(url, options = {}) {
           }
         } else {
           // iOS巨魔环境降级处理：使用pako库
-          log("info", "[Utils] [HTTP] iOS环境降级使用pako解压");
+          log("info", "[system] [http] iOS环境降级使用pako解压");
           try {
             // 动态导入pako库
             const pako = await import('pako');
@@ -309,7 +309,7 @@ export async function httpPost(url, body, options = {}) {
       // 兼容iOS巨魔环境：使用node-fetch替代内置fetch
       let response;
       if (typeof WebAssembly === 'undefined') {
-        log("info", "[Utils] [HTTP] iOS环境降级使用node-fetch");
+        log("info", "[system] [http] iOS环境降级使用node-fetch");
         const fetch = (await import('node-fetch')).default;
         response = await fetch(url, fetchOptions);
       } else {

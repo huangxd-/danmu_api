@@ -136,7 +136,7 @@ export default class TencentSource extends BaseSource {
 
   async search(keyword) {
     try {
-      log("info", `[Tencent] 开始搜索: ${keyword}`);
+      log("info", `[tencent] 开始搜索: ${keyword}`);
 
       const searchUrl = "https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.MultiTerminalSearch/MbSearch?vplatform=2";
       const payload = {
@@ -179,14 +179,14 @@ export default class TencentSource extends BaseSource {
       const response = await httpPost(searchUrl, JSON.stringify(payload), { headers });
 
       if (!response || !response.data) {
-        log("info", "[Tencent] 搜索响应为空");
+        log("info", "[tencent] 搜索响应为空");
         return [];
       }
 
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
       if (data.ret !== 0) {
-        log("error", `[Tencent] API返回错误: ${data.msg} (ret: ${data.ret})`);
+        log("error", `[tencent] API返回错误: ${data.msg} (ret: ${data.ret})`);
         return [];
       }
 
@@ -196,7 +196,7 @@ export default class TencentSource extends BaseSource {
       if (data.data && data.data.areaBoxList) {
         for (const box of data.data.areaBoxList) {
           if (box.boxId === "MainNeed" && box.itemList) {
-            log("info", `[Tencent] 从 MainNeed box 找到 ${box.itemList.length} 个项目`);
+            log("info", `[tencent] 从 MainNeed box 找到 ${box.itemList.length} 个项目`);
             itemList = box.itemList;
             break;
           }
@@ -205,7 +205,7 @@ export default class TencentSource extends BaseSource {
 
       // 回退到 normalList
       if (itemList.length === 0 && data.data && data.data.normalList && data.data.normalList.itemList) {
-        log("info", "[Tencent] MainNeed box 未找到，使用 normalList");
+        log("info", "[tencent] MainNeed box 未找到，使用 normalList");
         itemList = data.data.normalList.itemList;
       }
 
@@ -224,10 +224,10 @@ export default class TencentSource extends BaseSource {
               item.videoInfo.title.includes(keyword)
             );
             if (relatedItems.length > 0) {
-              log("info", `[Tencent] 追加「相关影视」box 中匹配 "${keyword}" 的 ${relatedItems.length} 个项目`);
+              log("info", `[tencent] 追加「相关影视」box 中匹配 "${keyword}" 的 ${relatedItems.length} 个项目`);
               itemList = [...itemList, ...relatedItems];
             } else {
-              log("info", `[Tencent] 「相关影视」box 中无匹配 "${keyword}" 的项目`);
+              log("info", `[tencent] 「相关影视」box 中无匹配 "${keyword}" 的项目`);
             }
             break;
           }
@@ -235,7 +235,7 @@ export default class TencentSource extends BaseSource {
       }
 
       if (itemList.length === 0) {
-        log("info", "[Tencent] 搜索无结果");
+        log("info", "[tencent] 搜索无结果");
         return [];
       }
 
@@ -248,18 +248,18 @@ export default class TencentSource extends BaseSource {
         }
       }
 
-      log("info", `[Tencent] 搜索找到 ${results.length} 个有效结果`);
+      log("info", `[tencent] 搜索找到 ${results.length} 个有效结果`);
       return results;
 
     } catch (error) {
-      log("error", "[Tencent] 搜索出错:", error.message);
+      log("error", "[tencent] 搜索出错:", error.message);
       return [];
     }
   }
 
   async getEpisodes(id) {
     try {
-      log("info", `[Tencent] 获取分集列表: cid=${id}`);
+      log("info", `[tencent] 获取分集列表: cid=${id}`);
 
       const episodesUrl = "https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData?video_appid=3000010&vversion_name=8.2.96&vversion_platform=2";
 
@@ -293,14 +293,14 @@ export default class TencentSource extends BaseSource {
       const response = await httpPost(episodesUrl, JSON.stringify(payload), { headers });
 
       if (!response || !response.data) {
-        log("info", "[Tencent] 分集响应为空");
+        log("info", "[tencent] 分集响应为空");
         return [];
       }
 
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
       if (data.ret !== 0) {
-        log("error", `[Tencent] 分集API返回错误: ret=${data.ret}`);
+        log("error", `[tencent] 分集API返回错误: ret=${data.ret}`);
         return [];
       }
 
@@ -314,7 +314,7 @@ export default class TencentSource extends BaseSource {
                 tabs = JSON.parse(moduleData.module_params.tabs);
                 break;
               } catch (e) {
-                log("error", "[Tencent] 解析tabs失败:", e.message);
+                log("error", "[tencent] 解析tabs失败:", e.message);
               }
             }
           }
@@ -326,7 +326,7 @@ export default class TencentSource extends BaseSource {
       const allEpisodes = [];
 
       if (tabs.length === 0) {
-        log("info", "[Tencent] 未找到分页信息,尝试从初始响应中提取分集");
+        log("info", "[tencent] 未找到分页信息,尝试从初始响应中提取分集");
 
         // 尝试直接从第一次响应中提取分集(单页情况)
         if (data.data && data.data.module_list_datas) {
@@ -348,13 +348,13 @@ export default class TencentSource extends BaseSource {
         }
 
         if (allEpisodes.length === 0) {
-          log("info", "[Tencent] 初始响应中也未找到分集信息");
+          log("info", "[tencent] 初始响应中也未找到分集信息");
           return [];
         }
 
-        log("info", `[Tencent] 从初始响应中提取到 ${allEpisodes.length} 集`);
+        log("info", `[tencent] 从初始响应中提取到 ${allEpisodes.length} 集`);
       } else {
-        log("info", `[Tencent] 找到 ${tabs.length} 个分页`);
+        log("info", `[tencent] 找到 ${tabs.length} 个分页`);
 
         // 获取所有分页的分集
         for (const tab of tabs) {
@@ -406,11 +406,11 @@ export default class TencentSource extends BaseSource {
         }
       }
 
-      log("info", `[Tencent] 共获取 ${allEpisodes.length} 集`);
+      log("info", `[tencent] 共获取 ${allEpisodes.length} 集`);
       return allEpisodes;
 
     } catch (error) {
-      log("error", "[Tencent] 获取分集出错:", error.message);
+      log("error", "[tencent] 获取分集出错:", error.message);
       return [];
     }
   }
@@ -428,7 +428,7 @@ export default class TencentSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Tencent] sourceAnimes is not a valid array");
+      log("error", "[tencent] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -448,7 +448,7 @@ export default class TencentSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Tencent] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[tencent] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -505,7 +505,7 @@ export default class TencentSource extends BaseSource {
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Tencent] Error processing anime: ${error.message}`);
+          log("error", `[tencent] Error processing anime: ${error.message}`);
         }
       })
     );
@@ -535,12 +535,12 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "[Tencent] 开始从本地请求腾讯视频弹幕...", id);
+    log("info", "[tencent] 开始从本地请求腾讯视频弹幕...", id);
 
     // 解析 URL 获取 vid
     let vid = this.extractVid(id);
 
-    log("info", `[Tencent] vid: ${vid}`);
+    log("info", `[tencent] vid: ${vid}`);
 
     // 获取页面标题
     let res;
@@ -552,14 +552,14 @@ export default class TencentSource extends BaseSource {
         },
       });
     } catch (error) {
-      log("error", "[Tencent] 请求页面失败:", error);
+      log("error", "[tencent] 请求页面失败:", error);
       return [];
     }
 
     // 使用正则表达式提取 <title> 标签内容
     const titleMatch = res.data.match(/<title[^>]*>(.*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
-    log("info", `[Tencent] 标题: ${title}`);
+    log("info", `[tencent] 标题: ${title}`);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -568,7 +568,7 @@ export default class TencentSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `[Tencent] 弹幕分段数量: ${segmentList.length}`);
+    log("info", `[tencent] 弹幕分段数量: ${segmentList.length}`);
 
     // 创建请求Promise数组
     const promises = [];
@@ -604,7 +604,7 @@ export default class TencentSource extends BaseSource {
         contents.push(...data.barrage_list);
       });
     } catch (error) {
-      log("error", "[Tencent] 解析弹幕数据失败:", error);
+      log("error", "[tencent] 解析弹幕数据失败:", error);
       return [];
     }
 
@@ -614,7 +614,7 @@ export default class TencentSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Tencent] 获取腾讯视频弹幕分段列表...", id);
+    log("info", "[tencent] 获取腾讯视频弹幕分段列表...", id);
 
     // 弹幕 API 基础地址
     const api_danmaku_base = "https://dm.video.qq.com/barrage/base/";
@@ -622,7 +622,7 @@ export default class TencentSource extends BaseSource {
 
     let vid = this.extractVid(id);
 
-    log("info", `[Tencent] 获取弹幕分段列表 - vid: ${vid}`);
+    log("info", `[tencent] 获取弹幕分段列表 - vid: ${vid}`);
 
     // 获取弹幕基础数据
     let res;
@@ -640,7 +640,7 @@ export default class TencentSource extends BaseSource {
           "segmentList": []
         });
       }
-      log("error", "[Tencent] 请求弹幕基础数据失败:", error);
+      log("error", "[tencent] 请求弹幕基础数据失败:", error);
       return new SegmentListResponse({
         "type": "qq",
         "segmentList": []
@@ -693,7 +693,7 @@ export default class TencentSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "[Tencent] 请求分片弹幕失败:", error);
+      log("error", "[tencent] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }
