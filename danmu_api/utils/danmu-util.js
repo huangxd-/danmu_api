@@ -1,7 +1,9 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
-import { jsonResponse, xmlResponse } from "./http-util.js";
+import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
 import { traditionalized } from './zh-util.js';
+import { UniDB } from "@dan-uni/dan-any/core/main/pure";
+import { ArtplayerMetadata, ArtplayerTransformer, BahaMetadata, BahaTransformer, BiliXmlMetadata, BiliXmlTransformerConfigurator, DanuniJsonMetadata, DanuniJsonTransformerConfigurator, DanuniPbMetadata, DanuniPbTransformer, DdplayAdapter, DdplayMetadata, DdplayTransformer, DplayerMetadata, DplayerTransformer, VodMetadata, VodTransformer } from '@dan-uni/dan-any/adapters';
 
 // =====================
 // danmu处理相关函数
@@ -28,7 +30,7 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
   const groupedByTime = filteredDanmus.reduce((acc, danmu) => {
     // 获取时间：优先使用 t 字段，如果没有则使用 p 的第一个值
     const time = danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0]);
-    
+
     // 确定分组键：n=0时使用精确时间(保留2位小数)，否则使用分钟索引
     const groupKey = n === 0 ? time.toFixed(2) : Math.floor(time / (n * 60));
 
@@ -64,14 +66,14 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
       acc[message].earliestT = Math.min(acc[message].earliestT, danmu.t);
       // 合并like字段，如果是undefined则视为0
       acc[message].like += (danmu.like !== undefined ? danmu.like : 0);
-      
+
       // 提取当前弹幕的来源并加入集合中，建立弹幕内容与平台的精确映射
       if (danmu.p) {
         const match = danmu.p.match(/\[([^\]]*)\]$/);
         if (match && match[1]) {
-            match[1].split(/[&＆]/).forEach(s => {
-                if (s.trim()) acc[message].sources.add(s.trim());
-            });
+          match[1].split(/[&＆]/).forEach(s => {
+            if (s.trim()) acc[message].sources.add(s.trim());
+          });
         }
       }
       return acc;
@@ -80,11 +82,11 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
     // 转换为结果格式
     return Object.keys(groupedByMessage).map(message => {
       const data = groupedByMessage[message];
-      
+
       // 以当前这句弹幕实际跨越的独立平台数作为除数，进行局部精准降噪，保留单平台内真实的重复计数
       let localSourceCount = Math.max(1, data.sources.size);
       let displayCount = Math.round(data.count / localSourceCount);
-      
+
       if (displayCount < 1) displayCount = 1;
 
       // 将收集到的所有真实独立来源重新拼装回 p 属性标签中
@@ -270,15 +272,15 @@ export function convertToDanmakuJson(contents, platform) {
 
     // 优先使用弹幕自带的 _sourceLabel（应对合并工具），其次是外部传入的宏观 platform
     let currentPlatform = item._sourceLabel || platform;
-    
+
     // 如果存在实时拉取的副源标签，安全追加
     if (item.realTimeSource && !currentPlatform.includes(item.realTimeSource)) {
-        currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
+      currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
     }
 
     // 在组装字符串时，顺带通过符号检测判定当前是否为多源组合数据
     if (!isMultiSource && /[&＆]/.test(currentPlatform)) {
-        isMultiSource = true;
+      isMultiSource = true;
     }
 
     attributes = [
@@ -488,7 +490,10 @@ function escapeXmlText(str) {
     .replace(/>/g, '&gt;');
 }
 
-// 根据格式参数返回弹幕数据（JSON 或 XML）
+const tmp_da_db = new UniDB()
+const tmp_da_udb = tmp_da_db.init()
+
+// 根据格式参数返回弹幕数据
 export function formatDanmuResponse(danmuData, queryFormat) {
   // 确定最终使用的格式：查询参数 > 环境变量 > 默认值
   let format = queryFormat || globals.danmuOutputFormat;
@@ -496,6 +501,7 @@ export function formatDanmuResponse(danmuData, queryFormat) {
 
   log("info", `[Utils] [Danmu] [Format] Using format: ${format}`);
 
+  // 兼容旧格式转换
   if (format === 'xml') {
     try {
       const xmlData = convertDanmuToXml(danmuData);
@@ -505,7 +511,19 @@ export function formatDanmuResponse(danmuData, queryFormat) {
       // 转换失败时回退到 JSON
       return jsonResponse(danmuData);
     }
-  }
+  } else if (format === 'json') return jsonResponse(danmuData);
+
+  // 转换为 @dan-uni/dan-any 支持的格式
+  const chunk = tmp_da_udb.makeChunk({ tmp: true })
+  chunk.import(DdplayAdapter(danmuData))
+  if (format === VodMetadata.type) return jsonResponse(chunk.export(VodTransformer))
+  else if (format === BahaMetadata.type) return jsonResponse(chunk.export(BahaTransformer))
+  else if (format === DdplayMetadata.type) return jsonResponse(chunk.export(DdplayTransformer))
+  else if (format === BiliXmlMetadata.type) return xmlResponse(chunk.export(BiliXmlTransformerConfigurator()))
+  else if (format === DplayerMetadata.type) return jsonResponse(chunk.export(DplayerTransformer))
+  else if (format === DanuniPbMetadata.type) return binResponse(chunk.export(DanuniPbTransformer), 'danuni.binpb')
+  else if (format === ArtplayerMetadata.type) return jsonResponse(chunk.export(ArtplayerTransformer))
+  else if (format === DanuniJsonMetadata.type) return jsonResponse(chunk.export(DanuniJsonTransformerConfigurator()))
 
   // 默认返回 JSON
   return jsonResponse(danmuData);

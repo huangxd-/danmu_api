@@ -33,11 +33,11 @@ export function toLogSourceName(sourceKey) {
  * @returns {Function} 监听器清理闭包
  */
 function linkSignal(externalSignal, internalController) {
-  if (!externalSignal) return () => {};
+  if (!externalSignal) return () => { };
 
   if (externalSignal.aborted) {
     internalController.abort();
-    return () => {};
+    return () => { };
   }
 
   const abortHandler = () => {
@@ -518,7 +518,7 @@ export async function getPageTitle(url) {
 export function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*"
     }
@@ -534,8 +534,19 @@ export function xmlResponse(data, status = 200) {
   // 直接返回 XML 字符串作为 Response 的 body
   return new Response(data, {
     status,
-    headers: { 
+    headers: {
       "Content-Type": "application/xml",
+      "Access-Control-Allow-Origin": "*"
+    }
+  });
+}
+
+export function binResponse(data, filename = "data.bin", status = 200) {
+  return new Response(data, {
+    status,
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${filename}"`,
       "Access-Control-Allow-Origin": "*"
     }
   });
@@ -698,8 +709,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
       const text = await response.text();
       clearTimeout(timeoutId);
       if (checkCallback && !checkCallback(text.slice(0, SNIFF_LIMIT))) {
-          log("info", `[${currentSource}] [流式请求] 检测到无效数据(回退模式),丢弃结果`);
-          return null;
+        log("info", `[${currentSource}] [流式请求] 检测到无效数据(回退模式),丢弃结果`);
+        return null;
       }
       try { return JSON.parse(text); } catch { return text; }
     }
@@ -713,7 +724,7 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
     let stopChecking = false; // 标记是否停止检查
 
     // 流式读取循环
-    while(true) {
+    while (true) {
       const { done, value } = await reader.read();
 
       if (done) break;
@@ -724,7 +735,7 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
       // 1. 数据嗅探逻辑 (仅在前 SNIFF_LIMIT 范围内执行)
       if (!stopChecking && checkCallback) {
         // 累积文本
-        const chunkText = new TextDecoder("utf-8").decode(value, {stream: true});
+        const chunkText = new TextDecoder("utf-8").decode(value, { stream: true });
         checkBuffer += chunkText;
 
         // 执行回调检查
@@ -738,8 +749,8 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
 
         // 如果缓冲区超过限制
         if (receivedLength > SNIFF_LIMIT) {
-            stopChecking = true;
-            checkBuffer = null; // 释放缓冲区内存
+          stopChecking = true;
+          checkBuffer = null; // 释放缓冲区内存
         }
       }
 
@@ -753,7 +764,7 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
     // 2. 拼接完整数据
     let chunksAll = new Uint8Array(receivedLength);
     let position = 0;
-    for(let chunk of chunks) {
+    for (let chunk of chunks) {
       chunksAll.set(chunk, position);
       position += chunk.length;
     }
@@ -769,7 +780,7 @@ export async function httpGetWithStreamCheck(url, options = {}, checkCallback) {
     const currentSource = sourceLogContext.getStore() || "system";
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-       return null;
+      return null;
     }
     log("error", `[${currentSource}] [流式请求] 失败: ${error.message}`);
     return null;
