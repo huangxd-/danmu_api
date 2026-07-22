@@ -2145,14 +2145,19 @@ function detectCollectionCandidates(curAnimes) {
         if (!clean) return;
 
         const category = getContentCategory(anime.animeTitle, realAnime.typeDescription, realAnime.source);
-        const groupKey = `${clean}|${category}`;
+        // 3D/2D 维度分离：防止【3D动漫】与【动漫】在同一个合集探测组内被误合并
+        // 如 tencent 择天记(2020)【动漫】(2D) 与 iqiyi 择天记(2026)【3D动漫】(3D) 不应互成合集
+        const is3D = (realAnime.typeDescription || '').includes('3D') || /3[dD]/.test(anime.animeTitle || '');
+        const is2D = (realAnime.typeDescription || '').includes('2D') || /2[dD]/.test(anime.animeTitle || '');
+        const dim = is3D ? '3D' : (is2D ? '2D' : '-');
+        const groupKey = `${clean}|${category}|${dim}`;
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(anime);
     });
 
     for (const [groupKey, list] of groups.entries()) {
         if (list.length < 2) continue;
-        const [baseTitle, category] = groupKey.split('|');
+        const [baseTitle, category, dim] = groupKey.split('|');
         const itemDetails = list.map(a => `   - [${a.source}] ${a.animeTitle}`).join('\n');
         log("info", `[Merge-Check] [合集探测] 正在检查分组: "${baseTitle}" [${category}] (包含 ${list.length} 个条目):\n${itemDetails}`);
 
