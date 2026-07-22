@@ -669,6 +669,7 @@ export class Envs {
       'BANGUMI_DATA_CACHE_DAYS': { category: 'cache', type: 'number', description: 'Bangumi Data 缓存有效期(天)，设置0则每次请求时强制异步更新，默认7天', min: 0, max: 30 },
 
       // 系统配置
+      'UI_THEME': { category: 'system', type: 'select', options: ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'lavender', 'mist', 'terminal'], description: '管理界面主题' },
       'PROXY_URL': { category: 'system', type: 'text', description: '代理/反代地址' },
       'TMDB_API_KEY': { category: 'system', type: 'text', description: 'TMDB API密钥' },
       'LOG_LEVEL': { category: 'system', type: 'select', options: ['debug', 'info', 'warn', 'error'], description: '日志级别配置' },
@@ -702,6 +703,7 @@ export class Envs {
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
+      uiTheme: this.get('UI_THEME', 'ocean', 'string').toLowerCase(), // 管理界面主题
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
       danmuSimplifiedTraditional: this.get('DANMU_SIMPLIFIED_TRADITIONAL', 'default', 'string'), // 弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址

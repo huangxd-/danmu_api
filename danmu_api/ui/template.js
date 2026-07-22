@@ -3,6 +3,7 @@ import { baseCssContent } from "./css/base.css.js";
 import { componentsCssContent } from "./css/components.css.js";
 import { formsCssContent } from "./css/forms.css.js";
 import { responsiveCssContent } from "./css/responsive.css.js";
+import { themesCssContent } from "./css/themes.css.js";
 import { mainJsContent } from "./js/main.js";
 import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
@@ -25,9 +26,10 @@ export const HTML_TEMPLATE = /* html */ `
     <style>${componentsCssContent}</style>
     <style>${formsCssContent}</style>
     <style>${responsiveCssContent}</style>
+    <style>${themesCssContent}</style>
     
 </head>
-<body>
+<body data-theme="globals.uiTheme">
     <div class="container">
         <!-- 进度条 -->
         <div class="progress-container" id="progress-container">
@@ -204,11 +206,11 @@ export const HTML_TEMPLATE = /* html */ `
                         <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">vercel/netlify/edgeone平台修改变量后需要重新部署</p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-primary" onclick="exportSystemConfig()" title="导出当前环境变量配置">
-                        📥 导出配置
+                    <button class="btn btn-primary config-transfer-btn" onclick="exportSystemConfig()" title="下载当前环境变量配置文件">
+                        <span class="config-transfer-icon" aria-hidden="true">↓</span> 导出配置
                     </button>
-                    <button class="btn btn-primary" onclick="triggerConfigImport()" title="从 JSON 文件导入环境变量配置">
-                        📤 导入配置
+                    <button class="btn btn-primary config-transfer-btn" onclick="triggerConfigImport()" title="上传 JSON 文件并导入环境变量配置">
+                        <span class="config-transfer-icon" aria-hidden="true">↑</span> 导入配置
                     </button>
                     <input type="file" id="config-import-file" accept=".json,application/json" style="display: none;" onchange="importSystemConfigFile(this.files[0])">
                     <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
@@ -281,6 +283,45 @@ export const HTML_TEMPLATE = /* html */ `
                     <button class="category-btn" onclick="switchCategory('danmu', event)">🔣 弹幕配置</button>
                     <button class="category-btn" onclick="switchCategory('cache', event)">💾 缓存配置</button>
                     <button class="category-btn" onclick="switchCategory('system', event)">⚙️ 系统配置</button>
+                </div>
+
+                <div class="theme-settings" id="theme-settings" hidden>
+                    <div class="theme-settings-copy">
+                        <h3>界面主题</h3>
+                        <span class="theme-current-label" id="theme-current-label">UI_THEME · 海湾蓝</span>
+                    </div>
+                    <div class="theme-options" role="radiogroup" aria-label="界面主题选择">
+                        <button type="button" role="radio" class="theme-option" data-theme-option="ocean" aria-checked="false" onclick="selectTheme('ocean')" title="海湾蓝">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #145b6f"></i><i style="background: #159b8f"></i><i style="background: #dfe9f1"></i></span><span class="theme-option-label">海湾蓝</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="forest" aria-checked="false" onclick="selectTheme('forest')" title="森林绿">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #245c45"></i><i style="background: #b36a3c"></i><i style="background: #e5eee8"></i></span><span class="theme-option-label">森林绿</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="graphite" aria-checked="false" onclick="selectTheme('graphite')" title="石墨夜">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #0e1115"></i><i style="background: #55b8c9"></i><i style="background: #20242a"></i></span><span class="theme-option-label">石墨夜</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="berry" aria-checked="false" onclick="selectTheme('berry')" title="莓果红">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #702846"></i><i style="background: #315b8a"></i><i style="background: #f1e5eb"></i></span><span class="theme-option-label">莓果红</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="monochrome" aria-checked="false" onclick="selectTheme('monochrome')" title="黑白简约">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #111111"></i><i style="background: #767676"></i><i style="background: #f2f2f2"></i></span><span class="theme-option-label">黑白简约</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="sunset" aria-checked="false" onclick="selectTheme('sunset')" title="暖霞橙">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #4d344b"></i><i style="background: #b54132"></i><i style="background: #ebeef2"></i></span><span class="theme-option-label">暖霞橙</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="aurora" aria-checked="false" onclick="selectTheme('aurora')" title="极光青">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #164a4a"></i><i style="background: #d49a3a"></i><i style="background: #dfe8e6"></i></span><span class="theme-option-label">极光青</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="薰衣紫">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #4c3e69"></i><i style="background: #3f806b"></i><i style="background: #ebe9f0"></i></span><span class="theme-option-label">薰衣紫</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="mist" aria-checked="false" onclick="selectTheme('mist')" title="晨雾灰">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #40566b"></i><i style="background: #a94f42"></i><i style="background: #e7ebef"></i></span><span class="theme-option-label">晨雾灰</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="terminal" aria-checked="false" onclick="selectTheme('terminal')" title="终端绿">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #050706"></i><i style="background: #4faf75"></i><i style="background: #1d231f"></i></span><span class="theme-option-label">终端绿</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="env-list" id="env-list"></div>

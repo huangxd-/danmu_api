@@ -5,8 +5,22 @@ import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
 import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-util.js";
 
+const UI_THEMES = new Set([
+  'ocean', 'forest', 'graphite', 'berry', 'monochrome',
+  'sunset', 'aurora', 'lavender', 'mist', 'terminal'
+]);
+
+function resolveUiTheme(theme) {
+  const normalizedTheme = String(theme || '').toLowerCase();
+  return UI_THEMES.has(normalizedTheme) ? normalizedTheme : 'ocean';
+}
+
 export function handleUI() {
-  return new Response(HTML_TEMPLATE.replace("globals.currentToken", globals.currentToken), {
+  const html = HTML_TEMPLATE
+    .replace("globals.currentToken", () => globals.currentToken)
+    .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme));
+
+  return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Access-Control-Allow-Origin': '*'

@@ -4,6 +4,64 @@ export const systemSettingsJsContent = /* javascript */ `
 let isMergeMode = false;
 let stagingTags = [];
 
+const UI_THEMES = {
+    ocean: '海湾蓝',
+    forest: '森林绿',
+    graphite: '石墨夜',
+    berry: '莓果红',
+    monochrome: '黑白简约',
+    sunset: '暖霞橙',
+    aurora: '极光青',
+    lavender: '薰衣紫',
+    mist: '晨雾灰',
+    terminal: '终端绿'
+};
+
+function applyTheme(theme) {
+    const normalizedTheme = String(theme || '').toLowerCase();
+    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'ocean';
+    document.body.dataset.theme = selectedTheme;
+
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        const isSelected = button.dataset.themeOption === selectedTheme;
+        button.setAttribute('aria-checked', String(isSelected));
+    });
+
+    const label = document.getElementById('theme-current-label');
+    if (label) label.textContent = 'UI_THEME · ' + UI_THEMES[selectedTheme];
+    return selectedTheme;
+}
+
+function setThemeButtonsDisabled(disabled) {
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        button.disabled = disabled;
+    });
+}
+
+async function selectTheme(theme) {
+    const previousTheme = document.body.dataset.theme || 'ocean';
+    const selectedTheme = applyTheme(theme);
+    setThemeButtonsDisabled(true);
+
+    try {
+        const result = await saveImportedConfigValue('UI_THEME', selectedTheme);
+        if (!result || !result.success) {
+            throw new Error(result?.message || '保存失败');
+        }
+
+        updateLocalImportedConfig('UI_THEME', selectedTheme);
+        addLog('界面主题已保存为: ' + UI_THEMES[selectedTheme], 'success');
+    } catch (error) {
+        applyTheme(previousTheme);
+        addLog('界面主题保存失败: ' + error.message, 'error');
+        customAlert('界面主题保存失败: ' + error.message);
+    } finally {
+        setThemeButtonsDisabled(false);
+    }
+}
+
+applyTheme(document.body.dataset.theme || 'ocean');
+
 // 导出当前管理员可见的环境变量配置
 async function exportSystemConfig() {
     try {
@@ -91,10 +149,17 @@ function normalizeImportedConfig(data) {
             return;
         }
 
-        const value = rawValue === null ? '' : String(rawValue);
+        let value = rawValue === null ? '' : String(rawValue);
         if (/^\\*+$/.test(value)) {
             maskedKeys.push(key);
             return;
+        }
+        if (key === 'UI_THEME') {
+            value = value.trim().toLowerCase() || 'ocean';
+            if (!Object.prototype.hasOwnProperty.call(UI_THEMES, value)) {
+                invalidKeys.push(key + ' (不支持的主题: ' + value + ')');
+                return;
+            }
         }
         entries.push({ key, value });
     });
@@ -143,11 +208,13 @@ function updateLocalImportedConfig(key, value) {
     }
 
     if (!envVariables.system) envVariables.system = [];
+    const isTheme = key === 'UI_THEME';
     envVariables.system.push({
         key,
         value,
-        type: 'text',
-        description: '从配置文件导入的配置项'
+        type: isTheme ? 'select' : 'text',
+        options: isTheme ? Object.keys(UI_THEMES) : [],
+        description: isTheme ? '管理界面主题' : '从配置文件导入的配置项'
     });
 }
 
@@ -176,6 +243,7 @@ async function importSystemConfigFile(file) {
                     failed.push(key + ': ' + (result?.message || '保存失败'));
                 } else {
                     updateLocalImportedConfig(key, value);
+                    if (key === 'UI_THEME') applyTheme(value);
                 }
             } catch (error) {
                 failed.push(key + ': ' + error.message);
@@ -2159,7 +2227,11 @@ function updateProgress(percent) {
 // 渲染环境变量列表
 function renderEnvList() {
     const list = document.getElementById('env-list');
-    const items = envVariables[currentCategory] || [];
+    const themeSettings = document.getElementById('theme-settings');
+    if (themeSettings) themeSettings.hidden = currentCategory !== 'system';
+
+    const items = (envVariables[currentCategory] || [])
+        .filter(item => item.key !== 'UI_THEME');
 
     if (items.length === 0) {
         list.innerHTML = '<p class="text-gray padding-20 text-center">暂无配置项</p>';
