@@ -202,8 +202,15 @@ export const HTML_TEMPLATE = /* html */ `
                     <div>
                         <h2 style="margin: 0;">环境变量配置</h2>
                         <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">vercel/netlify/edgeone平台修改变量后需要重新部署</p>
-                    </div>
+                </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="exportSystemConfig()" title="导出当前环境变量配置">
+                        📥 导出配置
+                    </button>
+                    <button class="btn btn-primary" onclick="triggerConfigImport()" title="从 JSON 文件导入环境变量配置">
+                        📤 导入配置
+                    </button>
+                    <input type="file" id="config-import-file" accept=".json,application/json" style="display: none;" onchange="importSystemConfigFile(this.files[0])">
                     <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
                         🗑️ 清理缓存
                     </button>

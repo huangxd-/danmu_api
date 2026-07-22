@@ -4,6 +4,214 @@ export const systemSettingsJsContent = /* javascript */ `
 let isMergeMode = false;
 let stagingTags = [];
 
+// 导出当前管理员可见的环境变量配置
+async function exportSystemConfig() {
+    try {
+        const response = await fetch(buildApiUrl('/api/config', true));
+        if (!response.ok) {
+            throw new Error('获取配置失败: HTTP ' + response.status);
+        }
+
+        const config = await response.json();
+        const values = config.originalEnvVars || {};
+        const maskedKeys = Object.entries(values)
+            .filter(([, value]) => typeof value === 'string' && /^\\*+$/.test(value))
+            .map(([key]) => key);
+
+        if (maskedKeys.length > 0) {
+            customAlert('当前页面没有权限读取完整配置，无法导出脱敏配置。请使用 ADMIN_TOKEN 访问系统配置。');
+            return;
+        }
+
+        const exportData = {
+            format: 'danmu-api-config',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            values
+        };
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = 'danmu-api-config-' + date + '.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        addLog('配置文件导出成功，共 ' + Object.keys(values).length + ' 项', 'success');
+    } catch (error) {
+        addLog('配置文件导出失败: ' + error.message, 'error');
+        customAlert('配置文件导出失败: ' + error.message);
+    }
+}
+
+// 打开配置文件选择器
+function triggerConfigImport() {
+    const input = document.getElementById('config-import-file');
+    if (!input) return;
+    input.value = '';
+    input.click();
+}
+
+function readConfigFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('读取配置文件失败'));
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function normalizeImportedConfig(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('配置文件必须是 JSON 对象');
+    }
+
+    const values = data.values || data.variables || data.env || data;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) {
+        throw new Error('配置文件中没有找到有效的 values 配置项');
+    }
+
+    const reservedKeys = new Set(['format', 'version', 'exportedAt']);
+    const entries = [];
+    const invalidKeys = [];
+    const maskedKeys = [];
+
+    Object.entries(values).forEach(([rawKey, rawValue]) => {
+        const key = String(rawKey).trim();
+        if (reservedKeys.has(key)) return;
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            invalidKeys.push(key || '(空键名)');
+            return;
+        }
+
+        if (rawValue !== null && typeof rawValue === 'object') {
+            invalidKeys.push(key + ' (值必须是文本、数字或布尔值)');
+            return;
+        }
+
+        const value = rawValue === null ? '' : String(rawValue);
+        if (/^\\*+$/.test(value)) {
+            maskedKeys.push(key);
+            return;
+        }
+        entries.push({ key, value });
+    });
+
+    if (invalidKeys.length > 0) {
+        throw new Error('配置文件包含无效项目: ' + invalidKeys.slice(0, 8).join('、'));
+    }
+    if (entries.length === 0) {
+        throw new Error(maskedKeys.length > 0 ? '配置文件中的值全部为脱敏值，无法导入' : '配置文件中没有可导入的配置');
+    }
+
+    // 令牌最后更新，避免导入过程中提前失去当前页面权限。
+    const importPriority = {
+        DEPLOY_PLATFROM_ACCOUNT: 10,
+        DEPLOY_PLATFROM_PROJECT: 11,
+        DEPLOY_PLATFROM_TOKEN: 12,
+        TOKEN: 20,
+        ADMIN_TOKEN: 30
+    };
+    entries.sort((a, b) => (importPriority[a.key] || 0) - (importPriority[b.key] || 0));
+
+    return { entries, maskedKeys };
+}
+
+async function saveImportedConfigValue(key, value) {
+    const request = (endpoint) => fetch(buildApiUrl(endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value })
+    }).then(response => response.json());
+
+    let result = await request('/api/env/set');
+    if (!result.success) {
+        result = await request('/api/env/add');
+    }
+    return result;
+}
+
+function updateLocalImportedConfig(key, value) {
+    for (const items of Object.values(envVariables)) {
+        const item = items.find(entry => entry.key === key);
+        if (item) {
+            item.value = value;
+            return;
+        }
+    }
+
+    if (!envVariables.system) envVariables.system = [];
+    envVariables.system.push({
+        key,
+        value,
+        type: 'text',
+        description: '从配置文件导入的配置项'
+    });
+}
+
+// 读取并批量导入配置文件
+async function importSystemConfigFile(file) {
+    if (!file) return;
+
+    try {
+        const data = JSON.parse(await readConfigFile(file));
+        const { entries, maskedKeys } = normalizeImportedConfig(data);
+        const confirmed = await customConfirm(
+            '即将覆盖 ' + entries.length + ' 项环境变量配置，导入过程可能需要一些时间。是否继续？',
+            '确认导入配置'
+        );
+        if (!confirmed) return;
+
+        showLoading('正在导入配置...', '准备导入 ' + entries.length + ' 项');
+        const failed = [];
+
+        for (let i = 0; i < entries.length; i++) {
+            const { key, value } = entries[i];
+            updateLoadingText('正在导入配置...', (i + 1) + '/' + entries.length + '  ' + key);
+            try {
+                const result = await saveImportedConfigValue(key, value);
+                if (!result || !result.success) {
+                    failed.push(key + ': ' + (result?.message || '保存失败'));
+                } else {
+                    updateLocalImportedConfig(key, value);
+                }
+            } catch (error) {
+                failed.push(key + ': ' + error.message);
+            }
+        }
+
+        hideLoading();
+        renderEnvList();
+        renderPreview();
+
+        if (failed.length > 0) {
+            addLog('配置导入部分失败: ' + failed.join('；'), 'error');
+            customAlert('配置导入完成，但有 ' + failed.length + ' 项失败：\\n' + failed.slice(0, 8).join('\\n'));
+            return;
+        }
+
+        let successMessage;
+        if (maskedKeys.length > 0) {
+            addLog('配置导入完成，跳过 ' + maskedKeys.length + ' 项脱敏配置', 'warn');
+            successMessage = '配置导入成功，已跳过 ' + maskedKeys.length + ' 项脱敏值配置。';
+        } else {
+            addLog('配置导入成功，共 ' + entries.length + ' 项', 'success');
+            successMessage = '配置导入成功，共导入 ' + entries.length + ' 项配置。';
+        }
+
+        if (entries.some(entry => entry.key === 'TOKEN' || entry.key === 'ADMIN_TOKEN')) {
+            successMessage += '\\n访问令牌已更新，请使用新 TOKEN 或 ADMIN_TOKEN 地址重新打开管理页面。';
+        }
+        customAlert(successMessage);
+    } catch (error) {
+        hideLoading();
+        addLog('配置文件导入失败: ' + error.message, 'error');
+        customAlert('配置文件导入失败: ' + error.message);
+    }
+}
+
 // 显示清理缓存确认模态框
 function showClearCacheModal() {
     document.getElementById('clear-cache-modal').classList.add('active');
