@@ -207,10 +207,10 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary config-transfer-btn" onclick="exportSystemConfig()" title="下载当前环境变量配置文件">
-                        <span class="config-transfer-icon" aria-hidden="true">↓</span> 导出配置
+                        <span class="config-transfer-icon" aria-hidden="true">📤</span> 导出配置
                     </button>
                     <button class="btn btn-primary config-transfer-btn" onclick="triggerConfigImport()" title="上传 JSON 文件并导入环境变量配置">
-                        <span class="config-transfer-icon" aria-hidden="true">↑</span> 导入配置
+                        <span class="config-transfer-icon" aria-hidden="true">📥</span> 导入配置
                     </button>
                     <input type="file" id="config-import-file" accept=".json,application/json" style="display: none;" onchange="importSystemConfigFile(this.files[0])">
                     <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
