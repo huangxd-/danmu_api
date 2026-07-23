@@ -74,8 +74,8 @@ export default class IqiyiSource extends BaseSource {
       let data = await doSearch();
       for (let attempt = 0; attempt < MAX_RETRIES && (!data || data.code === "-1"); attempt++) {
         const reason = !data ? "搜索响应为空" : `搜索接口风控 (code=${data.code})`;
-        log("info", `[iQiyi] ${reason}，等待 1.5 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
-        await new Promise(r => setTimeout(r, 1500));
+        log("info", `[iQiyi] ${reason}，等待 3 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 3000));
         data = await doSearch();
       }
 
