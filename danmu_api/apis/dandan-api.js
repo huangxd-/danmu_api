@@ -2022,8 +2022,9 @@ async function fetchMergedComments(url, animeTitle, commentId) {
 
   const stats = {};
   
-  // 2. 并行获取所有源的弹幕
-  const tasks = partMetas.map(async (meta) => {
+  // 2. 构建任务工厂（延迟启动，到分组后再执行）
+  const taskFactories = partMetas.map((meta) => {
+    return async () => {
     const sourceName = meta.logicalSource;
     const sourceLabel = meta.sourceLabel || meta.logicalSource;
     const realId = meta.realId;
@@ -2117,10 +2118,28 @@ async function fetchMergedComments(url, animeTitle, commentId) {
         // 任务完成后移除队列
         PENDING_DANMAKU_REQUESTS.delete(pendingKey);
     }
+    };
   });
 
-  // 等待所有源请求完成
-  const results = await Promise.all(tasks);
+  // 按平台分组执行：同平台（sourceName 相同）任务串行执行，每个间隔 1 秒，防止短时间内对同一个平台发起多次并发请求触发风控；不同平台仍并行执行。
+  // taskFactories 而非直接 map(async) 确保任务在分组后才启动，避免 async 函数同步段在分组前就已执行。
+  const sourceGroups = new Map();
+  taskFactories.forEach((factory, i) => {
+    const src = partMetas[i]?.logicalSource || 'unknown';
+    if (!sourceGroups.has(src)) sourceGroups.set(src, []);
+    sourceGroups.get(src).push({ factory, index: i });
+  });
+  const indexedResults = await Promise.all(
+    Array.from(sourceGroups.values()).map(async (group) => {
+      const items = [];
+      for (let j = 0; j < group.length; j++) {
+        items.push({ index: group[j].index, data: await group[j].factory() });
+        if (j < group.length - 1) await new Promise(r => setTimeout(r, 1000));
+      }
+      return items;
+    })
+  );
+  const results = indexedResults.flat().sort((a, b) => a.index - b.index).map(x => x.data);
   
   // 调用以dandan为基准的跨源时间轴对齐函数（仅当存在 dandan 源时执行）
   alignSourceTimelines(results, sourceNames, realIds);
