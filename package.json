@@ -17,6 +17,7 @@
     "esbuild": "^0.25.10",
     "https-proxy-agent": "^7.0.6",
     "node-fetch": "^3.3.2",
+    "opencc-js": "^1.4.1",
     "pako": "^2.1.0",
     "redis": "^5.11.0"
   }
