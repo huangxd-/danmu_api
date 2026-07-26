@@ -6,7 +6,8 @@
   "main": "danmu_api/server.js",
   "scripts": {
     "start": "node danmu_api/server.js",
-    "build-forward-widget": "node build-forward-widget.js"
+    "build-forward-widget": "node build-forward-widget.js",
+    "build-forward-widget:debug": "node build-forward-widget.js --debug"
   },
   "author": "",
   "license": "ISC",

@@ -4,16 +4,24 @@ import { log } from '../danmu_api/utils/log-util.js';
 import { simplized } from '../danmu_api/utils/zh-util.js';
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
-
 WidgetMetadata = {
-  id: "forward.auto.danmu2",
-  title: "自动链接弹幕v2",
+  id: globalThis.__FORWARD_WIDGET_DEBUG__ === true ? "forward.auto.danmu2.debug" : "forward.auto.danmu2",
+  title: globalThis.__FORWARD_WIDGET_DEBUG__ === true ? "自动链接弹幕v2 [DEBUG]" : "自动链接弹幕v2",
   version: wv,
   requiredVersion: "0.0.2",
   description: "自动获取播放链接并从服务器获取弹幕【五折码：CHEAP.5;七折码：CHEAP】",
   author: "huangxd",
   site: "https://github.com/huangxd-/ForwardWidgets",
   globalParams: [
+    ...(globalThis.__FORWARD_WIDGET_DEBUG__ === true ? [{
+      name: "debugEndpoint",
+      title: "调试回传地址，例如 http://192.168.1.10:9321/87654321",
+      type: "input",
+      placeholders: [{
+        title: "局域网 danmu_api 地址",
+        value: "http://192.168.1.10:9321/87654321",
+      }],
+    }] : []),
     // 源配置
     {
       name: "sourceOrder",
@@ -527,11 +535,297 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
+const FORWARD_TRACE_MAX_LOGS = 80;
+const FORWARD_TRACE_MAX_ARRAY = 5;
+const FORWARD_TRACE_MAX_STRING = 500;
+const FORWARD_TRACE_BATCH_SIZE = 20;
+let forwardDebugContext = null;
+
+function redactForwardTraceValue(value, key = '', depth = 0, seen = []) {
+  if (/(cookie|token|api.?key|authorization|password|secret|debugEndpoint)/i.test(key)) {
+    return value ? '[REDACTED]' : value;
+  }
+  if (typeof value === 'string') {
+    return value.length > FORWARD_TRACE_MAX_STRING
+      ? `${value.slice(0, FORWARD_TRACE_MAX_STRING)}...[truncated]`
+      : value;
+  }
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (depth >= 4) return '[max-depth]';
+  if (seen.includes(value)) return '[circular]';
+
+  const nextSeen = [...seen, value];
+  if (Array.isArray(value)) {
+    const items = value.slice(0, FORWARD_TRACE_MAX_ARRAY)
+      .map((item) => redactForwardTraceValue(item, key, depth + 1, nextSeen));
+    if (value.length > FORWARD_TRACE_MAX_ARRAY) {
+      items.push(`[${value.length - FORWARD_TRACE_MAX_ARRAY} more items]`);
+    }
+    return items;
+  }
+
+  const output = {};
+  Object.keys(value).slice(0, 50).forEach((childKey) => {
+    output[childKey] = redactForwardTraceValue(value[childKey], childKey, depth + 1, nextSeen);
+  });
+  return output;
+}
+
+function summarizeForwardResult(handlerName, result) {
+  if (handlerName === 'searchDanmu') {
+    const animes = Array.isArray(result?.animes) ? result.animes : [];
+    return { animeCount: animes.length, animes: redactForwardTraceValue(animes.slice(0, 5)) };
+  }
+  if (handlerName === 'getDetailById') {
+    const episodes = Array.isArray(result) ? result : [];
+    return { episodeCount: episodes.length, episodes: redactForwardTraceValue(episodes.slice(0, 5)) };
+  }
+  if (handlerName === 'getCommentsById') {
+    const segments = Array.isArray(result) ? result : [];
+    return {
+      segmentCount: segments.length,
+      firstSegment: redactForwardTraceValue(segments[0] || null),
+      lastSegment: redactForwardTraceValue(segments[segments.length - 1] || null),
+    };
+  }
+  if (handlerName === 'getDanmuWithSegmentTime') {
+    const comments = Array.isArray(result?.comments) ? result.comments : [];
+    return {
+      success: result?.success,
+      errorCode: result?.errorCode,
+      errorMessage: result?.errorMessage,
+      count: Number.isFinite(Number(result?.count)) ? Number(result.count) : comments.length,
+      comments: redactForwardTraceValue(comments.slice(0, 3)),
+    };
+  }
+  return redactForwardTraceValue(result);
+}
+
+function buildForwardTraceUrl(debugEndpoint) {
+  const endpoint = String(debugEndpoint || '').trim().replace(/\/+$/, '');
+  if (!endpoint) return '';
+  return endpoint.endsWith('/api/debug/forward-trace')
+    ? endpoint
+    : `${endpoint}/api/debug/forward-trace`;
+}
+
+function redactForwardRequestUrl(url) {
+  return String(url || '').replace(
+    /([?&](?:token|access_token|api_?key|key|signature|x-signature|authorization)=)[^&]*/gi,
+    '$1[REDACTED]'
+  );
+}
+
+function enqueueForwardRuntimeLog(level, message, details = {}) {
+  if (!forwardDebugContext) return;
+  forwardDebugContext.runtimeLogs.push({
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...redactForwardTraceValue(details),
+  });
+  flushForwardRuntimeLogs().catch(() => {});
+}
+
+function installForwardConsoleTrace() {
+  ['log', 'info', 'warn', 'error'].forEach((method) => {
+    const original = console[method];
+    if (typeof original !== 'function' || original.__forwardTraceWrapped) return;
+    const wrapped = (...args) => {
+      const message = args.map((arg) => {
+        if (typeof arg === 'string') return arg;
+        try { return JSON.stringify(redactForwardTraceValue(arg)); } catch (_) { return String(arg); }
+      }).join(' ');
+      enqueueForwardRuntimeLog(method === 'log' ? 'info' : method, message, { kind: 'console' });
+      return original.apply(console, args);
+    };
+    wrapped.__forwardTraceWrapped = true;
+    console[method] = wrapped;
+  });
+}
+
+function collectPendingForwardLogs(context) {
+  const logs = [];
+  const centralLogKeys = new Set();
+  if (globals && Array.isArray(globals.logBuffer)) {
+    globals.logBuffer.forEach((entry) => {
+      if (context.seenLogs.includes(entry)) return;
+      const timestamp = Date.parse(entry?.timestamp || '');
+      if (!Number.isFinite(timestamp) || timestamp < context.startedAt - 1000) return;
+      context.seenLogs.push(entry);
+      const redacted = redactForwardTraceValue(entry);
+      centralLogKeys.add(`${redacted.level}|${redacted.message}`);
+      logs.push(redacted);
+    });
+  }
+  context.runtimeLogs.splice(0).forEach((entry) => {
+    const redacted = redactForwardTraceValue(entry);
+    if (redacted.kind === 'console' && centralLogKeys.has(`${redacted.level}|${redacted.message}`)) return;
+    logs.push(redacted);
+  });
+  return logs.slice(-FORWARD_TRACE_MAX_LOGS);
+}
+
+async function flushForwardRuntimeLogs() {
+  const context = forwardDebugContext;
+  if (!context || !context.debugEndpoint) return;
+  if (context.flushing) {
+    context.flushAgain = true;
+    return context.flushPromise;
+  }
+  context.flushing = true;
+  context.flushPromise = (async () => {
+    try {
+      do {
+        context.flushAgain = false;
+        const logs = collectPendingForwardLogs(context);
+        for (let index = 0; index < logs.length; index += FORWARD_TRACE_BATCH_SIZE) {
+          const batch = logs.slice(index, index + FORWARD_TRACE_BATCH_SIZE);
+          await sendForwardTrace(context.debugEndpoint, {
+            eventType: 'logBatch',
+            widgetId: WidgetMetadata.id,
+            widgetVersion: WidgetMetadata.version,
+            handler: context.handler,
+            status: batch.some((entry) => entry.level === 'error') ? 'error' : 'info',
+            timestamp: new Date().toISOString(),
+            logs: batch,
+          });
+        }
+      } while (context.flushAgain);
+    } finally {
+      context.flushing = false;
+    }
+  })();
+  return context.flushPromise;
+}
+
+async function startForwardRealtimeTrace(handlerName, params, startedAt) {
+  forwardDebugContext = {
+    handler: handlerName,
+    debugEndpoint: params?.debugEndpoint,
+    startedAt,
+    seenLogs: [],
+    runtimeLogs: [],
+    flushing: false,
+    flushAgain: false,
+    flushPromise: null,
+  };
+  await sendForwardTrace(params?.debugEndpoint, {
+    eventType: 'handlerStart',
+    widgetId: WidgetMetadata.id,
+    widgetVersion: WidgetMetadata.version,
+    handler: handlerName,
+    status: 'running',
+    timestamp: new Date(startedAt).toISOString(),
+    params: redactForwardTraceValue(params || {}),
+  });
+}
+
+async function stopForwardRealtimeTrace() {
+  const context = forwardDebugContext;
+  if (!context) return;
+  await flushForwardRuntimeLogs();
+  if (forwardDebugContext === context) forwardDebugContext = null;
+}
+
+async function forwardDebugHttpRequest(method, url, body, options = {}) {
+  const startedAt = Date.now();
+  const safeUrl = redactForwardRequestUrl(url);
+  enqueueForwardRuntimeLog('info', `[HTTP] ${method} ${safeUrl}`, { kind: 'httpStart', method, url: safeUrl });
+  try {
+    const response = method === 'GET'
+      ? await Widget.http.get(url, options)
+      : await Widget.http.post(url, body, options);
+    enqueueForwardRuntimeLog(
+      'info',
+      `[HTTP] ${method} ${response?.status || 200} ${Date.now() - startedAt}ms ${safeUrl}`,
+      { kind: 'httpComplete', method, url: safeUrl, status: response?.status || 200, durationMs: Date.now() - startedAt }
+    );
+    return response;
+  } catch (error) {
+    enqueueForwardRuntimeLog(
+      'error',
+      `[HTTP] ${method} ERROR ${Date.now() - startedAt}ms ${safeUrl}: ${error?.message || error}`,
+      { kind: 'httpError', method, url: safeUrl, durationMs: Date.now() - startedAt, error: error?.message || String(error) }
+    );
+    throw error;
+  }
+}
+
+async function forwardDebugHttpGet(url, options = {}) {
+  return forwardDebugHttpRequest('GET', url, undefined, options);
+}
+
+async function forwardDebugHttpPost(url, body, options = {}) {
+  return forwardDebugHttpRequest('POST', url, body, options);
+}
+
+if (globalThis.__FORWARD_WIDGET_DEBUG__ === true) {
+  installForwardConsoleTrace();
+  globalThis.__forwardDebugHttpGet = forwardDebugHttpGet;
+  globalThis.__forwardDebugHttpPost = forwardDebugHttpPost;
+}
+
+async function sendForwardTrace(debugEndpoint, payload) {
+  const traceUrl = buildForwardTraceUrl(debugEndpoint);
+  if (!traceUrl) return;
+  try {
+    await Widget.http.post(traceUrl, JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 3000,
+    });
+  } catch (error) {
+    console.warn('[ForwardDebug] trace upload failed:', error?.message || error);
+  }
+}
+
+async function runWithForwardTrace(handlerName, params, operation) {
+  if (globalThis.__FORWARD_WIDGET_DEBUG__ !== true) return operation();
+
+  const startedAt = Date.now();
+  await startForwardRealtimeTrace(handlerName, params, startedAt);
+  try {
+    const result = await operation();
+    await stopForwardRealtimeTrace();
+    await sendForwardTrace(params?.debugEndpoint, {
+      eventType: 'handlerComplete',
+      widgetId: WidgetMetadata.id,
+      widgetVersion: WidgetMetadata.version,
+      handler: handlerName,
+      status: 'success',
+      timestamp: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      params: redactForwardTraceValue(params || {}),
+      result: summarizeForwardResult(handlerName, result),
+    });
+    return result;
+  } catch (error) {
+    await stopForwardRealtimeTrace();
+    await sendForwardTrace(params?.debugEndpoint, {
+      eventType: 'handlerComplete',
+      widgetId: WidgetMetadata.id,
+      widgetVersion: WidgetMetadata.version,
+      handler: handlerName,
+      status: 'error',
+      timestamp: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      params: redactForwardTraceValue(params || {}),
+      error: redactForwardTraceValue({
+        name: error?.name,
+        message: error?.message || String(error),
+        stack: error?.stack,
+      }),
+    });
+    throw error;
+  }
+}
+
 async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
                      platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
                      danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
   const env = {};
+  if (globalThis.__FORWARD_WIDGET_DEBUG__ === true) env.LOG_LEVEL = 'info';
   
   if (sourceOrder !== undefined) env.SOURCE_ORDER = sourceOrder;
   if (otherServer !== undefined) env.OTHER_SERVER = otherServer;
@@ -623,7 +917,7 @@ async function removeCaches() {
 
 const PREFIX_URL = "http://localhost:9321"
 
-async function searchDanmu(params) {
+async function searchDanmuCore(params) {
   const { tmdbId, type, title, season, link, videoUrl, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
          danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
@@ -703,7 +997,7 @@ async function searchDanmu(params) {
   };
 }
 
-async function getDetailById(params) {
+async function getDetailByIdCore(params) {
   const { animeId, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
          danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
@@ -722,7 +1016,7 @@ async function getDetailById(params) {
   return resJson.bangumi.episodes;
 }
 
-async function getCommentsById(params) {
+async function getCommentsByIdCore(params) {
   const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
          danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
@@ -743,10 +1037,8 @@ async function getCommentsById(params) {
     log("info", "[Forward] lastCommentId:", lastCommentId);
     log("info", "[Forward] segmentList:", segmentList);
 
-    if (lastCommentId === commentId && segmentList) {
-        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
-                                               platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                                               danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes })
+    if (lastCommentId === commentId && Array.isArray(segmentList)) {
+        return segmentList;
     } else {
       Widget.storage.remove(storeKey);
       Widget.storage.remove(commentIdKey);
@@ -767,7 +1059,7 @@ async function getCommentsById(params) {
   return null;
 }
 
-async function getDanmuWithSegmentTime(params) {
+async function getDanmuWithSegmentTimeCore(params) {
   const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
          danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
@@ -786,6 +1078,15 @@ async function getDanmuWithSegmentTime(params) {
         return time >= start && time < end;
     });
     log("info", "[Forward] segment:", segment);
+    if (!segment) {
+      const starts = segmentList.map((item) => Number(item.segment_start)).filter(Number.isFinite);
+      const ends = segmentList.map((item) => Number(item.segment_end)).filter(Number.isFinite);
+      const rangeStart = starts.length ? Math.min(...starts) : null;
+      const rangeEnd = ends.length ? Math.max(...ends) : null;
+      const errorMessage = `No segment covers ${segmentTime}s; available range: ${rangeStart}-${rangeEnd}s`;
+      log("warn", `[Forward] ${errorMessage}`);
+      return { errorCode: 404, success: false, errorMessage, count: 0, comments: [] };
+    }
     const response = await getSegmentComment(segment);
     const resJson = await response.json();
 
@@ -794,6 +1095,30 @@ async function getDanmuWithSegmentTime(params) {
     return resJson;
   }
   return null;
+}
+
+async function searchDanmu(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('searchDanmu', params, () => searchDanmuCore(params))
+    : searchDanmuCore(params);
+}
+
+async function getDetailById(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getDetailById', params, () => getDetailByIdCore(params))
+    : getDetailByIdCore(params);
+}
+
+async function getCommentsById(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getCommentsById', params, () => getCommentsByIdCore(params))
+    : getCommentsByIdCore(params);
+}
+
+async function getDanmuWithSegmentTime(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getDanmuWithSegmentTime', params, () => getDanmuWithSegmentTimeCore(params))
+    : getDanmuWithSegmentTimeCore(params);
 }
 
 // 导出函数以供ForwardWidgets调用

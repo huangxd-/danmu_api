@@ -140,7 +140,7 @@ LogVar 弹幕 API 服务器
    # 构建forward弹幕插件
    node build-forward-widget.js
    # 测试forward弹幕插件
-   node danmu_api/forward-widget.test.js
+   node forward/forward-widget.test.js
    ```
 
 5. **测试 API**：
@@ -157,6 +157,30 @@ LogVar 弹幕 API 服务器
    - `POST http://{ip}:9321/87654321/api/v2/segmentcomment?format=json` (请求体包含segment类JSON数据，示例 `{"type": "qq","segment_start":0,"segment_end":30000,"url":"https://dm.video.qq.com/barrage/segment/j0032ubhl9s/t/v1/0/30000"}` )
    - `GET http://{ip}:9321/87654321/api/logs`
    > 注意：TOKEN为默认87654321的情况下，可不带{TOKEN}请求，如`http://{ip}:9321/api/v2/search/anime?keyword=生万物`
+
+### Forward 真机调试
+
+在电脑上启动实时日志接收服务：
+
+```bash
+node danmu_api/server.js
+```
+
+再在另一个终端生成可与正式插件并存的 debug bundle：
+
+```bash
+node build-forward-widget.js --debug
+```
+
+在 Forward 中安装 `dist/logvar-danmu.debug.js`，将 `debugEndpoint` 配置为带 token 的电脑局域网地址，例如 `http://192.168.1.10:9321/87654321`。不要填写 `127.0.0.1`，它在手机上指向手机自身。
+
+真机复现时，handler 开始/结束、参数、结果摘要、`info/warn/error`、直接 `console` 输出，以及所有 HTTP GET/POST 的 URL、状态、耗时和异常会实时显示在服务端终端。相同内容也会以 `[ForwardRemote]` 前缀写入 `/api/logs`：
+
+```text
+GET http://127.0.0.1:9321/87654321/api/logs
+```
+
+服务端不会保存 trace session，也不提供回放接口。正式 bundle 不包含日志回传代码；Cookie、token 和 API key 会在上传前脱敏。日志回传失败不会影响弹幕主流程。
 
 ## 使用 Docker 运行
 1. **构建 Docker 镜像**：

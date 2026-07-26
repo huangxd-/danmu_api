@@ -9,6 +9,7 @@ import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
+import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -257,7 +258,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   if (path !== "/" && path !== "/danmaku" && path !== "/api/logs" && !path.startsWith('/api/env') 
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
-    && !path.startsWith('/api/ai')) {
+    && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')) {
       log("info", `[Path Check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
 
@@ -281,7 +282,7 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') 
         && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
-        && !path.startsWith('/api/ai')) {
+        && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')) {
           if (path.startsWith('/v2/') || path === '/v2') {
               log("info", `[Path Check] Path is missing /api prefix. Adding /api...`);
               path = '/api' + path;
@@ -487,6 +488,15 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // GET /api/logs
   if (path === "/api/logs" && method === "GET") {
     return handleLogs();
+  }
+
+  if (path === '/api/debug/forward-trace') {
+    if (!isValidToken) {
+      return jsonResponse({ success: false, errorMessage: 'Explicit token required for Forward traces' }, 401);
+    }
+    if (method === 'POST') {
+      return handleForwardTrace(req);
+    }
   }
 
   // POST /api/logs/clear
