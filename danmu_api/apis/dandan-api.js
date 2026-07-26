@@ -75,6 +75,13 @@ const tmdbSource = new TmdbSource(doubanSource);
 // 用于聚合请求的去重Map
 const PENDING_DANMAKU_REQUESTS = new Map();
 
+function resolveCommentCacheKey(url) {
+  const value = String(url || "");
+  if (!globals.hongguoMergeAllEpisodes) return url;
+  const containsHongguo = value.includes("hongguo:") || /https?:\/\/(?:www\.)?hongguoduanju\.com(?::\d+)?\/player\//i.test(value);
+  return containsHongguo ? `${value}::hongguo-all-episodes` : url;
+}
+
 function normalizeDurationValue(rawValue) {
   const duration = Number(rawValue || 0);
   if (!Number.isFinite(duration) || duration <= 0) return 0;
@@ -2029,7 +2036,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   log("info", `[Merge] 开始获取 [${sourceTag}] 聚合弹幕...`);
 
   // 1. 检查聚合缓存
-  const cached = getCommentCache(url);
+  const cached = getCommentCache(resolveCommentCacheKey(url));
   if (cached) {
     log("info", `[Merge] 命中缓存 [${sourceTag}]，返回 ${cached.length} 条`);
     return cached;
@@ -2204,7 +2211,8 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   log("info", `[system] [LogVar-API] Fetched comment ID: ${commentId}`);
 
   // 检查弹幕缓存
-  const cachedComments = getCommentCache(url);
+  const cacheKey = resolveCommentCacheKey(url);
+  const cachedComments = getCommentCache(cacheKey);
   if (cachedComments !== null) {
     const responseData = buildDanmuResponse(
       { count: cachedComments.length, comments: cachedComments },
@@ -2380,7 +2388,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     if (danmus && danmus.comments) danmus = danmus.comments;
     if (!Array.isArray(danmus)) danmus = [];
     if (danmus.length > 0) {
-        setCommentCache(url, danmus);
+        setCommentCache(cacheKey, danmus);
     }
   }
 
@@ -2419,7 +2427,8 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     let url = videoUrl;
     const shouldAttachDuration = shouldIncludeVideoDuration(queryFormat, includeDuration);
     // 检查弹幕缓存
-    const cachedComments = getCommentCache(url);
+    const cacheKey = resolveCommentCacheKey(url);
+    const cachedComments = getCommentCache(cacheKey);
     if (cachedComments !== null) {
       const responseData = buildDanmuResponse({
         errorCode: 0,
@@ -2476,7 +2485,7 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
 
     // 缓存弹幕结果
     if (danmus.length > 0) {
-      setCommentCache(url, danmus);
+      setCommentCache(cacheKey, danmus);
     }
 
     const responseData = buildDanmuResponse({
@@ -2517,7 +2526,8 @@ export async function getSegmentComment(segment, queryFormat) {
     log("info", `[system] [SegmentComment] Processing segment comment request for URL: ${url}`);
 
     // 检查弹幕缓存
-    const cachedComments = getCommentCache(url);
+    const cacheKey = resolveCommentCacheKey(url);
+    const cachedComments = getCommentCache(cacheKey);
     if (cachedComments !== null) {
       const responseData = {
         errorCode: 0,
@@ -2577,7 +2587,7 @@ export async function getSegmentComment(segment, queryFormat) {
 
     // 缓存弹幕结果
     if (danmus.length > 0) {
-      setCommentCache(url, danmus);
+      setCommentCache(cacheKey, danmus);
     }
 
     const responseData = {

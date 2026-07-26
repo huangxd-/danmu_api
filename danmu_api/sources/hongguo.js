@@ -66,6 +66,7 @@ const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
 const COMMENT_COUNT = 90;
+const COMMENT_CONCURRENCY = 30;
 const MAX_RETRIES = 3;
 const MAX_SEARCH_ITEMS = 20;
 const IMAGE_SHRINK =
@@ -441,6 +442,26 @@ export function createHongguoEpisodeId(seriesId, vid, durationSeconds) {
   return `hongguo:v1:${encodeURIComponent(String(seriesId))}:${encodeURIComponent(String(vid))}:${Math.max(0, Math.trunc(Number(durationSeconds) || 0))}`;
 }
 
+export function createHongguoSeriesId(seriesId) {
+  return `hongguo:series:v1:${encodeURIComponent(String(seriesId))}`;
+}
+
+export function parseHongguoSeriesId(value) {
+  const rawValue = String(value || "").split("#", 1)[0];
+  const match = rawValue.match(/^hongguo:series:v1:([^:]+)$/);
+  if (!match) throw new Error("无效的红果全集 ID");
+  return { seriesId: decodeURIComponent(match[1]) };
+}
+
+export function isHongguoSeriesId(value) {
+  try {
+    parseHongguoSeriesId(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseHongguoEpisodeId(value) {
   const rawValue = String(value || "").split("#", 1)[0];
   const match = rawValue.match(/^hongguo:v1:([^:]+):([^:]+):(\d+)$/);
@@ -552,11 +573,48 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  let firstError = null;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        if (!firstError) firstError = error;
+      }
+    }
+  });
+  await Promise.all(workers);
+  if (firstError) throw firstError;
+  return results;
+}
+
+function getFragmentNumber(value, name) {
+  const hashIndex = String(value || "").indexOf("#");
+  if (hashIndex < 0) return null;
+  const expected = String(name);
+  const fragment = String(value).slice(hashIndex + 1);
+  for (const pair of fragment.split("&")) {
+    const separator = pair.indexOf("=");
+    const key = separator < 0 ? pair : pair.slice(0, separator);
+    if (decodeURIComponent(key) !== expected) continue;
+    const number = Number(decodeURIComponent(separator < 0 ? "" : pair.slice(separator + 1)));
+    return Number.isFinite(number) ? number : null;
+  }
+  return null;
+}
+
 export default class HongguoSource extends BaseSource {
   constructor() {
     super();
     this.nextRequestAt = 0;
     this.playerEpisodeResolutions = new Map();
+    this.activeCommentRequests = 0;
+    this.commentRequestWaiters = [];
   }
 
   buildUrl(path, extraQuery = {}) {
@@ -602,10 +660,16 @@ export default class HongguoSource extends BaseSource {
           headers["x-ss-stub"] = md5(stringToUtf8Bytes(payload)).toUpperCase();
         }
         Object.assign(headers, signHongguoRequest(url, { headers }));
-        await this.throttle();
-        const response = method === "GET"
-          ? await httpGet(url, { headers, timeout: 30000 })
-          : await httpPost(url, payload, { headers, timeout: 30000 });
+        const releaseCommentSlot = comment ? await this.acquireCommentSlot() : null;
+        if (!comment) await this.throttle();
+        let response;
+        try {
+          response = method === "GET"
+            ? await httpGet(url, { headers, timeout: 30000 })
+            : await httpPost(url, payload, { headers, timeout: 30000 });
+        } finally {
+          if (releaseCommentSlot) releaseCommentSlot();
+        }
         const result = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
         this.checkResponse(result);
         return result;
@@ -734,6 +798,40 @@ export default class HongguoSource extends BaseSource {
     }
   }
 
+  createCommentSlotRelease() {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.commentRequestWaiters.shift();
+      if (next) {
+        next(this.createCommentSlotRelease());
+      } else {
+        this.activeCommentRequests--;
+      }
+    };
+  }
+
+  async acquireCommentSlot() {
+    if (this.activeCommentRequests < COMMENT_CONCURRENCY) {
+      this.activeCommentRequests++;
+      return this.createCommentSlotRelease();
+    }
+    return new Promise((resolve) => this.commentRequestWaiters.push(resolve));
+  }
+
+  resolveSeriesId(value) {
+    if (isHongguoSeriesId(value)) return parseHongguoSeriesId(value).seriesId;
+    if (String(value || "").split("#", 1)[0].startsWith("hongguo:v1:")) {
+      return parseHongguoEpisodeId(value).seriesId;
+    }
+    return parseHongguoPlayerUrl(value).seriesId;
+  }
+
+  shouldMergeAllEpisodes(value) {
+    return isHongguoSeriesId(value) || Boolean(globals.hongguoMergeAllEpisodes);
+  }
+
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     if (!Array.isArray(sourceAnimes)) return [];
     const transformed = [];
@@ -741,14 +839,20 @@ export default class HongguoSource extends BaseSource {
     for (const anime of filtered) {
       const details = await this.getEpisodes(anime.seriesId);
       const episodes = details.episodes;
-      const links = episodes.map((episode) => {
-        const episodeTitle = `第${episode.index}集${episode.title ? ` ${episode.title}` : ""}`;
-        return {
-          name: episodeTitle,
-          url: createHongguoEpisodeId(anime.seriesId, episode.vid, episode.duration),
-          title: `【hongguo】 ${episodeTitle}`,
-        };
-      });
+      const links = globals.hongguoMergeAllEpisodes && episodes.length
+        ? [{
+            name: "全集",
+            url: createHongguoSeriesId(anime.seriesId),
+            title: "【hongguo】 全集",
+          }]
+        : episodes.map((episode) => {
+            const episodeTitle = `第${episode.index}集${episode.title ? ` ${episode.title}` : ""}`;
+            return {
+              name: episodeTitle,
+              url: createHongguoEpisodeId(anime.seriesId, episode.vid, episode.duration),
+              title: `【hongguo】 ${episodeTitle}`,
+            };
+          });
       if (!links.length) continue;
       const item = {
         animeId: convertToAsciiSum(anime.seriesId),
@@ -812,27 +916,60 @@ export default class HongguoSource extends BaseSource {
     };
   }
 
+  async getDanmuForEpisode(info) {
+    const durationMs = info.duration * 1000;
+    const comments = [];
+    const seenMarkers = new Set();
+    let startMs = 0;
+    let cursor = "";
+    const maxRequests = Math.max(1, Math.ceil(durationMs / COMMENT_WINDOW_MS) + 5);
+    for (let requestIndex = 0; requestIndex < maxRequests; requestIndex++) {
+      const marker = `${startMs}:${cursor}`;
+      if (seenMarkers.has(marker)) break;
+      seenMarkers.add(marker);
+      const page = await this.fetchCommentWindow(info, startMs, cursor);
+      comments.push(...page.comments);
+      if (durationMs && page.nextStart >= durationMs) break;
+      if (!page.hasMore && !durationMs) break;
+      startMs = page.nextStart;
+      cursor = page.cursor;
+    }
+    return comments;
+  }
+
+  async getSeriesDanmu(seriesId) {
+    const details = await this.getEpisodes(seriesId);
+    let cumulativeMs = 0;
+    const episodeTasks = details.episodes.map((episode) => {
+      const task = { episode, offsetMs: cumulativeMs };
+      cumulativeMs += Math.max(0, Number(episode.duration) || 0) * 1000;
+      return task;
+    });
+    const groupedComments = await mapWithConcurrency(episodeTasks, COMMENT_CONCURRENCY, async ({ episode, offsetMs }) => {
+      const episodeComments = await this.getDanmuForEpisode({
+        seriesId: String(seriesId),
+        vid: episode.vid,
+        duration: episode.duration,
+      });
+      return episodeComments.map((comment) => ({
+        ...comment,
+        offsetMs: comment.offsetMs + offsetMs,
+      }));
+    });
+    const comments = [];
+    for (const episodeComments of groupedComments) {
+      comments.push(...episodeComments);
+    }
+    return dedupeDanmus(comments);
+  }
+
   async getEpisodeDanmu(id) {
     try {
-      const info = await this.resolveEpisodeInfo(id);
-      const durationMs = info.duration * 1000;
-      const comments = [];
-      const seenMarkers = new Set();
-      let startMs = 0;
-      let cursor = "";
-      const maxRequests = Math.max(1, Math.ceil(durationMs / COMMENT_WINDOW_MS) + 5);
-      for (let requestIndex = 0; requestIndex < maxRequests; requestIndex++) {
-        const marker = `${startMs}:${cursor}`;
-        if (seenMarkers.has(marker)) break;
-        seenMarkers.add(marker);
-        const page = await this.fetchCommentWindow(info, startMs, cursor);
-        comments.push(...page.comments);
-        if (durationMs && page.nextStart >= durationMs) break;
-        if (!page.hasMore && !durationMs) break;
-        startMs = page.nextStart;
-        cursor = page.cursor;
+      if (this.shouldMergeAllEpisodes(id)) {
+        return await this.getSeriesDanmu(this.resolveSeriesId(id));
       }
-      return dedupeDanmus(comments);
+      const info = await this.resolveEpisodeInfo(id);
+      return dedupeDanmus(await this.getDanmuForEpisode(info));
     } catch (error) {
       log("error", `[Hongguo] 获取弹幕失败: ${error.message}`);
       return [];
@@ -841,6 +978,9 @@ export default class HongguoSource extends BaseSource {
 
   async getEpisodeDanmuSegments(id) {
     try {
+      if (this.shouldMergeAllEpisodes(id)) {
+        return await this.getSeriesDanmuSegments(this.resolveSeriesId(id));
+      }
       const info = await this.resolveEpisodeInfo(id);
       const episodeId = createHongguoEpisodeId(info.seriesId, info.vid, info.duration);
       const segmentList = [];
@@ -859,13 +999,44 @@ export default class HongguoSource extends BaseSource {
     }
   }
 
+  async getSeriesDanmuSegments(seriesId) {
+    const details = await this.getEpisodes(seriesId);
+    const segmentList = [];
+    let cumulativeSeconds = 0;
+    for (const episode of details.episodes) {
+      const duration = Math.max(0, Number(episode.duration) || 0);
+      const episodeId = createHongguoEpisodeId(seriesId, episode.vid, duration);
+      for (let start = 0; start < duration; start += COMMENT_WINDOW_MS / 1000) {
+        const end = Math.min(start + COMMENT_WINDOW_MS / 1000, duration);
+        segmentList.push({
+          type: "hongguo",
+          segment_start: cumulativeSeconds + start,
+          segment_end: cumulativeSeconds + end,
+          url: `${episodeId}#segment=${start}&offset=${cumulativeSeconds}`,
+        });
+      }
+      cumulativeSeconds += duration;
+    }
+    return new SegmentListResponse({ type: "hongguo", segmentList, duration: cumulativeSeconds });
+  }
+
   async getEpisodeSegmentDanmu(segment) {
     try {
       const info = await this.resolveEpisodeInfo(segment.url);
-      const startMs = Math.max(0, Number(segment.segment_start) * 1000);
-      const endMs = Math.max(startMs, Number(segment.segment_end) * 1000);
+      const globalOffsetSeconds = Math.max(0, getFragmentNumber(segment.url, "offset") || 0);
+      const fragmentStart = getFragmentNumber(segment.url, "segment");
+      const localStartSeconds = Math.max(0, fragmentStart == null
+        ? Number(segment.segment_start) - globalOffsetSeconds
+        : fragmentStart);
+      const segmentDurationSeconds = Math.max(0, Number(segment.segment_end) - Number(segment.segment_start));
+      const localEndSeconds = Math.min(info.duration, localStartSeconds + segmentDurationSeconds);
+      const startMs = localStartSeconds * 1000;
+      const endMs = Math.max(startMs, localEndSeconds * 1000);
       const page = await this.fetchCommentWindow(info, startMs, "");
-      return dedupeDanmus(page.comments.filter((item) => item.offsetMs >= startMs && item.offsetMs < endMs));
+      const offsetMs = globalOffsetSeconds * 1000;
+      return dedupeDanmus(page.comments
+        .filter((item) => item.offsetMs >= startMs && item.offsetMs < endMs)
+        .map((item) => ({ ...item, offsetMs: item.offsetMs + offsetMs })));
     } catch (error) {
       log("error", `[Hongguo] 获取分段弹幕失败: ${error.message}`);
       return [];
