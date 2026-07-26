@@ -5,7 +5,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
@@ -26,7 +26,7 @@ import LeshiSource from "./sources/leshi.js";
 import XiguaSource from "./sources/xigua.js";
 import MaiduiduiSource from "./sources/maiduidui.js";
 import AiyifanSource from "./sources/aiyifan.js";
-import HongguoSource from "./sources/hongguo.js";
+import HongguoSource, { parseHongguoPlayerUrl } from "./sources/hongguo.js";
 import AnimekoSource from "./sources/animeko.js";
 import OtherSource from "./sources/other.js";
 import { NodeHandler } from "./configs/handlers/node-handler.js";
@@ -1204,6 +1204,99 @@ test('worker.js API endpoints', async (t) => {
   //   } finally {
   //     hongguoSource.fetchCommentWindow = originalFetchCommentWindow;
   //   }
+  // });
+
+  // await t.test('Hongguo player URL should resolve the exact episode', async () => {
+  //   const playerUrl = 'https://hongguoduanju.com/player/7572458140411628568/7572460055539223614';
+  //   assert.deepEqual(parseHongguoPlayerUrl(playerUrl), {
+  //     seriesId: '7572458140411628568',
+  //     vid: '7572460055539223614',
+  //   });
+
+  //   const source = new HongguoSource();
+  //   let requestedSeriesId = '';
+  //   let detailRequests = 0;
+  //   source.getEpisodes = async (seriesId) => {
+  //     detailRequests++;
+  //     requestedSeriesId = seriesId;
+  //     return {
+  //       episodes: [
+  //         { index: 1, vid: '7572459982168280126', duration: 150 },
+  //         { index: 2, vid: '7572460055539223614', duration: 119 },
+  //       ],
+  //       imageUrl: '',
+  //     };
+  //   };
+
+  //   const segments = await source.getComments(playerUrl, 'hongguo', true);
+  //   assert.equal(requestedSeriesId, '7572458140411628568');
+  //   assert.equal(segments.duration, 119);
+  //   assert.equal(segments.segmentList.length, 4);
+  //   assert.equal(
+  //     segments.segmentList[0].url,
+  //     'hongguo:v1:7572458140411628568:7572460055539223614:119#segment=0',
+  //   );
+
+  //   source.fetchCommentWindow = async (info) => {
+  //     assert.equal(info.vid, '7572460055539223614');
+  //     return {
+  //       comments: [{ commentId: 'link-comment', offsetMs: 1500, text: '链接弹幕', diggCount: 2 }],
+  //       nextStart: 119000,
+  //       cursor: '',
+  //       hasMore: false,
+  //     };
+  //   };
+  //   const comments = await source.getComments(playerUrl, 'hongguo');
+  //   assert.equal(detailRequests, 1);
+  //   assert.equal(comments.length, 1);
+  //   assert.equal(comments[0].m, '链接弹幕');
+  // });
+
+  // await t.test('GET comments by Hongguo player URL should use resolved vid', async () => {
+  //   const seriesId = '7572458140411628568';
+  //   const vid = '7572460055539223614';
+  //   const playerUrl = `https://hongguoduanju.com/player/${seriesId}/${vid}`;
+  //   const requestedUrls = [];
+
+  //   const response = await withMockFetch(async (url) => {
+  //     requestedUrls.push(String(url));
+  //     if (String(url).includes('/novel/player/multi_video_detail/v1/')) {
+  //       return mockJsonResponse({
+  //         code: 0,
+  //         data: {
+  //           [seriesId]: {
+  //             video_data: {
+  //               video_list: [{ vid_index: 1, vid, duration: 119 }],
+  //             },
+  //           },
+  //         },
+  //       }, String(url));
+  //     }
+  //     if (String(url).includes(`/novel/commentapi/comment/list/${vid}/v1/`)) {
+  //       return mockJsonResponse({
+  //         code: 0,
+  //         data: {
+  //           data_list: [{
+  //             comment: {
+  //               comment_id: 'route-comment',
+  //               common: { content: { text: '路由弹幕' } },
+  //               expand: { offset_time: 1500 },
+  //               stat: { digg_count: 3 },
+  //             },
+  //           }],
+  //           common_list_info: { cursor: '', has_more: false },
+  //           extra: { next_query_danmaku_list_time: 119000 },
+  //         },
+  //       }, String(url));
+  //     }
+  //     throw new Error(`Unexpected Hongguo request: ${url}`);
+  //   }, () => getCommentByUrl(playerUrl, 'json', false));
+
+  //   const body = await parseResponse(response);
+  //   assert.equal(body.count, 1);
+  //   assert.equal(body.comments[0].m, '路由弹幕');
+  //   assert(requestedUrls.some((url) => url.includes('/novel/player/multi_video_detail/v1/')));
+  //   assert(requestedUrls.some((url) => url.includes(`/novel/commentapi/comment/list/${vid}/v1/`)));
   // });
 
   // await t.test('GET other_server danmu', async () => {

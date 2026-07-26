@@ -77,7 +77,7 @@ LogVar 弹幕 API 服务器
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Hugging Face Spaces部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
-- **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西埋巴Ani播放链接可获取弹幕，如`senplayer`。
+- **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西埋巴Ani红播放链接可获取弹幕，如`senplayer`。
   - 支持空格分隔多个链接合并弹幕，例如：`https://www.iqiyi.com/v_xxx.html https://v.qq.com/x/cover/xxx.html`
   - 支持链接尾部追加时间偏移，例如：`https://www.iqiyi.com/v_xxx.html@-50`（提前50秒）、`https://v.qq.com/x/cover/xxx.html@%11`（百分比缩放）
 - **弹幕转换功能**：支持通过环境变量配置弹幕转换规则，包括：
@@ -351,7 +351,7 @@ LogVar 弹幕 API 服务器
 <img src="https://i.mji.rip/2025/09/14/80aa5205d49a767447f61938f2dada20.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/9fdf945fb247994518042691f60d7849.jpeg" style="width:400px" />
 <img src="https://i.mji.rip/2025/09/14/dbacc0cf9c8a839f16b8960de1f38f11.jpeg" style="width:400px" />
-4. 现已支持手动搜索标题输入爱优腾芒哔咪狐乐西埋巴Ani播放链接获取弹幕。
+4. 现已支持手动搜索标题输入爱优腾芒哔咪狐乐西埋巴Ani红播放链接获取弹幕。
 
 `uz`使用：
 1. 弹幕拓展 -> 豆儿弹幕

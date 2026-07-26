@@ -452,6 +452,26 @@ export function parseHongguoEpisodeId(value) {
   };
 }
 
+export function parseHongguoPlayerUrl(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/@%?-?\d+(?:\.\d+)?$/, "");
+  const match = normalized.match(
+    /^https?:\/\/(?:www\.)?hongguoduanju\.com(?::\d+)?\/player\/(\d+)\/(\d+)\/?(?:\?[^#]*)?(?:#.*)?$/i,
+  );
+  if (!match) throw new Error("无效的红果短剧播放链接");
+  return { seriesId: match[1], vid: match[2] };
+}
+
+export function isHongguoPlayerUrl(value) {
+  try {
+    parseHongguoPlayerUrl(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractImageUrl(value) {
   if (typeof value === "string") {
     const url = value.trim();
@@ -536,6 +556,7 @@ export default class HongguoSource extends BaseSource {
   constructor() {
     super();
     this.nextRequestAt = 0;
+    this.playerEpisodeResolutions = new Map();
   }
 
   buildUrl(path, extraQuery = {}) {
@@ -679,6 +700,40 @@ export default class HongguoSource extends BaseSource {
     }
   }
 
+  async resolveEpisodeInfo(value) {
+    if (String(value || "").split("#", 1)[0].startsWith("hongguo:v1:")) {
+      return parseHongguoEpisodeId(value);
+    }
+
+    const player = parseHongguoPlayerUrl(value);
+    const cacheKey = `${player.seriesId}:${player.vid}`;
+    let resolution = this.playerEpisodeResolutions.get(cacheKey);
+    if (!resolution) {
+      resolution = (async () => {
+        const details = await this.getEpisodes(player.seriesId);
+        const episode = details.episodes.find((item) => item.vid === player.vid);
+        if (!episode) {
+          throw new Error(`播放链接中的 vid ${player.vid} 不属于剧集 ${player.seriesId}`);
+        }
+        return {
+          seriesId: player.seriesId,
+          vid: player.vid,
+          duration: episode.duration,
+        };
+      })();
+      this.playerEpisodeResolutions.set(cacheKey, resolution);
+    }
+
+    try {
+      return await resolution;
+    } catch (error) {
+      if (this.playerEpisodeResolutions.get(cacheKey) === resolution) {
+        this.playerEpisodeResolutions.delete(cacheKey);
+      }
+      throw error;
+    }
+  }
+
   async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
     if (!Array.isArray(sourceAnimes)) return [];
     const transformed = [];
@@ -759,7 +814,7 @@ export default class HongguoSource extends BaseSource {
 
   async getEpisodeDanmu(id) {
     try {
-      const info = parseHongguoEpisodeId(id);
+      const info = await this.resolveEpisodeInfo(id);
       const durationMs = info.duration * 1000;
       const comments = [];
       const seenMarkers = new Set();
@@ -786,14 +841,15 @@ export default class HongguoSource extends BaseSource {
 
   async getEpisodeDanmuSegments(id) {
     try {
-      const info = parseHongguoEpisodeId(id);
+      const info = await this.resolveEpisodeInfo(id);
+      const episodeId = createHongguoEpisodeId(info.seriesId, info.vid, info.duration);
       const segmentList = [];
       for (let start = 0; start < info.duration; start += COMMENT_WINDOW_MS / 1000) {
         segmentList.push({
           type: "hongguo",
           segment_start: start,
           segment_end: Math.min(start + COMMENT_WINDOW_MS / 1000, info.duration),
-          url: `${id}#segment=${start}`,
+          url: `${episodeId}#segment=${start}`,
         });
       }
       return new SegmentListResponse({ type: "hongguo", segmentList, duration: info.duration });
@@ -805,7 +861,7 @@ export default class HongguoSource extends BaseSource {
 
   async getEpisodeSegmentDanmu(segment) {
     try {
-      const info = parseHongguoEpisodeId(segment.url);
+      const info = await this.resolveEpisodeInfo(segment.url);
       const startMs = Math.max(0, Number(segment.segment_start) * 1000);
       const endMs = Math.max(startMs, Number(segment.segment_end) * 1000);
       const page = await this.fetchCommentWindow(info, startMs, "");
