@@ -154,17 +154,17 @@ global.Widget = {
     _store: {},  // 内部存储对象
 
     get: (key) => {
-      console.log(`[iOS模拟] storage.get: ${key}`);
+      // console.log(`[iOS模拟] storage.get: ${key}`);
       return Widget.storage._store[key] ?? null;
     },
 
     set: (key, value) => {
-      console.log(`[iOS模拟] storage.set: ${key} = ${JSON.stringify(value)}`);
+      // console.log(`[iOS模拟] storage.set: ${key} = ${JSON.stringify(value)}`);
       Widget.storage._store[key] = value;
     },
 
     remove: (key) => {
-      console.log(`[iOS模拟] storage.remove: ${key}`);
+      // console.log(`[iOS模拟] storage.remove: ${key}`);
       delete Widget.storage._store[key];
     },
 
@@ -201,6 +201,7 @@ async function runTest() {
     await testNewFlow();
   } catch (error) {
     console.error('Failed to load module:', error);
+    process.exitCode = 1;
   }
 }
 
@@ -268,6 +269,10 @@ async function testNewFlow() {
       console.log(`✅ 搜索结果: 找到 ${searchRes.animes ? searchRes.animes.length : 0} 个动漫`);
     }
 
+    if (!searchRes.animes || searchRes.animes.length === 0) {
+      throw new Error('搜索结果为空，未进入弹幕获取链路');
+    }
+
     if (searchRes.animes && searchRes.animes.length > 0) {
       const anime = searchRes.animes[0];
       console.log(`📺 找到动漫: ${anime.animeTitle} (ID: ${anime.animeId})`);
@@ -278,26 +283,60 @@ async function testNewFlow() {
         animeId: anime.animeId,
         ...commonParams,
       });
-      const commentId = bangumi[0].episodeId;
-      const sgementList = await getCommentsById({
+      const targetEpisode = Number(commonParams.episode);
+      const selectedEpisode = bangumi.find((item) => {
+        const explicitNumber = Number(item.episodeNumber);
+        if (Number.isFinite(explicitNumber) && explicitNumber === targetEpisode) return true;
+
+        const titleMatch = String(item.episodeTitle || '').match(/第\s*(\d+)\s*[集期]/);
+        return titleMatch && Number(titleMatch[1]) === targetEpisode;
+      }) || bangumi[targetEpisode - 1];
+
+      if (!selectedEpisode) {
+        throw new Error(`未找到第 ${targetEpisode} 集，可用剧集数: ${bangumi.length}`);
+      }
+
+      console.log(`🎯 选择剧集: ${selectedEpisode.episodeTitle} (ID: ${selectedEpisode.episodeId})`);
+      const commentId = selectedEpisode.episodeId;
+      const segmentList = await getCommentsById({
         commentId: commentId,
         ...commonParams,
       });
       if (verbose) {
-        console.log('✅ 弹幕分片:', JSON.stringify(sgementList, null, 2));
+        console.log('✅ 弹幕分片:', JSON.stringify(segmentList, null, 2));
       } else {
-        console.log(`✅ 弹幕分片: 获取到 ${sgementList ? sgementList.length : 0} 个分片`);
+        console.log(`✅ 弹幕分片: 获取到 ${segmentList ? segmentList.length : 0} 个分片`);
       }
 
-      if (sgementList.length > 0) {
+      if (!Array.isArray(segmentList) || segmentList.length === 0) {
+        throw new Error(`第 ${targetEpisode} 集没有可用弹幕分片`);
+      }
+
+      if (segmentList.length > 0) {
+        const preferredSegmentTime = 450;
+        const selectedSegment = segmentList.find((item) => (
+          preferredSegmentTime >= Number(item.segment_start)
+          && preferredSegmentTime < Number(item.segment_end)
+        )) || segmentList[0];
+        const segmentStart = Number(selectedSegment.segment_start);
+        const segmentEnd = Number(selectedSegment.segment_end);
+        const segmentTime = preferredSegmentTime >= segmentStart && preferredSegmentTime < segmentEnd
+          ? preferredSegmentTime
+          : segmentStart + Math.max(0, segmentEnd - segmentStart) / 2;
+
+        console.log(`🎯 选择弹幕分片: ${segmentStart}-${segmentEnd}s，请求时间点 ${segmentTime}s`);
         const comments = await getDanmuWithSegmentTime({
-          segmentTime: 450,
+          segmentTime,
           ...commonParams,
         });
         if (verbose) {
           console.log('✅ 弹幕评论:', JSON.stringify(comments, null, 2));
         } else {
           console.log(`✅ 弹幕评论: 获取到 ${comments && comments.comments ? comments.comments.length : 0} 条弹幕`);
+        }
+
+        if (!comments || !Array.isArray(comments.comments) || comments.comments.length === 0) {
+          throw new Error(`分片 ${segmentStart}-${segmentEnd}s 未获取到弹幕`);
         }
       }
     }
@@ -307,6 +346,7 @@ async function testNewFlow() {
 
   } catch (error) {
     console.error('❌ 测试失败:', error);
+    process.exitCode = 1;
   }
 }
 
