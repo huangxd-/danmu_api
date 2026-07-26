@@ -214,10 +214,10 @@ async function testNewFlow() {
       type: 'tv',
       tmdbId: '242762',
       season: 1,
-      episode: 21,
+      episode: 1,
       airDate: '2025-07-18',
       episodeName: '第2期上：首次大约会！温柔医生为爱冲锋',
-      sourceOrder: 'douban',
+      sourceOrder: 'hongguo',
       otherServer: 'https://api.danmu.icu',
       customSourceApiUrl: '',
       vodServers: '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top',
@@ -242,6 +242,7 @@ async function testNewFlow() {
       likeSwitch: 'true',
       proxyUrl: '',
       tmdbApiKey: '',
+      hongguoMergeAllEpisodes: 'false',
     };
 
     // 测试自动获取分片弹幕
@@ -260,7 +261,7 @@ async function testNewFlow() {
       // title: "https://www.bilibili.com/bangumi/play/ep1231564",
       // title: "https://www.bilibili.com/video/av170001?p=2",
       // title: "https://www.bilibili.com/video/BV17x411w7KC?p=3",
-      title: '寻秦记',
+      title: '装穷回家',
       ...commonParams,
     });
     if (verbose) {
