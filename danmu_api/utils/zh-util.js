@@ -1,9 +1,15 @@
-import { Converter } from "opencc-js";
+import { ConverterFactory } from "opencc-js/core";
+import simplifiedToTraditionalCharacters from "opencc-js/dict/STCharacters";
+import toSimplifiedChinese from "opencc-js/to/cn";
+import toTraditionalChinese from "opencc-js/to/tw";
 
 // Converter instances are immutable and expensive to build, so share them
 // across all searches and danmu conversions.
-const toSimplified = Converter({ from: "t", to: "cn" });
-const toTraditional = Converter({ from: "cn", to: "tw" });
+const toSimplified = ConverterFactory(toSimplifiedChinese);
+const toTraditional = ConverterFactory(
+  [simplifiedToTraditionalCharacters],
+  toTraditionalChinese,
+);
 
 export function traditionalized(value) {
   return toTraditional(value);
