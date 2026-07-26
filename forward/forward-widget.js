@@ -17,7 +17,7 @@ WidgetMetadata = {
     // 源配置
     {
       name: "sourceOrder",
-      title: "源排序配置，默认'douban,360,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "源排序配置，默认'douban,360,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
@@ -163,7 +163,7 @@ WidgetMetadata = {
     // 匹配配置
     {
       name: "platformOrder",
-      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi, 'xigua', 'maiduidui', 'aiyifan', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi, 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {

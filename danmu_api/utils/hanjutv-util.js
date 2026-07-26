@@ -1,4 +1,4 @@
-import { md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, subWord, keyExpansion, invShiftRows } from "./codec-util.js";
+import { aesCbcEncrypt, md5, stringToUtf8Bytes, utf8BytesToString, bytesToBase64, base64ToBytes, invSubBytes, keyExpansion, invShiftRows } from "./codec-util.js";
 
 function normalizePositiveTimestamp(value, fallbackValue = Date.now()) {
   const ts = Number(value);
@@ -57,15 +57,6 @@ function xorBytes(a, b) {
   return out;
 }
 
-function pkcs7Pad(bytes, blockSize = 16) {
-  const remain = bytes.length % blockSize;
-  const padSize = remain === 0 ? blockSize : blockSize - remain;
-  const result = new Uint8Array(bytes.length + padSize);
-  result.set(bytes, 0);
-  result.fill(padSize, bytes.length);
-  return result;
-}
-
 function stripControlChars(text) {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
@@ -75,16 +66,6 @@ function addRoundKey(state, w, round) {
   for (let c = 0; c < 4; c++) {
     for (let r = 0; r < 4; r++) {
       out[r + 4 * c] = state[r + 4 * c] ^ w[round * 4 + c][r];
-    }
-  }
-  return out;
-}
-
-function shiftRows(state) {
-  const out = new Uint8Array(16);
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 4; c++) {
-      out[r + 4 * c] = state[r + 4 * ((c + r) % 4)];
     }
   }
   return out;
@@ -104,18 +85,6 @@ function gfMul(a, b) {
   return p;
 }
 
-function mixColumns(state) {
-  const out = new Uint8Array(16);
-  for (let c = 0; c < 4; c++) {
-    const col = state.slice(4 * c, 4 * c + 4);
-    out[4 * c + 0] = gfMul(col[0], 0x02) ^ gfMul(col[1], 0x03) ^ col[2] ^ col[3];
-    out[4 * c + 1] = col[0] ^ gfMul(col[1], 0x02) ^ gfMul(col[2], 0x03) ^ col[3];
-    out[4 * c + 2] = col[0] ^ col[1] ^ gfMul(col[2], 0x02) ^ gfMul(col[3], 0x03);
-    out[4 * c + 3] = gfMul(col[0], 0x03) ^ col[1] ^ col[2] ^ gfMul(col[3], 0x02);
-  }
-  return out;
-}
-
 function invMixColumns(state) {
   const out = new Uint8Array(16);
   for (let c = 0; c < 4; c++) {
@@ -126,23 +95,6 @@ function invMixColumns(state) {
     out[4 * c + 3] = gfMul(col[0], 0x0b) ^ gfMul(col[1], 0x0d) ^ gfMul(col[2], 0x09) ^ gfMul(col[3], 0x0e);
   }
   return out;
-}
-
-function aesEncryptBlock(input, w) {
-  let state = new Uint8Array(input);
-  state = addRoundKey(state, w, 0);
-
-  for (let round = 1; round <= 9; round++) {
-    state = subWord(state);
-    state = shiftRows(state);
-    state = mixColumns(state);
-    state = addRoundKey(state, w, round);
-  }
-
-  state = subWord(state);
-  state = shiftRows(state);
-  state = addRoundKey(state, w, 10);
-  return state;
 }
 
 function aesDecryptBlock(input, w) {
@@ -160,23 +112,6 @@ function aesDecryptBlock(input, w) {
   state = invSubBytes(state);
   state = addRoundKey(state, w, 0);
   return state;
-}
-
-function aesCbcEncryptPure(plainBytes, keyBytes, ivBytes) {
-  const padded = pkcs7Pad(plainBytes, 16);
-  const w = keyExpansion(keyBytes);
-  const out = new Uint8Array(padded.length);
-  let prev = new Uint8Array(ivBytes);
-
-  for (let i = 0; i < padded.length; i += 16) {
-    const block = padded.slice(i, i + 16);
-    const mixed = xorBytes(block, prev);
-    const cipherBlock = aesEncryptBlock(mixed, w);
-    out.set(cipherBlock, i);
-    prev = cipherBlock;
-  }
-
-  return out;
 }
 
 function aesCbcDecryptPureNoUnpad(cipherBytes, keyBytes, ivBytes) {
@@ -202,7 +137,7 @@ async function aesCbcEncryptToBase64(plainText, key, iv) {
   const keyBytes = utf8Encode(key);
   const ivBytes = utf8Encode(iv);
   const plainBytes = utf8Encode(plainText);
-  const cipherBytes = aesCbcEncryptPure(plainBytes, keyBytes, ivBytes);
+  const cipherBytes = aesCbcEncrypt(plainBytes, keyBytes, ivBytes);
   return bytesToBase64(cipherBytes);
 }
 

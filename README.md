@@ -18,7 +18,7 @@ LogVar 弹幕 API 服务器
 
 ---
 
-一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西埋帆弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/hf等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
+一个人人都能部署的基于 js 的弹幕 API 服务器，支持爱优腾芒哔咪人韩巴狐乐西埋帆红弹幕直接获取，兼容弹弹play的搜索、详情查询和弹幕获取接口规范，并提供日志记录，支持vercel/netlify/edgeone/cloudflare/docker/hf等部署方式，不用提前下载弹幕，没有nas或小鸡也能一键部署。
 
 本项目仅为个人学习爱好开发，代码开源。如有任何侵权行为，请联系本人删除。
 
@@ -410,9 +410,9 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | BILIBILI_COOKIE      | 【可选】b站cookie（填入后能抓取完整弹幕和启用港澳台App接口），如 `buvid3=E2BCA ... eao6; theme-avatar-tip-show=SHOWED`，请自行通过浏览器或抓包工具抓取，热心网友测试后，弹幕获取实际最少只需取 `SESSDATA=xxxx` 字段，但如果需要使用港澳台区域稳定的App搜索接口还需要`bili_jct=xxxx`或`access_key=xxxx` 字段，不知道怎么获取cookie的，可以从工具 [cookie-butler](https://cookie-butler.do-u.me) 获取    |
 | DOUBAN_COOKIE      | 【可选】豆瓣cookie，用于豆瓣相关接口请求，配置后可降低豆瓣接口风控影响，提升搜索/详情获取的稳定性。填写浏览器中已登录豆瓣后的完整 Cookie 字符串即可，格式示例：`bid=xxxx; ll="118282"; ...`。如遇到豆瓣搜索不稳定、返回异常或频繁验证，建议优先补充该变量       |
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
-| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`douban,360,renren,hanjutv`，表示douban数据排在最前，hanjutv数据排在最后，示例：`douban,renren`：只返回douban数据和renren数据，且douban数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,renren,hanjutv,bahamut,dandan,animeko,custom`       |
-| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, maiduidui, aiyifan, renren, hanjutv, bahamut, dandan, animeko, custom`  |
-| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`dandan&bahamut&animeko,renren&hanjutv,renren`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,renren,hanjutv,bahamut,dandan,animeko` |
+| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`douban,360,renren,hanjutv`，表示douban数据排在最前，hanjutv数据排在最后，示例：`douban,renren`：只返回douban数据和renren数据，且douban数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,bahamut,dandan,animeko,custom`       |
+| PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, maiduidui, aiyifan, hongguo, renren, hanjutv, bahamut, dandan, animeko, custom`  |
+| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`dandan&bahamut&animeko,renren&hanjutv,renren`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,bahamut,dandan,animeko` |
 | CUSTOM_MERGE_RULES | 【可选】合并映射表，用于自定义源合并行为，默认为空。<br>格式 1 (合并)：`副源剧名/S季数@来源 -> 主源剧名/S季数@来源 \| E副源集数>E主源集数`<br>格式 2 (阻断)：`副源剧名/S季数@来源 × 主源剧名/S季数@来源`<br>说明：`[/S季数]` 与 `[\|路由规则]` 为可选项，留空则交由程序判断。多个规则用分号隔开，多段路由用逗号分隔。<br>示例：<br>1. 常规合并：`天气之子@bilibili -> 天气之子@dandan`<br>2. 多集路由：`我推的孩子/S01@bahamut -> 我推的孩子/S03@dandan \| E25~E35>E25~E35`<br>3. 阻断合并：`辉夜大小姐想让我告白？～天才们的恋爱头脑战～(2020)@bilibili × 辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA(2021)【OVA】@dandan` |
 | ANIME_TITLE_FILTER    | 【可选】剧名过滤规则，用于按正则表达式对剧名进行过滤，适用于过滤一些不需要的剧集，需开启ENABLE_ANIME_EPISODE_FILTER，默认值：空（不过滤），格式：使用 \| 分隔多个关键词，例如：广告\|预告\|无关剧名       |
 | EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
@@ -551,6 +551,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | xigua    | xigua |
 | maiduidui| maiduidui |
 | aiyifan  | aiyifan |
+| hongguo  | hongguo |
 | renren   | renren |
 | hanjutv  | hanjutv |
 | bahamut  | bahamut |
@@ -604,6 +605,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │   ├── dandan.js           # 弹弹play源
 │   │   ├── douban.js           # 豆瓣源
 │   │   ├── hanjutv.js          # 韩剧TV源
+│   │   ├── hongguo.js          # 红果短剧源
 │   │   ├── iqiyi.js            # 爱奇艺源
 │   │   ├── kan360.js           # 360看源
 │   │   ├── leshi.js            # 乐视视频源

@@ -115,7 +115,7 @@ function createFilterContainer() {
 const tagGroupOrder = [
     ['system', 'ai'],
     ['utils', 'cache', 'merge'],
-    ['360kan', 'aiyifan', 'animeko', 'bahamut', 'bilibili', 'custom', 'dandan', 'douban', 'hanjutv', 'iqiyi', 'leshi', 'maiduidui', 'mango', 'migu', 'other', 'renren', 'sohu', 'tencent', 'tmdb', 'vod', 'xigua', 'youku'],
+    ['360kan', 'aiyifan', 'animeko', 'bahamut', 'bilibili', 'custom', 'dandan', 'douban', 'hanjutv', 'hongguo', 'iqiyi', 'leshi', 'maiduidui', 'mango', 'migu', 'other', 'renren', 'sohu', 'tencent', 'tmdb', 'vod', 'xigua', 'youku'],
 ];
 const tagOrderMap = {};
 tagGroupOrder.forEach((group, gi) => group.forEach((tag, ti) => tagOrderMap[tag] = gi * 1000 + ti));
