@@ -30,6 +30,15 @@ export const HTML_TEMPLATE = /* html */ `
     
 </head>
 <body data-theme="globals.uiTheme">
+    <script>
+        try {
+            const storedTheme = localStorage.getItem('logvar_ui_theme');
+            const supportedThemes = ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'lavender', 'mist', 'terminal'];
+            if (supportedThemes.includes(storedTheme)) document.body.dataset.theme = storedTheme;
+        } catch (error) {
+            // localStorage may be unavailable in restricted browser contexts.
+        }
+    </script>
     <div class="container">
         <!-- 进度条 -->
         <div class="progress-container" id="progress-container">

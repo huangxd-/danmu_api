@@ -180,7 +180,8 @@ function loadEnvVariables() {
             
             // 使用从API获取的原始环境变量，用于系统设置
             const originalEnvVars = config.originalEnvVars || {};
-            applyTheme(originalEnvVars.UI_THEME || document.body.dataset.theme || 'ocean');
+            // 浏览器偏好覆盖部署环境变量；云函数更新变量通常要等重新部署后才会进入新实例。
+            applyTheme(getStoredTheme() || originalEnvVars.UI_THEME || document.body.dataset.theme || 'ocean');
             
             // 重新组织数据结构以适配现有UI
             envVariables = {};

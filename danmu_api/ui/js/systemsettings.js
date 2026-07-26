@@ -17,6 +17,26 @@ const UI_THEMES = {
     terminal: '终端绿'
 };
 
+const UI_THEME_STORAGE_KEY = 'logvar_ui_theme';
+
+function getStoredTheme() {
+    try {
+        const theme = String(localStorage.getItem(UI_THEME_STORAGE_KEY) || '').toLowerCase();
+        return Object.prototype.hasOwnProperty.call(UI_THEMES, theme) ? theme : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function storeTheme(theme) {
+    try {
+        localStorage.setItem(UI_THEME_STORAGE_KEY, theme);
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
 function applyTheme(theme) {
     const normalizedTheme = String(theme || '').toLowerCase();
     const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'ocean';
@@ -39,8 +59,8 @@ function setThemeButtonsDisabled(disabled) {
 }
 
 async function selectTheme(theme) {
-    const previousTheme = document.body.dataset.theme || 'ocean';
     const selectedTheme = applyTheme(theme);
+    const storedLocally = storeTheme(selectedTheme);
     setThemeButtonsDisabled(true);
 
     try {
@@ -52,15 +72,15 @@ async function selectTheme(theme) {
         updateLocalImportedConfig('UI_THEME', selectedTheme);
         addLog('界面主题已保存为: ' + UI_THEMES[selectedTheme], 'success');
     } catch (error) {
-        applyTheme(previousTheme);
-        addLog('界面主题保存失败: ' + error.message, 'error');
-        customAlert('界面主题保存失败: ' + error.message);
+        const localMessage = storedLocally ? '，已保存在当前浏览器' : '，仅在当前页面生效';
+        addLog('云端默认主题保存失败' + localMessage + ': ' + error.message, 'warn');
+        customAlert('主题已应用' + localMessage + '。云端默认主题保存失败: ' + error.message);
     } finally {
         setThemeButtonsDisabled(false);
     }
 }
 
-applyTheme(document.body.dataset.theme || 'ocean');
+applyTheme(getStoredTheme() || document.body.dataset.theme || 'ocean');
 
 // 导出当前管理员可见的环境变量配置
 async function exportSystemConfig() {
@@ -243,7 +263,10 @@ async function importSystemConfigFile(file) {
                     failed.push(key + ': ' + (result?.message || '保存失败'));
                 } else {
                     updateLocalImportedConfig(key, value);
-                    if (key === 'UI_THEME') applyTheme(value);
+                    if (key === 'UI_THEME') {
+                        applyTheme(value);
+                        storeTheme(value);
+                    }
                 }
             } catch (error) {
                 failed.push(key + ': ' + error.message);
