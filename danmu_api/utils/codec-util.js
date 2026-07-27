@@ -469,13 +469,9 @@ export function subWord(word){
   return Uint8Array.from(word.map(b=>SBOX[b]));
 }
 
-// 扩展 AES-128/192/256 密钥
+// 扩展 AES-128 密钥。红果 X-Argus 依赖这条固定调度路径。
 export function keyExpansion(key) {
-  if (!(key instanceof Uint8Array) || ![16, 24, 32].includes(key.length)) {
-    throw new RangeError("AES key must be 16, 24, or 32 bytes");
-  }
-
-  const Nk = key.length / 4, Nb=4, Nr=Nk + 6;
+  const Nk = 4, Nb=4, Nr=10;
   const w = new Array(Nb*(Nr+1));
   for(let i=0;i<Nk;i++){
     w[i] = key.slice(4*i,4*i+4);
@@ -483,15 +479,35 @@ export function keyExpansion(key) {
   for(let i=Nk;i<Nb*(Nr+1);i++){
     let temp = w[i-1];
     if(i%Nk===0) temp = xor(subWord(rotWord(temp)), Uint8Array.from([RCON[i/Nk],0,0,0]));
-    else if(Nk > 6 && i%Nk===4) temp = subWord(temp);
     w[i]=xor(w[i-Nk],temp);
   }
   return w;
 }
 
-// AES 解密单块 (16 字节)
+function keyExpansionForKeySize(key) {
+  if (!(key instanceof Uint8Array) || ![16, 24, 32].includes(key.length)) {
+    throw new RangeError("AES key must be 16, 24, or 32 bytes");
+  }
+  if (key.length === 16) return keyExpansion(key);
+
+  const Nk = key.length / 4, Nb = 4, Nr = Nk + 6;
+  const w = new Array(Nb * (Nr + 1));
+  for (let i = 0; i < Nk; i++) w[i] = key.slice(4 * i, 4 * i + 4);
+  for (let i = Nk; i < Nb * (Nr + 1); i++) {
+    let temp = w[i - 1];
+    if (i % Nk === 0) {
+      temp = xor(subWord(rotWord(temp)), Uint8Array.from([RCON[i / Nk], 0, 0, 0]));
+    } else if (Nk > 6 && i % Nk === 4) {
+      temp = subWord(temp);
+    }
+    w[i] = xor(w[i - Nk], temp);
+  }
+  return w;
+}
+
+// AES-128 解密单块 (16 字节)
 function aesDecryptBlock(input, w) {
-  const Nb=4, Nr=(w.length / Nb) - 1;
+  const Nb=4, Nr=10;
   let state = new Uint8Array(input);
   state = addRoundKey(state, w.slice(Nr*Nb,(Nr+1)*Nb));
   for(let round=Nr-1;round>=1;round--){
@@ -504,6 +520,21 @@ function aesDecryptBlock(input, w) {
   state = invSubBytes(state);
   state = addRoundKey(state, w.slice(0,Nb));
   return state;
+}
+
+function aesDecryptBlockForKeySize(input, w) {
+  const Nb = 4, Nr = (w.length / Nb) - 1;
+  let state = new Uint8Array(input);
+  state = addRoundKey(state, w.slice(Nr * Nb, (Nr + 1) * Nb));
+  for (let round = Nr - 1; round >= 1; round--) {
+    state = invShiftRows(state);
+    state = invSubBytes(state);
+    state = addRoundKey(state, w.slice(round * Nb, (round + 1) * Nb));
+    state = invMixColumns(state);
+  }
+  state = invShiftRows(state);
+  state = invSubBytes(state);
+  return addRoundKey(state, w.slice(0, Nb));
 }
 
 // AES 辅助函数
@@ -625,10 +656,7 @@ export function aesCbcEncrypt(input, key, iv) {
 }
 
 // ====================== ECB 模式解密 ======================
-export function aesEcbDecrypt(cipherBytes, keyBytes){
-  if (!(cipherBytes instanceof Uint8Array) || cipherBytes.length % 16 !== 0) {
-    throw new RangeError("AES-ECB ciphertext must contain complete 16-byte blocks");
-  }
+function aesDecryptECB(cipherBytes, keyBytes){
   const w = keyExpansion(keyBytes);
   const blockSize = 16;
   const result = new Uint8Array(cipherBytes.length);
@@ -636,6 +664,24 @@ export function aesEcbDecrypt(cipherBytes, keyBytes){
     const block = cipherBytes.slice(i,i+blockSize);
     const decrypted = aesDecryptBlock(block,w);
     result.set(decrypted,i);
+  }
+  return result;
+}
+
+export function aesEcbDecrypt(cipherBytes, keyBytes){
+  if (!(cipherBytes instanceof Uint8Array) || cipherBytes.length % 16 !== 0) {
+    throw new RangeError("AES-ECB ciphertext must contain complete 16-byte blocks");
+  }
+  if (!(keyBytes instanceof Uint8Array) || ![16, 24, 32].includes(keyBytes.length)) {
+    throw new RangeError("AES key must be 16, 24, or 32 bytes");
+  }
+  if (keyBytes.length === 16) return aesDecryptECB(cipherBytes, keyBytes);
+
+  const w = keyExpansionForKeySize(keyBytes);
+  const result = new Uint8Array(cipherBytes.length);
+  for(let i=0;i<cipherBytes.length;i+=16){
+    const block = cipherBytes.slice(i,i+16);
+    result.set(aesDecryptBlockForKeySize(block,w),i);
   }
   return result;
 }
@@ -760,7 +806,7 @@ function aesDecryptBase64(cipherB64, keyStr) {
   try {
     const cipherBytes = base64ToBytes(cipherB64);
     const keyBytes = stringToUtf8Bytes(keyStr);
-    const decryptedBytes = aesEcbDecrypt(cipherBytes, keyBytes);
+    const decryptedBytes = aesDecryptECB(cipherBytes, keyBytes);
     const unpadded = pkcs7Unpad(decryptedBytes);
     return utf8BytesToString(unpadded);
   } catch (e) {
