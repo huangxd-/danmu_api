@@ -469,9 +469,13 @@ export function subWord(word){
   return Uint8Array.from(word.map(b=>SBOX[b]));
 }
 
-// 扩展密钥 16 字节 -> 176 字节
+// 扩展 AES-128/192/256 密钥
 export function keyExpansion(key) {
-  const Nk = 4, Nb=4, Nr=10;
+  if (!(key instanceof Uint8Array) || ![16, 24, 32].includes(key.length)) {
+    throw new RangeError("AES key must be 16, 24, or 32 bytes");
+  }
+
+  const Nk = key.length / 4, Nb=4, Nr=Nk + 6;
   const w = new Array(Nb*(Nr+1));
   for(let i=0;i<Nk;i++){
     w[i] = key.slice(4*i,4*i+4);
@@ -479,14 +483,15 @@ export function keyExpansion(key) {
   for(let i=Nk;i<Nb*(Nr+1);i++){
     let temp = w[i-1];
     if(i%Nk===0) temp = xor(subWord(rotWord(temp)), Uint8Array.from([RCON[i/Nk],0,0,0]));
+    else if(Nk > 6 && i%Nk===4) temp = subWord(temp);
     w[i]=xor(w[i-Nk],temp);
   }
   return w;
 }
 
-// AES-128 解密单块 (16 字节)
+// AES 解密单块 (16 字节)
 function aesDecryptBlock(input, w) {
-  const Nb=4, Nr=10;
+  const Nb=4, Nr=(w.length / Nb) - 1;
   let state = new Uint8Array(input);
   state = addRoundKey(state, w.slice(Nr*Nb,(Nr+1)*Nb));
   for(let round=Nr-1;round>=1;round--){
@@ -620,7 +625,10 @@ export function aesCbcEncrypt(input, key, iv) {
 }
 
 // ====================== ECB 模式解密 ======================
-function aesDecryptECB(cipherBytes, keyBytes){
+export function aesEcbDecrypt(cipherBytes, keyBytes){
+  if (!(cipherBytes instanceof Uint8Array) || cipherBytes.length % 16 !== 0) {
+    throw new RangeError("AES-ECB ciphertext must contain complete 16-byte blocks");
+  }
   const w = keyExpansion(keyBytes);
   const blockSize = 16;
   const result = new Uint8Array(cipherBytes.length);
@@ -752,7 +760,7 @@ function aesDecryptBase64(cipherB64, keyStr) {
   try {
     const cipherBytes = base64ToBytes(cipherB64);
     const keyBytes = stringToUtf8Bytes(keyStr);
-    const decryptedBytes = aesDecryptECB(cipherBytes, keyBytes);
+    const decryptedBytes = aesEcbDecrypt(cipherBytes, keyBytes);
     const unpadded = pkcs7Unpad(decryptedBytes);
     return utf8BytesToString(unpadded);
   } catch (e) {
