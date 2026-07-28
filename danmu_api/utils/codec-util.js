@@ -469,7 +469,7 @@ export function subWord(word){
   return Uint8Array.from(word.map(b=>SBOX[b]));
 }
 
-// 扩展 AES-128 密钥。红果 X-Argus 依赖这条固定调度路径。
+// 扩展密钥 16 字节 -> 176 字节
 export function keyExpansion(key) {
   const Nk = 4, Nb=4, Nr=10;
   const w = new Array(Nb*(Nr+1));
