@@ -19,7 +19,7 @@ import { titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from "../models/dandan-model.js";
 
 const CLIENT_CONFIG = {
-  apiHost: "api5-normal-sinfonlineb.fqnovel.com",
+  apiHost: "api5-normal-sinfonlinea.fqnovel.com",
   baseQuery: {
     iid: "4439167111854618",
     device_id: "4439167111850522",
