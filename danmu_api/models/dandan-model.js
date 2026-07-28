@@ -115,9 +115,10 @@ export class AnimeMatch {
 // 数据模型：Episode
 // =====================
 export class Episode {
-  constructor({ episodeId = "", episodeTitle = "" } = {}) {
+  constructor({ episodeId = "", episodeTitle = "", url = "" } = {}) {
     this.episodeId = episodeId;
     this.episodeTitle = episodeTitle;
+    this.url = url;
   }
 }
 
@@ -125,7 +126,8 @@ export class Episode {
 Episode.prototype.toJson = function () {
   return {
     episodeId: this.episodeId,
-    episodeTitle: this.episodeTitle
+    episodeTitle: this.episodeTitle,
+    url: this.url
   };
 };
 
@@ -197,15 +199,16 @@ export class Season {
 // =====================
 export class BangumiEpisode {
   constructor({ seasonId = "", episodeId = 10001, episodeTitle = "", episodeNumber = "",
-                airDate = "" } = {}) {
+                airDate = "", url = "" } = {}) {
     validateType(seasonId, "string");
     validateType(episodeId, "number");
     validateType(episodeTitle, "string");
     validateType(episodeNumber, "string");
     validateType(airDate, "string");
+    validateType(url, "string");
 
     // 直接解构并赋值给 this
-    Object.assign(this, { seasonId, episodeId, episodeTitle, episodeNumber, airDate });
+    Object.assign(this, { seasonId, episodeId, episodeTitle, episodeNumber, airDate, url });
   }
 
   // ---- 静态方法：从 JSON 创建 BangumiEpisode 对象 ----
