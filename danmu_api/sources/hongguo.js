@@ -19,7 +19,14 @@ import { titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from "../models/dandan-model.js";
 
 const CLIENT_CONFIG = {
-  apiHost: "api5-normal-sinfonlineb.fqnovel.com",
+  apiHosts: Object.freeze([
+    "api5-normal-sinfonlinea.fqnovel.com",
+    "api5-normal-sinfonlinec.fqnovel.com",
+    "api5-normal-lf.fqnovel.com",
+    "api5-normal-lq.fqnovel.com",
+    "api5-normal-sinfonlineb.fqnovel.com",
+    "api5-normal-hl.fqnovel.com",
+  ]),
   baseQuery: {
     iid: "4439167111854618",
     device_id: "4439167111850522",
@@ -67,7 +74,6 @@ const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
 const COMMENT_COUNT = 90;
 const COMMENT_CONCURRENCY = 30;
-const MAX_RETRIES = 3;
 const MAX_SEARCH_ITEMS = 20;
 const IMAGE_SHRINK =
   "W3siaW1hZ2VfdHlwZSI6MywiaW1hZ2Vfd2lkdGgiOjkwMCwic2hyaW5rX3R5cGUiOjN9LHsiaW1h\n" +
@@ -611,15 +617,45 @@ function getFragmentNumber(value, name) {
 export default class HongguoSource extends BaseSource {
   constructor() {
     super();
+    this.preferredApiHost = CLIENT_CONFIG.apiHosts[0];
     this.nextRequestAt = 0;
     this.playerEpisodeResolutions = new Map();
     this.activeCommentRequests = 0;
     this.commentRequestWaiters = [];
   }
 
-  buildUrl(path, extraQuery = {}) {
+  buildUrl(path, extraQuery = {}, apiHost = this.preferredApiHost) {
     const query = { ...CLIENT_CONFIG.baseQuery, ...extraQuery, _rticket: String(Date.now()) };
-    return `https://${CLIENT_CONFIG.apiHost}${path}?${buildQueryString(query)}`;
+    return `https://${apiHost || CLIENT_CONFIG.apiHosts[0]}${path}?${buildQueryString(query)}`;
+  }
+
+  getApiHosts() {
+    const preferred = this.preferredApiHost;
+    if (!preferred || !CLIENT_CONFIG.apiHosts.includes(preferred)) return [...CLIENT_CONFIG.apiHosts];
+    return [preferred, ...CLIENT_CONFIG.apiHosts.filter((host) => host !== preferred)];
+  }
+
+  parseApiResponse(response) {
+    const status = response && response.status != null ? `HTTP ${response.status}` : "未知 HTTP 状态";
+    if (!response || !("data" in response)) throw new Error(`无效响应 (${status})`);
+    const statusCode = response.status == null ? null : Number(response.status);
+    if (Number.isFinite(statusCode) && (statusCode < 200 || statusCode >= 300)) {
+      throw new Error(`接口返回 ${status}`);
+    }
+    if (typeof response.data !== "string") {
+      if (!response.data || typeof response.data !== "object") throw new Error(`无效响应 (${status})`);
+      return response.data;
+    }
+
+    const text = response.data.trim();
+    if (!text) throw new Error(`接口返回空响应 (${status})`);
+    try {
+      const result = JSON.parse(text);
+      if (!result || typeof result !== "object") throw new Error("JSON 根节点不是对象");
+      return result;
+    } catch (error) {
+      throw new Error(`接口返回无效 JSON (${status}): ${error.message}`);
+    }
   }
 
   async throttle() {
@@ -642,15 +678,17 @@ export default class HongguoSource extends BaseSource {
   }
 
   async request(method, path, { body = null, extraQuery = {}, comment = false } = {}) {
-    let lastError;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const apiHosts = this.getApiHosts();
+    const failures = [];
+    const payload = body == null ? null : JSON.stringify(body);
+    for (let index = 0; index < apiHosts.length; index++) {
+      const apiHost = apiHosts[index];
       try {
-        const url = this.buildUrl(path, extraQuery);
+        const url = this.buildUrl(path, extraQuery, apiHost);
         const headers = {};
         for (const [key, value] of Object.entries(CLIENT_CONFIG.sessionHeaders)) {
           if (value) headers[key] = String(value);
         }
-        const payload = body == null ? null : JSON.stringify(body);
         headers["content-type"] = "application/json; charset=utf-8";
         if (comment) {
           headers["comment-source"] = String(COMMENT_SOURCE);
@@ -670,15 +708,30 @@ export default class HongguoSource extends BaseSource {
         } finally {
           if (releaseCommentSlot) releaseCommentSlot();
         }
-        const result = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-        this.checkResponse(result);
+        const result = this.parseApiResponse(response);
+        try {
+          this.checkResponse(result);
+        } catch (error) {
+          error.retryable = false;
+          throw error;
+        }
+        this.preferredApiHost = apiHost;
         return result;
       } catch (error) {
-        lastError = error;
-        if (attempt + 1 < MAX_RETRIES) await sleep(1500 * (attempt + 1));
+        if (error && error.retryable === false) throw error;
+        const message = error && error.message ? error.message : String(error);
+        failures.push({ host: apiHost, message });
+        const nextApiHost = apiHosts[index + 1];
+        if (nextApiHost) {
+          log("warn", `[Hongguo] ${apiHost} 请求失败，切换到 ${nextApiHost}: ${message}`);
+        }
       }
     }
-    throw lastError || new Error("平台请求失败");
+    const details = failures.map(({ host, message }) => `${host}: ${message}`).join(" | ");
+    const requestError = new Error(`红果请求失败，${apiHosts.length} 条线路均不可用: ${details}`);
+    requestError.name = "HongguoHostError";
+    requestError.failures = failures;
+    throw requestError;
   }
 
   async search(keyword) {
