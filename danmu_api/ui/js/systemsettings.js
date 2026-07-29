@@ -2315,6 +2315,7 @@ function editEnv(index) {
     renderValueInput(item);
 
     document.getElementById('env-modal').classList.add('active');
+    lockPageScroll();
     
     // 恢复按钮状态（在实际场景中，这会在编辑完成后发生，比如在保存后或取消后）
     // 为了演示，这里立即恢复按钮状态，实际使用中应该在适当的地方恢复按钮状态

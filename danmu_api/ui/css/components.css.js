@@ -394,6 +394,16 @@ export const componentsCssContent = /* css */ `
 }
 
 /* 模态框 */
+html.modal-open {
+    overflow: hidden;
+}
+
+body.modal-open {
+    position: fixed;
+    width: 100%;
+    overflow: hidden;
+}
+
 .modal {
     display: none;
     position: fixed;

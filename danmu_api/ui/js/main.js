@@ -492,9 +492,34 @@ function switchCategory(category, event = null) {
     renderEnvList();
 }
 
+let modalPageScrollTop = 0;
+
+function lockPageScroll() {
+    if (document.body.classList.contains('modal-open')) {
+        return;
+    }
+
+    modalPageScrollTop = window.scrollY || document.documentElement.scrollTop;
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    document.body.style.top = \`-\${modalPageScrollTop}px\`;
+}
+
+function unlockPageScroll() {
+    if (!document.body.classList.contains('modal-open')) {
+        return;
+    }
+
+    document.documentElement.classList.remove('modal-open');
+    document.body.classList.remove('modal-open');
+    document.body.style.top = '';
+    window.scrollTo(0, modalPageScrollTop);
+}
+
 // 关闭模态框
 function closeModal() {
     document.getElementById('env-modal').classList.remove('active');
+    unlockPageScroll();
     
     // 重置表单字段状态
     document.getElementById('env-category').disabled = false;
