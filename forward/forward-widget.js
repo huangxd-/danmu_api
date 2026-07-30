@@ -535,6 +535,14 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
+let forwardCachesLoaded = false;
+const FORWARD_CACHE_SCHEMA_VERSION = 2;
+const FORWARD_CACHE_SCHEMA_KEY = 'forward.cache.schema';
+const FORWARD_SEGMENT_CACHE_PREFIX = `forward.segment.v${FORWARD_CACHE_SCHEMA_VERSION}`;
+const FORWARD_SEGMENT_CACHE_TTL_MS = 300 * 60 * 1000;
+const FORWARD_SEGMENT_EMPTY_RETRY_MIN_AGE_MS = 60 * 1000;
+const FORWARD_PERSISTED_LOG_LIMIT = 200;
+const forwardSegmentMemoryCache = new Map();
 const FORWARD_TRACE_MAX_LOGS = 80;
 const FORWARD_TRACE_MAX_ARRAY = 5;
 const FORWARD_TRACE_MAX_STRING = 500;
@@ -855,9 +863,7 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
   if (proxyUrl !== undefined) env.PROXY_URL = proxyUrl;
   if (tmdbApiKey !== undefined) env.TMDB_API_KEY = tmdbApiKey;
   
-  if (!globals) {
-    globals = Globals.init(env);
-  }
+  globals = Globals.init(env);
 
   await getCaches();
 
@@ -866,47 +872,93 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
 
 // 获取变量数据
 async function getCaches() {
-    if (globals.animes.length === 0) {
-        log("info", '[Forward] getCaches start.');
-        const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
-          Widget.storage.get('animes'),
-          Widget.storage.get('episodeIds'),
-          Widget.storage.get('episodeNum'),
-          Widget.storage.get('logBuffer'),
-          Widget.storage.get('lastSelectMap'),
-        ]);
-
-        globals.animes = kv_animes ? (typeof kv_animes === 'string' ? JSON.parse(kv_animes) : kv_animes) : globals.animes;
-        globals.episodeIds = kv_episodeIds ? (typeof kv_episodeIds === 'string' ? JSON.parse(kv_episodeIds) : kv_episodeIds) : globals.episodeIds;
-        globals.episodeNum = kv_episodeNum ? (typeof kv_episodeNum === 'string' ? JSON.parse(kv_episodeNum) : kv_episodeNum) : globals.episodeNum;
-        globals.logBuffer = kv_logBuffer ? (typeof kv_logBuffer === 'string' ? JSON.parse(kv_logBuffer) : kv_logBuffer) : globals.logBuffer;
-        
-        // 特殊处理 Map
-        if (kv_lastSelectMap) {
-          const parsed = typeof kv_lastSelectMap === 'string' ? JSON.parse(kv_lastSelectMap) : kv_lastSelectMap;
-          globals.lastSelectMap = new Map(
-            Array.isArray(parsed) ? parsed : Object.entries(parsed)
-          );
-        }
+    if (forwardCachesLoaded) {
+      return;
     }
+    forwardCachesLoaded = true;
+
+    log("info", '[Forward] getCaches start.');
+    const storedSchemaVersion = await Widget.storage.get(FORWARD_CACHE_SCHEMA_KEY);
+    if (Number(storedSchemaVersion) !== FORWARD_CACHE_SCHEMA_VERSION) {
+      log("info", `[Forward] Cache schema changed to v${FORWARD_CACHE_SCHEMA_VERSION}; ignoring legacy cache.`);
+      forwardSegmentMemoryCache.clear();
+      if (typeof Widget.storage.clear === 'function') {
+        await Widget.storage.clear();
+      } else {
+        await removeCaches();
+      }
+      await Widget.storage.set(FORWARD_CACHE_SCHEMA_KEY, FORWARD_CACHE_SCHEMA_VERSION);
+      return;
+    }
+
+    const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
+      Widget.storage.get('animes'),
+      Widget.storage.get('episodeIds'),
+      Widget.storage.get('episodeNum'),
+      Widget.storage.get('logBuffer'),
+      Widget.storage.get('lastSelectMap'),
+    ]);
+
+    globals.animes = parseForwardCacheValue(kv_animes, globals.animes, Array.isArray);
+    globals.episodeIds = parseForwardCacheValue(kv_episodeIds, globals.episodeIds, Array.isArray);
+    globals.episodeNum = parseForwardCacheValue(
+      kv_episodeNum,
+      globals.episodeNum,
+      (value) => Number.isFinite(Number(value))
+    );
+    globals.logBuffer = parseForwardCacheValue(kv_logBuffer, globals.logBuffer, Array.isArray);
+
+    const parsedLastSelectMap = parseForwardCacheValue(
+      kv_lastSelectMap,
+      null,
+      (value) => Array.isArray(value) || (value && typeof value === 'object')
+    );
+    if (parsedLastSelectMap) {
+      globals.lastSelectMap = new Map(
+        Array.isArray(parsedLastSelectMap) ? parsedLastSelectMap : Object.entries(parsedLastSelectMap)
+      );
+    }
+}
+
+function parseForwardCacheValue(value, fallback, validator) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return validator(parsed) ? parsed : fallback;
+  } catch (error) {
+    log("warn", `[Forward] Ignoring invalid persisted cache: ${error.message}`);
+    return fallback;
+  }
 }
 
 // 存储更新后的变量
 async function updateCaches() {
     log("info", '[Forward] updateCaches start.');
-    await Promise.all([
-      Widget.storage.set('animes', globals.animes),
-      Widget.storage.set('episodeIds', globals.episodeIds),
-      Widget.storage.set('episodeNum', globals.episodeNum),
-      Widget.storage.set('logBuffer', globals.logBuffer),
-      Widget.storage.set('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)))
-    ]);
+    const persistedLogs = Array.isArray(globals.logBuffer)
+      ? globals.logBuffer.slice(-FORWARD_PERSISTED_LOG_LIMIT)
+      : [];
+    try {
+      await Promise.all([
+        Widget.storage.set(FORWARD_CACHE_SCHEMA_KEY, FORWARD_CACHE_SCHEMA_VERSION),
+        Widget.storage.set('animes', globals.animes),
+        Widget.storage.set('episodeIds', globals.episodeIds),
+        Widget.storage.set('episodeNum', globals.episodeNum),
+        Widget.storage.set('logBuffer', persistedLogs),
+        Widget.storage.set('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)))
+      ]);
+    } catch (error) {
+      log("warn", `[Forward] Failed to persist optional global cache: ${error.message}`);
+    }
 }
 
 // 删除存储的变量
 async function removeCaches() {
     log("info", '[Forward] removeCaches start.');
     await Promise.all([
+      Widget.storage.remove(FORWARD_CACHE_SCHEMA_KEY),
       Widget.storage.remove('animes'),
       Widget.storage.remove('episodeIds'),
       Widget.storage.remove('episodeNum'),
@@ -1011,9 +1063,185 @@ async function getDetailByIdCore(params) {
 
   log("info", "[Forward] bangumi", resJson);
 
-  await updateCaches();
-
   return resJson.bangumi.episodes;
+}
+
+function hashForwardCacheIdentity(value) {
+  let hash = 2166136261;
+  const input = String(value);
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeForwardCacheKeyPart(value, fallback = 'none') {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  return String(value).trim() || fallback;
+}
+
+function getSegmentCacheKey(params) {
+  const normalizedTmdbId = normalizeForwardCacheKeyPart(params.tmdbId, '');
+  const tmdbId = ['undefined', 'null', 'none'].includes(normalizedTmdbId.toLowerCase())
+    ? ''
+    : normalizedTmdbId;
+  const mediaIdentity = tmdbId
+    ? `tmdb:${normalizeForwardCacheKeyPart(params.type)}:${tmdbId}`
+    : `media:${normalizeForwardCacheKeyPart(params.type)}:${normalizeForwardCacheKeyPart(
+        params.seriesName || params.title || params.link || params.videoUrl,
+        'unknown'
+      )}`;
+  const season = normalizeForwardCacheKeyPart(params.season);
+  const episode = normalizeForwardCacheKeyPart(params.episode);
+  return `${FORWARD_SEGMENT_CACHE_PREFIX}.${hashForwardCacheIdentity(mediaIdentity)}.${season}.${episode}`;
+}
+
+function getLegacySegmentCacheKey(params) {
+  return params.season && params.episode
+    ? `${params.tmdbId}.${params.season}.${params.episode}`
+    : `${params.tmdbId}`;
+}
+
+function isValidSegment(segment) {
+  if (!segment || typeof segment !== 'object' || typeof segment.url !== 'string' || !segment.url.trim()) {
+    return false;
+  }
+  const start = Number(segment.segment_start);
+  const end = Number(segment.segment_end);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+function parseSegmentCacheRecord(value) {
+  const record = parseForwardCacheValue(
+    value,
+    null,
+    (candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+  );
+  if (!record
+      || record.version !== FORWARD_CACHE_SCHEMA_VERSION
+      || record.commentId === null
+      || record.commentId === undefined
+      || !Number.isFinite(Number(record.cachedAt))
+      || !Array.isArray(record.segmentList)
+      || record.segmentList.length === 0
+      || !record.segmentList.every(isValidSegment)) {
+    return null;
+  }
+  return record;
+}
+
+function isSegmentCacheFresh(record) {
+  const age = Date.now() - Number(record.cachedAt);
+  return age >= 0 && age <= FORWARD_SEGMENT_CACHE_TTL_MS;
+}
+
+async function readSegmentCache(params) {
+  const key = getSegmentCacheKey(params);
+  let storedValue = null;
+  try {
+    storedValue = await Widget.storage.get(key);
+  } catch (error) {
+    log("warn", `[Forward] Failed to read segment cache: ${error.message}`);
+  }
+  storedValue ||= forwardSegmentMemoryCache.get(key);
+  const record = parseSegmentCacheRecord(storedValue);
+  if (storedValue && !record) {
+    forwardSegmentMemoryCache.delete(key);
+    try {
+      await Widget.storage.remove(key);
+    } catch (error) {
+      log("warn", `[Forward] Failed to remove invalid segment cache: ${error.message}`);
+    }
+  }
+  return { key, record, fresh: record ? isSegmentCacheFresh(record) : false };
+}
+
+async function removeSegmentCache(params, commentId = null) {
+  const key = getSegmentCacheKey(params);
+  const legacyKey = getLegacySegmentCacheKey(params);
+  forwardSegmentMemoryCache.delete(key);
+  const removals = [
+    Widget.storage.remove(key),
+    Widget.storage.remove(legacyKey),
+  ];
+  if (commentId !== null && commentId !== undefined) {
+    removals.push(Widget.storage.remove(`${legacyKey}.${commentId}`));
+  }
+  const results = await Promise.allSettled(removals);
+  if (results.some((result) => result.status === 'rejected')) {
+    log("warn", '[Forward] Some stale segment cache entries could not be removed.');
+  }
+}
+
+async function fetchAndCacheSegmentList(commentId, params) {
+  const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
+  const resJson = await response.json();
+  if (resJson?.success === false || (resJson?.errorCode && Number(resJson.errorCode) !== 0)) {
+    throw new Error(resJson?.errorMessage || `Failed to fetch segment list for comment ${commentId}`);
+  }
+
+  const rawSegmentList = resJson?.comments?.segmentList;
+  const segmentList = Array.isArray(rawSegmentList) ? rawSegmentList.filter(isValidSegment) : [];
+  if (segmentList.length !== (Array.isArray(rawSegmentList) ? rawSegmentList.length : 0)) {
+    log("warn", `[Forward] Ignored invalid segments for comment ${commentId}.`);
+  }
+
+  const key = getSegmentCacheKey(params);
+  if (segmentList.length === 0) {
+    forwardSegmentMemoryCache.delete(key);
+    try {
+      await Widget.storage.remove(key);
+    } catch (error) {
+      log("warn", `[Forward] Failed to remove empty segment cache: ${error.message}`);
+    }
+    return { record: null, segmentList: [] };
+  }
+
+  const record = {
+    version: FORWARD_CACHE_SCHEMA_VERSION,
+    commentId: String(commentId),
+    cachedAt: Date.now(),
+    segmentList,
+  };
+  forwardSegmentMemoryCache.set(key, record);
+  try {
+    await Widget.storage.set(key, record);
+  } catch (error) {
+    log("warn", `[Forward] Failed to persist segment cache; using memory cache: ${error.message}`);
+  }
+  return { record, segmentList };
+}
+
+function findSegmentAtTime(segmentList, segmentTime) {
+  const time = Number(segmentTime);
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+  return segmentList.find((item) => time >= Number(item.segment_start) && time < Number(item.segment_end)) || null;
+}
+
+function buildMissingSegmentResponse(segmentList, segmentTime) {
+  const starts = segmentList.map((item) => Number(item.segment_start)).filter(Number.isFinite);
+  const ends = segmentList.map((item) => Number(item.segment_end)).filter(Number.isFinite);
+  const rangeStart = starts.length ? Math.min(...starts) : null;
+  const rangeEnd = ends.length ? Math.max(...ends) : null;
+  const errorMessage = `No segment covers ${segmentTime}s; available range: ${rangeStart}-${rangeEnd}s`;
+  log("warn", `[Forward] ${errorMessage}`);
+  return { errorCode: 404, success: false, errorMessage, count: 0, comments: [] };
+}
+
+function shouldRefreshSegmentResponse(resJson, record) {
+  if (!resJson || resJson.success === false || Number(resJson.errorCode || 0) !== 0) {
+    return true;
+  }
+  if (!Array.isArray(resJson.comments)) {
+    return true;
+  }
+  const cacheAge = Date.now() - Number(record.cachedAt);
+  return resJson.comments.length === 0 && cacheAge >= FORWARD_SEGMENT_EMPTY_RETRY_MIN_AGE_MS;
 }
 
 async function getCommentsByIdCore(params) {
@@ -1025,38 +1253,19 @@ async function getCommentsByIdCore(params) {
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
 
-  if (commentId) {
-    const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
-    const commentIdKey = `${storeKey}.${commentId}`;
-    const segmentList = Widget.storage.get(storeKey);
-    const lastCommentId = Widget.storage.get(commentIdKey);
-    
-    log("info", "[Forward] storeKey:", storeKey);
-    log("info", "[Forward] commentIdKey:", commentIdKey);
-    log("info", "[Forward] commentId:", commentId);
-    log("info", "[Forward] lastCommentId:", lastCommentId);
-    log("info", "[Forward] segmentList:", segmentList);
+  if (!commentId) return null;
 
-    if (lastCommentId === commentId && Array.isArray(segmentList)) {
-        return segmentList;
-    } else {
-      Widget.storage.remove(storeKey);
-      Widget.storage.remove(commentIdKey);
-    }
-
-    const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
-    const resJson = await response.json();
-
-    log("info", "[Forward] segmentList:", resJson.comments.segmentList);
-
-    Widget.storage.set(storeKey, resJson.comments.segmentList);
-    Widget.storage.set(commentIdKey, commentId);
-
-    await updateCaches();
-
-    return resJson.comments.segmentList;
+  const cached = await readSegmentCache(params);
+  if (cached.fresh && String(cached.record.commentId) === String(commentId)) {
+    log("info", "[Forward] Using fresh segment cache:", cached.key);
+    return cached.record.segmentList;
   }
-  return null;
+
+  await removeSegmentCache(params, commentId);
+  const { segmentList } = await fetchAndCacheSegmentList(commentId, params);
+  log("info", "[Forward] segmentList:", segmentList);
+  await updateCaches();
+  return segmentList;
 }
 
 async function getDanmuWithSegmentTimeCore(params) {
@@ -1068,33 +1277,60 @@ async function getDanmuWithSegmentTimeCore(params) {
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
 
-  const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
-  const segmentList = Widget.storage.get(storeKey);
-  if (segmentList) {
-    const segment = segmentList.find((item) => {
-        const start = Number(item.segment_start);
-        const end = Number(item.segment_end);
-        const time = Number(segmentTime);
-        return time >= start && time < end;
-    });
-    log("info", "[Forward] segment:", segment);
-    if (!segment) {
-      const starts = segmentList.map((item) => Number(item.segment_start)).filter(Number.isFinite);
-      const ends = segmentList.map((item) => Number(item.segment_end)).filter(Number.isFinite);
-      const rangeStart = starts.length ? Math.min(...starts) : null;
-      const rangeEnd = ends.length ? Math.max(...ends) : null;
-      const errorMessage = `No segment covers ${segmentTime}s; available range: ${rangeStart}-${rangeEnd}s`;
-      log("warn", `[Forward] ${errorMessage}`);
-      return { errorCode: 404, success: false, errorMessage, count: 0, comments: [] };
+  let cached = await readSegmentCache(params);
+  if (!cached.record) return null;
+
+  let record = cached.record;
+  let refreshed = false;
+  if (!cached.fresh) {
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      if (refreshResult.record) record = refreshResult.record;
+      refreshed = true;
+    } catch (error) {
+      log("warn", `[Forward] Failed to refresh expired segment cache: ${error.message}`);
     }
-    const response = await getSegmentComment(segment);
-    const resJson = await response.json();
-
-    await updateCaches();
-
-    return resJson;
   }
-  return null;
+
+  let segment = findSegmentAtTime(record.segmentList, segmentTime);
+  if (!segment && !refreshed) {
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      if (refreshResult.record) {
+        record = refreshResult.record;
+        segment = findSegmentAtTime(record.segmentList, segmentTime);
+      }
+      refreshed = true;
+    } catch (error) {
+      log("warn", `[Forward] Failed to refresh segment range: ${error.message}`);
+    }
+  }
+  if (!segment) {
+    return buildMissingSegmentResponse(record.segmentList, segmentTime);
+  }
+
+  log("info", "[Forward] segment:", segment);
+  let response = await getSegmentComment(segment);
+  let resJson = await response.json();
+
+  if (!refreshed && shouldRefreshSegmentResponse(resJson, record)) {
+    log("warn", "[Forward] Segment response is stale or invalid; refreshing segment list once.");
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      refreshed = true;
+      if (refreshResult.record) {
+        record = refreshResult.record;
+        segment = findSegmentAtTime(record.segmentList, segmentTime);
+        if (!segment) return buildMissingSegmentResponse(record.segmentList, segmentTime);
+        response = await getSegmentComment(segment);
+        resJson = await response.json();
+      }
+    } catch (error) {
+      log("warn", `[Forward] Failed to retry stale segment response: ${error.message}`);
+    }
+  }
+
+  return resJson;
 }
 
 async function searchDanmu(params = {}) {
