@@ -671,7 +671,7 @@ export class Envs {
       'BANGUMI_DATA_CACHE_DAYS': { category: 'cache', type: 'number', description: 'Bangumi Data 缓存有效期(天)，设置0则每次请求时强制异步更新，默认7天', min: 0, max: 30 },
 
       // 系统配置
-      'UI_THEME': { category: 'system', type: 'select', options: ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'lavender', 'mist', 'terminal'], description: '管理界面主题' },
+      'UI_THEME': { category: 'system', type: 'select', options: ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'mist', 'terminal', 'lavender'], description: '管理界面主题' },
       'PROXY_URL': { category: 'system', type: 'text', description: '代理/反代地址' },
       'TMDB_API_KEY': { category: 'system', type: 'text', description: 'TMDB API密钥' },
       'LOG_LEVEL': { category: 'system', type: 'select', options: ['debug', 'info', 'warn', 'error'], description: '日志级别配置' },

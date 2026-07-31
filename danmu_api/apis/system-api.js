@@ -7,7 +7,7 @@ import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-ut
 
 const UI_THEMES = new Set([
   'ocean', 'forest', 'graphite', 'berry', 'monochrome',
-  'sunset', 'aurora', 'lavender', 'mist', 'terminal'
+  'sunset', 'aurora', 'mist', 'terminal', 'lavender'
 ]);
 
 function resolveUiTheme(theme) {

@@ -33,7 +33,7 @@ export const HTML_TEMPLATE = /* html */ `
     <script>
         try {
             const storedTheme = localStorage.getItem('logvar_ui_theme');
-            const supportedThemes = ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'lavender', 'mist', 'terminal'];
+            const supportedThemes = ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'mist', 'terminal', 'lavender'];
             if (supportedThemes.includes(storedTheme)) document.body.dataset.theme = storedTheme;
         } catch (error) {
             // localStorage may be unavailable in restricted browser contexts.
@@ -321,14 +321,14 @@ export const HTML_TEMPLATE = /* html */ `
                         <button type="button" role="radio" class="theme-option" data-theme-option="aurora" aria-checked="false" onclick="selectTheme('aurora')" title="极光青">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #164a4a"></i><i style="background: #d49a3a"></i><i style="background: #dfe8e6"></i></span><span class="theme-option-label">极光青</span>
                         </button>
-                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="薰衣紫">
-                            <span class="theme-swatches" aria-hidden="true"><i style="background: #4c3e69"></i><i style="background: #3f806b"></i><i style="background: #ebe9f0"></i></span><span class="theme-option-label">薰衣紫</span>
-                        </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="mist" aria-checked="false" onclick="selectTheme('mist')" title="晨雾灰">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #40566b"></i><i style="background: #a94f42"></i><i style="background: #e7ebef"></i></span><span class="theme-option-label">晨雾灰</span>
                         </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="terminal" aria-checked="false" onclick="selectTheme('terminal')" title="终端绿">
                             <span class="theme-swatches" aria-hidden="true"><i style="background: #050706"></i><i style="background: #4faf75"></i><i style="background: #1d231f"></i></span><span class="theme-option-label">终端绿</span>
+                        </button>
+                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="经典默认">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background: #1a2980"></i><i style="background: #26d0ce"></i><i style="background: #a0b9e8"></i></span><span class="theme-option-label">经典默认</span>
                         </button>
                     </div>
                 </div>

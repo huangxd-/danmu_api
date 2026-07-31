@@ -12,9 +12,9 @@ const UI_THEMES = {
     monochrome: '黑白简约',
     sunset: '暖霞橙',
     aurora: '极光青',
-    lavender: '薰衣紫',
     mist: '晨雾灰',
-    terminal: '终端绿'
+    terminal: '终端绿',
+    lavender: '经典默认'
 };
 
 const UI_THEME_STORAGE_KEY = 'logvar_ui_theme';
