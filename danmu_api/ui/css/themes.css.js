@@ -524,6 +524,16 @@ body[data-theme] .category-btn:focus-visible {
     gap: 7px;
 }
 
+.env-toolbar-actions .btn {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+    gap: 7px;
+    line-height: 1.2;
+    min-height: 38px;
+    white-space: nowrap;
+}
+
 .config-transfer-icon {
     font-size: 20px;
     font-weight: 700;
@@ -537,6 +547,28 @@ body[data-theme] .category-btn:focus-visible {
 }
 
 @media (max-width: 768px) {
+    .env-section-header {
+        align-items: stretch !important;
+    }
+
+    .env-section-header > div:first-child {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .env-toolbar-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .env-toolbar-actions .btn {
+        flex: none;
+        min-height: 44px;
+        padding: 10px 8px;
+        width: 100%;
+    }
+
     .theme-settings {
         align-items: stretch;
         flex-direction: column;
