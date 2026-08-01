@@ -294,7 +294,6 @@ body[data-theme] .number-btn:active {
 }
 
 body[data-theme] .env-item,
-body[data-theme] .preview-area,
 body[data-theme] .preview-item,
 body[data-theme] .api-params,
 body[data-theme] .api-selector,
@@ -315,6 +314,70 @@ body[data-theme] .request-records-container {
 body[data-theme] .preview-item,
 body[data-theme] .env-item {
     border-left-color: var(--theme-accent);
+}
+
+body[data-theme] .preview-toolbar {
+    background: var(--theme-content-bg);
+    border-color: var(--theme-border);
+}
+
+body[data-theme] .preview-category-btn,
+body[data-theme] .preview-search input,
+body[data-theme] .preview-action-btn {
+    background: var(--theme-panel-strong);
+    color: var(--theme-text);
+    border-color: var(--theme-border);
+}
+
+body[data-theme] .preview-category-btn:hover,
+body[data-theme] .preview-search-clear:hover,
+body[data-theme] .preview-summary:hover {
+    background: var(--theme-panel-bg);
+}
+
+body[data-theme] .preview-category-btn.active {
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #ffffff;
+}
+
+body[data-theme] .preview-summary,
+body[data-theme] .preview-item {
+    background: var(--theme-panel-bg);
+    color: var(--theme-text);
+    border-color: var(--theme-border);
+}
+
+body[data-theme] .preview-summary:hover,
+body[data-theme] .preview-action-btn:hover {
+    border-color: var(--theme-accent);
+}
+
+body[data-theme] .preview-value {
+    background: var(--theme-panel-strong);
+    color: var(--theme-text);
+}
+
+body[data-theme] .preview-list,
+body[data-theme] .preview-group-heading {
+    border-color: var(--theme-border);
+}
+
+body[data-theme] .preview-description,
+body[data-theme] .preview-status,
+body[data-theme] .preview-summary-description,
+body[data-theme] .preview-summary-arrow,
+body[data-theme] .preview-group-heading span,
+body[data-theme] .preview-item-description,
+body[data-theme] .preview-empty,
+body[data-theme] .preview-search-clear {
+    color: var(--theme-muted);
+}
+
+body[data-theme] .preview-summary-count,
+body[data-theme] .preview-group-heading h3,
+body[data-theme] .preview-empty strong {
+    color: var(--theme-accent);
 }
 
 body[data-theme] .env-info strong,
@@ -427,7 +490,11 @@ body[data-theme="terminal"] .modal-footer {
 
 body[data-theme] .theme-option:focus-visible,
 body[data-theme] .btn:focus-visible,
-body[data-theme] .category-btn:focus-visible {
+body[data-theme] .category-btn:focus-visible,
+body[data-theme] .preview-category-btn:focus-visible,
+body[data-theme] .preview-summary:focus-visible,
+body[data-theme] .preview-action-btn:focus-visible,
+body[data-theme] .preview-search-clear:focus-visible {
     outline: 3px solid var(--theme-accent);
     outline-offset: 2px;
 }

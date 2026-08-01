@@ -64,5 +64,68 @@ export const responsiveCssContent = /* css */ `
     .btn {
         flex: 1;
     }
+
+    .preview-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 8px;
+    }
+
+    .preview-categories {
+        order: 2;
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 6px;
+        overflow: visible;
+    }
+
+    .preview-category-btn {
+        width: 100%;
+        min-width: 0;
+        justify-content: space-between;
+    }
+
+    .preview-search {
+        order: 1;
+        flex: none;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .preview-overview {
+        grid-template-columns: 1fr;
+    }
+
+    .preview-summary {
+        min-height: 92px;
+    }
+
+    .preview-item {
+        padding: 12px 4px;
+    }
+
+    .preview-item-main {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .preview-key {
+        padding-top: 0;
+    }
+
+    .preview-value-container {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .preview-value-actions {
+        align-self: flex-end;
+    }
+
+    .preview-item-description {
+        margin: 8px 0 0;
+    }
 }
 `;

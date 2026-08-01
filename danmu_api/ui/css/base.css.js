@@ -124,7 +124,10 @@ body {
 
 /* footer 样式 */
 .footer {
-    padding: 20px;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px 15px;
     background: transparent;
     text-align: center;
     font-size: 14px;

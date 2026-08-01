@@ -88,8 +88,33 @@ export const HTML_TEMPLATE = /* html */ `
                     <p style="color: #666; font-size: 12px; margin-top: 5px;">* 设置将保存在浏览器本地存储中，清除网页的‘本地存储空间’或者输入框中留空并保存可恢复默认</p>
                 </div>
 
-                <p style="color: #666; margin-bottom: 20px;">当前生效的环境变量配置</p>
-                <div class="preview-area" id="preview-area"></div>
+                <p class="preview-description">当前生效的环境变量配置</p>
+                <div class="preview-toolbar">
+                    <nav class="preview-categories" id="preview-categories" aria-label="配置分类"></nav>
+                    <div class="preview-search">
+                        <input
+                            type="search"
+                            id="preview-search-input"
+                            placeholder="搜索键名、值或说明"
+                            aria-label="搜索配置"
+                            autocomplete="off"
+                            oninput="handlePreviewSearch(event)"
+                        >
+                        <button
+                            type="button"
+                            class="preview-search-clear"
+                            id="preview-search-clear"
+                            onclick="clearPreviewSearch()"
+                            title="清除搜索"
+                            aria-label="清除搜索"
+                            hidden
+                        >&times;</button>
+                    </div>
+                </div>
+                <div class="preview-status" id="preview-status" aria-live="polite"></div>
+                <div class="preview-area" id="preview-area" aria-live="polite">
+                    <p class="text-gray">正在加载配置...</p>
+                </div>
             </div>
 
             <!-- 日志查看 -->
