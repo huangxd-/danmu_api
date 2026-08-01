@@ -519,6 +519,18 @@ function extractImageUrl(value) {
   return "";
 }
 
+function extractYearFromTimestamp(...values) {
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) continue;
+    const milliseconds = timestamp >= 1e12 ? timestamp : timestamp * 1000;
+    const year = new Date(milliseconds).getUTCFullYear();
+    if (year >= 1900 && year <= 2100) return year;
+  }
+  return null;
+}
+
 function parseSearchCell(cell) {
   const seriesId = cell && (cell.book_id || cell.search_result_id);
   if (!seriesId) return null;
@@ -527,10 +539,11 @@ function parseSearchCell(cell) {
   if (Array.isArray(videoData)) videoData = videoData[0] || {};
   if (!videoData || typeof videoData !== "object") videoData = {};
   const inner = videoData.video_detail || {};
-  const episodeCount = detail.episode_cnt || videoData.episode_cnt || inner.episode_cnt || 0;
+  const albumInfo = videoData.album_info || inner.album_info || detail.album_info || {};
+  const episodeCount = detail.episode_cnt || videoData.episode_cnt || inner.episode_cnt || albumInfo.episode_cnt || 0;
   if (!episodeCount) return null;
   const highlighted = cell.search_high_light && cell.search_high_light.title && cell.search_high_light.title.text;
-  const title = String(highlighted || detail.series_title || videoData.title || inner.series_title || "")
+  const title = String(highlighted || detail.series_title || videoData.title || inner.series_title || albumInfo.title || "")
     .replace(/<[^>]+>/g, "")
     .trim();
   if (!title) return null;
@@ -538,9 +551,16 @@ function parseSearchCell(cell) {
     seriesId: String(seriesId),
     name: title,
     episodeCount: Number(episodeCount) || 0,
-    score: videoData.score || inner.score || "",
+    score: videoData.score || inner.score || albumInfo.score || "",
+    year: extractYearFromTimestamp(
+      albumInfo.create_time,
+      inner.create_time,
+      videoData.create_time,
+      detail.create_time,
+      cell.create_time,
+    ),
     imageUrl: extractImageUrl(
-      inner.series_cover || videoData.cover || detail.series_cover || cell.series_cover || cell.cover,
+      inner.series_cover || videoData.cover || detail.series_cover || albumInfo.cover || cell.series_cover || cell.cover,
     ),
   };
 }
@@ -795,7 +815,8 @@ export default class HongguoSource extends BaseSource {
         series_id: String(seriesId),
       };
       const payload = await this.request("POST", "/novel/player/multi_video_detail/v1/", { body });
-      const entry = payload.data && payload.data[String(seriesId)];
+      const responseData = payload.data || {};
+      const entry = responseData[String(seriesId)] || responseData;
       const videoData = (entry && entry.video_data) || {};
       const episodes = (videoData.video_list || []).map((item) => ({
         index: Number(item.vid_index) || 0,
@@ -807,13 +828,14 @@ export default class HongguoSource extends BaseSource {
       })).filter((item) => item.vid).sort((a, b) => a.index - b.index);
       return {
         episodes,
+        year: extractYearFromTimestamp(videoData.create_time),
         imageUrl: extractImageUrl(videoData.series_cover) ||
           (episodes.find((episode) => episode.imageUrl) || {}).imageUrl ||
           "",
       };
     } catch (error) {
       log("error", `[Hongguo] 获取剧集失败: ${error.message}`);
-      return { episodes: [], imageUrl: "" };
+      return { episodes: [], year: null, imageUrl: "" };
     }
   }
 
@@ -907,14 +929,17 @@ export default class HongguoSource extends BaseSource {
             };
           });
       if (!links.length) continue;
+      const year = Number.isInteger(anime.year)
+        ? anime.year
+        : (Number.isInteger(details.year) ? details.year : null);
       const item = {
         animeId: convertToAsciiSum(anime.seriesId),
         bangumiId: String(anime.seriesId),
-        animeTitle: `${anime.name}【短剧】from hongguo`,
+        animeTitle: `${anime.name}${year ? `(${year})` : ""}【短剧】from hongguo`,
         type: "短剧",
         typeDescription: "短剧",
         imageUrl: anime.imageUrl || details.imageUrl || "",
-        startDate: generateValidStartDate(""),
+        startDate: generateValidStartDate(year),
         episodeCount: links.length,
         rating: Number(anime.score) || 0,
         isFavorited: true,
