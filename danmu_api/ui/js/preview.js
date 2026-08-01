@@ -3,12 +3,12 @@ export const previewJsContent = /* javascript */ `
 const previewCategoryOrder = ['api', 'source', 'match', 'danmu', 'cache', 'system'];
 
 const previewCategoryMeta = {
-    api: { label: 'API 配置', description: '访问凭证与请求控制' },
-    source: { label: '源配置', description: '弹幕源、VOD 服务与平台凭证' },
-    match: { label: '匹配配置', description: '标题处理、匹配策略与 AI 服务' },
-    danmu: { label: '弹幕配置', description: '过滤、转换、输出与时间调整' },
-    cache: { label: '缓存配置', description: '缓存时效、容量与 Redis 服务' },
-    system: { label: '系统配置', description: '界面、网络、部署与安全设置' }
+    api: { label: '🔗 API 配置', description: '访问凭证与请求控制' },
+    source: { label: '📜 源配置', description: '弹幕源、VOD 服务与平台凭证' },
+    match: { label: '🔍 匹配配置', description: '标题处理、匹配策略与 AI 服务' },
+    danmu: { label: '🔣 弹幕配置', description: '过滤、转换、输出与时间调整' },
+    cache: { label: '💾 缓存配置', description: '缓存时效、容量与 Redis 服务' },
+    system: { label: '⚙️ 系统配置', description: '界面、网络、部署与安全设置' }
 };
 
 const previewGroupDefinitions = {
@@ -112,7 +112,6 @@ function renderPreviewNavigation() {
     if (!navigation) return;
 
     const categories = [
-        { key: 'overview', label: '概览', count: getPreviewTotalCount() },
         ...previewCategoryOrder.map(category => ({
             key: category,
             label: previewCategoryMeta[category].label,
