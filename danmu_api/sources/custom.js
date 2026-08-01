@@ -3,7 +3,6 @@ import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
@@ -196,8 +195,7 @@ export default class CustomSource extends BaseSource {
         const decimalColor = r * 256 * 256 + g * 256 + b;
         return `${platform}${decimalColor}`;
       })}`,
-      // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
-      m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.m) : c.m,
+      m: c.m,
     }));
   }
 }

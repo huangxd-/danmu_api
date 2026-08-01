@@ -557,8 +557,7 @@ export default class BahamutSource extends BaseSource {
     return comments.map(c => ({
       cid: Number(c.sn),
       p: `${(c.time / 10).toFixed(2)},${positionToMode[c.position] || c.tp},${parseInt(c.color.slice(1), 16)},[bahamut]`,
-      // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
-      m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.text) : c.text,
+      m: c.text,
       t: c.time / 10
     }));
   }

@@ -1,7 +1,7 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
-import { traditionalized } from './zh-util.js';
+import { simplized, traditionalized } from './zh-util.js';
 import { convertDanAny } from './dan-any.js';
 
 // =====================
@@ -292,6 +292,22 @@ export function convertToDanmakuJson(contents, platform) {
     danmus.push({ p: attributes, m, cid: cidCounter++, like: item?.like });
   }
 
+  // 文本字段归一化为 m 后统一转换，确保所有来源及输入格式行为一致。
+  const textConverter = globals.danmuSimplifiedTraditional === 'simplified'
+    ? simplized
+    : globals.danmuSimplifiedTraditional === 'traditional'
+      ? traditionalized
+      : null;
+
+  if (textConverter) {
+    danmus = danmus.map(danmu => ({
+      ...danmu,
+      m: typeof danmu.m === 'string' ? textConverter(danmu.m) : danmu.m
+    }));
+    const targetLabel = globals.danmuSimplifiedTraditional === 'simplified' ? '简体字' : '繁体字';
+    log("info", `[system] [danmu] [danmu convert] 转换了 ${danmus.length} 条弹幕为${targetLabel}`);
+  }
+
   // 切割字符串成正则表达式数组
   const regexArray = globals.blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
     // 去除两端的斜杠并转换为正则对象
@@ -375,15 +391,6 @@ export function convertToDanmakuJson(contents, platform) {
     if (colorCount > 0) {
       log("info", `[system] [danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色`);
     }
-  }
-
-  // 根据 danmuSimplifiedTraditional 设置转换弹幕文本
-  if (globals.danmuSimplifiedTraditional === 'traditional') {
-    convertedDanmus = convertedDanmus.map(danmu => ({
-      ...danmu,
-      m: traditionalized(danmu.m)
-    }));
-    log("info", `[system] [danmu] [danmu convert] 转换了 ${convertedDanmus.length} 条弹幕为繁体字`);
   }
 
   log("info", `[system] [danmu] danmus_original: ${danmus.length}`);

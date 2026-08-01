@@ -39,7 +39,7 @@ import { HandlerFactory } from "./configs/handlers/handler-factory.js";
 import { Globals } from "./configs/globals.js";
 import { addAnime, addEpisode } from "./utils/cache-util.js";
 import { convertToAsciiSum } from "./utils/codec-util.js";
-import { handleDanmusLike } from "./utils/danmu-util.js";
+import { convertToDanmakuJson, handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 import { initBangumiData, searchBangumiData, clearBangumiDataCache } from "./utils/bangumi-data-util.js";
 
@@ -247,6 +247,52 @@ test('worker.js API endpoints', async (t) => {
 
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+  });
+  
+  await t.test('danmu text conversion should run after normalization and before filtering and grouping', () => {
+    const baseEnv = {
+      BLOCKED_WORDS: '',
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    };
+
+    Globals.init({ ...baseEnv, DANMU_SIMPLIFIED_TRADITIONAL: 'simplified' });
+    const simplified = convertToDanmakuJson([
+      { progress: 1000, mode: 1, color: 16777215, content: '來看能不能發彈幕' },
+      { p: '2,1,16777215,[test]', m: '繁體彈幕' }
+    ], 'bilibili1');
+    assert.deepEqual(simplified.map(item => item.m), ['来看能不能发弹幕', '繁体弹幕']);
+
+    Globals.init({
+      ...baseEnv,
+      DANMU_SIMPLIFIED_TRADITIONAL: 'simplified',
+      BLOCKED_WORDS: '/来看/'
+    });
+    const filtered = convertToDanmakuJson([
+      { progress: 1000, mode: 1, color: 16777215, content: '來看' }
+    ], 'bilibili1');
+    assert.equal(filtered.length, 0);
+
+    Globals.init({
+      ...baseEnv,
+      DANMU_SIMPLIFIED_TRADITIONAL: 'simplified',
+      GROUP_MINUTE: '1'
+    });
+    const grouped = convertToDanmakuJson([
+      { progress: 1000, mode: 1, color: 16777215, content: '來看' },
+      { p: '2,1,16777215,[test]', m: '来看' }
+    ], 'bilibili1');
+    assert.equal(grouped.length, 1);
+    assert.match(grouped[0].m, /^来看.*2$/);
+
+    Globals.init({ ...baseEnv, DANMU_SIMPLIFIED_TRADITIONAL: 'traditional' });
+    const traditional = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '来看能不能发弹幕' }
+    ], 'test');
+    assert.equal(traditional[0].m, '來看能不能發彈幕');
+
+    resetSearchState();
   });
 
   // await t.test('GET /api/v2/comment/:id?format=json&duration=true should return segment duration and reuse comment cache', async () => {

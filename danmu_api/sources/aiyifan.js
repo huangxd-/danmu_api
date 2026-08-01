@@ -6,7 +6,6 @@ import { hexToInt } from "../utils/danmu-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
-import { simplized } from "../utils/zh-util.js";
 import { globals } from '../configs/globals.js';
 import { AiyifanSigningProvider } from '../utils/aiyifan-util.js';
 
@@ -506,11 +505,6 @@ export default class AiyifanSource extends BaseSource {
         // 保留原始数据
         ...comment
       };
-    }).map(c => {
-      if (globals.danmuSimplifiedTraditional === 'simplified') {
-        if (c.m) c.m = simplized(c.m);
-      }
-      return c;
     });
   }
 }

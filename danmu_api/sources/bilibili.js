@@ -1135,9 +1135,6 @@ export default class BilibiliSource extends BaseSource {
 
   formatComments(comments) {
     return comments.map(c => {
-        if (globals.danmuSimplifiedTraditional === 'simplified') {
-            if (c.m) c.m = simplized(c.m);
-        }
         c.like = c.like_num;
         return c;
     });

@@ -3,7 +3,6 @@ import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
 import TencentSource from "./tencent.js";
@@ -540,11 +539,8 @@ export default class DandanSource extends BaseSource {
 
   formatComments(comments) {
     return comments.map(c => {
-      // 已经被实时抓取的其它源弹幕，略过复杂的 Dandan 转换，进行繁转简处理
+      // 已经被实时抓取的其它源弹幕，略过复杂的 Dandan 转换。
       if (c.isRealTimePulled) {
-        if (globals.danmuSimplifiedTraditional === 'simplified' && c.m) {
-          return { ...c, m: simplized(c.m) };
-        }
         return c;
       }
 
@@ -558,8 +554,7 @@ export default class DandanSource extends BaseSource {
           const decimalColor = r * 256 * 256 + g * 256 + b;
           return `${platform}${decimalColor}`;
         })}`,
-        // 根据 globals.danmuSimplifiedTraditional 控制是否繁转简
-        m: globals.danmuSimplifiedTraditional === 'simplified' ? simplized(c.m) : c.m,
+        m: c.m,
       };
     });
   }

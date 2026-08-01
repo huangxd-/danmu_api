@@ -3,7 +3,6 @@ import { globals } from '../configs/globals.js';
 import { log } from "../utils/log-util.js";
 import { httpGet, httpPost } from "../utils/http-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { simplized } from "../utils/zh-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
@@ -936,12 +935,11 @@ export default class AnimekoSource extends BaseSource {
         const time = (Number(info.playTime) / 1000).toFixed(2);
         const mode = locationMap[info.location] || 1;
         const color = info.color === -1 ? 16777215 : info.color;
-        const text = globals.danmuSimplifiedTraditional === 'simplified' ? simplized(info.text) : info.text;
 
         return {
           cid: item.id,
           p: `${time},${mode},${color},[animeko]`,
-          m: text
+          m: info.text
         };
       });
   }
