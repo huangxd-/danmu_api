@@ -93,7 +93,7 @@ export const HTML_TEMPLATE = /* html */ `
                     <nav class="preview-categories" id="preview-categories" aria-label="配置分类"></nav>
                     <div class="preview-search">
                         <input
-                            type="search"
+                            type="text"
                             id="preview-search-input"
                             placeholder="搜索键名、值或说明"
                             aria-label="搜索配置"
