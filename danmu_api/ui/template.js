@@ -310,14 +310,29 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 </div>
 
-                <div class="env-categories">
-                    <button class="category-btn active" onclick="switchCategory('api', event)">🔗 API配置</button>
-                    <button class="category-btn" onclick="switchCategory('source', event)">📜 源配置</button>
-                    <button class="category-btn" onclick="switchCategory('match', event)">🔍 匹配配置</button>
-                    <button class="category-btn" onclick="switchCategory('danmu', event)">🔣 弹幕配置</button>
-                    <button class="category-btn" onclick="switchCategory('cache', event)">💾 缓存配置</button>
-                    <button class="category-btn" onclick="switchCategory('system', event)">⚙️ 系统配置</button>
+                <div class="preview-toolbar env-config-toolbar">
+                    <nav class="preview-categories" id="env-categories" aria-label="系统配置分类"></nav>
+                    <div class="preview-search">
+                        <input
+                            type="text"
+                            id="env-search-input"
+                            placeholder="搜索键名、值或说明"
+                            aria-label="搜索系统配置"
+                            autocomplete="off"
+                            oninput="handleEnvSearch(event)"
+                        >
+                        <button
+                            type="button"
+                            class="preview-search-clear"
+                            id="env-search-clear"
+                            onclick="clearEnvSearch()"
+                            title="清除搜索"
+                            aria-label="清除搜索"
+                            hidden
+                        >&times;</button>
+                    </div>
                 </div>
+                <div class="preview-status" id="env-search-status" aria-live="polite"></div>
 
                 <div class="theme-settings" id="theme-settings" hidden>
                     <div class="theme-settings-copy">

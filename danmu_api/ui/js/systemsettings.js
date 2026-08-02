@@ -70,6 +70,7 @@ async function selectTheme(theme) {
         }
 
         updateLocalImportedConfig('UI_THEME', selectedTheme);
+        renderEnvList();
         addLog('界面主题已保存为: ' + UI_THEMES[selectedTheme], 'success');
     } catch (error) {
         const localMessage = storedLocally ? '，已保存在当前浏览器' : '，仅在当前页面生效';
@@ -2247,51 +2248,141 @@ function updateProgress(percent) {
     document.getElementById('progress-bar').style.width = percent + '%';
 }
 
-// 渲染环境变量列表
-function renderEnvList() {
-    const list = document.getElementById('env-list');
-    const themeSettings = document.getElementById('theme-settings');
-    if (themeSettings) themeSettings.hidden = currentCategory !== 'system';
+function renderEnvNavigation() {
+    const navigation = document.getElementById('env-categories');
+    if (!navigation) return;
 
-    const items = (envVariables[currentCategory] || [])
-        .map((item, originalIndex) => ({ item, originalIndex }))
-        .filter(({ item }) => item.key !== 'UI_THEME');
-
-    if (items.length === 0) {
-        list.innerHTML = '<p class="text-gray padding-20 text-center">暂无配置项</p>';
-        return;
-    }
-
-    list.innerHTML = items.map(({ item, originalIndex }) => {
-        const typeLabel = item.type === 'boolean' ? '布尔' :
-                         item.type === 'number' ? '数字' :
-                         item.type === 'select' ? '单选' :
-                         item.type === 'map' ? '映射' :
-                         item.type === 'multi-select' ? '多选' : '文本';
-        const badgeClass = item.type === 'multi-select' ? 'multi' : '';
-
-        const escapedValue = escapeHtml(item.value);
-
+    navigation.innerHTML = previewCategoryOrder.map(category => {
+        const isActive = !envSearchQuery && currentCategory === category;
+        const count = (envVariables[category] || []).length;
         return \`
-            <div class="env-item">
-                <div class="env-info">
-                    <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
-                    <div class="text-dark-gray">\${escapedValue}</div>
-                    <div class="text-gray font-size-12 margin-top-3">\${item.description || '无描述'}</div>
-                </div>
-                <div class="env-actions">
-                    <button class="btn btn-primary" onclick="editEnv(\${originalIndex})">编辑</button>
-                    <button class="btn btn-danger" onclick="deleteEnv(\${originalIndex})">删除</button>
-                </div>
-            </div>
+            <button
+                type="button"
+                class="preview-category-btn\${isActive ? ' active' : ''}"
+                onclick="switchCategory('\${category}')"
+                aria-pressed="\${isActive}"
+            >
+                <span>\${previewCategoryMeta[category].label}</span>
+                <span class="preview-category-count">\${count}</span>
+            </button>
         \`;
     }).join('');
 }
 
+function envItemMatchesSearch(item, category, normalizedQuery) {
+    const value = item.value === null || item.value === undefined ? '' : String(item.value);
+    const themeLabel = item.key === 'UI_THEME' ? UI_THEMES[value.toLowerCase()] || '' : '';
+    return [
+        item.key,
+        value,
+        item.description,
+        previewCategoryMeta[category].label,
+        themeLabel
+    ].join(' ').toLocaleLowerCase().includes(normalizedQuery);
+}
+
+function renderEnvItem(item, category, originalIndex) {
+    const typeLabel = item.type === 'boolean' ? '布尔' :
+                     item.type === 'number' ? '数字' :
+                     item.type === 'select' ? '单选' :
+                     item.type === 'map' ? '映射' :
+                     item.type === 'multi-select' ? '多选' : '文本';
+    const badgeClass = item.type === 'multi-select' ? 'multi' : '';
+
+    return \`
+        <div class="env-item">
+            <div class="env-info">
+                <strong>\${escapeHtml(item.key)}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
+                <div class="text-dark-gray">\${escapeHtml(item.value)}</div>
+                <div class="text-gray font-size-12 margin-top-3">\${escapeHtml(item.description || '无描述')}</div>
+            </div>
+            <div class="env-actions">
+                <button class="btn btn-primary" onclick="editEnv('\${category}', \${originalIndex}, this)">编辑</button>
+                <button class="btn btn-danger" onclick="deleteEnv('\${category}', \${originalIndex}, this)">删除</button>
+            </div>
+        </div>
+    \`;
+}
+
+function handleEnvSearch(event) {
+    envSearchQuery = event.target.value.trim();
+    const clearButton = document.getElementById('env-search-clear');
+    if (clearButton) clearButton.hidden = !envSearchQuery;
+    renderEnvList();
+}
+
+function clearEnvSearch(shouldRender = true) {
+    envSearchQuery = '';
+    const input = document.getElementById('env-search-input');
+    const clearButton = document.getElementById('env-search-clear');
+    if (input) input.value = '';
+    if (clearButton) clearButton.hidden = true;
+    if (shouldRender) {
+        renderEnvList();
+        if (input) input.focus();
+    }
+}
+
+// 渲染环境变量列表
+function renderEnvList() {
+    const list = document.getElementById('env-list');
+    const status = document.getElementById('env-search-status');
+    const themeSettings = document.getElementById('theme-settings');
+    if (!list) return;
+
+    renderEnvNavigation();
+
+    if (!envSearchQuery) {
+        const categoryItems = envVariables[currentCategory] || [];
+        const items = categoryItems
+            .map((item, originalIndex) => ({ item, originalIndex }))
+            .filter(({ item }) => item.key !== 'UI_THEME');
+
+        if (themeSettings) themeSettings.hidden = currentCategory !== 'system';
+        if (status) status.textContent = previewCategoryMeta[currentCategory].label + ' · ' + categoryItems.length + ' 项';
+        list.innerHTML = items.length
+            ? items.map(({ item, originalIndex }) => renderEnvItem(item, currentCategory, originalIndex)).join('')
+            : '<p class="text-gray padding-20 text-center">暂无配置项</p>';
+        return;
+    }
+
+    const normalizedQuery = envSearchQuery.toLocaleLowerCase();
+    let total = 0;
+    let themeMatched = false;
+    let html = '';
+
+    previewCategoryOrder.forEach(category => {
+        const matches = (envVariables[category] || [])
+            .map((item, originalIndex) => ({ item, originalIndex }))
+            .filter(({ item }) => envItemMatchesSearch(item, category, normalizedQuery));
+
+        const regularMatches = matches.filter(({ item }) => item.key !== 'UI_THEME');
+        themeMatched = themeMatched || matches.some(({ item }) => item.key === 'UI_THEME');
+        total += matches.length;
+
+        if (!regularMatches.length) return;
+        html += \`
+            <section class="preview-group env-search-group">
+                <div class="preview-group-heading">
+                    <h3>\${previewCategoryMeta[category].label}</h3>
+                    <span>\${regularMatches.length} 项</span>
+                </div>
+                <div>
+                    \${regularMatches.map(({ item, originalIndex }) => renderEnvItem(item, category, originalIndex)).join('')}
+                </div>
+            </section>
+        \`;
+    });
+
+    if (themeSettings) themeSettings.hidden = !themeMatched;
+    if (status) status.textContent = '搜索结果 · ' + total + ' 项';
+    list.innerHTML = html || (themeMatched ? '' : '<div class="preview-empty"><strong>未找到匹配配置</strong><span>请尝试其他关键词</span></div>');
+}
+
 // 编辑环境变量
-function editEnv(index) {
-    const item = envVariables[currentCategory][index];
-    const editButton = event.target; // 获取当前点击的编辑按钮
+function editEnv(category, index, editButton) {
+    const item = (envVariables[category] || [])[index];
+    if (!item || !editButton) return;
     
     // 设置按钮为加载状态
     const originalText = editButton.innerHTML;
@@ -2299,8 +2390,9 @@ function editEnv(index) {
     editButton.disabled = true;
     
     editingKey = index;
+    editingCategory = category;
     document.getElementById('modal-title').textContent = '编辑配置项';
-    document.getElementById('env-category').value = currentCategory;
+    document.getElementById('env-category').value = category;
     document.getElementById('env-key').value = item.key;
     document.getElementById('env-description').value = item.description || '';
     document.getElementById('value-type').value = item.type || 'text';
@@ -2324,12 +2416,12 @@ function editEnv(index) {
 }
 
 // 删除环境变量
-function deleteEnv(index) {
+function deleteEnv(category, index, deleteButton) {
     customConfirm('确定要删除这个配置项吗?', '删除确认').then(confirmed => {
         if (confirmed) {
-            const item = envVariables[currentCategory][index];
+            const item = (envVariables[category] || [])[index];
+            if (!item || !deleteButton) return;
             const key = item.key;
-            const deleteButton = event.target; // 获取当前点击的删除按钮
 
             // 设置按钮为加载状态
             const originalText = deleteButton.innerHTML;
@@ -2348,7 +2440,7 @@ function deleteEnv(index) {
             .then(result => {
                 if (result.success) {
                     // 从本地数据中删除
-                    envVariables[currentCategory].splice(index, 1);
+                    envVariables[category].splice(index, 1);
                     renderEnvList();
                     renderPreview();
                     addLog(\`删除配置项: \${key}\`, 'warn');
@@ -2378,8 +2470,9 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
     const key = document.getElementById('env-key').value.trim();
     const description = document.getElementById('env-description').value.trim();
     const type = document.getElementById('value-type').value;
-    const existingItem = editingKey !== null && envVariables[currentCategory]
-        ? envVariables[currentCategory][editingKey]
+    const targetCategory = editingCategory || category;
+    const existingItem = editingKey !== null && envVariables[targetCategory]
+        ? envVariables[targetCategory][editingKey]
         : null;
 
     // 根据类型获取值
@@ -2462,7 +2555,7 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             }
 
             if (editingKey !== null) {
-                envVariables[currentCategory][editingKey] = {
+                envVariables[targetCategory][editingKey] = {
                     ...(existingItem || {}),
                     ...itemData
                 };
@@ -2472,11 +2565,9 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
                 addLog(\`添加配置项: \${key} = \${value}\`, 'success');
             }
 
-            if (category !== currentCategory) {
+            if (editingKey === null && category !== currentCategory) {
                 currentCategory = category;
-                document.querySelectorAll('.category-btn').forEach((btn, i) => {
-                    btn.classList.toggle('active', ['api', 'source', 'match', 'danmu', 'cache', 'system'][i] === category);
-                });
+                clearEnvSearch(false);
             }
 
             renderEnvList();
