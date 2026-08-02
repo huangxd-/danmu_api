@@ -128,6 +128,7 @@ LogVar 弹幕 API 服务器
    ```
    服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
    如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
+   HTTPS 反向代理应传递 `X-Forwarded-Proto`；无法传递时可设置 `DANMU_API_PUBLIC_PROTO=https`，用于生成正确的对外弹幕链接。
 
    **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
 

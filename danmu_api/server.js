@@ -49,6 +49,21 @@ function detectNodeDeployPlatform() {
   return "node";
 }
 
+function resolvePublicRequestProtocol(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (forwardedProto === 'http' || forwardedProto === 'https') {
+    return forwardedProto;
+  }
+
+  const configuredProto = String(process.env.DANMU_API_PUBLIC_PROTO || 'http')
+    .trim()
+    .toLowerCase();
+  return configuredProto === 'https' ? 'https' : 'http';
+}
+
 /**
  * 检查并自动复制配置文件
  * 在Node环境下，如果config目录下没有.env，则自动从.env.example拷贝一份生成.env
@@ -270,8 +285,9 @@ process.on('SIGINT', cleanupWatcher);
 function createServer() {
   return http.createServer(async (req, res) => {
     try {
-      // 构造完整的请求 URL
-      const fullUrl = `http://${req.headers.host}${req.url}`;
+      // 构造完整的请求 URL，反向代理场景优先使用客户端原始协议
+      const scheme = resolvePublicRequestProtocol(req);
+      const fullUrl = `${scheme}://${req.headers.host}${req.url}`;
 
       // 获取请求客户端的ip，兼容反向代理场景
       let clientIp = 'unknown';
