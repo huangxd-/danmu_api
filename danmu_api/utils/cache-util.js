@@ -324,6 +324,15 @@ export function isCommentCacheValid(videoUrl) {
     }
 
     const cached = globals.commentCache.get(videoUrl);
+    const commentCount = Array.isArray(cached.comments) ? cached.comments.length : 0;
+    const minCount = Math.max(0, globals.commentCacheMinCount || 0);
+
+    if (minCount > 0 && commentCount < minCount) {
+        globals.commentCache.delete(videoUrl);
+        log("info", `[cache] Comment cache for "${videoUrl}" has only ${commentCount} comments (minimum ${minCount}), refreshing`);
+        return false;
+    }
+
     const now = Date.now();
     const cacheAgeMinutes = (now - cached.timestamp) / (1000 * 60);
 
