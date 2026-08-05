@@ -397,36 +397,22 @@ export const HTML_TEMPLATE = /* html */ `
             <form id="env-form">
                 <div class="form-group">
                     <label>变量类别</label>
-                    <select id="env-category" disabled>
-                        <option value="api">🔗 API配置</option>
-                        <option value="source">📜 源配置</option>
-                        <option value="match">🔍 匹配配置</option>
-                        <option value="danmu">🔣 弹幕配置</option>
-                        <option value="cache">💾 缓存配置</option>
-                        <option value="system">⚙️ 系统配置</option>
-                    </select>
+                    <div class="readonly-field" id="env-category-display"></div>
                 </div>
                 <div class="form-group">
                     <label>变量名</label>
-                    <input type="text" id="env-key" placeholder="例如: DB_HOST" required readonly>
+                    <div class="readonly-field" id="env-key-display"></div>
                 </div>
                 <div class="form-group">
                     <label>值类型</label>
-                    <select id="value-type" onchange="renderValueInput()" disabled>
-                        <option value="text">文本</option>
-                        <option value="boolean">布尔值</option>
-                        <option value="number">数字 (1-100)</option>
-                        <option value="select">单选</option>
-                        <option value="multi-select">多选 (可排序)</option>
-                        <option value="map">映射</option>
-                    </select>
+                    <div class="readonly-field" id="value-type-display"></div>
                 </div>
                 <div class="form-group" id="value-input-container">
                     <!-- 动态渲染的值输入控件 -->
-                    </div>
+                </div>
                 <div class="form-group">
                     <label>描述</label>
-                    <textarea id="env-description" placeholder="配置项说明" readonly></textarea>
+                    <div class="readonly-field" id="env-description-display"></div>
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="submit" class="btn btn-success" style="flex: 1;">保存</button>

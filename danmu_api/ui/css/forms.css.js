@@ -353,4 +353,25 @@ input:checked + .slider:before {
 .map-item-template {
     display: none;
 }
+
+/* Read-only config fields in edit modal */
+.readonly-field {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--theme-panel-bg, #f5f6f8);
+    border: 1px dashed var(--theme-border, #d5d7db);
+    border-radius: 6px;
+    color: var(--theme-text, #333);
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: default;
+    user-select: text;
+}
+
+.readonly-field:empty::before {
+    content: '—';
+    color: var(--theme-muted, #999);
+}
 `;

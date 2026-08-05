@@ -109,6 +109,8 @@ let currentCategory = 'api'; // 默认分类改为api
 let envSearchQuery = '';
 let editingKey = null;
 let editingCategory = null;
+let editingKeyName = '';
+let editingType = 'text';
 let logs = []; // 保留本地日志数组，用于UI显示
 
 // 版本信息
@@ -523,10 +525,8 @@ function closeModal() {
     editingCategory = null;
     
     // 重置表单字段状态
-    document.getElementById('env-category').disabled = false;
-    document.getElementById('env-key').readOnly = false;
-    document.getElementById('value-type').disabled = false;
-    document.getElementById('env-description').readOnly = false;
+    editingKeyName = '';
+    editingType = 'text';
 }
 
 // 页面加载完成后初始化时获取一次日志

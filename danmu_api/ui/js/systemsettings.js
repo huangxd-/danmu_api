@@ -683,12 +683,21 @@ function checkAndHandleAdminToken() {
     }
 }
 
+// 获取配置项类型的显示标签
+function getEnvTypeLabel(type) {
+    return type === 'boolean' ? '布尔' :
+           type === 'number' ? '数字' :
+           type === 'select' ? '单选' :
+           type === 'map' ? '映射' :
+           type === 'multi-select' ? '多选' : '文本';
+}
+
 // 渲染值输入控件
 function renderValueInput(item) {
     const container = document.getElementById('value-input-container');
-    const type = item ? item.type : document.getElementById('value-type').value;
+    const type = item ? item.type : editingType;
     const value = item ? item.value : '';
-    const currentKey = item ? item.key : document.getElementById('env-key').value;
+    const currentKey = item ? item.key : editingKeyName;
 
     if (type === 'boolean') {
         // 布尔开关
@@ -874,7 +883,7 @@ function renderValueInput(item) {
 
     } else {
         // 文本输入
-        const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
+        const currentKey = editingKeyName;
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
@@ -1562,12 +1571,10 @@ function updateTagOptions() {
 // 统一的状态检查函数
 function updateTagStates() {
     // 确保 DOM 元素存在，防止在渲染过程中被调用出错
-    const keyInput = document.getElementById('env-key');
-    if (!keyInput) return;
+    // 确保当前编辑配置存在
+    if (!editingKeyName) return;
 
-    const currentKey = keyInput.value;
-    const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS';
-
+    const currentKey = editingKeyName;
     // 1. 获取当前暂存区中的Token (防止同组内重复)
     const stagingTokens = new Set(stagingTags);
     
@@ -2282,11 +2289,7 @@ function envItemMatchesSearch(item, category, normalizedQuery) {
 }
 
 function renderEnvItem(item, category, originalIndex) {
-    const typeLabel = item.type === 'boolean' ? '布尔' :
-                     item.type === 'number' ? '数字' :
-                     item.type === 'select' ? '单选' :
-                     item.type === 'map' ? '映射' :
-                     item.type === 'multi-select' ? '多选' : '文本';
+    const typeLabel = getEnvTypeLabel(item.type);
     const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
     return \`
@@ -2391,17 +2394,15 @@ function editEnv(category, index, editButton) {
     
     editingKey = index;
     editingCategory = category;
-    document.getElementById('modal-title').textContent = '编辑配置项';
-    document.getElementById('env-category').value = category;
-    document.getElementById('env-key').value = item.key;
-    document.getElementById('env-description').value = item.description || '';
-    document.getElementById('value-type').value = item.type || 'text';
+    editingKeyName = item.key;
+    editingType = item.type || 'text';
 
-    // 设置字段为只读（编辑模式下）
-    document.getElementById('env-category').disabled = true;
-    document.getElementById('env-key').readOnly = true;
-    document.getElementById('value-type').disabled = true;
-    document.getElementById('env-description').readOnly = true;
+    document.getElementById('modal-title').textContent = '编辑配置项';
+    document.getElementById('env-category-display').textContent =
+        (previewCategoryMeta[category] && previewCategoryMeta[category].label) || category;
+    document.getElementById('env-key-display').textContent = item.key;
+    document.getElementById('value-type-display').textContent = getEnvTypeLabel(item.type || 'text');
+    document.getElementById('env-description-display').textContent = item.description || '';
 
     // 渲染对应的值输入控件
     renderValueInput(item);
@@ -2466,10 +2467,10 @@ function deleteEnv(category, index, deleteButton) {
 document.getElementById('env-form').addEventListener('submit', async function(e) {
     e.preventDefault();
 
-    const category = document.getElementById('env-category').value;
-    const key = document.getElementById('env-key').value.trim();
-    const description = document.getElementById('env-description').value.trim();
-    const type = document.getElementById('value-type').value;
+    const category = editingCategory || 'api';
+    const key = editingKeyName;
+    const description = (document.getElementById('env-description-display').textContent || '').trim();
+    const type = editingType;
     const targetCategory = editingCategory || category;
     const existingItem = editingKey !== null && envVariables[targetCategory]
         ? envVariables[targetCategory][editingKey]
@@ -2948,11 +2949,9 @@ async function fetchAndShowRecentData() {
 
 // 渲染animes缓存面板 (含集数解析与映射详情)
 function renderAnimeCachePanel(data, listContainer) {
-    const keyInput = document.getElementById('env-key');
+    if (!listContainer || !editingKeyName) return;
 
-    if (!listContainer || !keyInput) return;
-
-    const currentKey = keyInput.value;
+    const currentKey = editingKeyName;
 
     // 内部辅助函数：生成操作按钮
     const generateButtons = (title, source) => {
