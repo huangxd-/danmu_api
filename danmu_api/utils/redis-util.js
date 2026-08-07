@@ -1,6 +1,7 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { simpleHash, serializeValue } from "./codec-util.js";
+import { loadFavorites } from './favorite-util.js';
 
 // =====================
 // upstash redis 读写请求 （先简单实现，不加锁）
@@ -152,7 +153,9 @@ export async function getRedisCaches() {
   if (!globals.redisCacheInitialized) {
     try {
       log("info", '[system] [redis] getRedisCaches start.');
-      const keys = ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'];
+      const keys = [
+        'animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum', 'favoriteCache'
+      ];
       const commands = keys.map(key => ['GET', key]); // 构造 pipeline 命令
       const results = await runPipeline(commands);
 
@@ -169,6 +172,7 @@ export async function getRedisCaches() {
         log("info", `[system] [redis] Restored lastSelectMap from Redis with ${globals.lastSelectMap.size} entries`);
       }
       globals.todayReqNum = results[5].result ? parseInt(results[5].result, 10) : globals.todayReqNum;
+      if (results[6]?.result) loadFavorites(results[6].result);
 
       // 更新哈希值
       globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
@@ -177,6 +181,7 @@ export async function getRedisCaches() {
       globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
       globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
       globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
+      globals.lastHashes.favoriteCache = simpleHash(serializeValue('favoriteCache', globals.favoriteCache));
 
       globals.redisCacheInitialized = true;
       log("info", '[system] [redis] getRedisCaches completed successfully.');
@@ -201,12 +206,12 @@ export async function updateRedisCaches() {
       { key: 'episodeNum', value: globals.episodeNum },
       { key: 'reqRecords', value: globals.reqRecords },
       { key: 'lastSelectMap', value: globals.lastSelectMap },
-      { key: 'todayReqNum', value: globals.todayReqNum }
+      { key: 'todayReqNum', value: globals.todayReqNum },
+      { key: 'favoriteCache', value: globals.favoriteCache }
     ];
 
     for (const { key, value } of variables) {
-      // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-      const serializedValue = key === 'lastSelectMap' ? JSON.stringify(Object.fromEntries(value)) : JSON.stringify(value);
+      const serializedValue = serializeValue(key, value);
       const currentHash = simpleHash(serializedValue);
       if (currentHash !== globals.lastHashes[key]) {
         commands.push(['SET', key, serializedValue]);

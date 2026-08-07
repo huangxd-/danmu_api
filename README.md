@@ -79,13 +79,14 @@ LogVar 弹幕 API 服务器
   - 后续搜索或自动匹配命中收藏时直接从永久缓存返回，不再请求外部弹幕源；除精确关键词外，也会使用收藏剧名包含关系匹配同名剧场版、季度等变体。
   - “收藏”标签页支持搜索收藏、强制刷新和删除。刷新会绕过已有缓存重新查询；删除会同时移除对应搜索缓存。
   - 收藏不受 `SEARCH_CACHE_MINUTES`、普通搜索缓存 500 条上限或过期清理影响。
-  - Node/Docker 部署会写入 `.cache/favoritesCache` 永久保存，请挂载 `.cache` 目录；serverless 部署仅保存在当前实例内存中，实例重建或隔离后需要重新收藏。
+  - Node/Docker 部署会写入 `.cache/favoritesCache` 永久保存，请挂载 `.cache` 目录；serverless 未配置 Redis 时仅保存在当前实例内存中，配置 Redis 后可跨冷启动和实例恢复。
 - **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。包括：
   - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
   - 弹幕缓存（可通过 `COMMENT_CACHE_MINUTES` 配置，默认5分钟）
   - 永久收藏缓存（无 TTL、无数量上限，Node/Docker 可持久化到 `.cache/favoritesCache`）
   - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
   - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
+  - 配置redis可持久化原有查询信息和永久收藏；搜索结果与弹幕缓存仍只保存在实例内存中，不会写入 Redis
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
 - **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Hugging Face Spaces部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
@@ -483,8 +484,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId，最小值100，最大值1000       |
 | MAX_ANIMES    | 【可选】动漫标题缓存最大数量，默认为`100`，缓存最多保存的anime条目数，超过限制时删除最早的条目（FIFO），最小值100，最大值1000       |
 | BANGUMI_DATA_CACHE_DAYS    | 【可选】指定 Bangumi Data 数据有效期(天)，默认为：`7`，超过有效期后会下载更新，设置0则每次请求时强制异步更新（需开启`USE_BANGUMI_DATA`）'       |
-| UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化存储，不会因为冷启动而丢失过去的查询信息（在cf/eo上配置后应该能更稳定点，也能解决小幻掉匹配的问题，但会稍微影响请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | LOCAL_REDIS_URL    | 【可选】本地Redis连接URL，用于本地缓存存储，适用于docker和本地部署环境，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地Redis）       |
 | DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
 | DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
@@ -735,7 +736,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 ### 其他注意事项
 - 日志存储在内存中，服务器重启后会清空。
 - `/api/logs` 中的 JSON 日志会格式化显示，带缩进以提高可读性。
-- 搜索结果和弹幕数据存储在内存中，服务器重启后会清空，可通过配置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN` 启用 Redis 持久化存储。
+- 搜索结果和弹幕数据存储在内存中，服务器重启后会清空，可通过配置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN` 启用 Redis 持久化存储，启用 Redis 后，收藏功能也可用。
 - 已支持本地redis，可通过配置 `LOCAL_REDIS_URL` 启用，只支持docker和本地部署环境。
 - 搜索结果缓存默认时间为 1 分钟，可通过环境变量 `SEARCH_CACHE_MINUTES` 调整（设置为 0 表示不缓存）。
 - 确保 `package.json` 中包含 `node-fetch` 依赖。

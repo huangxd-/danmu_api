@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { handleFavoriteRefresh } from './apis/favorite-api.js';
-import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
+import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
 import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
@@ -337,6 +337,74 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(traditional[0].m, '來看能不能發彈幕');
 
     resetSearchState();
+  });
+
+  await t.test('Upstash Redis persists favorites without storing search or comment caches', async () => {
+    resetFavoriteState({
+      UPSTASH_REDIS_REST_URL: 'https://redis.example.com',
+      UPSTASH_REDIS_REST_TOKEN: 'test-token',
+      LOG_LEVEL: 'error'
+    });
+    Globals.redisValid = true;
+    Globals.redisCacheInitialized = false;
+    Globals.lastHashes = {
+      animes: null,
+      episodeIds: null,
+      episodeNum: null,
+      lastSelectMap: null,
+      reqRecords: null,
+      todayReqNum: null,
+      favoriteCache: null
+    };
+
+    const anime = createFavoriteAnime('Redis cache test');
+    Globals.searchCache.set('Redis search', {
+      results: [favoriteSearchResult(anime)],
+      details: [anime],
+      timestamp: Date.now()
+    });
+    Globals.commentCache.set('https://example.com/video', {
+      comments: [{ p: '1,1,16777215,test', m: 'cached' }],
+      timestamp: Date.now()
+    });
+    addFavorite('Redis favorite', [favoriteSearchResult(anime)], [anime]);
+    Globals.favoriteCache.get('Redis favorite').timestamp = Date.now() - 24 * 60 * 60 * 1000;
+
+    const redisData = new Map();
+    const redisCommands = [];
+    await withMockFetch(async (_url, options) => {
+      const commands = JSON.parse(options.body);
+      redisCommands.push(...commands);
+      return {
+        json: async () => commands.map(command => {
+          if (command[0] === 'SET') {
+            redisData.set(command[1], command[2]);
+            return { result: 'OK' };
+          }
+          return { result: redisData.get(command[1]) ?? null };
+        })
+      };
+    }, async () => {
+      await updateRedisCaches();
+      assert.ok(redisData.has('favoriteCache'));
+      assert.equal(redisData.has('searchCache'), false);
+      assert.equal(redisData.has('commentCache'), false);
+
+      Globals.searchCache = new Map();
+      Globals.commentCache = new Map();
+      Globals.favoriteCache = new Map();
+      Globals.redisCacheInitialized = false;
+      await getRedisCaches();
+    });
+
+    assert.equal(Globals.searchCache.size, 0);
+    assert.equal(Globals.commentCache.size, 0);
+    assert.equal(redisCommands.some(command => command[1] === 'searchCache'), false);
+    assert.equal(redisCommands.some(command => command[1] === 'commentCache'), false);
+    assert.equal(resolveFavoriteForKeyword('Redis favorite')?.entry.results[0].animeId, anime.animeId);
+    assert.equal(getSearchCache('Redis favorite')[0].animeId, anime.animeId);
+
+    Globals.redisValid = false;
   });
 
   await t.test('favorite cache', async t => {

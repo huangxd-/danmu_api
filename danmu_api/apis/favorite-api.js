@@ -47,6 +47,10 @@ function detailsFromMap(detailsMap) {
 
 async function persistFavorites() {
   if (globals.localCacheValid) await updateLocalCaches();
+  if (globals.redisValid) {
+    const { updateRedisCaches } = await import('../utils/redis-util.js');
+    await updateRedisCaches();
+  }
 }
 
 function removeRelatedSearchCaches(keyword) {
