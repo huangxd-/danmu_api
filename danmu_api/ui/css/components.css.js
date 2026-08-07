@@ -138,6 +138,56 @@ export const componentsCssContent = /* css */ `
     background: #5568d3;
 }
 
+.favorite-action-btn {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.favorite-action-btn:disabled,
+.favorite-action-btn:disabled:hover,
+body[data-theme] .favorite-action-btn:disabled,
+body[data-theme] .favorite-action-btn:disabled:hover {
+    background: #d1d5db !important;
+    color: #6b7280 !important;
+    border-color: #d1d5db !important;
+    cursor: not-allowed;
+    opacity: 1;
+    box-shadow: none;
+    transform: none;
+}
+
+.favorite-action-btn:disabled::before {
+    display: none;
+}
+
+.favorite-cover {
+    width: 58px;
+    height: 78px;
+    flex: 0 0 auto;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #e5e7eb;
+}
+
+.favorite-info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.favorite-meta {
+    color: #6b7280;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+.favorite-list {
+    margin-top: 8px;
+}
+
 .btn-success {
     background: #28a745;
     color: white;

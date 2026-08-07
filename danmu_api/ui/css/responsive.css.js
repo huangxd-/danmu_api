@@ -61,6 +61,11 @@ export const responsiveCssContent = /* css */ `
         width: 100%;
     }
 
+    .favorite-action-btn {
+        max-width: none;
+        flex-basis: 100%;
+    }
+
     .btn {
         flex: 1;
     }

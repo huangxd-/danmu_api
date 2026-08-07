@@ -168,13 +168,14 @@ export const HTML_TEMPLATE = /* html */ `
                     <div class="danmu-test-tabs">
                         <button class="danmu-test-tab active" onclick="switchDanmuTestTab('auto', event)">自动匹配测试</button>
                         <button class="danmu-test-tab" onclick="switchDanmuTestTab('manual', event)">手动匹配测试</button>
+                        <button class="danmu-test-tab" onclick="switchDanmuTestTab('favorite', event)">收藏</button>
                     </div>
 
                     <div class="danmu-test-panel active" id="auto-match-panel">
                         <p style="color: #666; margin-bottom: 15px;">模拟播放器自动匹配流程：输入文件名 → 匹配剧集 → 获取弹幕</p>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label>文件名</label>
-                            <div style="display:flex;gap:10px;margin-top:5px;">
+                            <div style="display:flex;gap:10px;margin-top:5px;flex-wrap:wrap;">
                                 <input type="text" id="auto-match-filename" placeholder="示例: 生万物 S02E08, 无忧渡.S02E08.2160p.WEB-DL" style="flex:1;">
                                 <button class="btn btn-success" id="auto-match-btn" onclick="autoMatchTest()">开始匹配</button>
                             </div>
@@ -188,10 +189,24 @@ export const HTML_TEMPLATE = /* html */ `
                             <div style="display:flex;gap:10px;margin-top:5px;">
                                 <input type="text" id="manual-search-keyword" placeholder="请输入动漫名称" style="flex:1;">
                                 <button class="btn btn-primary" id="manual-search-btn" onclick="manualSearchAnime()">搜索</button>
+                                <button class="btn btn-success favorite-action-btn" id="manual-favorite-btn" onclick="favoriteManualSearch()" disabled>收藏</button>
                             </div>
                         </div>
                         <div id="manual-anime-list" style="display:none;"></div>
                         <div id="manual-episode-list" style="display:none;"></div>
+                    </div>
+
+                    <div class="danmu-test-panel" id="favorite-panel">
+                        <p style="color: #666; margin-bottom: 15px;">收藏后的剧集会永久缓存，后续匹配可秒级返回缓存结果；对于《火影忍者》《名侦探柯南》等集数较多的剧集尤其有用，无需每次重新搜索。可在“手动匹配测试”界面搜索剧集后，点击“收藏”按钮添加搜索结果收藏。</p>
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>搜索收藏</label>
+                            <div style="display:flex;gap:10px;margin-top:5px;">
+                                <input type="text" id="favorite-search-input" placeholder="搜索收藏剧名或来源" oninput="handleFavoriteSearch(event)" style="flex:1;">
+                                <button class="btn btn-primary" onclick="loadFavoriteList()">刷新列表</button>
+                            </div>
+                        </div>
+                        <div class="preview-status" id="favorite-list-status" aria-live="polite"></div>
+                        <div class="favorite-list" id="favorite-list"></div>
                     </div>
 
                     <div id="danmu-result-area" style="display:none;"></div>

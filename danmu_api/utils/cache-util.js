@@ -2,6 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
+import { loadFavorites, resolveFavoriteForKeyword, saveFavorites } from "./favorite-util.js";
 let fs, path;
 
 // =====================
@@ -111,6 +112,9 @@ function sweepExpiredCache(cacheMap, cacheMinutes, cacheName) {
     let sweptCount = 0;
 
     for (const [key, entry] of cacheMap.entries()) {
+        if (cacheMap === globals.searchCache && globals.favoriteCache instanceof Map && globals.favoriteCache.has(key)) {
+            continue;
+        }
         const ageMinutes = (now - entry.timestamp) / (1000 * 60);
         if (ageMinutes > cacheMinutes) {
             cacheMap.delete(key);
@@ -164,6 +168,26 @@ function* iterateSearchCacheDetails() {
                 seen.add(identityKey);
             }
             yield anime;
+        }
+    }
+
+    // 收藏剧集的详情也纳入解析范围（永久缓存）
+    if (globals.favoriteCache instanceof Map) {
+        for (const cached of globals.favoriteCache.values()) {
+            if (!Array.isArray(cached.details)) {
+                continue;
+            }
+
+            for (const anime of cached.details) {
+                const identityKey = getAnimeIdentityKey(anime);
+                if (identityKey && seen.has(identityKey)) {
+                    continue;
+                }
+                if (identityKey) {
+                    seen.add(identityKey);
+                }
+                yield anime;
+            }
         }
     }
 }
@@ -259,6 +283,10 @@ export function resolveEpisodeContextById(id, detailStore = null) {
 }
 // 检查搜索缓存是否有效（未过期）
 export function isSearchCacheValid(keyword) {
+    if (resolveFavoriteForKeyword(keyword)) {
+        return true;
+    }
+
     if (!globals.searchCache.has(keyword)) {
         return false;
     }
@@ -279,6 +307,19 @@ export function isSearchCacheValid(keyword) {
 
 // 获取搜索缓存
 export function getSearchCache(keyword, detailsMap = null) {
+    // 收藏剧集永久缓存优先命中（无 TTL、无数量上限）
+    const favorite = resolveFavoriteForKeyword(keyword);
+    if (favorite) {
+        const favoriteEntry = favorite.entry;
+        log("info", `[cache] Using favorite cache for "${keyword}"`);
+        if (detailsMap instanceof Map && Array.isArray(favoriteEntry.details)) {
+            favoriteEntry.details.forEach(anime => {
+                storeAnimeDetail(detailsMap, anime);
+            });
+        }
+        return favoriteEntry.results;
+    }
+
     if (isSearchCacheValid(keyword)) {
         log("info", `[cache] Using search cache for "${keyword}"`);
         const cached = globals.searchCache.get(keyword);
@@ -710,13 +751,17 @@ export async function getLocalCaches() {
   if (!globals.localCacheInitialized) {
     try {
       log("info", '[cache] getLocalCaches start.');
-
       // 从本地缓存文件读取数据并恢复到 globals 中
       globals.animes = JSON.parse(readCacheFromFile('animes')) || globals.animes;
       globals.episodeIds = JSON.parse(readCacheFromFile('episodeIds')) || globals.episodeIds;
       globals.episodeNum = JSON.parse(readCacheFromFile('episodeNum')) || globals.episodeNum;
       globals.reqRecords = JSON.parse(readCacheFromFile('reqRecords')) || globals.reqRecords;
       globals.todayReqNum = JSON.parse(readCacheFromFile('todayReqNum')) || globals.todayReqNum;
+
+      const favoriteCacheData = readCacheFromFile('favoritesCache');
+      if (favoriteCacheData) {
+        loadFavorites(typeof favoriteCacheData === 'string' ? JSON.parse(favoriteCacheData) : favoriteCacheData);
+      }
 
       // 恢复 lastSelectMap 并转换为 Map 对象
       const lastSelectMapData = readCacheFromFile('lastSelectMap');
@@ -732,6 +777,7 @@ export async function getLocalCaches() {
       globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
       globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
       globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
+      globals.lastHashes.favoriteCache = simpleHash(JSON.stringify(saveFavorites()));
 
       globals.localCacheInitialized = true;
       log("info", '[cache] getLocalCaches completed successfully.');
@@ -755,24 +801,30 @@ export async function updateLocalCaches() {
       { key: 'episodeNum', value: globals.episodeNum },
       { key: 'reqRecords', value: globals.reqRecords },
       { key: 'lastSelectMap', value: globals.lastSelectMap },
-      { key: 'todayReqNum', value: globals.todayReqNum }
+      { key: 'todayReqNum', value: globals.todayReqNum },
+      { key: 'favoritesCache', value: globals.favoriteCache }
     ];
 
     for (const { key, value } of variables) {
       // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-      const serializedValue = key === 'lastSelectMap' ? JSON.stringify(Object.fromEntries(value)) : JSON.stringify(value);
+      const serializedValue = key === 'lastSelectMap'
+        ? JSON.stringify(Object.fromEntries(value))
+        : key === 'favoritesCache'
+          ? JSON.stringify(saveFavorites())
+          : JSON.stringify(value);
       const currentHash = simpleHash(serializedValue);
-      if (currentHash !== globals.lastHashes[key]) {
+      const hashKey = key === 'favoritesCache' ? 'favoriteCache' : key;
+      if (currentHash !== globals.lastHashes[hashKey]) {
         writeCacheToFile(key, serializedValue);
-        updates.push({ key, hash: currentHash });
+        updates.push({ key, hashKey, hash: currentHash });
       }
     }
 
     // 输出更新日志
     if (updates.length > 0) {
       log("info", `[cache] Updated local caches for keys: ${updates.map(u => u.key).join(', ')}`);
-      updates.forEach(({ key, hash }) => {
-        globals.lastHashes[key] = hash; // 更新本地哈希
+      updates.forEach(({ hashKey, hash }) => {
+        globals.lastHashes[hashKey] = hash; // 更新本地哈希
       });
     } else {
       log("info", '[cache] No changes detected, skipping local cache update.');

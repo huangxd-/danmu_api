@@ -62,6 +62,10 @@ LogVar 弹幕 API 服务器
   - `GET /danmaku/api/v2/fongmi/danmaku?name={name}&episode={episode}`：兼容FengMi影视api短路径。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
   - `GET /api/cache/animes`：获取最近的 animes 缓存。
+  - `POST /api/v2/favorite/add`：新增收藏。手动匹配测试使用 `{ "keyword": "火影忍者" }` 保存搜索关键词及整组搜索结果；同时兼容 `{ "fileName": "火影忍者 S01E01" }`。
+  - `GET /api/v2/favorite/list`：获取收藏摘要列表，包含收藏关键词、来源、总集数、首条搜索结果图片及收藏时间。
+  - `POST /api/v2/favorite/refresh`：使用 `{ "keyword": "火影忍者" }` 强制重新搜索并更新收藏缓存。
+  - `POST /api/v2/favorite/remove`：使用 `{ "keyword": "火影忍者" }` 删除收藏及对应搜索缓存。
 - **弹幕格式输出**：支持 JSON 和 XML 及 [@dan-uni/dan-any](https://github.com/ani-uni/dan-any)支持的全部输出格式 输出，通过以下方式配置：
   - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml|artplayer.json|baha.json|bili.xml|danuni.json|danuni.binpb|ddplay.json|dplayer.json|vod.json`（默认：json）
   - 查询参数：`?format=xml` 或 `?format=json` ...（优先级最高）
@@ -69,9 +73,17 @@ LogVar 弹幕 API 服务器
   - 示例：`GET /api/v2/comment/10001?format=xml` 返回 XML 格式弹幕
   - **XML 格式说明**：完全遵循 Bilibili 标准格式，8字段标准弹幕属性
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
+- **永久收藏缓存**：适合《火影忍者》《名侦探柯南》等集数较多、重复搜索耗时较长的剧集。
+  - 在 UI 的“接口调试 → 弹幕测试 → 手动匹配测试”中输入关键词并搜索，搜索成功后点击“收藏”按钮即可保存整组搜索结果；已收藏时可再次点击按钮取消收藏。
+  - 收藏名称和缓存键使用手动搜索框中的原始关键词，例如搜索“火影忍者”即收藏为“火影忍者”；列表图片取第一条搜索结果的图片。
+  - 后续搜索或自动匹配命中收藏时直接从永久缓存返回，不再请求外部弹幕源；除精确关键词外，也会使用收藏剧名包含关系匹配同名剧场版、季度等变体。
+  - “收藏”标签页支持搜索收藏、强制刷新和删除。刷新会绕过已有缓存重新查询；删除会同时移除对应搜索缓存。
+  - 收藏不受 `SEARCH_CACHE_MINUTES`、普通搜索缓存 500 条上限或过期清理影响。
+  - Node/Docker 部署会写入 `.cache/favoritesCache` 永久保存，请挂载 `.cache` 目录；serverless 部署仅保存在当前实例内存中，实例重建或隔离后需要重新收藏。
 - **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。包括：
   - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
   - 弹幕缓存（可通过 `COMMENT_CACHE_MINUTES` 配置，默认5分钟）
+  - 永久收藏缓存（无 TTL、无数量上限，Node/Docker 可持久化到 `.cache/favoritesCache`）
   - 用户偏好记录（可通过 `MAX_LAST_SELECT_MAP` 配置，默认100条）
   - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
@@ -95,6 +107,7 @@ LogVar 弹幕 API 服务器
   - 配置预览
   - 日志查看
   - 接口调试/弹幕测试
+    - 自动匹配测试、手动匹配测试及收藏管理
   - 推送弹幕
   - 请求记录
   - 系统管理
@@ -616,6 +629,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │   │   └── fongmi-api.js   # FongMi影视兼容接口
 │   │   ├── dandan-api.js       # 弹弹play兼容接口函数
 │   │   ├── env-api.js          # 环境变量接口函数
+│   │   ├── favorite-api.js     # 永久收藏的新增、列表、刷新和删除接口
 │   │   ├── forward-trace-api.js # Forward 调试日志回传接口
 │   │   └── system-api.js       # 系统管理接口函数
 │   ├── configs/
@@ -685,6 +699,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── dan-any.js          # dan-any 弹幕格式转换工具
 │       ├── danmu-util.js       # 弹幕处理工具
 │       ├── douban-util.js      # 豆瓣API请求工具
+│       ├── favorite-util.js    # 永久收藏缓存的匹配、增删、刷新及序列化工具
 │       ├── hanjutv-util.js     # 韩剧tv加解密工具
 │       ├── http-util.js        # 请求工具
 │       ├── imdb-util.js        # IMDB API请求工具

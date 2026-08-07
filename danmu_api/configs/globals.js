@@ -38,10 +38,12 @@ export const Globals = {
     episodeNum: null,
     lastSelectMap: null,
     reqRecords: null,
-    todayReqNum: null
+    todayReqNum: null,
+    favoriteCache: null
   },
   searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
+  favoriteCache: new Map(), // 收藏剧集永久缓存，存储格式：{ keyword: { results, details, timestamp } }，无 TTL、无数量上限
   deployPlatform: '', // 部署平台配置
   currentToken: '', // 标识当前可用token
 

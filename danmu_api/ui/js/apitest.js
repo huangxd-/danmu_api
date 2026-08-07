@@ -76,8 +76,14 @@ let danmuTestState = {
     nextDanmuFlowRequestId: 0,
     activeDanmuFlowRequestId: 0,
     nextManualBangumiRequestId: 0,
-    activeManualBangumiRequestId: 0
+    activeManualBangumiRequestId: 0,
+    favoriteSearchKeyword: '',
+    favoriteAnimeTitle: '',
+    favoriteKeyword: '',
+    isFavorite: false
 };
+
+let favoriteState = { items: [], loading: false, error: '', loaded: false, searchQuery: '' };
 
 // 初始化接口调试界面
 function initApiTestInterface() {
@@ -98,6 +104,7 @@ function initApiTestInterface() {
         manualInput.addEventListener('keypress', function(event) {
             if (event.key === 'Enter') { manualSearchAnime(); }
         });
+        manualInput.addEventListener('input', resetManualFavoriteButton);
     }
 }
 
@@ -420,10 +427,11 @@ function switchDanmuTestTab(tab, event) {
     document.querySelectorAll('.danmu-test-tab').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.danmu-test-panel').forEach(el => el.classList.remove('active'));
     event.target.classList.add('active');
-    if (tab === 'auto') {
-        document.getElementById('auto-match-panel').classList.add('active');
-    } else {
-        document.getElementById('manual-match-panel').classList.add('active');
+    const panelId = tab === 'auto' ? 'auto-match-panel' : tab === 'manual' ? 'manual-match-panel' : 'favorite-panel';
+    document.getElementById(panelId).classList.add('active');
+    if (tab === 'favorite') {
+        document.getElementById('danmu-result-area').style.display = 'none';
+        loadFavoriteList();
     }
 }
 
@@ -723,6 +731,223 @@ function setDanmuFlowButtonLoading(btn, requestId, loading) {
 // =====================
 // 自动匹配测试
 // =====================
+function resetManualFavoriteButton() {
+    danmuTestState.favoriteSearchKeyword = '';
+    danmuTestState.favoriteAnimeTitle = '';
+    danmuTestState.favoriteKeyword = '';
+    danmuTestState.isFavorite = false;
+    const button = document.getElementById('manual-favorite-btn');
+    if (!button) return;
+    button.classList.remove('btn-danger');
+    button.classList.add('btn-success');
+    button.disabled = true;
+    button.textContent = '收藏';
+    button.title = '请先完成手动搜索';
+}
+
+function renderManualFavoriteButton() {
+    const button = document.getElementById('manual-favorite-btn');
+    if (!button || !danmuTestState.favoriteSearchKeyword) return;
+    const title = danmuTestState.favoriteAnimeTitle || danmuTestState.favoriteSearchKeyword;
+    button.disabled = false;
+    button.classList.toggle('btn-success', !danmuTestState.isFavorite);
+    button.classList.toggle('btn-danger', danmuTestState.isFavorite);
+    button.textContent = (danmuTestState.isFavorite ? '取消收藏 · ' : '收藏 · ') + title;
+    button.title = danmuTestState.isFavorite ? '取消收藏「' + title + '」' : '收藏「' + title + '」';
+}
+
+function setManualFavoriteButton(keyword) {
+    const animeTitle = keyword;
+    const normalizedKeyword = String(keyword || '').trim().toLocaleLowerCase();
+    const normalizedTitle = String(animeTitle || '').trim().toLocaleLowerCase();
+    const favorite = favoriteState.items.find(item => {
+        const favoriteKeyword = String(item.keyword || '').trim().toLocaleLowerCase();
+        const favoriteTitle = String(item.animeTitle || '').trim().toLocaleLowerCase();
+        return favoriteKeyword === normalizedKeyword || favoriteTitle === normalizedTitle ||
+            (favoriteKeyword.length >= 2 && normalizedKeyword.includes(favoriteKeyword)) ||
+            (normalizedKeyword.length >= 2 && favoriteKeyword.includes(normalizedKeyword));
+    });
+
+    danmuTestState.favoriteSearchKeyword = keyword;
+    danmuTestState.favoriteAnimeTitle = animeTitle;
+    danmuTestState.favoriteKeyword = favorite?.keyword || '';
+    danmuTestState.isFavorite = !!favorite;
+
+    const button = document.getElementById('manual-favorite-btn');
+    if (!button) return;
+    renderManualFavoriteButton();
+}
+
+async function favoriteManualSearch() {
+    const button = document.getElementById('manual-favorite-btn');
+    const inputKeyword = document.getElementById('manual-search-keyword')?.value.trim() || '';
+    if (!button || !inputKeyword) {
+        resetManualFavoriteButton();
+        return;
+    }
+    if (inputKeyword !== danmuTestState.favoriteSearchKeyword) {
+        resetManualFavoriteButton();
+        return;
+    }
+    const keyword = danmuTestState.favoriteSearchKeyword;
+    const removing = danmuTestState.isFavorite;
+
+    setBtnLoading(button, true);
+    try {
+        const response = await fetch(buildApiUrl(removing ? '/api/v2/favorite/remove' : '/api/v2/favorite/add'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: removing ? danmuTestState.favoriteKeyword || keyword : keyword })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || (removing ? '取消收藏失败' : '收藏失败'));
+
+        if (removing) {
+            const removedKeyword = danmuTestState.favoriteKeyword || keyword;
+            favoriteState.items = favoriteState.items.filter(item => item.keyword !== removedKeyword);
+            danmuTestState.isFavorite = false;
+            danmuTestState.favoriteKeyword = '';
+        } else {
+            danmuTestState.isFavorite = true;
+            danmuTestState.favoriteKeyword = data.keyword || keyword;
+        }
+        addLog(data.message || (removing ? '已取消收藏' : '收藏成功'), 'success');
+        await loadFavoriteList(false);
+    } catch (error) {
+        customAlert((removing ? '取消收藏失败: ' : '收藏失败: ') + error.message);
+        addLog((removing ? '取消收藏失败: ' : '收藏失败: ') + error.message, 'error');
+    } finally {
+        setBtnLoading(button, false);
+        renderManualFavoriteButton();
+    }
+}
+
+function formatFavoriteTime(timestamp) {
+    if (!timestamp) return '未知时间';
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? '未知时间' : date.toLocaleString();
+}
+
+function renderFavoriteItem(item) {
+    const imageUrl = escapeHtml(item.imageUrl || '');
+    const keyword = escapeHtml(item.keyword || '');
+    const title = escapeHtml(item.animeTitle || item.keyword || '未命名剧集');
+    const source = escapeHtml(item.source || '未知来源');
+    const episodeText = Number(item.episodeCount) > 0 ? item.episodeCount + ' 集' : '集数未知';
+    return \`
+        <div class="env-item favorite-item">
+            <div class="env-info favorite-info-row">
+                \${imageUrl ? '<img class="favorite-cover" src="' + imageUrl + '" alt="" loading="lazy">' : ''}
+                <div>
+                    <strong>\${title}</strong>
+                    <div class="favorite-meta">来源：\${source} · \${episodeText} · \${item.resultsCount || 0} 个搜索结果</div>
+                    <div class="favorite-meta">收藏时间：\${escapeHtml(formatFavoriteTime(item.timestamp))}</div>
+                </div>
+            </div>
+            <div class="env-actions">
+                <button class="btn btn-primary" data-keyword="\${keyword}" onclick="refreshFavoriteItem(this.dataset.keyword, this)">刷新</button>
+                <button class="btn btn-danger" data-keyword="\${keyword}" data-title="\${title}" onclick="removeFavoriteItem(this.dataset.keyword, this.dataset.title, this)">删除</button>
+            </div>
+        </div>
+    \`;
+}
+
+function renderFavoriteListView() {
+    const list = document.getElementById('favorite-list');
+    const status = document.getElementById('favorite-list-status');
+    if (!list) return;
+
+    if (favoriteState.loading && !favoriteState.loaded) {
+        if (status) status.textContent = '收藏 · 正在加载';
+        list.innerHTML = '<p class="text-gray padding-20 text-center">正在加载收藏...</p>';
+        return;
+    }
+    if (favoriteState.error) {
+        if (status) status.textContent = '收藏 · 加载失败';
+        list.innerHTML = \`<div class="preview-empty"><strong>收藏加载失败</strong><span>\${escapeHtml(favoriteState.error)}</span></div>\`;
+        return;
+    }
+
+    const normalizedQuery = favoriteState.searchQuery.toLocaleLowerCase();
+    const items = normalizedQuery
+        ? favoriteState.items.filter(item => [item.keyword, item.animeTitle, item.source].join(' ').toLocaleLowerCase().includes(normalizedQuery))
+        : favoriteState.items;
+    if (status) status.textContent = '收藏 · ' + items.length + ' 项';
+    list.innerHTML = items.length
+        ? items.map(renderFavoriteItem).join('')
+        : '<div class="preview-empty"><strong>暂无收藏</strong><span>请先在自动匹配测试中添加收藏</span></div>';
+}
+
+function handleFavoriteSearch(event) {
+    favoriteState.searchQuery = event.target.value.trim();
+    renderFavoriteListView();
+}
+
+async function loadFavoriteList(shouldRender = true) {
+    favoriteState.loading = true;
+    favoriteState.error = '';
+    if (shouldRender) renderFavoriteListView();
+    try {
+        const response = await fetch(buildApiUrl('/api/v2/favorite/list'));
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || 'HTTP ' + response.status);
+        favoriteState.items = Array.isArray(data.favorites) ? data.favorites : [];
+        favoriteState.loaded = true;
+    } catch (error) {
+        favoriteState.error = error.message;
+        addLog('收藏列表加载失败: ' + error.message, 'error');
+    } finally {
+        favoriteState.loading = false;
+        if (shouldRender) renderFavoriteListView();
+    }
+}
+
+async function refreshFavoriteItem(keyword, button) {
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '刷新中...';
+    try {
+        const response = await fetch(buildApiUrl('/api/v2/favorite/refresh'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || '刷新失败');
+        addLog(data.message || '收藏刷新成功', 'success');
+        await loadFavoriteList();
+    } catch (error) {
+        button.disabled = false;
+        button.textContent = originalText;
+        customAlert('刷新收藏失败: ' + error.message);
+        addLog('刷新收藏失败: ' + error.message, 'error');
+    }
+}
+
+async function removeFavoriteItem(keyword, title, button) {
+    const confirmed = await customConfirm('确定删除收藏「' + title + '」吗？');
+    if (!confirmed) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '删除中...';
+    try {
+        const response = await fetch(buildApiUrl('/api/v2/favorite/remove'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || '删除失败');
+        addLog(data.message || '收藏已删除', 'success');
+        await loadFavoriteList();
+    } catch (error) {
+        button.disabled = false;
+        button.textContent = originalText;
+        customAlert('删除收藏失败: ' + error.message);
+        addLog('删除收藏失败: ' + error.message, 'error');
+    }
+}
+
 async function autoMatchTest() {
     const fileName = document.getElementById('auto-match-filename').value.trim();
     if (!fileName) { customAlert('请输入文件名'); return; }
@@ -795,9 +1020,14 @@ async function autoMatchTest() {
 // =====================
 async function manualSearchAnime() {
     const keyword = document.getElementById('manual-search-keyword').value.trim();
-    if (!keyword) { customAlert('请输入搜索关键字'); return; }
+    if (!keyword) {
+        resetManualFavoriteButton();
+        customAlert('请输入搜索关键字');
+        return;
+    }
 
     const flowRequestId = startDanmuFlowRequest();
+    resetManualFavoriteButton();
     const btn = document.getElementById('manual-search-btn');
     setDanmuFlowButtonLoading(btn, flowRequestId, true);
     document.getElementById('manual-anime-list').style.display = 'none';
@@ -829,6 +1059,9 @@ async function manualSearchAnime() {
             });
             danmuTestState.currentManualSearchCallTraceBase = cloneDanmuCallTrace(trace);
             displayManualAnimeList(data.animes);
+            await loadFavoriteList(false);
+            if (!isCurrentDanmuFlowRequest(flowRequestId)) return;
+            setManualFavoriteButton(keyword);
             addLog('搜索到 ' + data.animes.length + ' 个动漫', 'success');
         } else {
             finishDanmuCallEmpty(trace, searchStartedAt, {

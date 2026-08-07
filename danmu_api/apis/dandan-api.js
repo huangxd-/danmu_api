@@ -9,6 +9,7 @@ import {
     getSearchCache, removeEarliestAnime, resolveAnimeById, resolveAnimeByIdFromDetailStore, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
+import { resolveFavoriteForKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { resolveOffset, resolveOffsetRule, applyOffset } from "../utils/offset-util.js";
 import { 
@@ -478,7 +479,7 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
 }
 
 // Extracted function for GET /api/v2/search/anime
-export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null) {
+export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null, forceRefresh = false) {
   let queryTitle = url.searchParams.get("keyword");
 
   // 搜索词杂音清理：移除画质/配音/版本等杂音词后再提交源站搜索
@@ -512,8 +513,19 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   const requestAnimeDetailsMap = detailStore instanceof Map ? detailStore : new Map();
   const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
 
-  // 检查搜索缓存
-  let cachedResults = getSearchCache(cacheKey, requestAnimeDetailsMap);
+  // 收藏缓存命中后必须直接返回，不能因目标集数判断继续请求外部源。
+  if (!forceRefresh && resolveFavoriteForKeyword(cacheKey)) {
+    const favoriteResults = getSearchCache(cacheKey, requestAnimeDetailsMap) || [];
+    return jsonResponse({
+      errorCode: 0,
+      success: true,
+      errorMessage: "",
+      animes: favoriteResults,
+    });
+  }
+
+  // 检查普通搜索缓存；刷新收藏时显式跳过所有缓存。
+  let cachedResults = forceRefresh ? null : getSearchCache(cacheKey, requestAnimeDetailsMap);
 
   // 如果带季度的特定缓存未命中，尝试获取不带季度的通用搜索缓存
   if (cachedResults === null && querySeason !== null) {
@@ -1826,6 +1838,13 @@ export async function matchAnime(url, req, clientIp) {
           "imageUrl": resAnime.imageUrl
         })
       ]
+    }
+
+    if (resData["matches"] && resData["matches"].length > 0) {
+      const favoriteKey = season !== null ? `${title}_S${season}` : title;
+      if (resolveFavoriteForKeyword(favoriteKey)) {
+        resData["matches"] = resData["matches"].map(m => ({ ...m, isFavorite: true }));
+      }
     }
 
     log("info", `[system] [match] resMatchData: ${resData}`);

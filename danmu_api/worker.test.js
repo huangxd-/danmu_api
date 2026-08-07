@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
+import { handleFavoriteRefresh } from './apis/favorite-api.js';
 import { getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
@@ -37,7 +38,11 @@ import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { HuggingfaceHandler } from "./configs/handlers/huggingface-handler.js";
 import { HandlerFactory } from "./configs/handlers/handler-factory.js";
 import { Globals } from "./configs/globals.js";
-import { addAnime, addEpisode } from "./utils/cache-util.js";
+import { addAnime, addEpisode, getSearchCache, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
+import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
+import { HTML_TEMPLATE } from './ui/template.js';
+import { apitestJsContent } from './ui/js/apitest.js';
+import { systemSettingsJsContent } from './ui/js/systemsettings.js';
 import { convertToAsciiSum } from "./utils/codec-util.js";
 import { convertToDanmakuJson, handleDanmusLike } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
@@ -110,6 +115,45 @@ function resetSearchState() {
   Globals.requestHistory = new Map();
   Globals.envs.rateLimitMaxRequests = 0;
   delete Globals.requestAnimeDetailsMap;
+}
+
+function resetFavoriteState(env = {}) {
+  Globals.init(env);
+  Globals.animes = [];
+  Globals.episodeIds = [];
+  Globals.episodeNum = 10001;
+  Globals.searchCache = new Map();
+  Globals.commentCache = new Map();
+  Globals.favoriteCache = new Map();
+  Globals.requestHistory = new Map();
+  Globals.localCacheValid = false;
+  Globals.localCacheInitialized = false;
+}
+
+function createFavoriteAnime(title = '收藏测试', episodeCount = 2, id = 910001) {
+  return {
+    animeId: id,
+    bangumiId: String(id),
+    animeTitle: title,
+    type: 'tvseries',
+    typeDescription: 'TV',
+    imageUrl: 'https://example.com/favorite.jpg',
+    startDate: '2026-01-01T00:00:00.000Z',
+    episodeCount,
+    rating: 0,
+    isFavorited: true,
+    source: 'tencent',
+    links: Array.from({ length: episodeCount }, (_, index) => ({
+      id: id * 10 + index + 1,
+      url: `https://v.qq.com/x/cover/favorite/ep${index + 1}.html`,
+      title: `【qq】 第${index + 1}集`
+    }))
+  };
+}
+
+function favoriteSearchResult(anime) {
+  const { links, ...result } = anime;
+  return result;
 }
 
 const urlPrefix = "http://localhost:9321";
@@ -293,6 +337,198 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(traditional[0].m, '來看能不能發彈幕');
 
     resetSearchState();
+  });
+
+  await t.test('favorite cache', async t => {
+    await t.test('add/list/remove and serialization round trip', () => {
+      resetFavoriteState();
+      const anime = createFavoriteAnime();
+      const entry = addFavorite('收藏测试_S1', [favoriteSearchResult(anime)], [anime]);
+
+      assert.equal(entry.results.length, 1);
+      assert.equal(Globals.favoriteCache.size, 1);
+      assert.equal(listFavorites()[0].episodeCount, 2);
+      assert.equal(resolveFavoriteForKeyword('收藏测试剧场版')?.entry, entry);
+
+      const snapshot = saveFavorites();
+      Globals.favoriteCache = new Map();
+      loadFavorites(JSON.stringify(snapshot));
+      assert.deepEqual(saveFavorites(), snapshot);
+      assert.equal(removeFavorite('收藏测试 第二季'), true);
+      assert.equal(Globals.favoriteCache.size, 0);
+    });
+
+    await t.test('favorite entries ignore search TTL, sweep, and count limits', () => {
+      resetFavoriteState({ SEARCH_CACHE_MINUTES: '1', LOG_LEVEL: 'error' });
+      const anime = createFavoriteAnime();
+      const oldTimestamp = Date.now() - 24 * 60 * 60 * 1000;
+      addFavorite('收藏测试', [favoriteSearchResult(anime)], [anime]);
+      Globals.favoriteCache.get('收藏测试').timestamp = oldTimestamp;
+      Globals.searchCache.set('收藏测试', { results: [], details: [], timestamp: oldTimestamp });
+      Globals.searchCache.set('普通过期缓存', { results: [], details: [], timestamp: oldTimestamp });
+
+      setSearchCache('新缓存', [], new Map());
+
+      assert.equal(isSearchCacheValid('收藏测试_S9'), true);
+      assert.equal(getSearchCache('收藏测试剧场版')[0].animeId, anime.animeId);
+      assert.equal(Globals.favoriteCache.has('收藏测试'), true);
+      assert.equal(Globals.searchCache.has('收藏测试'), true);
+      assert.equal(Globals.searchCache.has('普通过期缓存'), false);
+
+      for (let index = 0; index < 510; index++) addFavorite(`无限收藏${index}`, [], []);
+      assert.equal(Globals.favoriteCache.size, 511);
+    });
+
+    await t.test('search and match short-circuit external sources and expose isFavorite', async () => {
+      resetFavoriteState();
+      const anime = createFavoriteAnime();
+      addFavorite('收藏测试', [favoriteSearchResult(anime)], [anime]);
+      let fetchCount = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        fetchCount++;
+        throw new Error('favorite hit must not use fetch');
+      };
+
+      try {
+        const searchResponse = await searchAnime(new URL('http://localhost/api/v2/search/anime?keyword=收藏测试&season=1&episode=2'));
+        const searchBody = await parseResponse(searchResponse);
+        assert.equal(searchBody.animes[0].animeId, anime.animeId);
+
+        const request = new Request('http://localhost/api/v2/match', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ fileName: '收藏测试 S01E02' })
+        });
+        const matchBody = await parseResponse(await matchAnime(new URL(request.url), request, '127.0.0.1'));
+        assert.equal(matchBody.isMatched, true);
+        assert.equal(matchBody.matches[0].episodeId, anime.links[1].id);
+        assert.equal(matchBody.matches[0].isFavorite, true);
+        assert.equal(fetchCount, 0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    await t.test('favorite API add/list/remove follows token path normalization', async () => {
+      resetFavoriteState();
+      const anime = createFavoriteAnime('路由收藏测试');
+      Globals.searchCache.set('路由收藏测试_S1', {
+        results: [favoriteSearchResult(anime)],
+        details: [anime],
+        timestamp: Date.now()
+      });
+
+      const addResponse = await handleRequest(new Request('http://localhost/api/v2/favorite/add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fileName: '路由收藏测试 S01E01' })
+      }), {}, 'cloudflare', '127.0.0.1', {});
+      assert.equal(addResponse.status, 200);
+      assert.equal((await parseResponse(addResponse)).isFavorite, true);
+
+      const listResponse = await handleRequest(
+        new Request('http://localhost/87654321/api/favorite/list'),
+        {}, 'cloudflare', '127.0.0.1', {}
+      );
+      const listBody = await parseResponse(listResponse);
+      assert.equal(listBody.favorites.length, 1);
+      assert.equal(listBody.favorites[0].animeTitle, '路由收藏测试');
+
+      const removeResponse = await handleRequest(new Request('http://localhost/87654321/api/favorite/remove', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keyword: listBody.favorites[0].keyword })
+      }), {}, 'cloudflare', '127.0.0.1', {});
+      assert.equal(removeResponse.status, 200);
+      assert.equal(Globals.favoriteCache.size, 0);
+      assert.equal(Globals.searchCache.has('路由收藏测试_S1'), false);
+    });
+
+    await t.test('manual favorite keeps the search keyword and uses the first result image', async () => {
+      resetFavoriteState();
+      const anime = createFavoriteAnime('火影忍者 疾风传', 720, 915001);
+      Globals.searchCache.set('火影忍者', {
+        results: [favoriteSearchResult(anime)],
+        details: [anime],
+        timestamp: Date.now()
+      });
+
+      const addResponse = await handleRequest(new Request('http://localhost/api/v2/favorite/add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keyword: '火影忍者' })
+      }), {}, 'cloudflare', '127.0.0.1', {});
+      const addBody = await parseResponse(addResponse);
+      assert.equal(addResponse.status, 200);
+      assert.equal(addBody.keyword, '火影忍者');
+      assert.equal(addBody.animeTitle, '火影忍者');
+      assert.equal(addBody.imageUrl, anime.imageUrl);
+
+      const listBody = await parseResponse(await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        {}, 'cloudflare', '127.0.0.1', {}
+      ));
+      assert.equal(listBody.favorites[0].keyword, '火影忍者');
+      assert.equal(listBody.favorites[0].animeTitle, '火影忍者');
+      assert.equal(listBody.favorites[0].imageUrl, anime.imageUrl);
+      assert.equal(listBody.favorites[0].resultsCount, 1);
+    });
+
+    await t.test('refresh always performs a new source search and rebuilds the favorite', async () => {
+      resetFavoriteState();
+      const oldAnime = createFavoriteAnime('刷新测试', 1, 920001);
+      const refreshedAnime = createFavoriteAnime('刷新测试', 3, 920002);
+      addFavorite('刷新测试', [favoriteSearchResult(oldAnime)], [oldAnime]);
+
+      const originalSearch = TencentSource.prototype.search;
+      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalOrder = Globals.envs.sourceOrderArr;
+      let searchCount = 0;
+      TencentSource.prototype.search = async () => {
+        searchCount++;
+        return [{}];
+      };
+      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+        results.push(refreshedAnime);
+        details.set(String(refreshedAnime.animeId), refreshedAnime);
+      };
+      Globals.envs.sourceOrderArr = ['tencent'];
+
+      try {
+        const refreshRequest = new Request('http://localhost/api/v2/favorite/refresh', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ keyword: '刷新测试' })
+        });
+        const refreshResponse = await handleFavoriteRefresh(refreshRequest, new URL(refreshRequest.url));
+        assert.equal(refreshResponse.status, 200);
+        assert.equal(searchCount, 1);
+        assert.equal(resolveFavoriteForKeyword('刷新测试').entry.results[0].animeId, refreshedAnime.animeId);
+        assert.equal(resolveFavoriteForKeyword('刷新测试').entry.details[0].links.length, 3);
+      } finally {
+        TencentSource.prototype.search = originalSearch;
+        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        Globals.envs.sourceOrderArr = originalOrder;
+      }
+    });
+
+    await t.test('frontend bundle contains working favorite controls', () => {
+      assert.match(HTML_TEMPLATE, /id="manual-favorite-btn"/);
+      assert.doesNotMatch(HTML_TEMPLATE, /id="auto-favorite-btn"/);
+      assert.match(HTML_TEMPLATE, /id="favorite-panel"/);
+      assert.match(HTML_TEMPLATE, /switchDanmuTestTab\('favorite'/);
+      assert.match(apitestJsContent, /function favoriteManualSearch\(\)/);
+      assert.match(apitestJsContent, /function setManualFavoriteButton/);
+      assert.match(apitestJsContent, /取消收藏 · /);
+      assert.match(apitestJsContent, /removing \? '\/api\/v2\/favorite\/remove'/);
+      assert.match(apitestJsContent, /JSON\.stringify\(\{ keyword \}\)/);
+      assert.match(apitestJsContent, /\/api\/v2\/favorite\/refresh/);
+      assert.match(apitestJsContent, /\/api\/v2\/favorite\/remove/);
+      assert.doesNotMatch(systemSettingsJsContent, /switchCategory\('favorite'\)/);
+      assert.doesNotThrow(() => new Function(apitestJsContent));
+      assert.doesNotThrow(() => new Function(systemSettingsJsContent));
+    });
   });
 
   // await t.test('GET /api/v2/comment/:id?format=json&duration=true should return segment duration and reuse comment cache', async () => {
