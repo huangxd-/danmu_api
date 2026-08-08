@@ -142,11 +142,11 @@ export const HTML_TEMPLATE = /* html */ `
             <div class="section" id="api-section">
                 <h2>接口调试</h2>
                 <div class="api-top-tabs">
-                    <button class="api-top-tab active" onclick="switchApiTopTab('debug', event)">接口调试</button>
-                    <button class="api-top-tab" onclick="switchApiTopTab('danmu-test', event)">弹幕测试</button>
+                    <button class="api-top-tab active" onclick="switchApiTopTab('danmu-test', event)">弹幕测试</button>
+                    <button class="api-top-tab" onclick="switchApiTopTab('debug', event)">接口调试</button>
                 </div>
 
-                <div class="api-tab-content active" id="api-debug-content">
+                <div class="api-tab-content" id="api-debug-content">
                     <div class="api-selector">
                         <div class="form-group">
                             <label>选择接口</label>
@@ -172,7 +172,7 @@ export const HTML_TEMPLATE = /* html */ `
                     </div>
                 </div>
 
-                <div class="api-tab-content" id="danmu-test-content">
+                <div class="api-tab-content active" id="danmu-test-content">
                     <div class="danmu-test-tabs">
                         <button class="danmu-test-tab active" onclick="switchDanmuTestTab('auto', event)">自动匹配测试</button>
                         <button class="danmu-test-tab" onclick="switchDanmuTestTab('manual', event)">手动匹配测试</button>
