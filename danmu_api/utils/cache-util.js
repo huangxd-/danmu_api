@@ -2,7 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
-import { loadFavorites, resolveFavoriteForKeyword, saveFavorites } from "./favorite-util.js";
+import { loadFavorites, resolveFavoriteForSearchKeyword, saveFavorites } from "./favorite-util.js";
 let fs, path;
 
 // =====================
@@ -283,7 +283,7 @@ export function resolveEpisodeContextById(id, detailStore = null) {
 }
 // 检查搜索缓存是否有效（未过期）
 export function isSearchCacheValid(keyword) {
-    if (resolveFavoriteForKeyword(keyword)) {
+    if (resolveFavoriteForSearchKeyword(keyword)) {
         return true;
     }
 
@@ -308,7 +308,7 @@ export function isSearchCacheValid(keyword) {
 // 获取搜索缓存
 export function getSearchCache(keyword, detailsMap = null) {
     // 收藏剧集永久缓存优先命中（无 TTL、无数量上限）
-    const favorite = resolveFavoriteForKeyword(keyword);
+    const favorite = resolveFavoriteForSearchKeyword(keyword);
     if (favorite) {
         const favoriteEntry = favorite.entry;
         log("info", `[cache] Using favorite cache for "${keyword}"`);

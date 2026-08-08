@@ -64,6 +64,27 @@ function getEntryTitles(keyword, entry) {
   return [...titles].filter(title => title.length >= 2);
 }
 
+// 搜索只能用完整标题命中收藏，避免短关键词误复用更长标题的收藏结果。
+// 季度缓存键和收藏结果中的完整标题仍视为同一部剧。
+export function resolveFavoriteForSearchKeyword(keyword) {
+  const key = String(keyword || '').trim();
+  if (!key || !(globals.favoriteCache instanceof Map) || globals.favoriteCache.size === 0) return null;
+
+  if (globals.favoriteCache.has(key)) {
+    return { keyword: key, entry: globals.favoriteCache.get(key) };
+  }
+
+  const queryTitle = stripSeasonSuffix(key);
+  if (!queryTitle) return null;
+
+  for (const [favoriteKeyword, entry] of globals.favoriteCache.entries()) {
+    if (stripSeasonSuffix(favoriteKeyword) === queryTitle || getEntryTitles(favoriteKeyword, entry).includes(queryTitle)) {
+      return { keyword: favoriteKeyword, entry };
+    }
+  }
+  return null;
+}
+
 // 先精确匹配关键词，再按收藏键和收藏结果中的剧名做包含兜底。
 export function resolveFavoriteForKeyword(keyword) {
   const key = String(keyword || '').trim();

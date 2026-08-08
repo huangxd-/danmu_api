@@ -439,7 +439,7 @@ test('worker.js API endpoints', async (t) => {
       setSearchCache('新缓存', [], new Map());
 
       assert.equal(isSearchCacheValid('收藏测试_S9'), true);
-      assert.equal(getSearchCache('收藏测试剧场版')[0].animeId, anime.animeId);
+      assert.equal(getSearchCache('收藏测试_S9')[0].animeId, anime.animeId);
       assert.equal(Globals.favoriteCache.has('收藏测试'), true);
       assert.equal(Globals.searchCache.has('收藏测试'), true);
       assert.equal(Globals.searchCache.has('普通过期缓存'), false);
@@ -477,6 +477,25 @@ test('worker.js API endpoints', async (t) => {
       } finally {
         globalThis.fetch = originalFetch;
       }
+    });
+
+    await t.test('partial search keyword does not reuse a longer favorite title', async () => {
+      resetFavoriteState();
+      const favoriteAnime = createFavoriteAnime('火影忍者', 2, 910011);
+      const searchAnimeResult = createFavoriteAnime('忍者战士飞影', 2, 910012);
+      addFavorite('火影忍者', [favoriteSearchResult(favoriteAnime)], [favoriteAnime]);
+      Globals.searchCache.set('忍者', {
+        results: [favoriteSearchResult(searchAnimeResult)],
+        details: [searchAnimeResult],
+        timestamp: Date.now()
+      });
+
+      assert.equal(getSearchCache('火影忍者_S1')[0].animeId, favoriteAnime.animeId);
+      assert.equal(getSearchCache('忍者')[0].animeId, searchAnimeResult.animeId);
+
+      const response = await searchAnime(new URL('http://localhost/api/v2/search/anime?keyword=忍者'));
+      const body = await parseResponse(response);
+      assert.equal(body.animes[0].animeId, searchAnimeResult.animeId);
     });
 
     await t.test('favorite API add/list/remove follows token path normalization', async () => {

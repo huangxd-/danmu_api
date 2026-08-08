@@ -9,7 +9,7 @@ import {
     getSearchCache, removeEarliestAnime, resolveAnimeById, resolveAnimeByIdFromDetailStore, setPreferByAnimeId, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
     updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById
 } from "../utils/cache-util.js";
-import { resolveFavoriteForKeyword } from "../utils/favorite-util.js";
+import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { resolveOffset, resolveOffsetRule, applyOffset } from "../utils/offset-util.js";
 import { 
@@ -514,7 +514,7 @@ export async function searchAnime(url, preferAnimeId = null, preferSource = null
   const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
 
   // 收藏缓存命中后必须直接返回，不能因目标集数判断继续请求外部源。
-  if (!forceRefresh && resolveFavoriteForKeyword(cacheKey)) {
+  if (!forceRefresh && resolveFavoriteForSearchKeyword(cacheKey)) {
     const favoriteResults = getSearchCache(cacheKey, requestAnimeDetailsMap) || [];
     return jsonResponse({
       errorCode: 0,
@@ -1842,7 +1842,7 @@ export async function matchAnime(url, req, clientIp) {
 
     if (resData["matches"] && resData["matches"].length > 0) {
       const favoriteKey = season !== null ? `${title}_S${season}` : title;
-      if (resolveFavoriteForKeyword(favoriteKey)) {
+      if (resolveFavoriteForSearchKeyword(favoriteKey)) {
         resData["matches"] = resData["matches"].map(m => ({ ...m, isFavorite: true }));
       }
     }
