@@ -205,7 +205,7 @@ body[data-theme] .theme-option:focus-visible, body[data-theme] .btn:focus-visibl
 .theme-settings-copy h3 { margin-bottom: 4px; font-size: 15px; }
 .theme-settings-copy p { margin: 0; color: var(--theme-muted); font-size: 12px; }
 .theme-current-label { color: var(--theme-accent); font-size: 12px; font-weight: 600; }
-.theme-options { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; flex: 1; }
+.theme-options { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; flex: 1; }
 .theme-option { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 8px; border: 1px solid var(--theme-border); border-radius: 10px; cursor: pointer; text-align: left; transition: border-color 0.22s var(--app-ease-smooth), background 0.22s var(--app-ease-smooth), box-shadow 0.22s var(--app-ease-smooth); }
 .theme-option:hover { border-color: var(--theme-accent); }
 .theme-option:disabled { cursor: wait; opacity: 0.65; }

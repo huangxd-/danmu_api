@@ -200,6 +200,15 @@ export const responsiveCssContent = /* css */ `
         width: calc(100% - 12px);
         box-sizing: border-box;
     }
+
+    .theme-settings {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .theme-options {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
 }
 
 /* ============ 小屏手机 (<= 480px) ============ */

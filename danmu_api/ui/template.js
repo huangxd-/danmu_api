@@ -35,7 +35,7 @@ export const HTML_TEMPLATE = /* html */ `
     <script>
         try {
             var storedTheme = localStorage.getItem('logvar_ui_theme');
-            var validThemes = ['shinyo','sakura','tianyi','hatsune','sakuragi','violet','amber','lavender'];
+            var validThemes = ['lavender','shinyo','sakura','tianyi','hatsune','sakuragi','violet','amber'];
             if (validThemes.indexOf(storedTheme) !== -1) { document.body.dataset.theme = storedTheme; }
             var storedScheme = localStorage.getItem('logvar_ui_color_scheme');
             if (storedScheme === 'dark' || storedScheme === 'light') {
@@ -396,9 +396,12 @@ export const HTML_TEMPLATE = /* html */ `
                 <div class="theme-settings" id="theme-settings" hidden>
                     <div class="theme-settings-copy">
                         <h3>界面主题</h3>
-                        <span class="theme-current-label" id="theme-current-label">UI_THEME · 新叶绿</span>
+                        <span class="theme-current-label" id="theme-current-label">UI_THEME · 经典默认</span>
                     </div>
                     <div class="theme-options" role="radiogroup" aria-label="界面主题选择">
+                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="经典默认">
+                            <span class="theme-swatches" aria-hidden="true"><i style="background:#667eea"></i><i style="background:#5a6fd6"></i><i style="background:#eef0f8"></i></span><span class="theme-option-label">经典默认</span>
+                        </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="shinyo" aria-checked="false" onclick="selectTheme('shinyo')" title="新叶绿">
                             <span class="theme-swatches" aria-hidden="true"><i style="background:#8cb48c"></i><i style="background:#7aa37a"></i><i style="background:#e8efe8"></i></span><span class="theme-option-label">新叶绿</span>
                         </button>
@@ -419,9 +422,6 @@ export const HTML_TEMPLATE = /* html */ `
                         </button>
                         <button type="button" role="radio" class="theme-option" data-theme-option="amber" aria-checked="false" onclick="selectTheme('amber')" title="LCL橘">
                             <span class="theme-swatches" aria-hidden="true"><i style="background:#f78c50"></i><i style="background:#e67a40"></i><i style="background:#f0ebe6"></i></span><span class="theme-option-label">LCL橘</span>
-                        </button>
-                        <button type="button" role="radio" class="theme-option" data-theme-option="lavender" aria-checked="false" onclick="selectTheme('lavender')" title="经典默认">
-                            <span class="theme-swatches" aria-hidden="true"><i style="background:#667eea"></i><i style="background:#5a6fd6"></i><i style="background:#eef0f8"></i></span><span class="theme-option-label">经典默认</span>
                         </button>
                     </div>
                 </div>

@@ -6,12 +6,12 @@ import { HandlerFactory } from "../configs/handlers/handler-factory.js";
 import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-util.js";
 
 const UI_THEMES = new Set([
-  'shinyo', 'sakura', 'tianyi', 'hatsune', 'sakuragi', 'violet', 'amber', 'lavender'
+  'lavender', 'shinyo', 'sakura', 'tianyi', 'hatsune', 'sakuragi', 'violet', 'amber'
 ]);
 
 function resolveUiTheme(theme) {
   const normalizedTheme = String(theme || '').toLowerCase();
-  return UI_THEMES.has(normalizedTheme) ? normalizedTheme : 'shinyo';
+  return UI_THEMES.has(normalizedTheme) ? normalizedTheme : 'lavender';
 }
 
 export function handleUI() {

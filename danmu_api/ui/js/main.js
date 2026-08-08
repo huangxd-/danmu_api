@@ -185,7 +185,7 @@ function loadEnvVariables() {
             // 使用从API获取的原始环境变量，用于系统设置
             const originalEnvVars = config.originalEnvVars || {};
             // 浏览器偏好覆盖部署环境变量；云函数更新变量通常要等重新部署后才会进入新实例。
-            applyTheme(getStoredTheme() || originalEnvVars.UI_THEME || document.body.dataset.theme || 'shinyo');
+            applyTheme(getStoredTheme() || originalEnvVars.UI_THEME || document.body.dataset.theme || 'lavender');
             // 恢复独立的深浅色偏好：已存储 > 系统偏好 > 默认浅色
             if (!document.body.dataset.colorScheme) {
                 var scheme = getStoredColorScheme();

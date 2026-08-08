@@ -5,6 +5,7 @@ let isMergeMode = false;
 let stagingTags = [];
 
 const UI_THEMES = {
+    lavender: '经典默认',
     shinyo: '新叶绿',
     sakura: '哔哩粉',
     tianyi: '天依蓝',
@@ -12,7 +13,6 @@ const UI_THEMES = {
     sakuragi: '樱木红',
     violet: '罗兰紫',
     amber: 'LCL橘',
-    lavender: '经典默认',
 };
 
 const UI_THEME_STORAGE_KEY = 'logvar_ui_theme';
@@ -41,7 +41,7 @@ function storeTheme(theme) {
 
 function applyTheme(theme) {
     const normalizedTheme = String(theme || '').toLowerCase();
-    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'shinyo';
+    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'lavender';
     document.body.dataset.theme = selectedTheme;
 
     document.querySelectorAll('[data-theme-option]').forEach(button => {
@@ -84,7 +84,7 @@ async function selectTheme(theme) {
     }
 }
 
-applyTheme(getStoredTheme() || document.body.dataset.theme || 'shinyo');
+applyTheme(getStoredTheme() || document.body.dataset.theme || 'lavender');
 
 // 导出当前管理员可见的环境变量配置
 async function exportSystemConfig() {
@@ -179,7 +179,7 @@ function normalizeImportedConfig(data) {
             return;
         }
         if (key === 'UI_THEME') {
-            value = value.trim().toLowerCase() || 'shinyo';
+            value = value.trim().toLowerCase() || 'lavender';
             if (!Object.prototype.hasOwnProperty.call(UI_THEMES, value)) {
                 invalidKeys.push(key + ' (不支持的主题: ' + value + ')');
                 return;
