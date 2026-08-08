@@ -416,6 +416,7 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(entry.results.length, 1);
       assert.equal(Globals.favoriteCache.size, 1);
       assert.equal(listFavorites()[0].episodeCount, 2);
+      assert.equal(listFavorites()[0].lastRefreshAt, entry.lastRefreshAt);
       assert.equal(resolveFavoriteForKeyword('收藏测试剧场版')?.entry, entry);
 
       const snapshot = saveFavorites();
@@ -547,7 +548,10 @@ test('worker.js API endpoints', async (t) => {
       resetFavoriteState();
       const oldAnime = createFavoriteAnime('刷新测试', 1, 920001);
       const refreshedAnime = createFavoriteAnime('刷新测试', 3, 920002);
-      addFavorite('刷新测试', [favoriteSearchResult(oldAnime)], [oldAnime]);
+      const originalTimestamp = Date.now() - 60_000;
+      const favorite = addFavorite('刷新测试', [favoriteSearchResult(oldAnime)], [oldAnime]);
+      favorite.timestamp = originalTimestamp;
+      favorite.lastRefreshAt = originalTimestamp;
 
       const originalSearch = TencentSource.prototype.search;
       const originalHandleAnimes = TencentSource.prototype.handleAnimes;
@@ -574,6 +578,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(searchCount, 1);
         assert.equal(resolveFavoriteForKeyword('刷新测试').entry.results[0].animeId, refreshedAnime.animeId);
         assert.equal(resolveFavoriteForKeyword('刷新测试').entry.details[0].links.length, 3);
+        assert.equal(resolveFavoriteForKeyword('刷新测试').entry.timestamp, originalTimestamp);
+        assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
+        assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
         TencentSource.prototype.search = originalSearch;
         TencentSource.prototype.handleAnimes = originalHandleAnimes;
@@ -593,6 +600,7 @@ test('worker.js API endpoints', async (t) => {
       assert.match(apitestJsContent, /JSON\.stringify\(\{ keyword \}\)/);
       assert.match(apitestJsContent, /\/api\/v2\/favorite\/refresh/);
       assert.match(apitestJsContent, /\/api\/v2\/favorite\/remove/);
+      assert.match(apitestJsContent, /最近刷新时间：/);
       assert.doesNotMatch(systemSettingsJsContent, /switchCategory\('favorite'\)/);
       assert.doesNotThrow(() => new Function(apitestJsContent));
       assert.doesNotThrow(() => new Function(systemSettingsJsContent));

@@ -884,6 +884,7 @@ function renderFavoriteItem(item) {
                     <strong>\${title}</strong>
                     <div class="favorite-meta">来源：\${source} · \${episodeText} · \${item.resultsCount || 0} 个搜索结果</div>
                     <div class="favorite-meta">收藏时间：\${escapeHtml(formatFavoriteTime(item.timestamp))}</div>
+                    <div class="favorite-meta">最近刷新时间：\${escapeHtml(formatFavoriteTime(item.lastRefreshAt || item.timestamp))}</div>
                     <div class="favorite-meta">\${scheduleMeta}</div>
                 </div>
             </div>

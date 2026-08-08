@@ -4,10 +4,13 @@ import { normalizeFavoriteSchedule } from './favorite-schedule-util.js';
 
 function normalizeEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
+  const timestamp = Number(entry.timestamp) || Date.now();
   return {
     results: Array.isArray(entry.results) ? entry.results : [],
     details: Array.isArray(entry.details) ? entry.details : [],
-    timestamp: Number(entry.timestamp) || Date.now(),
+    timestamp,
+    // 旧缓存只有 timestamp；将其作为最近一次生成收藏快照的时间兼容恢复。
+    lastRefreshAt: Number(entry.lastRefreshAt) || timestamp,
     refreshSchedule: normalizeFavoriteSchedule(entry.refreshSchedule)
   };
 }
@@ -87,7 +90,8 @@ export function addFavorite(keyword, results, details = []) {
   if (!key) return null;
   if (!(globals.favoriteCache instanceof Map)) globals.favoriteCache = new Map();
 
-  const entry = normalizeEntry({ results, details, timestamp: Date.now() });
+  const now = Date.now();
+  const entry = normalizeEntry({ results, details, timestamp: now, lastRefreshAt: now });
   globals.favoriteCache.set(key, entry);
   log('info', `[favorite] Added favorite "${key}" with ${entry.results.length} results`);
   return entry;
@@ -108,10 +112,12 @@ export function refreshFavorite(keyword, results, details = []) {
   const key = resolved?.keyword || stripSeasonSuffix(keyword);
   if (!key) return null;
 
+  const now = Date.now();
   const entry = normalizeEntry({
     results,
     details,
-    timestamp: Date.now(),
+    timestamp: Number(resolved?.entry?.timestamp) || now,
+    lastRefreshAt: now,
     refreshSchedule: resolved?.entry?.refreshSchedule || null
   });
   if (!(globals.favoriteCache instanceof Map)) globals.favoriteCache = new Map();
@@ -139,11 +145,12 @@ export function listFavorites() {
       episodeCount,
       resultsCount: results.length,
       timestamp: Number(entry?.timestamp) || 0,
+      lastRefreshAt: Number(entry?.lastRefreshAt) || Number(entry?.timestamp) || 0,
       refreshSchedule: normalizeFavoriteSchedule(entry?.refreshSchedule)
     });
   }
 
-  return items.sort((a, b) => b.timestamp - a.timestamp);
+  return items.sort((a, b) => b.lastRefreshAt - a.lastRefreshAt);
 }
 
 // 兼容内部旧调用名称。
