@@ -189,6 +189,19 @@ body[data-theme] .favorite-action-btn:disabled:hover {
     min-width: 92px;
 }
 
+.favorite-schedule-btn:disabled,
+.favorite-schedule-btn:disabled:hover,
+body[data-theme] .favorite-schedule-btn:disabled,
+body[data-theme] .favorite-schedule-btn:disabled:hover {
+    background: #d1d5db !important;
+    color: #6b7280 !important;
+    border-color: #d1d5db !important;
+    cursor: not-allowed;
+    opacity: 1;
+    box-shadow: none;
+    transform: none;
+}
+
 .favorite-schedule-hint {
     color: #6b7280;
     font-size: 13px;

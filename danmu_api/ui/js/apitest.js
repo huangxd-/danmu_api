@@ -1023,6 +1023,10 @@ async function disableFavoriteSchedule() {
 }
 
 async function refreshFavoriteItem(keyword, button) {
+    const item = favoriteState.items.find(entry => entry.keyword === keyword);
+    const title = item?.animeTitle || item?.keyword || '未命名剧集';
+    const confirmed = await customConfirm('确定刷新收藏「' + title + '」吗？');
+    if (!confirmed) return;
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = '刷新中...';
