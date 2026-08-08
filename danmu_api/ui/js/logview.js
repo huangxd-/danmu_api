@@ -162,7 +162,7 @@ function updateFilterUI() {
 
 window.setLogFilter = function(tag) {
     currentLogFilter = tag;
-    // 切换筛选仅调整已有日志行的显隐，不重建 DOM
+    // 切换筛选仅控制已有日志行的显隐，不重建 DOM
     applyLogFilter();
     const container = document.getElementById('log-container');
     container.scrollTop = container.scrollHeight;

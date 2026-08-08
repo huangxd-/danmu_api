@@ -5,19 +5,18 @@ let isMergeMode = false;
 let stagingTags = [];
 
 const UI_THEMES = {
-    ocean: '海湾蓝',
-    forest: '森林绿',
-    graphite: '石墨夜',
-    berry: '莓果红',
-    monochrome: '黑白简约',
-    sunset: '暖霞橙',
-    aurora: '极光青',
-    mist: '晨雾灰',
-    terminal: '终端绿',
-    lavender: '经典默认'
+    shinyo: '新叶绿',
+    sakura: '哔哩粉',
+    tianyi: '天依蓝',
+    hatsune: '初音青',
+    sakuragi: '樱木红',
+    violet: '罗兰紫',
+    amber: 'LCL橘',
+    lavender: '经典默认',
 };
 
 const UI_THEME_STORAGE_KEY = 'logvar_ui_theme';
+const UI_SCHEME_STORAGE_KEY = 'logvar_ui_color_scheme';
 
 function getStoredTheme() {
     try {
@@ -28,18 +27,21 @@ function getStoredTheme() {
     }
 }
 
+function getStoredColorScheme() {
+    try { return localStorage.getItem(UI_SCHEME_STORAGE_KEY) || null; } catch(e) { return null; }
+}
+
+function storeColorScheme(scheme) {
+    try { localStorage.setItem(UI_SCHEME_STORAGE_KEY, scheme); } catch(e) {}
+}
+
 function storeTheme(theme) {
-    try {
-        localStorage.setItem(UI_THEME_STORAGE_KEY, theme);
-        return true;
-    } catch (error) {
-        return false;
-    }
+    try { localStorage.setItem(UI_THEME_STORAGE_KEY, theme); return true; } catch (error) { return false; }
 }
 
 function applyTheme(theme) {
     const normalizedTheme = String(theme || '').toLowerCase();
-    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'ocean';
+    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'shinyo';
     document.body.dataset.theme = selectedTheme;
 
     document.querySelectorAll('[data-theme-option]').forEach(button => {
@@ -49,6 +51,7 @@ function applyTheme(theme) {
 
     const label = document.getElementById('theme-current-label');
     if (label) label.textContent = 'UI_THEME · ' + UI_THEMES[selectedTheme];
+    if (typeof updateColorSchemeToggle === 'function') updateColorSchemeToggle();
     return selectedTheme;
 }
 
@@ -81,7 +84,7 @@ async function selectTheme(theme) {
     }
 }
 
-applyTheme(getStoredTheme() || document.body.dataset.theme || 'ocean');
+applyTheme(getStoredTheme() || document.body.dataset.theme || 'shinyo');
 
 // 导出当前管理员可见的环境变量配置
 async function exportSystemConfig() {
@@ -176,7 +179,7 @@ function normalizeImportedConfig(data) {
             return;
         }
         if (key === 'UI_THEME') {
-            value = value.trim().toLowerCase() || 'ocean';
+            value = value.trim().toLowerCase() || 'shinyo';
             if (!Object.prototype.hasOwnProperty.call(UI_THEMES, value)) {
                 invalidKeys.push(key + ' (不支持的主题: ' + value + ')');
                 return;
@@ -683,12 +686,21 @@ function checkAndHandleAdminToken() {
     }
 }
 
+// 获取配置项类型的显示标签
+function getEnvTypeLabel(type) {
+    return type === 'boolean' ? '布尔' :
+           type === 'number' ? '数字' :
+           type === 'select' ? '单选' :
+           type === 'map' ? '映射' :
+           type === 'multi-select' ? '多选' : '文本';
+}
+
 // 渲染值输入控件
 function renderValueInput(item) {
     const container = document.getElementById('value-input-container');
-    const type = item ? item.type : document.getElementById('value-type').value;
+    const type = item ? item.type : editingType;
     const value = item ? item.value : '';
-    const currentKey = item ? item.key : document.getElementById('env-key').value;
+    const currentKey = item ? item.key : editingKeyName;
 
     if (type === 'boolean') {
         // 布尔开关
@@ -874,7 +886,7 @@ function renderValueInput(item) {
 
     } else {
         // 文本输入
-        const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
+        const currentKey = editingKeyName;
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
@@ -1061,13 +1073,12 @@ function renderValueInput(item) {
                             <label class="offset-label">副源实体（副源剧名@源）</label>
                             <input type="text" id="merge-sec-entity" class="offset-input" placeholder="例: 我推的孩子/S01@bahamut" onfocus="setMergeFocus('sec')">
                         </div>
-                        <div style="width: 60px;">
-                            <label class="offset-label" style="text-align: center; display: block;">关系</label>
-                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; padding: 6px; text-align: center; font-weight: bold; font-size: 14px;">
+                        <div style="width: 80px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;">
+                            <label class="offset-label" style="text-align: center; display: block;">关系：<span id="merge-action-hint" style="font-weight: normal; color: var(--theme-muted);">合并</span></label>
+                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; text-align: center; font-weight: bold; font-size: 15px;">
                                 <option value="->">-&gt;</option>
                                 <option value="×">×</option>
                             </select>
-                            <div id="merge-action-hint" style="font-size: 11px; color: #666; text-align: center; margin-top: 4px;">合并</div>
                         </div>
                         <div style="flex: 1; min-width: 120px;">
                             <label class="offset-label">主源实体（主源剧名@源）</label>
@@ -1523,7 +1534,7 @@ function appendMergeRule() {
     toggleMergeRulePanel();
 }
 
-// 调整数字
+// 递增/递减数字输入
 function adjustNumber(delta) {
     const display = document.getElementById('num-value');
     const slider = document.getElementById('num-slider');
@@ -1562,12 +1573,10 @@ function updateTagOptions() {
 // 统一的状态检查函数
 function updateTagStates() {
     // 确保 DOM 元素存在，防止在渲染过程中被调用出错
-    const keyInput = document.getElementById('env-key');
-    if (!keyInput) return;
+    // 确保当前编辑配置存在
+    if (!editingKeyName) return;
 
-    const currentKey = keyInput.value;
-    const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS';
-
+    const currentKey = editingKeyName;
     // 1. 获取当前暂存区中的Token (防止同组内重复)
     const stagingTokens = new Set(stagingTags);
     
@@ -2059,7 +2068,7 @@ function handleTouchMove(e) {
     // 防止默认的触摸行为
     e.preventDefault();
     
-    // 使用 requestAnimationFrame 来优化性能
+    // 通过 requestAnimationFrame 批量调度 DOM 更新，避免频繁重排
     if (window.requestAnimationFrame) {
         window.requestAnimationFrame(() => {
             // 获取触摸点位置
@@ -2282,11 +2291,7 @@ function envItemMatchesSearch(item, category, normalizedQuery) {
 }
 
 function renderEnvItem(item, category, originalIndex) {
-    const typeLabel = item.type === 'boolean' ? '布尔' :
-                     item.type === 'number' ? '数字' :
-                     item.type === 'select' ? '单选' :
-                     item.type === 'map' ? '映射' :
-                     item.type === 'multi-select' ? '多选' : '文本';
+    const typeLabel = getEnvTypeLabel(item.type);
     const badgeClass = item.type === 'multi-select' ? 'multi' : '';
 
     return \`
@@ -2391,17 +2396,15 @@ function editEnv(category, index, editButton) {
     
     editingKey = index;
     editingCategory = category;
-    document.getElementById('modal-title').textContent = '编辑配置项';
-    document.getElementById('env-category').value = category;
-    document.getElementById('env-key').value = item.key;
-    document.getElementById('env-description').value = item.description || '';
-    document.getElementById('value-type').value = item.type || 'text';
+    editingKeyName = item.key;
+    editingType = item.type || 'text';
 
-    // 设置字段为只读（编辑模式下）
-    document.getElementById('env-category').disabled = true;
-    document.getElementById('env-key').readOnly = true;
-    document.getElementById('value-type').disabled = true;
-    document.getElementById('env-description').readOnly = true;
+    document.getElementById('modal-title').textContent = '编辑配置项';
+    document.getElementById('env-category-display').textContent =
+        (previewCategoryMeta[category] && previewCategoryMeta[category].label) || category;
+    document.getElementById('env-key-display').textContent = item.key;
+    document.getElementById('value-type-display').textContent = getEnvTypeLabel(item.type || 'text');
+    document.getElementById('env-description-display').textContent = item.description || '';
 
     // 渲染对应的值输入控件
     renderValueInput(item);
@@ -2466,10 +2469,10 @@ function deleteEnv(category, index, deleteButton) {
 document.getElementById('env-form').addEventListener('submit', async function(e) {
     e.preventDefault();
 
-    const category = document.getElementById('env-category').value;
-    const key = document.getElementById('env-key').value.trim();
-    const description = document.getElementById('env-description').value.trim();
-    const type = document.getElementById('value-type').value;
+    const category = editingCategory || 'api';
+    const key = editingKeyName;
+    const description = (document.getElementById('env-description-display').textContent || '').trim();
+    const type = editingType;
     const targetCategory = editingCategory || category;
     const existingItem = editingKey !== null && envVariables[targetCategory]
         ? envVariables[targetCategory][editingKey]
@@ -2948,18 +2951,18 @@ async function fetchAndShowRecentData() {
 
 // 渲染animes缓存面板 (含集数解析与映射详情)
 function renderAnimeCachePanel(data, listContainer) {
-    const keyInput = document.getElementById('env-key');
+    if (!listContainer || !editingKeyName) return;
 
-    if (!listContainer || !keyInput) return;
-
-    const currentKey = keyInput.value;
+    const currentKey = editingKeyName;
 
     // 内部辅助函数：生成操作按钮
     const generateButtons = (title, source) => {
         if (currentKey === 'CUSTOM_MERGE_RULES') {
             return \`
-                <button type="button" class="btn btn-sm btn-xs" onclick="fillMergeEntity('sec', '\${title}', '\${source}')">设为副</button>
-                <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillMergeEntity('prim', '\${title}', '\${source}')">设为主</button>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                    <button type="button" class="btn btn-sm btn-xs" onclick="fillMergeEntity('sec', '\${title}', '\${source}')">设为副</button>
+                    <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillMergeEntity('prim', '\${title}', '\${source}')">设为主</button>
+                </div>
             \`;
         } else if (currentKey === 'DANMU_OFFSET') {
             return \`

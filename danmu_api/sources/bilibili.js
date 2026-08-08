@@ -862,18 +862,18 @@ export default class BilibiliSource extends BaseSource {
                     if (ep) { cid = ep.cid; aid = ep.aid; duration = ep.duration / 1000; title = ep.long_title; success = true; }
                 }
             } catch(e) {}
+        }
 
-            // 尝试 Section 接口 (直连回退)
-            if (!success) {
-                try {
-                    const res = await httpGet(`https://api.bilibili.com/pgc/web/season/section?season_id=${seasonId}`, { headers: { "User-Agent": "Mozilla/5.0", "Cookie": globals.bilibliCookie||"" } });
-                    const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-                    if (data.code === 0 && data.result?.main_section?.episodes) {
-                        const ep = data.result.main_section.episodes.find(e => e.id == epid);
-                        if (ep) { cid = ep.cid; aid = ep.aid; duration = ep.duration ? ep.duration / 1000 : 0; title = ep.long_title; success = true; }
-                    }
-                } catch(e) {}
-            }
+        // 尝试 Section 接口作为回退，直连不走代理，无代理时也能覆盖 Bangumi Data 补充的港澳台条目
+        if (!success && seasonId) {
+            try {
+                const res = await httpGet(`https://api.bilibili.com/pgc/web/season/section?season_id=${seasonId}`, { headers: { "User-Agent": "Mozilla/5.0", "Cookie": globals.bilibliCookie||"" } });
+                const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+                if (data.code === 0 && data.result?.main_section?.episodes) {
+                    const ep = data.result.main_section.episodes.find(e => e.id == epid);
+                    if (ep) { cid = ep.cid; aid = ep.aid; duration = ep.duration ? ep.duration / 1000 : 0; title = ep.long_title; success = true; }
+                }
+            } catch(e) {}
         }
 
         if (!cid) {

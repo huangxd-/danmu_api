@@ -13,9 +13,9 @@ export class Envs {
   static accessedEnvVars = new Map();
 
   static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan']; // vod允许的播放平台
-  static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'animeko', 'custom']; // 全部源允许的播放平台
-  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'animeko', 'custom']; // 允许的源
-  static MERGE_ALLOWED_SOURCES = ['tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'bahamut', 'dandan', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'animeko']; // 允许的源合并
+  static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 全部源允许的播放平台
+  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 允许的源
+  static MERGE_ALLOWED_SOURCES = ['tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko']; // 允许的源合并
   static DEFAULT_AI_MATCH_PROMPT = `你是一个专业的影视匹配专家，你的的任务是根据用户提供的 JSON 数据，从候选动漫列表中匹配最符合条件的动漫及集数。
 
 输入字段说明：
@@ -351,7 +351,7 @@ export class Envs {
       
       // [4] 解读/回顾/盘点防御，保护: 生命精华, 案情回顾, 财务盘点, 新闻发布会
       '(?<!(提取|吸收|生命|魔法|修护|美白))精华|看点|速看|解读(?!.*(密文|密码|密电|电报|档案|书信|遗书|碑文|代码|信号|暗号|讯息|谜题|人心|唇语|真相|谜团|梦境))|' +
-      '(?<!(案情|人生|死前|历史|世纪))回顾|影评|解说|吐槽|(?<!(年终|季度|库存|资产|物资|财务|收获|战利))盘点|' +
+      '(?<!(案情|人生|死前|历史|世纪))回顾|影评|解说|(?<!(更|会|能|来|的|比|适合|擅长|比起))吐槽(?!.*(艺人|役|大会|担当))|(?<!(年终|季度|库存|资产|物资|财务|收获|战利))盘点|' +
       '拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|' +
       '番外彩蛋|精彩片段|精彩看点|精彩集锦|看点解析|看点预告|NG镜头|NG花絮|' +
       
@@ -662,6 +662,7 @@ export class Envs {
       // 缓存配置
       'SEARCH_CACHE_MINUTES': { category: 'cache', type: 'number', description: '搜索结果缓存时间(分钟)，默认3', min: 1, max: 120 },
       'COMMENT_CACHE_MINUTES': { category: 'cache', type: 'number', description: '弹幕缓存时间(分钟)，默认3', min: 1, max: 120 },
+      'COMMENT_CACHE_MIN_COUNT': { category: 'cache', type: 'number', description: '弹幕缓存最少条数，低于该值时重新获取，默认100，设置0关闭', min: 0, max: 10000 },
       'REMEMBER_LAST_SELECT': { category: 'cache', type: 'boolean', description: '记住手动选择结果' },
       'MAX_LAST_SELECT_MAP': { category: 'cache', type: 'number', description: '记住上次选择映射缓存大小限制，默认100', min: 10, max: 1000 },
       'MAX_ANIMES': { category: 'cache', type: 'number', description: '动漫标题缓存最大数量，默认100', min: 100, max: 1000 },
@@ -671,7 +672,7 @@ export class Envs {
       'BANGUMI_DATA_CACHE_DAYS': { category: 'cache', type: 'number', description: 'Bangumi Data 缓存有效期(天)，设置0则每次请求时强制异步更新，默认7天', min: 0, max: 30 },
 
       // 系统配置
-      'UI_THEME': { category: 'system', type: 'select', options: ['ocean', 'forest', 'graphite', 'berry', 'monochrome', 'sunset', 'aurora', 'mist', 'terminal', 'lavender'], description: '管理界面主题' },
+      'UI_THEME': { category: 'system', type: 'select', options: ['shinyo', 'sakura', 'tianyi', 'hatsune', 'sakuragi', 'violet', 'amber', 'lavender'], description: '管理界面主题' },
       'PROXY_URL': { category: 'system', type: 'text', description: '代理/反代地址' },
       'TMDB_API_KEY': { category: 'system', type: 'text', description: 'TMDB API密钥' },
       'LOG_LEVEL': { category: 'system', type: 'select', options: ['debug', 'info', 'warn', 'error'], description: '日志级别配置' },
@@ -705,7 +706,7 @@ export class Envs {
       blockedWords: this.get('BLOCKED_WORDS', '', 'string'), // 屏蔽词列表
       groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
-      uiTheme: this.get('UI_THEME', 'ocean', 'string').toLowerCase(), // 管理界面主题
+      uiTheme: this.get('UI_THEME', 'shinyo', 'string').toLowerCase(), // 管理界面主题
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
       danmuSimplifiedTraditional: this.get('DANMU_SIMPLIFIED_TRADITIONAL', 'default', 'string'), // 弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）
       danmuPushUrl: this.get('DANMU_PUSH_URL', '', 'string'), // 代理/反代地址
@@ -721,6 +722,7 @@ export class Envs {
       logLevel: this.get('LOG_LEVEL', 'info', 'string'), // 日志级别配置（默认 info，可选值：error, warn, info）
       searchCacheMinutes: this.get('SEARCH_CACHE_MINUTES', 3, 'number'), // 搜索结果缓存时间配置（分钟，默认 3）
       commentCacheMinutes: this.get('COMMENT_CACHE_MINUTES', 3, 'number'), // 弹幕缓存时间配置（分钟，默认 3）
+      commentCacheMinCount: this.get('COMMENT_CACHE_MIN_COUNT', 100, 'number'), // 弹幕缓存最少条数，低于该值时忽略缓存（默认 100，0 表示关闭）
       hongguoMergeAllEpisodes: this.get('HONGGUO_MERGE_ALL_EPISODES', false, 'boolean'), // 红果短剧是否合并全集弹幕（默认 false）
       convertTopBottomToScroll: this.get('CONVERT_TOP_BOTTOM_TO_SCROLL', false, 'boolean'), // 顶部/底部弹幕转换为浮动弹幕配置（默认 false，禁用转换）
       convertColor: this.get('CONVERT_COLOR', 'default', 'string'), // 弹幕转换颜色配置，支持 default、white、color（默认 default，禁用转换）

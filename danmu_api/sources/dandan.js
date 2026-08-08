@@ -85,9 +85,6 @@ export default class DandanSource extends BaseSource {
             log("info", "[dandan] 原始搜索成功，但未返回任何结果 (source: original)");
             return { success: false, source: 'original' };
           }
-
-          // 原始搜索有结果，中断 TMDB 流程
-          tmdbAbortController.abort();
           const animes = resp.data.animes;
           log("info", `[dandan] dandanSearchresp (original): ${JSON.stringify(animes)}`);
           log("info", `[dandan] 返回 ${animes.length} 条结果 (source: original)`);
@@ -165,20 +162,35 @@ export default class DandanSource extends BaseSource {
         }
       })();
 
-      // 等待两个搜索任务同时完成，优先采用原始搜索结果
-      const [originalResult, tmdbResult] = await Promise.all([
-        originalSearchPromise,
-        tmdbSearchPromise
-      ]);
-
-      // 优先返回原始搜索结果
+      // 搜索结果预过滤：先拿到原始结果再决定是否等待TMDB兜底
+      const originalResult = await originalSearchPromise;
       if (originalResult.success) {
-        return originalResult.data;
+        const resolvedSeason = getExplicitSeasonNumber(keyword);
+        const preFiltered = originalResult.data.filter(anime => {
+          if (anime.isTmdbSource) return true;
+          const t = anime.animeTitle || anime.title || '';
+          return titleMatches(t, keyword, resolvedSeason, true, 0.8);
+        });
+        if (preFiltered.length > 0) {
+          tmdbAbortController.abort();
+          // 记录原始搜索结果的全部animeId，供handleAnimes关联作品恢复误过滤条目使用
+          preFiltered._originalAnimeIds = originalResult.data.map(a => a.animeId);
+          return preFiltered;
+        }
+        // 初筛清空原始结果时不abort，等待TMDB兜底
       }
 
-      // 原始搜索无结果，返回 TMDB 搜索结果
+      // 原始搜索无结果或被初筛清空，等待并返回TMDB搜索结果
+      const tmdbResult = await tmdbSearchPromise;
+
+      // 原始搜索无结果，对TMDB日语原名结果做最终预过滤
       if (tmdbResult.success) {
-        return tmdbResult.data;
+        const resolvedSeason = getExplicitSeasonNumber(keyword);
+        const tmdbFiltered = tmdbResult.data.filter(anime => {
+          const t = anime.animeTitle || anime.title || '';
+          return titleMatches(t, keyword, resolvedSeason, true, 0.19);
+        });
+        if (tmdbFiltered.length > 0) return tmdbFiltered;
       }
 
       log("info", `[dandan] 原始搜索和基于TMDB的搜索均未返回任何结果 (当前搜索词: ${keyword})`);
@@ -391,6 +403,36 @@ export default class DandanSource extends BaseSource {
                     rating: rel.rating || 0,
                     isRelated: true // 标记动态挖掘出的条目为相关作品
                   });
+                }
+              }
+            }
+
+            // 关联作品补回预过滤误剔除的原始搜索结果条目（如翻译差异导致误过滤）
+            if (!isTargetFoundInInitial && Array.isArray(details.relateds)) {
+              const originalIds = sourceAnimes._originalAnimeIds;
+              if (Array.isArray(originalIds) && originalIds.length > 0) {
+                const recoveredIds = new Set(originalIds);
+                for (const rel of details.relateds) {
+                  if (recoveredIds.has(rel.animeId) && !existingIds.has(rel.animeId)) {
+                    existingIds.add(rel.animeId);
+                    if (!sourceAnimes.some(a => a.animeId === rel.animeId)) {
+                      sourceAnimes.push({
+                        animeId: rel.animeId,
+                        animeTitle: rel.animeTitle,
+                        title: rel.animeTitle,
+                        imageUrl: rel.imageUrl,
+                        rating: rel.rating || 0,
+                        isRelated: true
+                      });
+                    }
+                    queue.push({
+                      animeId: rel.animeId,
+                      animeTitle: rel.animeTitle,
+                      imageUrl: rel.imageUrl,
+                      rating: rel.rating || 0,
+                      isRelated: true // 标记动态挖掘出的条目为相关作品
+                    });
+                  }
                 }
               }
             }

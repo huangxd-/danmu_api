@@ -25,6 +25,8 @@ let activeDataSource = 'custom';
 let cachedCustomVersion = null;
 let cachedOfficialVersion = null;
 
+let versionQueryPromise = null; // 版本查询并发锁：serverless环境下冻结时异步信号可能不生效，共享同一Promise避免重复探测
+
 // 定义缓存目录/文件名
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILENAME = 'bangumi-data-cache.json';
@@ -103,7 +105,8 @@ function parseSemanticVersion(versionStr) {
 
 /**
  * 比较两个语义化版本号
- * 标准-semver 逐段数值比较
+ * 自定义版本格式 upstreamPatch*100+internalRev（patch≥1000时识别），
+ * 比较时还原为上游追踪版本以保证与官方版本号的正确对比
  * @param {string} verA 版本A
  * @param {string} verB 版本B
  * @returns {number} 正数表示 A>B, 负数表示 A<B, 0 表示相等
@@ -115,27 +118,32 @@ function compareVersions(verA, verB) {
 
     if (a.major !== b.major) return a.major - b.major;
     if (a.minor !== b.minor) return a.minor - b.minor;
-    if (a.patch !== b.patch) return a.patch - b.patch;
+
+    const patchA = a.patch >= 1000 ? Math.floor(a.patch / 100) : a.patch;
+    const patchB = b.patch >= 1000 ? Math.floor(b.patch / 100) : b.patch;
+    if (patchA !== patchB) return patchA - patchB;
 
     return 0;
 }
 
 /**
- * 从 npm registry 查询包的最新版本号
+ * 通过 CDN HEAD 请求获取包的精确版本号
+ * 利用 jsDelivr CDN 的 x-jsd-version 响应头提取模糊版号 @0.3 解析后的精确版本，
+ * HEAD 请求仅传输报头不传输数据体，比 NPM Registry API 轻量且不受限流影响
  * @param {string} packageName npm 包名
  * @returns {Promise<string|null>} 版本号或 null
  */
-async function fetchNpmLatestVersion(packageName) {
+async function fetchCdnLatestVersion(packageName) {
     try {
-        const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`;
-        log("info", `[system] [请求模拟] HTTP GET: ${url}`);
+        const url = `https://cdn.jsdelivr.net/npm/${encodeURIComponent(packageName)}@0.3/dist/data.json`;
+        log("info", `[system] [请求模拟] HTTP HEAD: ${url}`);
         const response = await fetch(url, {
-            headers: { 'Accept': 'application/json' },
+            method: 'HEAD',
+            headers: { 'Accept': '*/*' },
             signal: AbortSignal.timeout(8000)
         });
         if (!response.ok) return null;
-        const data = await response.json();
-        return data?.version || null;
+        return response.headers.get('x-jsd-version') || null;
     } catch (e) {
         log("warn", `[system] [Bangumi-Data] 查询 ${packageName} 版本号失败: ${e.message}`);
         return null;
@@ -153,10 +161,13 @@ async function fetchNpmLatestVersion(packageName) {
  * @returns {Promise<'custom'|'official'>} 应使用的数据源标识
  */
 async function selectBestDataSource() {
+    // 复用已在进行中的版本查询Promise，避免serverless冻结恢复后重复HEAD探测
+    if (versionQueryPromise) return versionQueryPromise;
+    versionQueryPromise = (async () => {
     try {
         const [customVer, officialVer] = await Promise.all([
-            cachedCustomVersion || fetchNpmLatestVersion(CUSTOM_PACKAGE),
-            cachedOfficialVersion || fetchNpmLatestVersion(OFFICIAL_PACKAGE)
+            cachedCustomVersion || fetchCdnLatestVersion(CUSTOM_PACKAGE),
+            cachedOfficialVersion || fetchCdnLatestVersion(OFFICIAL_PACKAGE)
         ]);
 
         if (customVer) cachedCustomVersion = customVer;
@@ -177,6 +188,9 @@ async function selectBestDataSource() {
         log("warn", `[system] [Bangumi-Data] 数据源选择异常，回退到自定义源: ${e.message}`);
         return 'custom';
     }
+    })();
+    versionQueryPromise.finally(() => { versionQueryPromise = null; });
+    return versionQueryPromise;
 }
 
 /**

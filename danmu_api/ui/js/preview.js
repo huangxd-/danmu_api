@@ -34,7 +34,7 @@ const previewGroupDefinitions = {
         { name: '时间与来源适配', keys: ['DANMU_OFFSET', 'HONGGUO_MERGE_ALL_EPISODES'] }
     ],
     cache: [
-        { name: '缓存时效', keys: ['SEARCH_CACHE_MINUTES', 'COMMENT_CACHE_MINUTES', 'BANGUMI_DATA_CACHE_DAYS'] },
+        { name: '缓存时效', keys: ['SEARCH_CACHE_MINUTES', 'COMMENT_CACHE_MINUTES', 'COMMENT_CACHE_MIN_COUNT', 'BANGUMI_DATA_CACHE_DAYS'] },
         { name: '容量与历史', keys: ['REMEMBER_LAST_SELECT', 'MAX_LAST_SELECT_MAP', 'MAX_ANIMES'] },
         { name: 'Redis 服务', keys: ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'LOCAL_REDIS_URL'] }
     ],
@@ -111,6 +111,23 @@ function renderPreviewNavigation() {
     const navigation = document.getElementById('preview-categories');
     if (!navigation) return;
 
+    const inOverview = !previewState.query && previewState.activeCategory === 'overview';
+    const totalCount = getPreviewTotalCount();
+
+    // 总览按钮常驻，避免分类项因插入/删除发生偏移
+    const overviewBtn = \`
+        <button
+            type="button"
+            class="preview-category-btn preview-back-btn\${inOverview ? ' active' : ''}"
+            onclick="\${inOverview ? '' : 'resetToPreviewOverview()'}"
+            aria-pressed="\${inOverview}"
+            \${inOverview ? '' : 'title="返回总览"'}
+        >
+            <span>🗂\uFE0E 总览</span>
+            <span class="preview-category-count">\${totalCount}</span>
+        </button>
+    \`;
+
     const categories = [
         ...previewCategoryOrder.map(category => ({
             key: category,
@@ -119,7 +136,7 @@ function renderPreviewNavigation() {
         }))
     ];
 
-    navigation.innerHTML = categories.map(category => {
+    navigation.innerHTML = overviewBtn + categories.map(category => {
         const isActive = !previewState.query && previewState.activeCategory === category.key;
         return \`
             <button
@@ -295,6 +312,13 @@ function getPreviewTotalCount() {
 
 function selectPreviewCategory(category) {
     previewState.activeCategory = category;
+    clearPreviewSearch(false);
+    renderPreviewNavigation();
+    renderPreviewContent();
+}
+
+function resetToPreviewOverview() {
+    previewState.activeCategory = 'overview';
     clearPreviewSearch(false);
     renderPreviewNavigation();
     renderPreviewContent();

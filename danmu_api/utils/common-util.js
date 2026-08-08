@@ -368,7 +368,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
     }
   }
 
-  return false;
+  return simMatch;
 }
 
 /**
