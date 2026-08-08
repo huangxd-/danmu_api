@@ -65,6 +65,7 @@ LogVar 弹幕 API 服务器
   - `POST /api/v2/favorite/add`：新增收藏。手动匹配测试使用 `{ "keyword": "火影忍者" }` 保存搜索关键词及整组搜索结果；同时兼容 `{ "fileName": "火影忍者 S01E01" }`。
   - `GET /api/v2/favorite/list`：获取收藏摘要列表，包含收藏关键词、来源、总集数、首条搜索结果图片及收藏时间。
   - `POST /api/v2/favorite/refresh`：使用 `{ "keyword": "火影忍者" }` 强制重新搜索并更新收藏缓存。
+  - `POST /api/v2/favorite/schedule`：设置或关闭收藏的定时刷新（仅 Node/Docker 部署可用）。设置使用 `{ "keyword": "火影忍者", "schedule": { "frequency": "daily", "time": "03:00" } }`；每周模式需额外传 `"weekday": 1-7`（周一至周日），例如 `{ "frequency": "weekly", "time": "03:00", "weekday": 1 }`。关闭使用 `{ "keyword": "火影忍者", "schedule": null }`。固定按北京时间（`Asia/Shanghai`）执行，serverless 平台返回 `501`。
   - `POST /api/v2/favorite/remove`：使用 `{ "keyword": "火影忍者" }` 删除收藏及对应搜索缓存。
 - **弹幕格式输出**：支持 JSON 和 XML 及 [@dan-uni/dan-any](https://github.com/ani-uni/dan-any)支持的全部输出格式 输出，通过以下方式配置：
   - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml|artplayer.json|baha.json|bili.xml|danuni.json|danuni.binpb|ddplay.json|dplayer.json|vod.json`（默认：json）
@@ -79,6 +80,9 @@ LogVar 弹幕 API 服务器
   - 后续搜索或自动匹配命中收藏时直接从永久缓存返回，不再请求外部弹幕源；除精确关键词外，也会使用收藏剧名包含关系匹配同名剧场版、季度等变体。
   - “收藏”标签页支持搜索收藏、强制刷新和删除。刷新会绕过已有缓存重新查询；删除会同时移除对应搜索缓存。
   - 收藏不受 `SEARCH_CACHE_MINUTES`、普通搜索缓存 500 条上限或过期清理影响。
+  - 支持定时刷新收藏：在“收藏”标签页点击“定时刷新”按钮，选择每天或每周（1-7 对应周一至周日）与执行时间，固定按北京时间（`Asia/Shanghai`）运行；已配置的条目按钮会显示类似“每天 03:00”“周一 03:00”，条目下方显示下次执行时间和最近状态。
+  - 定时刷新失败会保留旧缓存并在 10 分钟后自动重试一次，仍失败则等待下一个正常周期，不再继续重试；服务停机错过执行时间时，重启后只补执行一次并重新计算下一周期。
+  - 定时刷新计划随收藏一起保存在 `.cache/favoritesCache` 或 Redis 中，Node/Docker 重启后如需保留请挂载 `.cache` 目录或配置 Upstash Redis；纯内存收藏及计划会随进程重启丢失。Vercel、Cloudflare、Netlify、EdgeOne、Hugging Face 等 serverless 平台不启动调度器，按钮会禁用并提示“仅支持 Node/Docker 部署”。
   - Node/Docker 部署会写入 `.cache/favoritesCache` 永久保存，请挂载 `.cache` 目录；serverless 未配置 Redis 时仅保存在当前实例内存中，配置 Redis 后可跨冷启动和实例恢复。
 - **智能缓存管理**：支持内存缓存搜索结果和弹幕数据，避免短期内重复的不必要API请求。包括：
   - 搜索结果缓存（可通过 `SEARCH_CACHE_MINUTES` 配置，默认1分钟）
@@ -630,7 +634,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   │   │   └── fongmi-api.js   # FongMi影视兼容接口
 │   │   ├── dandan-api.js       # 弹弹play兼容接口函数
 │   │   ├── env-api.js          # 环境变量接口函数
-│   │   ├── favorite-api.js     # 永久收藏的新增、列表、刷新和删除接口
+│   │   ├── favorite-api.js     # 永久收藏的新增、列表、刷新、删除和定时刷新接口
 │   │   ├── forward-trace-api.js # Forward 调试日志回传接口
 │   │   └── system-api.js       # 系统管理接口函数
 │   ├── configs/
@@ -700,6 +704,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── dan-any.js          # dan-any 弹幕格式转换工具
 │       ├── danmu-util.js       # 弹幕处理工具
 │       ├── douban-util.js      # 豆瓣API请求工具
+│       ├── favorite-schedule-util.js # 定时刷新的校验、时间计算与调度工具
 │       ├── favorite-util.js    # 永久收藏缓存的匹配、增删、刷新及序列化工具
 │       ├── hanjutv-util.js     # 韩剧tv加解密工具
 │       ├── http-util.js        # 请求工具

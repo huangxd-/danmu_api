@@ -100,6 +100,7 @@ export const componentsCssContent = /* css */ `
 .env-item .env-actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
     flex-shrink: 0;
 }
 
@@ -182,6 +183,20 @@ body[data-theme] .favorite-action-btn:disabled:hover {
     color: #6b7280;
     font-size: 12px;
     line-height: 1.7;
+}
+
+.favorite-schedule-btn {
+    min-width: 92px;
+}
+
+.favorite-schedule-hint {
+    color: #6b7280;
+    font-size: 13px;
+    margin: 0 0 16px;
+}
+
+.favorite-schedule-modal-content {
+    max-width: 460px;
 }
 
 .favorite-list {

@@ -1,12 +1,14 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
+import { normalizeFavoriteSchedule } from './favorite-schedule-util.js';
 
 function normalizeEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
   return {
     results: Array.isArray(entry.results) ? entry.results : [],
     details: Array.isArray(entry.details) ? entry.details : [],
-    timestamp: Number(entry.timestamp) || Date.now()
+    timestamp: Number(entry.timestamp) || Date.now(),
+    refreshSchedule: normalizeFavoriteSchedule(entry.refreshSchedule)
   };
 }
 
@@ -106,7 +108,12 @@ export function refreshFavorite(keyword, results, details = []) {
   const key = resolved?.keyword || stripSeasonSuffix(keyword);
   if (!key) return null;
 
-  const entry = normalizeEntry({ results, details, timestamp: Date.now() });
+  const entry = normalizeEntry({
+    results,
+    details,
+    timestamp: Date.now(),
+    refreshSchedule: resolved?.entry?.refreshSchedule || null
+  });
   if (!(globals.favoriteCache instanceof Map)) globals.favoriteCache = new Map();
   globals.favoriteCache.set(key, entry);
   log('info', `[favorite] Refreshed favorite "${key}" with ${entry.results.length} results`);
@@ -131,7 +138,8 @@ export function listFavorites() {
       imageUrl: primary.imageUrl || '',
       episodeCount,
       resultsCount: results.length,
-      timestamp: Number(entry?.timestamp) || 0
+      timestamp: Number(entry?.timestamp) || 0,
+      refreshSchedule: normalizeFavoriteSchedule(entry?.refreshSchedule)
     });
   }
 

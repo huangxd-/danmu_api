@@ -83,7 +83,7 @@ let danmuTestState = {
     isFavorite: false
 };
 
-let favoriteState = { items: [], loading: false, error: '', loaded: false, searchQuery: '' };
+let favoriteState = { items: [], loading: false, error: '', loaded: false, searchQuery: '', scheduledRefreshSupported: false };
 
 // 初始化接口调试界面
 function initApiTestInterface() {
@@ -828,12 +828,54 @@ function formatFavoriteTime(timestamp) {
     return Number.isNaN(date.getTime()) ? '未知时间' : date.toLocaleString();
 }
 
+function formatFavoriteSchedule(schedule) {
+    if (!schedule) return '';
+    const frequency = schedule.frequency === 'weekly' ? '每周' : '每天';
+    const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const weekday = schedule.frequency === 'weekly' ? (weekdayNames[Number(schedule.weekday)] || '') : '';
+    const time = schedule.time || '--:--';
+    return frequency + (weekday ? ' ' + weekday : '') + ' ' + time;
+}
+
+function formatFavoriteNextRun(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+}
+
+function formatFavoriteLastStatus(schedule) {
+    if (!schedule) return '';
+    if (schedule.lastStatus === 'failed') return '上次失败' + (schedule.lastError ? '：' + schedule.lastError : '');
+    if (schedule.lastStatus === 'success') return '上次成功';
+    return '';
+}
+
+function normalizeFavoriteTime(value) {
+    const cleaned = String(value || '').trim();
+    if (!cleaned) return '';
+    const match = /^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/.exec(cleaned);
+    if (!match) return '';
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour > 23 || minute > 59) return '';
+    return String(hour).padStart(2, '0') + ':' + match[2];
+}
+
 function renderFavoriteItem(item) {
     const imageUrl = escapeHtml(item.imageUrl || '');
     const keyword = escapeHtml(item.keyword || '');
     const title = escapeHtml(item.animeTitle || item.keyword || '未命名剧集');
     const source = escapeHtml(item.source || '未知来源');
     const episodeText = Number(item.episodeCount) > 0 ? item.episodeCount + ' 集' : '集数未知';
+    const schedule = item.refreshSchedule;
+    const scheduleText = schedule ? formatFavoriteSchedule(schedule) : '定时刷新';
+    const scheduleTitle = favoriteState.scheduledRefreshSupported ? '设置定时刷新' : '定时刷新仅支持 Node/Docker 部署';
+    const scheduleDisabled = favoriteState.scheduledRefreshSupported ? '' : ' disabled';
+    const lastStatusText = formatFavoriteLastStatus(schedule);
+    const scheduleMeta = schedule
+        ? '定时刷新：' + escapeHtml(formatFavoriteSchedule(schedule)) + (schedule.nextRunAt ? ' · 下次 ' + escapeHtml(formatFavoriteNextRun(schedule.nextRunAt)) : '') + (lastStatusText ? ' · ' + escapeHtml(lastStatusText) : '')
+        : '定时刷新：未设置';
     return \`
         <div class="env-item favorite-item">
             <div class="env-info favorite-info-row">
@@ -842,9 +884,11 @@ function renderFavoriteItem(item) {
                     <strong>\${title}</strong>
                     <div class="favorite-meta">来源：\${source} · \${episodeText} · \${item.resultsCount || 0} 个搜索结果</div>
                     <div class="favorite-meta">收藏时间：\${escapeHtml(formatFavoriteTime(item.timestamp))}</div>
+                    <div class="favorite-meta">\${scheduleMeta}</div>
                 </div>
             </div>
             <div class="env-actions">
+                <button class="btn \${schedule ? 'btn-success' : 'btn-primary'} favorite-schedule-btn" data-keyword="\${keyword}" onclick="openFavoriteScheduleModal(this.dataset.keyword)" title="\${scheduleTitle}"\${scheduleDisabled}>\${escapeHtml(scheduleText)}</button>
                 <button class="btn btn-primary" data-keyword="\${keyword}" onclick="refreshFavoriteItem(this.dataset.keyword, this)">刷新</button>
                 <button class="btn btn-danger" data-keyword="\${keyword}" data-title="\${title}" onclick="removeFavoriteItem(this.dataset.keyword, this.dataset.title, this)">删除</button>
             </div>
@@ -875,7 +919,7 @@ function renderFavoriteListView() {
     if (status) status.textContent = '收藏 · ' + items.length + ' 项';
     list.innerHTML = items.length
         ? items.map(renderFavoriteItem).join('')
-        : '<div class="preview-empty"><strong>暂无收藏</strong><span>请先在自动匹配测试中添加收藏</span></div>';
+        : '<div class="preview-empty"><strong>暂无收藏</strong><span>请先在手动匹配测试中添加收藏</span></div>';
 }
 
 function handleFavoriteSearch(event) {
@@ -892,6 +936,7 @@ async function loadFavoriteList(shouldRender = true) {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.message || 'HTTP ' + response.status);
         favoriteState.items = Array.isArray(data.favorites) ? data.favorites : [];
+        favoriteState.scheduledRefreshSupported = data.scheduledRefreshSupported === true;
         favoriteState.loaded = true;
     } catch (error) {
         favoriteState.error = error.message;
@@ -899,6 +944,81 @@ async function loadFavoriteList(shouldRender = true) {
     } finally {
         favoriteState.loading = false;
         if (shouldRender) renderFavoriteListView();
+    }
+}
+
+function toggleFavoriteScheduleWeekday() {
+    const frequency = document.getElementById('favorite-schedule-frequency');
+    const group = document.getElementById('favorite-schedule-weekday-group');
+    if (group && frequency) group.style.display = frequency.value === 'weekly' ? '' : 'none';
+}
+
+function openFavoriteScheduleModal(keyword) {
+    if (!favoriteState.scheduledRefreshSupported) {
+        customAlert('定时刷新仅支持 Node/Docker 部署');
+        return;
+    }
+    const item = favoriteState.items.find(entry => entry.keyword === keyword);
+    const schedule = item?.refreshSchedule;
+    document.getElementById('favorite-schedule-keyword').value = keyword;
+    document.getElementById('favorite-schedule-frequency').value = schedule?.frequency || 'daily';
+    document.getElementById('favorite-schedule-weekday').value = String(schedule?.weekday || 1);
+    toggleFavoriteScheduleWeekday();
+    document.getElementById('favorite-schedule-modal').classList.add('active');
+    lockPageScroll();
+    // 弹窗显示后再填充时间，避免部分浏览器在隐藏状态下丢弃 time 输入框的值
+    document.getElementById('favorite-schedule-time').value = schedule?.time || '03:00';
+}
+
+function closeFavoriteScheduleModal() {
+    const modal = document.getElementById('favorite-schedule-modal');
+    if (modal) modal.classList.remove('active');
+    unlockPageScroll();
+}
+
+async function saveFavoriteSchedule() {
+    const keyword = document.getElementById('favorite-schedule-keyword').value;
+    const frequency = document.getElementById('favorite-schedule-frequency').value;
+    const time = normalizeFavoriteTime(document.getElementById('favorite-schedule-time').value);
+    const weekday = Number(document.getElementById('favorite-schedule-weekday').value);
+    if (!keyword || !time) {
+        customAlert('请选择有效的刷新时间');
+        return;
+    }
+    try {
+        const response = await fetch(buildApiUrl('/api/v2/favorite/schedule'), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, schedule: { frequency, time, ...(frequency === 'weekly' ? { weekday } : {}) } })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || '设置失败');
+        closeFavoriteScheduleModal();
+        addLog(data.message || '定时刷新设置成功', 'success');
+        await loadFavoriteList();
+    } catch (error) {
+        customAlert('设置定时刷新失败: ' + error.message);
+        addLog('设置定时刷新失败: ' + error.message, 'error');
+    }
+}
+
+async function disableFavoriteSchedule() {
+    const keyword = document.getElementById('favorite-schedule-keyword').value;
+    if (!keyword) return;
+    const confirmed = await customConfirm('确定关闭该剧集的定时刷新吗？');
+    if (!confirmed) return;
+    try {
+        const response = await fetch(buildApiUrl('/api/v2/favorite/schedule'), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, schedule: null })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || '关闭失败');
+        closeFavoriteScheduleModal();
+        addLog(data.message || '已关闭定时刷新', 'success');
+        await loadFavoriteList();
+    } catch (error) {
+        customAlert('关闭定时刷新失败: ' + error.message);
+        addLog('关闭定时刷新失败: ' + error.message, 'error');
     }
 }
 

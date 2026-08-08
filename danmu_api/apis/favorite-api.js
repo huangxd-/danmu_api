@@ -13,6 +13,9 @@ import {
   stripSeasonSuffix
 } from '../utils/favorite-util.js';
 import { extractTitleSeasonEpisode, searchAnime } from './dandan-api.js';
+import { createFavoriteSchedule } from '../utils/favorite-schedule-util.js';
+
+const favoriteRefreshLocks = new Set();
 
 async function resolveTitleForFavorite(fileName) {
   const { cleanFileName } = parseFileName(fileName);
@@ -45,7 +48,7 @@ function detailsFromMap(detailsMap) {
   return [...new Set(detailsMap instanceof Map ? detailsMap.values() : [])];
 }
 
-async function persistFavorites() {
+export async function persistFavorites() {
   if (globals.localCacheValid) await updateLocalCaches();
   if (globals.redisValid) {
     const { updateRedisCaches } = await import('../utils/redis-util.js');
@@ -125,7 +128,45 @@ export async function handleFavoriteAdd(req, url) {
 }
 
 export function handleFavoriteList() {
-  return jsonResponse({ success: true, favorites: listFavorites() });
+  return jsonResponse({
+    success: true,
+    scheduledRefreshSupported: globals.deployPlatform === 'node',
+    favorites: listFavorites()
+  });
+}
+
+export async function handleFavoriteSchedule(req) {
+  if (globals.deployPlatform !== 'node') {
+    return jsonResponse({ success: false, message: '定时刷新仅支持 Node/Docker 部署' }, 501);
+  }
+
+  try {
+    const body = await req.json();
+    const keyword = String(body?.keyword || '').trim();
+    if (!keyword) return jsonResponse({ success: false, message: '缺少 keyword 参数' }, 400);
+
+    const resolved = resolveFavoriteForKeyword(keyword);
+    if (!resolved) return jsonResponse({ success: false, message: '未找到该收藏' }, 404);
+
+    if (body.schedule === null) {
+      resolved.entry.refreshSchedule = null;
+      await persistFavorites();
+      return jsonResponse({ success: true, message: '已关闭定时刷新', refreshSchedule: null });
+    }
+
+    const created = createFavoriteSchedule(body.schedule);
+    if (!created.valid) return jsonResponse({ success: false, message: created.message }, 400);
+    resolved.entry.refreshSchedule = created.value;
+    await persistFavorites();
+    return jsonResponse({
+      success: true,
+      message: '定时刷新设置成功',
+      refreshSchedule: created.value
+    });
+  } catch (error) {
+    log('error', `[favorite] schedule failed: ${error.message}`);
+    return jsonResponse({ success: false, message: `设置定时刷新失败: ${error.message}` }, 500);
+  }
 }
 
 export async function handleFavoriteRemove(req) {
@@ -153,15 +194,7 @@ export async function handleFavoriteRemove(req) {
   }
 }
 
-export async function handleFavoriteRefresh(req, url) {
-  try {
-    const body = await req.json();
-    const fileName = String(body?.fileName || '').trim();
-    const requestedKeyword = String(body?.keyword || '').trim();
-    if (!fileName && !requestedKeyword) {
-      return jsonResponse({ success: false, message: '缺少 fileName 或 keyword 参数' }, 400);
-    }
-
+async function refreshFavoriteResolved(fileName, requestedKeyword, url) {
     let title;
     let season = null;
     let episode = null;
@@ -176,7 +209,9 @@ export async function handleFavoriteRefresh(req, url) {
     }
 
     if (!resolveFavoriteForKeyword(cacheKey)) {
-      return jsonResponse({ success: false, message: '未找到该收藏' }, 404);
+      const error = new Error('未找到该收藏');
+      error.status = 404;
+      throw error;
     }
 
     const detailsMap = new Map();
@@ -184,16 +219,65 @@ export async function handleFavoriteRefresh(req, url) {
     const searchResponse = await searchAnime(searchUrl, null, null, detailsMap, null, true);
     const searchData = await searchResponse.json();
     if (!searchData?.success || !Array.isArray(searchData.animes) || searchData.animes.length === 0) {
-      return jsonResponse({ success: false, message: '刷新失败：未找到该剧集搜索结果' }, 404);
+      const error = new Error('刷新失败：未找到该剧集搜索结果');
+      error.status = 404;
+      throw error;
     }
 
     const stored = globals.searchCache instanceof Map ? globals.searchCache.get(cacheKey) : null;
     refreshFavorite(cacheKey, stored?.results || searchData.animes, stored?.details || detailsFromMap(detailsMap));
-    await persistFavorites();
     const animeTitle = searchData.animes[0]?.animeTitle || title;
-    return jsonResponse({ success: true, message: `已刷新收藏「${animeTitle}」` });
+    return { cacheKey, animeTitle };
+}
+
+export async function refreshFavoriteByKeyword(keyword, url, { persist = true } = {}) {
+  const resolved = resolveFavoriteForKeyword(keyword);
+  const lockKey = resolved?.keyword || String(keyword || '').trim();
+  if (!lockKey) throw Object.assign(new Error('未找到该收藏'), { status: 404 });
+  if (favoriteRefreshLocks.has(lockKey)) {
+    throw Object.assign(new Error('该收藏正在刷新，请稍后再试'), { status: 409 });
+  }
+
+  favoriteRefreshLocks.add(lockKey);
+  try {
+    const result = await refreshFavoriteResolved('', lockKey, url);
+    if (persist) await persistFavorites();
+    return result;
+  } finally {
+    favoriteRefreshLocks.delete(lockKey);
+  }
+}
+
+export async function handleFavoriteRefresh(req, url) {
+  try {
+    const body = await req.json();
+    const fileName = String(body?.fileName || '').trim();
+    const requestedKeyword = String(body?.keyword || '').trim();
+    if (!fileName && !requestedKeyword) {
+      return jsonResponse({ success: false, message: '缺少 fileName 或 keyword 参数' }, 400);
+    }
+
+    let result;
+    if (requestedKeyword) {
+      result = await refreshFavoriteByKeyword(requestedKeyword, url);
+    } else {
+      const parsed = await resolveTitleForFavorite(fileName);
+      const lockKey = resolveFavoriteForKeyword(cacheKeyFor(parsed.title, parsed.season))?.keyword;
+      if (!lockKey) return jsonResponse({ success: false, message: '未找到该收藏' }, 404);
+      if (favoriteRefreshLocks.has(lockKey)) {
+        return jsonResponse({ success: false, message: '该收藏正在刷新，请稍后再试' }, 409);
+      }
+      favoriteRefreshLocks.add(lockKey);
+      try {
+        result = await refreshFavoriteResolved(fileName, '', url);
+        await persistFavorites();
+      } finally {
+        favoriteRefreshLocks.delete(lockKey);
+      }
+    }
+    return jsonResponse({ success: true, message: `已刷新收藏「${result.animeTitle}」` });
   } catch (error) {
     log('error', `[favorite] refresh failed: ${error.message}`);
-    return jsonResponse({ success: false, message: `刷新收藏失败: ${error.message}` }, 500);
+    return jsonResponse({ success: false, message: `刷新收藏失败: ${error.message}` }, error.status || 500);
   }
 }

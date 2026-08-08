@@ -11,6 +11,10 @@ import { Request as NodeFetchRequest } from 'node-fetch';
 import { handleRequest } from './worker.js';
 import { Globals } from './configs/globals.js';
 import { clearBangumiDataCache, initBangumiData } from './utils/bangumi-data-util.js';
+import { getLocalCaches, judgeLocalCacheValid } from './utils/cache-util.js';
+import { getRedisCaches, judgeRedisValid } from './utils/redis-util.js';
+import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.js';
+import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
 
 // =====================
 // server.js - 本地node智能启动脚本：根据 Node.js 环境自动选择最优启动模式
@@ -244,6 +248,7 @@ async function setupEnvWatcher() {
  * 优雅关闭：清理文件监听器并关闭服务器
  */
 function cleanupWatcher() {
+  stopFavoriteScheduler();
   if (envWatcher) {
     console.log('[server] Closing file watcher...');
     envWatcher.close();
@@ -499,6 +504,11 @@ async function startServer() {
   mainServer = createServer();
   mainServer.listen(mainPort, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${mainPort}`);
+    if (detectNodeDeployPlatform() === 'node') {
+      initializeFavoriteScheduler(mainPort).catch(error => {
+        console.error('[server] Favorite scheduler initialization failed:', error.message);
+      });
+    }
   });
 
   // 启动5321端口的代理服务
@@ -509,6 +519,21 @@ async function startServer() {
     // 异步初始化 Bangumi Data 缓存
     setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
   });
+}
+
+async function initializeFavoriteScheduler(mainPort) {
+  await judgeLocalCacheValid('/api/v2/favorite/list', 'node');
+  if (Globals.localCacheValid) await getLocalCaches();
+
+  await judgeRedisValid('/api/v2/favorite/list');
+  if (Globals.redisValid) await getRedisCaches();
+
+  const refreshUrl = new URL(`http://127.0.0.1:${mainPort}/api/v2/favorite/refresh`);
+  await startFavoriteScheduler({
+    refresh: keyword => refreshFavoriteByKeyword(keyword, refreshUrl, { persist: false }),
+    persist: persistFavorites
+  });
+  console.log('[server] Favorite scheduler started (Node/Docker only, Asia/Shanghai)');
 }
 
 // 启动

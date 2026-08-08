@@ -7,7 +7,7 @@ import { formatDanmuResponse } from "./utils/danmu-util.js";
 import AIClient from './utils/ai-util.js';
 import { initBangumiData } from "./utils/bangumi-data-util.js";
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
-import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove } from "./apis/favorite-api.js";
+import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
@@ -344,6 +344,11 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   // POST /api/v2/favorite/refresh - 刷新收藏缓存
   if ((path === "/api/v2/favorite/refresh" || path === "/api/favorite/refresh") && method === "POST") {
     return handleFavoriteRefresh(req, url);
+  }
+
+  // POST /api/v2/favorite/schedule - 设置或关闭定时刷新
+  if ((path === "/api/v2/favorite/schedule" || path === "/api/favorite/schedule") && method === "POST") {
+    return handleFavoriteSchedule(req);
   }
 
   // POST /api/v2/favorite/remove - 删除收藏

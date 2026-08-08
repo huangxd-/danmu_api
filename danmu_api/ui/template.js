@@ -209,6 +209,42 @@ export const HTML_TEMPLATE = /* html */ `
                         <div class="favorite-list" id="favorite-list"></div>
                     </div>
 
+                    <div class="modal" id="favorite-schedule-modal">
+                        <div class="modal-content favorite-schedule-modal-content">
+                            <div class="modal-header">
+                                <h3>设置定时刷新</h3>
+                                <button class="close-btn" onclick="closeFavoriteScheduleModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="favorite-schedule-hint">按北京时间执行，仅 Node/Docker 部署支持定时刷新。</p>
+                                <input type="hidden" id="favorite-schedule-keyword">
+                                <div class="form-group">
+                                    <label for="favorite-schedule-frequency">刷新频率</label>
+                                    <select id="favorite-schedule-frequency" onchange="toggleFavoriteScheduleWeekday()">
+                                        <option value="daily">每天</option>
+                                        <option value="weekly">每周</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="favorite-schedule-weekday-group" style="display:none;">
+                                    <label for="favorite-schedule-weekday">星期</label>
+                                    <select id="favorite-schedule-weekday">
+                                        <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
+                                        <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="favorite-schedule-time">时间</label>
+                                    <input type="time" id="favorite-schedule-time" value="03:00">
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn btn-danger" id="favorite-schedule-disable-btn" onclick="disableFavoriteSchedule()">关闭定时刷新</button>
+                                <button class="btn btn-primary" onclick="closeFavoriteScheduleModal()">取消</button>
+                                <button class="btn btn-success" onclick="saveFavoriteSchedule()">保存</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="danmu-result-area" style="display:none;"></div>
                 </div>
             </div>
