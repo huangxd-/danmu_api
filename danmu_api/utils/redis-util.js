@@ -192,6 +192,24 @@ export async function getRedisCaches() {
   }
 }
 
+// serverless 多实例场景下单独刷新收藏缓存。
+// Redis 中的收藏是跨实例的持久数据，但实例内存中的 favoriteCache 只在首次初始化时加载，
+// 预热实例可能错过其他实例新增的收藏，这里在收藏相关请求时直接从 Redis 重新读取。
+export async function getFavoriteCachesFromRedis() {
+  if (!globals.redisValid) return false;
+  try {
+    const results = await runPipeline([['GET', 'favoriteCache']]);
+    if (results?.[0]?.result) {
+      loadFavorites(results[0].result);
+      globals.lastHashes.favoriteCache = simpleHash(serializeValue('favoriteCache', globals.favoriteCache));
+    }
+    return true;
+  } catch (error) {
+    log("error", `[system] [redis] getFavoriteCachesFromRedis failed: ${error.message}`);
+    return false;
+  }
+}
+
 // 优化后的 updateRedisCaches，仅更新有变化的变量
 export async function updateRedisCaches() {
   try {
