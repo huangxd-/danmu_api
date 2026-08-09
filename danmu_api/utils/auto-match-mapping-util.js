@@ -1,7 +1,16 @@
+const NON_RULE_TITLE_CHARACTERS = (() => {
+  try {
+    return new RegExp('[^\\p{L}\\p{N}]', 'gu');
+  } catch {
+    // nodejs-mobile builds without Unicode property escapes still need CJK title matching.
+    return /[^0-9A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u052F\u05D0-\u05EA\u05EF-\u05F2\u0620-\u063F\u0640-\u064A\u0660-\u0669\u0671-\u06D3\u06D5\u06EE-\u06FC\u06FF\u1100-\u11FF\u3005-\u3007\u3031-\u3035\u3038-\u303B\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7A3\uD7B0-\uD7FF\uF900-\uFAFF]/g;
+  }
+})();
+
 function normalizeRuleTitle(value) {
   return String(value || '')
     .normalize('NFKC')
-    .replace(/[^\p{L}\p{N}]/gu, '')
+    .replace(NON_RULE_TITLE_CHARACTERS, '')
     .toLowerCase();
 }
 

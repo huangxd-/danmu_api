@@ -297,6 +297,25 @@ test('worker.js API endpoints', async (t) => {
   });
 
   await t.test('auto match mapping table', async t => {
+    await t.test('falls back when Unicode property escapes are unavailable', async () => {
+      const NativeRegExp = globalThis.RegExp;
+      globalThis.RegExp = function (pattern, flags) {
+        if (String(pattern).includes('\\p{')) throw new SyntaxError('Unicode property escapes are unavailable');
+        return new NativeRegExp(pattern, flags);
+      };
+
+      try {
+        const compat = await import('./utils/auto-match-mapping-util.js?unicode-properties=unavailable');
+        const { rules, warnings } = compat.parseAutoMatchMappingRules('進撃の巨人 S01E01->ＳＰＹ×ＦＡＭＩＬＹ S01E03');
+
+        assert.deepEqual(warnings, []);
+        assert.equal(compat.resolveAutoMatchMapping(rules, { title: '進撃の 巨人！', season: 1, episode: 2 }).targetEpisode, 4);
+        assert.equal(compat.candidateMatchesMappingTitle({ animeTitle: 'SPY FAMILY' }, rules[0]), true);
+      } finally {
+        globalThis.RegExp = NativeRegExp;
+      }
+    });
+
     await t.test('parses and resolves open, bounded, qualified, and platform rules', () => {
       const { rules, warnings } = parseAutoMatchMappingRules([
         '永生 S05E02->永生 S01E58',
