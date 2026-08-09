@@ -810,6 +810,29 @@ test('worker.js API endpoints', async (t) => {
         timestamp: Date.now()
       });
 
+      const defaultTokenResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        {}, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(defaultTokenResponse.status, 200);
+
+      const customTokenEnv = { TOKEN: 'favorite-user-token' };
+      const publicListResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        customTokenEnv, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(publicListResponse.status, 200);
+
+      const unauthorizedResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/remove', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ keyword: '路由收藏测试' })
+        }),
+        customTokenEnv, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(unauthorizedResponse.status, 401);
+
       const addResponse = await handleRequest(new Request('http://localhost/api/v2/favorite/add', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -834,6 +857,39 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(removeResponse.status, 200);
       assert.equal(Globals.favoriteCache.size, 0);
       assert.equal(Globals.searchCache.has('路由收藏测试_S1'), false);
+    });
+
+    await t.test('favorite API can require ADMIN_TOKEN', async () => {
+      const env = {
+        TOKEN: '87654321',
+        ADMIN_TOKEN: 'favorite-admin-token',
+        FAVORITE_REQUIRE_ADMIN: 'true'
+      };
+      resetFavoriteState(env);
+
+      const publicListResponse = await handleRequest(
+        new Request('http://localhost/api/v2/favorite/list'),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(publicListResponse.status, 200);
+
+      const userResponse = await handleRequest(
+        new Request('http://localhost/87654321/api/v2/favorite/add', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ keyword: '权限测试' })
+        }),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(userResponse.status, 403);
+      assert.equal((await parseResponse(userResponse)).message, '权限不足');
+
+      const adminResponse = await handleRequest(
+        new Request('http://localhost/favorite-admin-token/api/v2/favorite/list'),
+        env, 'cloudflare', '127.0.0.1', {}
+      );
+      assert.equal(adminResponse.status, 200);
+      assert.deepEqual((await parseResponse(adminResponse)).favorites, []);
     });
 
     await t.test('manual favorite keeps the search keyword and uses the first result image', async () => {

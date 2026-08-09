@@ -13,7 +13,7 @@ const previewCategoryMeta = {
 
 const previewGroupDefinitions = {
     api: [
-        { name: '访问认证', keys: ['TOKEN', 'ADMIN_TOKEN'] },
+        { name: '访问认证', keys: ['TOKEN', 'ADMIN_TOKEN', 'FAVORITE_REQUIRE_ADMIN'] },
         { name: '请求控制', keys: ['RATE_LIMIT_MAX_REQUESTS'] }
     ],
     source: [

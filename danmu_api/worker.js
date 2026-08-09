@@ -83,12 +83,36 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
   const firstPart = parts[0] || "";
   const isDefaultToken = globals.token === "87654321";
   const isValidToken = firstPart === globals.token || firstPart === globals.adminToken;
+  const explicitToken = firstPart === globals.token || (globals.adminToken && firstPart === globals.adminToken)
+    ? firstPart
+    : "";
 
   globals.currentToken = 
     isValidToken ? firstPart :
     isDefaultToken && (firstPart === "87654321" || knownApiPaths.includes(firstPart)) ? 
       (firstPart === "87654321" ? firstPart : "87654321") :
     "";
+
+  // 自定义 TOKEN 时收藏接口必须显式携带 token；默认 TOKEN=87654321 时保持无 token 兼容。
+  // FAVORITE_REQUIRE_ADMIN 开启后，无论 TOKEN 是否为默认值，都只能使用 ADMIN_TOKEN。
+  const tokenlessPath = explicitToken ? "/" + parts.slice(1).join("/") : path;
+  const isFavoriteRequest = /(?:^|\/)favorite(?:\/|$)/.test(tokenlessPath);
+  const isFavoriteListRequest = method === "GET"
+    && /^\/(?:api\/v2\/|api\/|v2\/)?favorite\/list$/.test(tokenlessPath);
+  if (method !== "OPTIONS" && isFavoriteRequest && !isFavoriteListRequest) {
+    if (!explicitToken && !isDefaultToken) {
+      return jsonResponse(
+        { errorCode: 401, success: false, errorMessage: "Favorite API requires an explicit token" },
+        401
+      );
+    }
+    if (globals.favoriteRequireAdmin && (!globals.adminToken || explicitToken !== globals.adminToken)) {
+      return jsonResponse(
+        { errorCode: 403, success: false, message: "权限不足", errorMessage: "Favorite API requires ADMIN_TOKEN" },
+        403
+      );
+    }
+  }
 
   if (deployPlatform === "node" && globals.localCacheValid && path !== "/favicon.ico" && path !== "/robots.txt") {
     await getLocalCaches();
@@ -231,14 +255,18 @@ async function handleRequest(req, env, deployPlatform, clientIp, ctx) {
       if (path === "/api/config" && method === "GET") {
         return handleConfig(false); // 无权限
       }
-      log("error", `[system] [server] Invalid or missing token in path: ${path}`);
-      return jsonResponse(
-        { errorCode: 401, success: false, errorMessage: "Unauthorized" },
-        401
-      );
+      // 收藏列表是公开只读接口；其他接口仍需严格校验 token
+      if (!isFavoriteListRequest) {
+        log("error", `[system] [server] Invalid or missing token in path: ${path}`);
+        return jsonResponse(
+          { errorCode: 401, success: false, errorMessage: "Unauthorized" },
+          401
+        );
+      }
+    } else {
+      // 移除 token 部分，剩下的才是真正的路径
+      path = "/" + parts.slice(1).join("/");
     }
-    // 移除 token 部分，剩下的才是真正的路径
-    path = "/" + parts.slice(1).join("/");
   }
 
   // 兼容部分客户端将自定义弹幕短地址再次拼接官方完整路径的情况

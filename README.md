@@ -75,6 +75,7 @@ LogVar 弹幕 API 服务器
   - **XML 格式说明**：完全遵循 Bilibili 标准格式，8字段标准弹幕属性
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **永久收藏缓存**：适合《火影忍者》《名侦探柯南》等集数较多、重复搜索耗时较长的剧集。只缓存剧集搜索结果，不缓存弹幕。
+  - `GET /api/v2/favorite/list` 是公开只读接口，无需 token。其他收藏接口在自定义 `TOKEN` 时，必须使用 `/{TOKEN}/api/v2/favorite/...` 或 `/{ADMIN_TOKEN}/api/v2/favorite/...` 形式显式携带 token；使用默认 `TOKEN=87654321` 且未开启管理员限制时可省略 token。配置 `FAVORITE_REQUIRE_ADMIN=true` 后，写入和管理操作仅允许 `ADMIN_TOKEN`。
   - 在 UI 的“接口调试 → 弹幕测试 → 手动匹配测试”中输入关键词并搜索，搜索成功后点击“收藏”按钮即可保存整组搜索结果；已收藏时可再次点击按钮取消收藏。
   - 收藏名称和缓存键使用手动搜索框中的原始关键词，例如搜索“火影忍者”即收藏为“火影忍者”；列表图片取第一条搜索结果的图片。
   - 后续搜索或自动匹配命中收藏时直接从永久缓存返回，不再请求外部弹幕源；除精确关键词外，也会使用收藏剧名包含关系匹配同名剧场版、季度等变体。
@@ -445,6 +446,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
 | ADMIN_TOKEN      | 【可选】系统管理访问令牌，如果未配置此值，则无法访问系统管理功能，需要先配置后在URL中填入此token才能打开系统管理       |
+| FAVORITE_REQUIRE_ADMIN | 【可选】收藏写入和管理接口是否必须使用 `ADMIN_TOKEN`，默认为 `false`。设为 `false` 时接受 `TOKEN` 或 `ADMIN_TOKEN`；自定义 `TOKEN` 必须在 URL 路径中显式携带，默认 `TOKEN=87654321` 时可省略。设为 `true` 时只接受已配置的 `ADMIN_TOKEN`。`GET /api/v2/favorite/list` 始终公开，无需 token。 |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`，其他可选：`https://fc.lyz05.cn`，`https://dmku.hls.one`，`https://se.678.ooo`，`https://danmu.56uxi.com`，`https://dm.lxlad.com`       |
 | CUSTOM_SOURCE_API_URL   | 【可选】自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源       |
 | VOD_SERVERS      | 【可选】VOD服务器列表，支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`，示例：`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`，不填默认为`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`       |
