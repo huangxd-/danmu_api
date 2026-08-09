@@ -294,6 +294,9 @@ function getPreviewGroupName(category, key) {
 
 function formatPreviewValue(value) {
     if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) {
+        return value.join(',');
+    }
     if (typeof value === 'object') {
         try {
             return JSON.stringify(value, null, 2);
