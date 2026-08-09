@@ -541,6 +541,9 @@ function unlockPageScroll() {
 
 // 关闭模态框
 function closeModal() {
+    if (typeof cleanupSelectedTagsTouchDrag === 'function') cleanupSelectedTagsTouchDrag();
+    if (typeof handleStagingTouchCancel === 'function') handleStagingTouchCancel();
+
     var modal = document.getElementById('env-modal');
     modal.classList.add('closing');
     setTimeout(function() {

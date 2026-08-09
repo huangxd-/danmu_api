@@ -295,6 +295,7 @@ input:checked + .slider:before {
     white-space: normal;
     word-break: break-all;
     line-height: 1.4;
+    touch-action: none;
 }
 
 .selected-tag:hover {
@@ -325,6 +326,7 @@ input:checked + .slider:before {
     font-size: 14px;
     font-weight: bold;
     transition: all 0.2s;
+    touch-action: manipulation;
 }
 
 .selected-tag .remove-btn:hover {
