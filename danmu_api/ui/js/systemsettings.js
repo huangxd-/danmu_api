@@ -1589,11 +1589,19 @@ function updateTagStates() {
     if (!editingKeyName) return;
 
     const currentKey = editingKeyName;
+    const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS';
+    const preventDuplicateSources = currentKey === 'SOURCE_ORDER' || currentKey === 'PLATFORM_ORDER';
     // 1. 获取当前暂存区中的Token (防止同组内重复)
     const stagingTokens = new Set(stagingTags);
     
     // 2. 获取已确认的 Selected Tags (仅在非合并模式下需要检查)
     const selectedTagElements = getSelectedTagElements();
+    // PLATFORM_ORDER 的已选项可能是 dandan&animeko，需要将组合拆开后再判断源是否已添加。
+    const selectedSourceTokens = new Set(
+        selectedTagElements.flatMap(element =>
+            String(element.dataset.value || '').split('&').map(value => value.trim()).filter(Boolean)
+        )
+    );
 
     // 3. 更新所有可选项的状态
     const availableTags = document.querySelectorAll('.available-tag');
@@ -1603,15 +1611,17 @@ function updateTagStates() {
 
         if (isMergeMode) {
             // [合并模式逻辑]
-            // 只要不在当前的暂存区中，就可以选（允许 bilibili&a 和 bilibili&b）
-            // 也就是说，我们完全不检查 selectedTagElements
-            if (stagingTokens.has(value)) {
+            // SOURCE_ORDER / PLATFORM_ORDER 中已经添加过的源不能再次加入。
+            // MERGE_SOURCE_PAIRS 保留同一源参与不同合并组的能力。
+            if (stagingTokens.has(value) || (preventDuplicateSources && selectedSourceTokens.has(value))) {
                 shouldDisable = true;
             }
         } else {
             // [普通模式逻辑]
-            // 只要已经被选了，就禁用 (精准匹配)
-            const isAlreadySelected = selectedTagElements.some(el => el.dataset.value === value);
+            // 排序配置按组成源判断，其他多选配置保持完整值精准匹配。
+            const isAlreadySelected = preventDuplicateSources
+                ? selectedSourceTokens.has(value)
+                : selectedTagElements.some(el => el.dataset.value === value);
             if (isAlreadySelected) {
                 shouldDisable = true;
             }
@@ -1634,6 +1644,8 @@ function updateTagStates() {
 function addSelectedTag(element) {
     const value = element.dataset.value;
 
+    if (element.classList.contains('disabled')) return;
+
     if (isMergeMode) {
         if (!stagingTags.includes(value)) {
             stagingTags.push(value);
@@ -1642,8 +1654,6 @@ function addSelectedTag(element) {
         }
         return;
     }
-
-    if (element.classList.contains('disabled')) return;
     
     const container = document.getElementById('selected-tags');
 
