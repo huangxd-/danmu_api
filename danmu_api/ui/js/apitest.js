@@ -880,7 +880,7 @@ function renderFavoriteItem(item) {
         <div class="env-item favorite-item">
             <div class="env-info favorite-info-row">
                 \${imageUrl ? '<img class="favorite-cover" src="' + imageUrl + '" alt="" loading="lazy">' : ''}
-                <div>
+                <div class="favorite-copy">
                     <strong>\${title}</strong>
                     <div class="favorite-meta">来源：\${source} · \${episodeText} · \${item.resultsCount || 0} 个搜索结果</div>
                     <div class="favorite-meta">收藏时间：\${escapeHtml(formatFavoriteTime(item.timestamp))}</div>

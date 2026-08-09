@@ -52,7 +52,7 @@ LogVar 弹幕 API 服务器
 ## 功能
 - **API 接口**：
   - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
-  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
+  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；可通过 `AUTO_MATCH_MAPPING_TABLE` 配置跨标题、跨季和集数范围映射；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?format=json&duration=true`：获取指定弹幕评论；当 `duration=true` 且返回 JSON 时，会额外附带 `videoDuration` 字段，优先返回源站时长，拿不到时返回 `0`。
@@ -463,6 +463,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
 | TITLE_TO_CHINESE    | 【可选】是否在match自动匹配时将外语标题转换成中文标题，适用于网盘没有刮削的资源，默认值：false（不转换），说明：需配合TMDB_API_KEY使用       |
 | TITLE_MAPPING_TABLE    | 【可选】剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
+| AUTO_MATCH_MAPPING_TABLE    | 【可选】自动匹配映射表，仅作用于 `POST /api/v2/match`，多条规则用分号分隔。开放映射 `永生 S05E02 -> 永生 S01E58` 会在源第 5 季内按集数递增映射；有限范围 `永生 S05E02~03 -> 永生 S01E58~59` 只映射包含两端的等长范围。支持目标结果优选 `海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62` 和平台优选 `航海王 S01E01 -> 航海王 S01E01 @qiyi`。同一输入优先采用有限范围规则，同类型冲突按配置顺序；整体优先级为当前源季手动偏好 > 本映射表 > `TITLE_MAPPING_TABLE` > 普通匹配，`default` 偏好不阻断映射。限定候选不可用时回退同目标标题，映射目标失败时按原始请求重新匹配。普通搜索、收藏缓存和弹幕时间偏移不受影响。       |
 | TITLE_NOISE_FILTER    | 【可选】剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`），默认值如下，设为空值可禁用      |
 | ANIME_TITLE_SIMPLIFIED    | 【可选】是否在搜索时将繁体剧名标题自动转换为简体，适用于繁体标题搜索，默认值：false（不转换），可选值：`true`、`false`       |
 | BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，示例如下       |
@@ -485,7 +486,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | COMMENT_CACHE_MINUTES    | 【可选】弹幕缓存时间（分钟），默认为`3`，弹幕数据的缓存时间，独立于搜索结果缓存，设置为`0`表示不缓存       |
 | COMMENT_CACHE_MIN_COUNT    | 【可选】弹幕缓存最少条数，默认为`100`。缓存弹幕少于该数量时忽略缓存时间并重新获取最新弹幕，设置为`0`可关闭此机制       |
 | HONGGUO_MERGE_ALL_EPISODES | 【可选】红果短剧是否将所有集弹幕按集号合并为一集返回，默认为`false`。启用后每集弹幕时间会累加前面各集时长，并在剧集列表中显示为“全集”       |
-| REMEMBER_LAST_SELECT    | 【可选】是否记住手动选择结果，用于match自动匹配时优选上次的选择，默认为`true`，表示记住，请注意，该功能为实验性功能，会记住某个剧上次选择的结果作为下次自动匹配的优选，如不需要，请关闭       |
+| REMEMBER_LAST_SELECT    | 【可选】是否记住明确手动选择的结果，用于match自动匹配时优选上次的选择，默认为`true`。自动匹配后直接获取其返回结果不会写入偏好，选择不同结果时才会记录；如不需要，请关闭       |
 | MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId，最小值100，最大值1000       |
 | MAX_ANIMES    | 【可选】动漫标题缓存最大数量，默认为`100`，缓存最多保存的anime条目数，超过限制时删除最早的条目（FIFO），最小值100，最大值1000       |
 | BANGUMI_DATA_CACHE_DAYS    | 【可选】指定 Bangumi Data 数据有效期(天)，默认为：`7`，超过有效期后会下载更新，设置0则每次请求时强制异步更新（需开启`USE_BANGUMI_DATA`）'       |
@@ -697,6 +698,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   └── utils/
 │       ├── ai-util.js          # AI相关处理工具
 │       ├── aiyifan-util.js     # 爱壹帆签名工具
+│       ├── auto-match-mapping-util.js # 自动匹配映射规则解析与候选筛选工具
 │       ├── bangumi-data-util.js # Bangumi Data管理工具
 │       ├── cache-util.js       # 缓存数据处理工具
 │       ├── codec-util.js       # 编解码工具

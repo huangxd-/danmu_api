@@ -190,9 +190,10 @@ body[data-theme] .favorite-action-btn:disabled:hover {
 }
 
 .favorite-cover {
-    width: 58px;
-    height: 78px;
+    width: 78px;
+    height: auto;
     flex: 0 0 auto;
+    align-self: stretch;
     border-radius: 6px;
     object-fit: cover;
     background: #e5e7eb;
@@ -200,9 +201,16 @@ body[data-theme] .favorite-action-btn:disabled:hover {
 
 .favorite-info-row {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 12px;
     min-width: 0;
+}
+
+.favorite-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .favorite-meta {
