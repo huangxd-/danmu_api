@@ -64,10 +64,12 @@ let danmuTestState = {
     filteredComments: [],
     currentFilter: 'all',
     displayedCount: 0,
-    pageSize: 100,
+    pageSize: 500,
     currentEpisodeId: null,
     currentTitle: '',
     currentDuration: 0,
+    currentSourceUrl: '',
+    currentSearchQuery: '',
     currentCallTrace: null,
     currentManualSearchCallTraceBase: null,
     currentManualEpisodeCallTraceBase: null,
@@ -584,6 +586,51 @@ function backBtnHtml(text, onclick) {
 
 function inlineJsString(value) {
     return escapeHtml(JSON.stringify(String(value || '')));
+}
+
+function getDanmuSourceUrl(value) {
+    const sourceUrl = String(value || '').trim();
+    if (!sourceUrl) return '';
+    try {
+        const parsedUrl = new URL(sourceUrl);
+        return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:' ? sourceUrl : '';
+    } catch (error) {
+        return '';
+    }
+}
+
+function renderDanmuSourceUrl() {
+    const sourceUrl = getDanmuSourceUrl(danmuTestState.currentSourceUrl);
+    if (!sourceUrl) return '';
+    const escapedUrl = escapeHtml(sourceUrl);
+    return '<div class="danmu-source-url">' +
+        '<span class="danmu-source-url-label">来源地址</span>' +
+        '<span class="danmu-source-url-value" title="' + escapedUrl + '">' + escapedUrl + '</span>' +
+        '<div class="danmu-source-url-actions">' +
+            '<button type="button" class="btn btn-sm btn-primary" onclick="copyDanmuSourceUrl(this)">复制</button>' +
+            '<a class="btn btn-sm btn-success" href="' + escapedUrl + '" target="_blank" rel="noopener noreferrer">打开</a>' +
+        '</div>' +
+    '</div>';
+}
+
+function copyDanmuSourceUrl(button) {
+    const sourceUrl = getDanmuSourceUrl(danmuTestState.currentSourceUrl);
+    if (!sourceUrl) return;
+
+    const done = function() {
+        const originalText = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(function() { button.textContent = originalText; }, 1500);
+        addLog('来源地址已复制', 'success');
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sourceUrl).then(done).catch(function() {
+            fallbackCopy(sourceUrl, done);
+        });
+    } else {
+        fallbackCopy(sourceUrl, done);
+    }
 }
 
 function createDanmuCallTrace(mode, inputText) {
@@ -1111,7 +1158,7 @@ async function autoMatchTest() {
             });
             addLog('自动匹配命中: ' + title + ' (共' + data.matches.length + '个结果，取第1个)', 'success');
             setDanmuFlowButtonLoading(btn, flowRequestId, false);
-            fetchDanmuForTest(best.episodeId, title, 'auto', trace);
+            fetchDanmuForTest(best.episodeId, title, 'auto', trace, best.url);
             return;
         } else {
             finishDanmuCallEmpty(trace, matchStartedAt, {
@@ -1314,7 +1361,7 @@ function displayManualEpisodeList(animeTitle, episodes) {
         const title = String(animeTitle || '') + ' 第' + episodeNumber + '集';
         html += '<div class="episode-item" id="episode-item-' + episodeNumber + '">';
         html += '<div class="episode-item-content"><strong>第' + episodeNumber + '集</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
-        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + episodeId + ', ' + inlineJsString(title) + ', \\'manual\\')">获取弹幕</button>';
+        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + episodeId + ', ' + inlineJsString(title) + ', \\'manual\\', null, ' + inlineJsString(ep.url) + ')">获取弹幕</button>';
         html += '</div>';
     });
     html += '</div>';
@@ -1365,7 +1412,7 @@ function isCurrentDanmuRequest(requestId) {
 // =====================
 // 获取弹幕并展示结果
 // =====================
-async function fetchDanmuForTest(episodeId, title, source, traceBase) {
+async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl) {
     addLog('获取弹幕: ' + episodeId + ' (' + title + ')', 'info');
     const requestId = ++danmuTestState.nextDanmuRequestId;
     danmuTestState.activeDanmuRequestId = requestId;
@@ -1383,6 +1430,8 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase) {
     danmuTestState.currentEpisodeId = episodeId;
     danmuTestState.currentTitle = title;
     danmuTestState.currentDuration = 0;
+    danmuTestState.currentSourceUrl = getDanmuSourceUrl(sourceUrl);
+    danmuTestState.currentSearchQuery = '';
 
     // 隐藏上级面板
     if (source === 'manual') {
@@ -1444,17 +1493,42 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase) {
             toolbarHtml += backBtnHtml('返回列表', 'backToEpisodeList()');
         }
         toolbarHtml += '<div class="danmu-export-btns">' +
-                '<button class="btn btn-sm btn-primary" onclick="exportDanmu(\\'json\\')">导出 JSON</button>' +
-                '<button class="btn btn-sm btn-primary" onclick="exportDanmu(\\'xml\\')">导出 XML</button>' +
+                '<select id="danmu-export-format" class="danmu-export-select" aria-label="导出格式">' +
+                    '<optgroup label="通用格式">' +
+                        '<option value="json">通用 JSON</option>' +
+                        '<option value="xml">Bilibili XML（内置）</option>' +
+                    '</optgroup>' +
+                    '<optgroup label="播放器格式">' +
+                        '<option value="ddplay.json">弹弹Play JSON</option>' +
+                        '<option value="dplayer.json">DPlayer JSON</option>' +
+                        '<option value="artplayer.json">ArtPlayer JSON</option>' +
+                        '<option value="vod.json">VOD JSON</option>' +
+                        '<option value="baha.json">巴哈姆特 JSON</option>' +
+                    '</optgroup>' +
+                    '<optgroup label="高级格式">' +
+                        '<option value="bili.xml">Bilibili XML（DanUni）</option>' +
+                        '<option value="danuni.json">DanUni JSON</option>' +
+                        '<option value="danuni.binpb">DanUni Protobuf</option>' +
+                    '</optgroup>' +
+                '</select>' +
+                '<button class="btn btn-sm btn-primary" onclick="exportDanmu()">导出</button>' +
             '</div></div>';
 
         const filterCounts = getDanmuFilterCounts(data.comments);
         resultArea.innerHTML =
             toolbarHtml +
+            renderDanmuSourceUrl() +
             '<div class="danmu-stats" id="danmu-stats"></div>' +
             renderDanmuCallTrace(requestTrace) +
             '<div class="danmu-heatmap-container"><h3 class="danmu-section-title">弹幕热力图</h3><div class="danmu-heatmap" id="danmu-heatmap"></div></div>' +
             '<div class="danmu-list-area"><h3 class="danmu-section-title">弹幕列表</h3>' +
+                '<div class="danmu-list-tools">' +
+                    '<div class="preview-search danmu-search">' +
+                        '<input type="search" id="danmu-search-input" placeholder="搜索弹幕内容" aria-label="搜索弹幕内容" autocomplete="off" oninput="handleDanmuSearch(event)">' +
+                        '<button type="button" class="preview-search-clear" id="danmu-search-clear" onclick="clearDanmuSearch()" title="清除搜索" aria-label="清除搜索" hidden>&times;</button>' +
+                    '</div>' +
+                    '<span class="danmu-search-status" id="danmu-search-status" aria-live="polite"></span>' +
+                '</div>' +
                 renderDanmuFilterTabs(filterCounts) +
                 '<div class="danmu-list" id="danmu-list"></div>' +
                 '<button class="btn btn-primary danmu-load-more" id="danmu-load-more" onclick="loadMoreDanmu()">加载更多</button>' +
@@ -1486,30 +1560,26 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase) {
 // =====================
 // 导出弹幕（直接请求后端获取格式化数据）
 // =====================
-async function exportDanmu(format) {
+async function exportDanmu() {
     const id = danmuTestState.currentEpisodeId;
     if (!id) { customAlert('无弹幕数据可导出'); return; }
+
+    const formatEl = document.getElementById('danmu-export-format');
+    const format = (formatEl && formatEl.value) || 'json';
 
     const title = danmuTestState.currentTitle || ('danmu_' + id);
     // 清理文件名中的非法字符
     const safeTitle = title.replace(/[\\\\/:*?"<>|]/g, '_');
 
-    addLog('导出弹幕 ' + format.toUpperCase() + '...', 'info');
+    addLog('导出弹幕 ' + format + '...', 'info');
     try {
-        const resp = await fetch(buildApiUrl('/api/v2/comment/' + id + '?format=' + format));
+        const resp = await fetch(buildApiUrl('/api/v2/comment/' + id + '?format=' + encodeURIComponent(format)));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
-        let content, mimeType;
-        if (format === 'xml') {
-            content = await resp.text();
-            mimeType = 'application/xml';
-        } else {
-            const data = await resp.json();
-            content = JSON.stringify(data, null, 2);
-            mimeType = 'application/json';
-        }
-
-        const blob = new Blob([content], { type: mimeType });
+        const contentType = (resp.headers && resp.headers.get ? (resp.headers.get('content-type') || '') : '').toLowerCase();
+        const blob = contentType.includes('json')
+            ? new Blob([JSON.stringify(await resp.json(), null, 2)], { type: 'application/json' })
+            : new Blob([await resp.arrayBuffer()], { type: contentType || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1518,7 +1588,7 @@ async function exportDanmu(format) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        addLog('导出弹幕 ' + format.toUpperCase() + ' 成功', 'success');
+        addLog('导出弹幕 ' + format + ' 成功', 'success');
     } catch (e) {
         customAlert('导出失败: ' + e.message);
         addLog('导出失败: ' + e.message, 'error');
@@ -1725,18 +1795,57 @@ function renderDanmuFilterTabs(counts) {
 // =====================
 function applyDanmuFilter() {
     const filter = danmuTestState.currentFilter;
+    let filteredComments;
     if (filter === 'all') {
-        danmuTestState.filteredComments = danmuTestState.allComments;
+        filteredComments = danmuTestState.allComments;
     } else {
         const modeMap = { scroll: 1, top: 5, bottom: 4 };
         const targetMode = modeMap[filter];
-        danmuTestState.filteredComments = danmuTestState.allComments.filter(c => {
+        filteredComments = danmuTestState.allComments.filter(c => {
             const mode = parseDanmuMode(c.p);
             if (filter === 'scroll') return mode !== 4 && mode !== 5;
             return mode === targetMode;
         });
     }
+
+    const keywords = String(danmuTestState.currentSearchQuery || '')
+        .trim()
+        .toLocaleLowerCase()
+        .split(/\\s+/)
+        .filter(Boolean);
+    if (keywords.length > 0) {
+        filteredComments = filteredComments.filter(comment => {
+            const content = String((comment && comment.m) || '').toLocaleLowerCase();
+            return keywords.every(keyword => content.includes(keyword));
+        });
+    }
+
+    danmuTestState.filteredComments = filteredComments;
     danmuTestState.displayedCount = 0;
+    const status = document.getElementById('danmu-search-status');
+    if (status) {
+        status.textContent = keywords.length > 0 ? filteredComments.length + ' 条匹配' : '';
+    }
+}
+
+function handleDanmuSearch(event) {
+    const value = event && event.target ? event.target.value : '';
+    danmuTestState.currentSearchQuery = value;
+    const clearButton = document.getElementById('danmu-search-clear');
+    if (clearButton) clearButton.hidden = !value;
+    applyDanmuFilter();
+    renderDanmuList();
+}
+
+function clearDanmuSearch() {
+    const input = document.getElementById('danmu-search-input');
+    const clearButton = document.getElementById('danmu-search-clear');
+    if (input) input.value = '';
+    if (clearButton) clearButton.hidden = true;
+    danmuTestState.currentSearchQuery = '';
+    applyDanmuFilter();
+    renderDanmuList();
+    if (input) input.focus();
 }
 
 function filterDanmuList(type, event) {
@@ -1771,7 +1880,8 @@ function renderDanmuList() {
 
     const container = document.getElementById('danmu-list');
     if (danmuTestState.displayedCount === 0) {
-        container.innerHTML = html || '<p class="danmu-empty-text danmu-empty-list">无弹幕数据</p>';
+        const emptyText = danmuTestState.currentSearchQuery.trim() ? '未找到匹配的弹幕' : '无弹幕数据';
+        container.innerHTML = html || '<p class="danmu-empty-text danmu-empty-list">' + emptyText + '</p>';
     } else {
         container.insertAdjacentHTML('beforeend', html);
     }

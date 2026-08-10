@@ -82,7 +82,7 @@ class Link {
 // =====================
 export class AnimeMatch {
   constructor({ episodeId = 10001, animeId = 111, animeTitle = "", episodeTitle = "",
-                type = "", typeDescription = "", shift = 1, imageUrl = "" } = {}) {
+                type = "", typeDescription = "", shift = 1, imageUrl = "", url = "" } = {}) {
     // ---- 类型检查 ----
     validateType(episodeId, "number");
     validateType(animeId, "number");
@@ -92,9 +92,10 @@ export class AnimeMatch {
     validateType(typeDescription, "string");
     validateType(shift, "number");
     validateType(imageUrl, "string");
+    validateType(url, "string");
 
     // 直接解构并赋值给 this
-    Object.assign(this, { episodeId, animeId, animeTitle, episodeTitle, type, typeDescription, shift, imageUrl });
+    Object.assign(this, { episodeId, animeId, animeTitle, episodeTitle, type, typeDescription, shift, imageUrl, url });
   }
 
   // ---- 静态方法：从 JSON 创建 User 对象 ----
