@@ -135,7 +135,18 @@ export function resolveAutoMatchMapping(rules, { title, season, episode }) {
     if (episodeNumber < rule.sourceStartEpisode) return false;
     return rule.sourceEndEpisode === null || episodeNumber <= rule.sourceEndEpisode;
   });
-  matches.sort((left, right) => Number(right.bounded) - Number(left.bounded) || left.order - right.order);
+  // Open rules describe a mapping from their source start episode onward.
+  // When several such rules share a source title/season, the latest start
+  // episode is the most specific transition point. Keep declaration order
+  // only as the tie-breaker for rules with the same specificity.
+  matches.sort((left, right) => {
+    const boundedOrder = Number(right.bounded) - Number(left.bounded);
+    if (boundedOrder !== 0) return boundedOrder;
+    if (!left.bounded && left.sourceStartEpisode !== right.sourceStartEpisode) {
+      return right.sourceStartEpisode - left.sourceStartEpisode;
+    }
+    return left.order - right.order;
+  });
 
   const rule = matches[0];
   if (!rule) return null;

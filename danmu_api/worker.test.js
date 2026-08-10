@@ -374,6 +374,21 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '测试', season: 1, episode: 2 }).targetEpisode, 20);
     });
 
+    await t.test('uses the latest open-rule transition for repeated source title and season', () => {
+      const parsed = parseAutoMatchMappingRules([
+        '一念永恒 S01E53->一念永恒 S02E01',
+        '一念永恒 S01E107->一念永恒 S03E01',
+        '一念永恒 S01E166->一念永恒 完结季 S01E01'
+      ].join(';'));
+
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 52 }), null);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 53 }).targetSeason, 2);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 106 }).targetEpisode, 54);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 107 }).targetSeason, 3);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 165 }).targetEpisode, 59);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 166 }).targetTitle, '一念永恒 完结季');
+    });
+
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
       const originalSearch = TencentSource.prototype.search;
       const originalHandleAnimes = TencentSource.prototype.handleAnimes;
