@@ -1077,10 +1077,12 @@ function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform 
   }
 
   // 策略2：使用数组索引
-  if (platformEpisodes.length >= targetEpisode) {
+  if (targetEpisode > 0 && platformEpisodes.length >= targetEpisode) {
     const fallbackEp = platformEpisodes[targetEpisode - 1];
-    log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
-    return fallbackEp;
+    if (fallbackEp) {
+      log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
+      return fallbackEp;
+    }
   }
   
   // 策略3：使用episodeNumber字段匹配
@@ -1346,19 +1348,21 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
       break;
     }
 
-    if (currentTargetEpisode <= allEps.length) {
+    if (currentTargetEpisode > 0 && currentTargetEpisode <= allEps.length) {
       const targetEp = allEps[currentTargetEpisode - 1];
-      if (platform && getPlatformMatchScore(extractEpisodeTitle(targetEp.episodeTitle), platform) === 0) {
-        currentSeason++;
-        continue;
+      if (targetEp) {
+        if (platform && getPlatformMatchScore(extractEpisodeTitle(targetEp.episodeTitle), platform) === 0) {
+          currentSeason++;
+          continue;
+        }
+        log("info", `[system] [spillover] 跨季溢出查找命中 (按相对排位计算) -> 所在季：S${currentSeason} 集标题：${targetEp.episodeTitle}`);
+        bestRes = {
+          anime: seasonData.anime,
+          episode: targetEp,
+          score: platform ? getPlatformMatchScore(seasonData.actualPlatform, platform) : 1
+        };
+        break;
       }
-      log("info", `[system] [spillover] 跨季溢出查找命中 (按相对排位计算) -> 所在季：S${currentSeason} 集标题：${targetEp.episodeTitle}`);
-      bestRes = {
-        anime: seasonData.anime,
-        episode: targetEp,
-        score: platform ? getPlatformMatchScore(seasonData.actualPlatform, platform) : 1
-      };
-      break;
     }
 
     // 目标集号超出实际集数但仍落在该季 TMDB 标准区间内: 真实集数偏短时返回该季最后一集, 避免无谓顺延至后续季
@@ -2077,10 +2081,10 @@ export async function matchAnime(url, req, clientIp) {
     // 示例返回
     return jsonResponse(resData);
   } catch (error) {
-    // 处理 JSON 解析错误或其他异常
-    log("error", `[system] [match] Failed to parse request body: ${error.message}`);
+    // 处理匹配请求中的异常
+    log("error", `[system] [match] Error processing match request: ${error.stack || error.message}`);
     return jsonResponse(
-      { errorCode: 400, success: false, errorMessage: "Invalid JSON body" },
+      { errorCode: 400, success: false, errorMessage: error.message || "Invalid JSON body" },
       400
     );
   }
