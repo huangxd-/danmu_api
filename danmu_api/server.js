@@ -15,6 +15,7 @@ import { getLocalCaches, judgeLocalCacheValid } from './utils/cache-util.js';
 import { getRedisCaches, judgeRedisValid } from './utils/redis-util.js';
 import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.js';
 import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
+import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
 
 // =====================
 // server.js - 本地node智能启动脚本：根据 Node.js 环境自动选择最优启动模式
@@ -252,7 +253,7 @@ async function setupEnvWatcher() {
 /**
  * 优雅关闭：清理文件监听器并关闭服务器
  */
-function cleanupWatcher() {
+function cleanupWatcher(exitCode = 0) {
   stopFavoriteScheduler();
   if (envWatcher) {
     console.log('[server] Closing file watcher...');
@@ -264,14 +265,14 @@ function cleanupWatcher() {
     reloadTimer = null;
   }
   // 优雅关闭主服务器
-  if (mainServer) {
+  if (mainServer?.listening) {
     console.log('[server] Closing main server...');
     mainServer.close(() => {
       console.log('[server] Main server closed');
     });
   }
   // 优雅关闭代理服务器
-  if (proxyServer) {
+  if (proxyServer?.listening) {
     console.log('[server] Closing proxy server...');
     proxyServer.close(() => {
       console.log('[server] Proxy server closed');
@@ -280,13 +281,13 @@ function cleanupWatcher() {
   // 给服务器一点时间关闭后退出
   setTimeout(() => {
     console.log('[server] Exit complete.');
-    process.exit(0);
+    process.exit(exitCode);
   }, 500);
 }
 
 // 监听进程退出信号
-process.on('SIGTERM', cleanupWatcher);
-process.on('SIGINT', cleanupWatcher);
+process.on('SIGTERM', () => cleanupWatcher(0));
+process.on('SIGINT', () => cleanupWatcher(0));
 
 /**
  * 创建主业务服务器实例 (默认端口 9321，可通过 DANMU_API_PORT 配置)
@@ -507,23 +508,25 @@ async function startServer() {
   const configuredMainPort = Number.parseInt(process.env.DANMU_API_PORT ?? '', 10);
   const mainPort = Number.isNaN(configuredMainPort) ? 9321 : configuredMainPort;
   mainServer = createServer();
-  mainServer.listen(mainPort, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${mainPort}`);
-    if (detectNodeDeployPlatform() === 'node') {
-      initializeFavoriteScheduler(mainPort).catch(error => {
-        console.error('[server] Favorite scheduler initialization failed:', error.message);
-      });
-    }
+  const mainBinding = await listenOnAllInterfaces(mainServer, mainPort, {
+    serviceName: 'main server'
   });
+  console.log(`Server running on http://${formatHostForUrl(mainBinding.address)}:${mainBinding.port}`);
+  if (detectNodeDeployPlatform() === 'node') {
+    initializeFavoriteScheduler(mainPort).catch(error => {
+      console.error('[server] Favorite scheduler initialization failed:', error.message);
+    });
+  }
 
   // 启动5321端口的代理服务
   proxyServer = createProxyServer();
-  proxyServer.listen(5321, '0.0.0.0', () => {
-    console.log('Proxy server running on http://0.0.0.0:5321');
-
-    // 异步初始化 Bangumi Data 缓存
-    setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
+  const proxyBinding = await listenOnAllInterfaces(proxyServer, 5321, {
+    serviceName: 'proxy server'
   });
+  console.log(`Proxy server running on http://${formatHostForUrl(proxyBinding.address)}:${proxyBinding.port}`);
+
+  // 异步初始化 Bangumi Data 缓存
+  setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
 }
 
 async function initializeFavoriteScheduler(mainPort) {
@@ -542,4 +545,7 @@ async function initializeFavoriteScheduler(mainPort) {
 }
 
 // 启动
-startServer();
+startServer().catch(error => {
+  console.error('[server] Failed to start server:', error);
+  cleanupWatcher(1);
+});

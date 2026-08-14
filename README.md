@@ -145,7 +145,7 @@ LogVar 弹幕 API 服务器
    ```bash
    npm start
    ```
-   服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。
+   服务器将在 `http://{ip}:9321` 运行，默认token是`87654321`。Node 服务默认通过 `::` 同时监听 IPv6 和 IPv4；不支持 IPv6 绑定时会自动回退到 `0.0.0.0`。IPv6 地址访问格式为 `http://[IPv6地址]:9321`。若操作系统强制启用了 `IPV6_V6ONLY`，需调整系统网络策略后才能通过同一监听端口接受 IPv4 连接。
    如需修改端口，可设置环境变量 `DANMU_API_PORT`（例如 `DANMU_API_PORT=8080 npm start`）。
    HTTPS 反向代理应传递 `X-Forwarded-Proto`；无法传递时可设置 `DANMU_API_PUBLIC_PROTO=https`，用于生成正确的对外弹幕链接。
 
@@ -214,6 +214,8 @@ GET http://127.0.0.1:9321/87654321/api/logs
    ```
    - 使用`-e TOKEN=87654321`设置`TOKEN`环境变量，覆盖Dockerfile中的默认值。
    - 或使用 `--env-file .env` 加载 .env 文件中的所有环境变量：`docker run -d -p 9321:9321 --name danmu-api --env-file .env danmu-api`
+
+   > 容器内服务默认启用 IPv4/IPv6 双栈监听。通过 IPv6 从宿主机访问时，Docker 守护进程及容器网络也需要启用 IPv6；否则仍可正常使用 IPv4。
 
    **热更新支持**：如需支持环境变量热更新（修改 `.env` 文件后无需重启容器），请使用 Volume 挂载：
    ```bash
@@ -720,6 +722,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── migu-util.js        # 咪咕工具
 │       ├── offset-util.js      # 弹幕偏移工具
 │       ├── redis-util.js       # redis工具
+│       ├── server-listen-util.js # IPv4/IPv6 双栈监听与 IPv4 回退工具
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具
 │       └── zh-util.js          # 中文繁简转换工具
