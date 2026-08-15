@@ -77,16 +77,16 @@ class XiguaSource extends BaseSource {
           }
         });
       } else {
-        log("info", "[Xigua] xiguaSearchresp: 相关视频的section 不存在");
+        log("info", "[xigua] xiguaSearchresp: 相关视频的section 不存在");
         return [];
       }
 
       // 正常情况下输出 JSON 字符串
-      log("info", `[Xigua] 搜索找到 ${animes.length} 个有效结果`);
+      log("info", `[xigua] 搜索找到 ${animes.length} 个有效结果`);
       return animes;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Xigua] getXiguaAnimes error:", {
+      log("error", "[xigua] getXiguaAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -110,7 +110,7 @@ class XiguaSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!resp || !resp.data) {
-        log("info", "[Xigua] getXiguaDetail: 请求失败或无数据返回");
+        log("info", "[xigua] getXiguaDetail: 请求失败或无数据返回");
         return 0;
       }
 
@@ -118,7 +118,7 @@ class XiguaSource extends BaseSource {
       return match ? parseFloat(match[1]) : 0;
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Xigua] getXiguaDetail error:", {
+      log("error", "[xigua] getXiguaDetail error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -139,7 +139,7 @@ class XiguaSource extends BaseSource {
 
       // 判断 resp 和 resp.data 是否存在
       if (!detailResp || !detailResp.data) {
-        log("info", "[Xigua] getXiguaEposides: 请求失败或无数据返回");
+        log("info", "[xigua] getXiguaEposides: 请求失败或无数据返回");
         return [];
       }
 
@@ -164,15 +164,15 @@ class XiguaSource extends BaseSource {
           return playlistUrls;
           
         } catch (e) {
-          log("error", "[Xigua] 解析episodes_list失败:", e);
+          log("error", "[xigua] 解析episodes_list失败:", e);
         }
       } else {
-        log("info", "[Xigua] getXiguaEposides: episodes_list 不存在");
+        log("info", "[xigua] getXiguaEposides: episodes_list 不存在");
         return [];
       }
     } catch (error) {
       // 捕获请求中的错误
-      log("error", "[Xigua] getXiguaEposides error:", {
+      log("error", "[xigua] getXiguaEposides error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -194,7 +194,7 @@ class XiguaSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Xigua] sourceAnimes is not a valid array");
+      log("error", "[xigua] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -214,7 +214,7 @@ class XiguaSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Xigua] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[xigua] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -255,7 +255,7 @@ class XiguaSource extends BaseSource {
             if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
           }
         } catch (error) {
-          log("error", `[Xigua] Error processing anime: ${error.message}`);
+          log("error", `[xigua] Error processing anime: ${error.message}`);
         }
       })
     );
@@ -266,7 +266,7 @@ class XiguaSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "[Xigua] 开始从本地请求西瓜视频弹幕...", id);
+    log("info", "[xigua] 开始从本地请求西瓜视频弹幕...", id);
     
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -275,7 +275,7 @@ class XiguaSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `[Xigua] 弹幕分段数量: ${segmentList.length}`);
+    log("info", `[xigua] 弹幕分段数量: ${segmentList.length}`);
 
     // 并发请求所有弹幕段，限制并发数量为50
     const MAX_CONCURRENT = 100;
@@ -303,7 +303,7 @@ class XiguaSource extends BaseSource {
             allComments.push(...comments);
           }
         } else {
-          log("error", `[Xigua] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
+          log("error", `[xigua] 获取弹幕段失败 (${start}-${end}s):`, result.reason.message);
         }
       }
       
@@ -314,7 +314,7 @@ class XiguaSource extends BaseSource {
     }
 
     if (allComments.length === 0) {
-      log("info", `[Xigua] 西瓜视频: 该视频暂无弹幕数据 (vid=${id})`);
+      log("info", `[xigua] 西瓜视频: 该视频暂无弹幕数据 (vid=${id})`);
       return [];
     }
 
@@ -324,12 +324,12 @@ class XiguaSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[Xigua] 获取西瓜视频弹幕分段列表...", id);
+    log("info", "[xigua] 获取西瓜视频弹幕分段列表...", id);
 
     const itemId = id.split('/').pop();
     const duration = await this.getDetail(id) * 1000;
-    log("info", "[Xigua] itemId:", itemId);
-    log("info", "[Xigua] duration:", duration);
+    log("info", "[xigua] itemId:", itemId);
+    log("info", "[xigua] duration:", duration);
 
     const segmentDuration = 300000; // 每个分片5分钟
     const segmentList = [];
@@ -380,7 +380,7 @@ class XiguaSource extends BaseSource {
 
       return contents;
     } catch (error) {
-      log("error", "[Xigua] 请求分片弹幕失败:", error);
+      log("error", "[xigua] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

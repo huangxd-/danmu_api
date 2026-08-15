@@ -1,4 +1,5 @@
 import { log } from "./log-util.js";
+import brotliDecompress from "brotli/decompress.js";
 
 // =====================
 // 通用编码/解码工具
@@ -17,8 +18,8 @@ export function simpleHash(str) {
 
 // 辅助函数：序列化值，处理 Map 对象
 export function serializeValue(key, value) {
-  // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-  if (key === 'lastSelectMap' && value instanceof Map) {
+  // Redis 中持久化的 Map 转成普通对象，避免 JSON.stringify(Map) 得到空对象。
+  if ((key === 'lastSelectMap' || key === 'favoriteCache') && value instanceof Map) {
     return JSON.stringify(Object.fromEntries(value));
   }
   return JSON.stringify(value);
@@ -45,7 +46,16 @@ export function md5(message) {
     return utf8;
   }
 
-  message = toUtf8(message);
+  if (message instanceof Uint8Array) {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < message.length; offset += chunkSize) {
+      binary += String.fromCharCode(...message.subarray(offset, offset + chunkSize));
+    }
+    message = binary;
+  } else {
+    message = toUtf8(message);
+  }
 
   function rotateLeft(lValue, iShiftBits) {
     return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits));
@@ -201,6 +211,126 @@ export function md5(message) {
   return (wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d)).toLowerCase();
 }
 
+export function hexToBytes(hex) {
+  const normalized = String(hex || "").replace(/\s+/g, "");
+  if (normalized.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(normalized)) {
+    throw new TypeError("hex input must contain an even number of hexadecimal characters");
+  }
+  return Uint8Array.from({ length: normalized.length / 2 }, (_, index) =>
+    parseInt(normalized.slice(index * 2, index * 2 + 2), 16)
+  );
+}
+
+export function bytesToHex(bytes) {
+  return Array.from(bytes || [], (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+export function pkcs7Pad(bytes, blockSize = 16) {
+  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (!Number.isInteger(blockSize) || blockSize < 1 || blockSize > 255) {
+    throw new RangeError("PKCS#7 block size must be an integer between 1 and 255");
+  }
+  const padding = blockSize - (input.length % blockSize);
+  const output = new Uint8Array(input.length + padding);
+  output.set(input);
+  output.fill(padding, input.length);
+  return output;
+}
+
+// SM3 digest used by ByteDance's Argus request signature.
+export function sm3Bytes(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input || []);
+  const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+  const padded = new Uint8Array(paddedLength);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+
+  const bitLengthLow = (bytes.length << 3) >>> 0;
+  const bitLengthHigh = Math.floor(bytes.length / 0x20000000) >>> 0;
+  for (let i = 0; i < 4; i++) {
+    padded[paddedLength - 8 + i] = (bitLengthHigh >>> ((3 - i) * 8)) & 0xff;
+    padded[paddedLength - 4 + i] = (bitLengthLow >>> ((3 - i) * 8)) & 0xff;
+  }
+
+  const rotateLeft = (value, count) => {
+    const shift = count & 31;
+    return shift === 0 ? value >>> 0 : ((value << shift) | (value >>> (32 - shift))) >>> 0;
+  };
+  const p0 = (x) => (x ^ rotateLeft(x, 9) ^ rotateLeft(x, 17)) >>> 0;
+  const p1 = (x) => (x ^ rotateLeft(x, 15) ^ rotateLeft(x, 23)) >>> 0;
+  const state = new Uint32Array([
+    0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600,
+    0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e
+  ]);
+
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    const w = new Uint32Array(68);
+    const wPrime = new Uint32Array(64);
+    for (let i = 0; i < 16; i++) {
+      const p = offset + i * 4;
+      w[i] = (
+        (padded[p] << 24) |
+        (padded[p + 1] << 16) |
+        (padded[p + 2] << 8) |
+        padded[p + 3]
+      ) >>> 0;
+    }
+    for (let i = 16; i < 68; i++) {
+      w[i] = (
+        p1(w[i - 16] ^ w[i - 9] ^ rotateLeft(w[i - 3], 15)) ^
+        rotateLeft(w[i - 13], 7) ^
+        w[i - 6]
+      ) >>> 0;
+    }
+    for (let i = 0; i < 64; i++) wPrime[i] = (w[i] ^ w[i + 4]) >>> 0;
+
+    let a = state[0];
+    let b = state[1];
+    let c = state[2];
+    let d = state[3];
+    let e = state[4];
+    let f = state[5];
+    let g = state[6];
+    let h = state[7];
+
+    for (let i = 0; i < 64; i++) {
+      const constant = i < 16 ? 0x79cc4519 : 0x7a879d8a;
+      const ss1 = rotateLeft((rotateLeft(a, 12) + e + rotateLeft(constant, i)) >>> 0, 7);
+      const ss2 = (ss1 ^ rotateLeft(a, 12)) >>> 0;
+      const ff = i < 16 ? (a ^ b ^ c) : ((a & b) | (a & c) | (b & c));
+      const gg = i < 16 ? (e ^ f ^ g) : ((e & f) | (~e & g));
+      const tt1 = (ff + d + ss2 + wPrime[i]) >>> 0;
+      const tt2 = (gg + h + ss1 + w[i]) >>> 0;
+      d = c;
+      c = rotateLeft(b, 9);
+      b = a;
+      a = tt1;
+      h = g;
+      g = rotateLeft(f, 19);
+      f = e;
+      e = p0(tt2);
+    }
+
+    state[0] ^= a;
+    state[1] ^= b;
+    state[2] ^= c;
+    state[3] ^= d;
+    state[4] ^= e;
+    state[5] ^= f;
+    state[6] ^= g;
+    state[7] ^= h;
+  }
+
+  const output = new Uint8Array(32);
+  for (let i = 0; i < state.length; i++) {
+    output[i * 4] = state[i] >>> 24;
+    output[i * 4 + 1] = state[i] >>> 16;
+    output[i * 4 + 2] = state[i] >>> 8;
+    output[i * 4 + 3] = state[i];
+  }
+  return output;
+}
+
 export function parseDanmakuBase64(base64) {
   const bytes = base64ToBytes(base64);
   const elems = [];
@@ -354,6 +484,27 @@ export function keyExpansion(key) {
   return w;
 }
 
+function keyExpansionForKeySize(key) {
+  if (!(key instanceof Uint8Array) || ![16, 24, 32].includes(key.length)) {
+    throw new RangeError("AES key must be 16, 24, or 32 bytes");
+  }
+  if (key.length === 16) return keyExpansion(key);
+
+  const Nk = key.length / 4, Nb = 4, Nr = Nk + 6;
+  const w = new Array(Nb * (Nr + 1));
+  for (let i = 0; i < Nk; i++) w[i] = key.slice(4 * i, 4 * i + 4);
+  for (let i = Nk; i < Nb * (Nr + 1); i++) {
+    let temp = w[i - 1];
+    if (i % Nk === 0) {
+      temp = xor(subWord(rotWord(temp)), Uint8Array.from([RCON[i / Nk], 0, 0, 0]));
+    } else if (Nk > 6 && i % Nk === 4) {
+      temp = subWord(temp);
+    }
+    w[i] = xor(w[i - Nk], temp);
+  }
+  return w;
+}
+
 // AES-128 解密单块 (16 字节)
 function aesDecryptBlock(input, w) {
   const Nb=4, Nr=10;
@@ -369,6 +520,21 @@ function aesDecryptBlock(input, w) {
   state = invSubBytes(state);
   state = addRoundKey(state, w.slice(0,Nb));
   return state;
+}
+
+function aesDecryptBlockForKeySize(input, w) {
+  const Nb = 4, Nr = (w.length / Nb) - 1;
+  let state = new Uint8Array(input);
+  state = addRoundKey(state, w.slice(Nr * Nb, (Nr + 1) * Nb));
+  for (let round = Nr - 1; round >= 1; round--) {
+    state = invShiftRows(state);
+    state = invSubBytes(state);
+    state = addRoundKey(state, w.slice(round * Nb, (round + 1) * Nb));
+    state = invMixColumns(state);
+  }
+  state = invShiftRows(state);
+  state = invSubBytes(state);
+  return addRoundKey(state, w.slice(0, Nb));
 }
 
 // AES 辅助函数
@@ -417,6 +583,78 @@ function invMixColumns(state){
   return out;
 }
 
+function shiftRows(state) {
+  const out = new Uint8Array(16);
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) out[r + 4 * c] = state[r + 4 * ((c + r) % 4)];
+  }
+  return out;
+}
+
+function mixColumns(state) {
+  function mul(a, b) {
+    let p = 0;
+    for (let i = 0; i < 8; i++) {
+      if (b & 1) p ^= a;
+      const hi = a & 0x80;
+      a = (a << 1) & 0xff;
+      if (hi) a ^= 0x1b;
+      b >>>= 1;
+    }
+    return p;
+  }
+
+  const out = new Uint8Array(16);
+  for (let c = 0; c < 4; c++) {
+    const i = c * 4;
+    const a = state[i];
+    const b = state[i + 1];
+    const d = state[i + 2];
+    const e = state[i + 3];
+    out[i] = mul(a, 2) ^ mul(b, 3) ^ d ^ e;
+    out[i + 1] = a ^ mul(b, 2) ^ mul(d, 3) ^ e;
+    out[i + 2] = a ^ b ^ mul(d, 2) ^ mul(e, 3);
+    out[i + 3] = mul(a, 3) ^ b ^ d ^ mul(e, 2);
+  }
+  return out;
+}
+
+function aesEncryptBlock(input, expandedKey) {
+  let state = addRoundKey(new Uint8Array(input), expandedKey.slice(0, 4));
+  for (let round = 1; round < 10; round++) {
+    state = subWord(state);
+    state = shiftRows(state);
+    state = mixColumns(state);
+    state = addRoundKey(state, expandedKey.slice(round * 4, (round + 1) * 4));
+  }
+  state = subWord(state);
+  state = shiftRows(state);
+  return addRoundKey(state, expandedKey.slice(40, 44));
+}
+
+// AES-128-CBC encryption with PKCS#7 padding, implemented without WebCrypto.
+export function aesCbcEncrypt(input, key, iv) {
+  const plainBytes = input instanceof Uint8Array ? input : new Uint8Array(input || []);
+  const keyBytes = key instanceof Uint8Array ? key : new Uint8Array(key || []);
+  const ivBytes = iv instanceof Uint8Array ? iv : new Uint8Array(iv || []);
+  if (keyBytes.length !== 16 || ivBytes.length !== 16) {
+    throw new RangeError("AES-128-CBC key and IV must both be 16 bytes");
+  }
+
+  const padded = pkcs7Pad(plainBytes);
+
+  const expandedKey = keyExpansion(keyBytes);
+  const output = new Uint8Array(padded.length);
+  let previous = new Uint8Array(ivBytes);
+  for (let offset = 0; offset < padded.length; offset += 16) {
+    const block = padded.slice(offset, offset + 16);
+    for (let i = 0; i < 16; i++) block[i] ^= previous[i];
+    previous = aesEncryptBlock(block, expandedKey);
+    output.set(previous, offset);
+  }
+  return output;
+}
+
 // ====================== ECB 模式解密 ======================
 function aesDecryptECB(cipherBytes, keyBytes){
   const w = keyExpansion(keyBytes);
@@ -426,6 +664,24 @@ function aesDecryptECB(cipherBytes, keyBytes){
     const block = cipherBytes.slice(i,i+blockSize);
     const decrypted = aesDecryptBlock(block,w);
     result.set(decrypted,i);
+  }
+  return result;
+}
+
+export function aesEcbDecrypt(cipherBytes, keyBytes){
+  if (!(cipherBytes instanceof Uint8Array) || cipherBytes.length % 16 !== 0) {
+    throw new RangeError("AES-ECB ciphertext must contain complete 16-byte blocks");
+  }
+  if (!(keyBytes instanceof Uint8Array) || ![16, 24, 32].includes(keyBytes.length)) {
+    throw new RangeError("AES key must be 16, 24, or 32 bytes");
+  }
+  if (keyBytes.length === 16) return aesDecryptECB(cipherBytes, keyBytes);
+
+  const w = keyExpansionForKeySize(keyBytes);
+  const result = new Uint8Array(cipherBytes.length);
+  for(let i=0;i<cipherBytes.length;i+=16){
+    const block = cipherBytes.slice(i,i+16);
+    result.set(aesDecryptBlockForKeySize(block,w),i);
   }
   return result;
 }
@@ -449,6 +705,21 @@ export function base64ToBytes(b64) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+// 纯 JavaScript Brotli 解压，兼容不提供原生解压 API 的沙箱。
+export function decompressBrotli(bytes) {
+  if (bytes == null) {
+    throw new TypeError("Brotli 输入不能为空");
+  }
+
+  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const output = brotliDecompress(input);
+  if (!output) {
+    throw new Error("Brotli 解压失败");
+  }
+
+  return output instanceof Uint8Array ? output : new Uint8Array(output);
 }
 
 // 自定义 Base64 解码函数
@@ -531,7 +802,7 @@ export function stringToUtf8Bytes(str) {
 }
 
 // 修改后的 aesDecryptBase64
-function aesDecryptBase64(cipherB64, keyStr) {
+export function aesDecryptBase64(cipherB64, keyStr) {
   try {
     const cipherBytes = base64ToBytes(cipherB64);
     const keyBytes = stringToUtf8Bytes(keyStr);
@@ -539,7 +810,7 @@ function aesDecryptBase64(cipherB64, keyStr) {
     const unpadded = pkcs7Unpad(decryptedBytes);
     return utf8BytesToString(unpadded);
   } catch (e) {
-    log("error", "[Utils] [Codec]", e);
+    log("error", "[system] [codec]", e);
     return null;
   }
 }
@@ -607,7 +878,7 @@ export function bytesToBase64(bytes) {
 
 // ===================== SHA256 算法 =====================
 // 纯 JS SHA256，返回字节数组
-function sha256(ascii) {
+export function sha256(ascii) {
     function rightRotate(n, x) { return (x >>> n) | (x << (32 - n)); }
 
     let maxWord = Math.pow(2, 32);

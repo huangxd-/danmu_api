@@ -2,7 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log as baseLog } from './log-util.js';
 import { addAnime } from './cache-util.js';
 import { simplized } from '../utils/zh-util.js';
-import { normalizeSpaces } from '../utils/common-util.js';
+import { normalizeSpaces, convertChineseNumber } from '../utils/common-util.js';
 
 // ==============================================================================
 //  源合并处理工具 (merge-util.js)
@@ -139,7 +139,7 @@ const RegexStore = {
         PART_NORM_2:      /(?:Part|P)[\s.]*(\d+)/gi,
         FINAL:            /(?:The\s+)?Final\s+Season/gi,
         NORM:             /(?:Season|S)\s*(\d+)/gi,
-        CN:               /第\s*([一二三四五六七八九十])\s*季/g,
+        CN:               /第\s*([一二三四五六七八九十]+)\s*季/g,
         ROMAN:            /(\s|^)(IV|III|II|I)(\s|$)/g,
         INFO_STRONG:      /(?:season|s|第)\s*[0-9一二三四五六七八九十]+\s*(?:季|期|部(?!分))?/gi,
         PART_INFO_STRONG: /(?:part|p|第)\s*\d+\s*(?:部分)?/gi,
@@ -162,6 +162,7 @@ const RegexStore = {
         NON_ALPHANUM_CN:     /[^\u4e00-\u9fa5a-zA-Z0-9]/g,
         META_SUFFIX:         /(\(|（|\[)(续篇|TV版|无修|未删减|完整版)(\)|）|\])/gi,
         YEAR_TAG:            /(\(|（|\[)\d{4}(\)|）|\]).*$/i,
+        YEAR_DIGITS:         /[\(（](\d{4})[\)）]/,
         SUBTITLE_SEPARATOR:  /^[\s:：\-–—(（\[【]/,
         SPACE_STRUCTURE:     /.+[\s\u00A0\u3000].+/,
         SPLIT_SPACES:        /[\s\u00A0\u3000]+/,
@@ -377,8 +378,7 @@ function cleanText(text) {
     clean = clean.replace(RegexStore.Season.FINAL, '最终季');
     clean = clean.replace(RegexStore.Season.NORM,  '第$1季');
     // 中文数字季度转阿拉伯数字
-    const cnNums = { '一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10' };
-    clean = clean.replace(RegexStore.Season.CN, (m, num) => `第${cnNums[num]}季`);
+    clean = clean.replace(RegexStore.Season.CN, (m, num) => `第${convertChineseNumber(num)}季`);
     // 罗马数字季度转阿拉伯数字
     clean = clean.replace(RegexStore.Season.ROMAN, (match, p1, roman, p2) => {
         const rMap = { 'I':'1','II':'2','III':'3','IV':'4' };
@@ -832,6 +832,32 @@ function checkTheatricalExemption(titleA, titleB, typeDescA, typeDescB) {
 }
 
 /**
+ * 检查标题与年份一致性以豁免类型标签差异
+ * 例如同一部剧在不同源被标注为"电视剧"与"动漫"，但年份括号内数字一致时可合并。
+ * 年份不同、N/A 或无年份不触发豁免。
+ * @param {string} titleA
+ * @param {string} titleB
+ * @returns {boolean}
+ */
+function isExactTitleYearMatch(titleA, titleB) {
+    const mA = titleA.match(RegexStore.Clean.YEAR_DIGITS);
+    const mB = titleB.match(RegexStore.Clean.YEAR_DIGITS);
+    if (!mA || !mB) return false;          // 至少一方无有效四位数年份
+    if (mA[1] !== mB[1]) return false;     // 年份不同
+
+    const strip = (t) => t
+        .replace(RegexStore.Clean.YEAR_DIGITS, '')          // 去掉年份
+        .replace(RegexStore.Clean.SOURCE_TAG, '')           // 去掉【电视剧】【动漫】等类型标签
+        .replace(RegexStore.Clean.FROM_SUFFIX, '')          // 去掉 from xxx
+        .replace(RegexStore.Clean.PARENTHESES_CONTENT, '')  // 去掉其余括号内容
+        .replace(RegexStore.Clean.NON_ALPHANUM_CN, '')      // 去掉剩余非字母数字汉字符
+        .trim()
+        .toLowerCase();
+
+    return strip(titleA) === strip(titleB);
+}
+
+/**
  * 校验媒体类型是否冲突 (真人 vs 动漫, TV vs Movie, 3D vs 2D)
  * 包含维数通配符逻辑：无明确 3D/2D 标识的条目视为通配符，允许进行任何关联
  * @param {string}  titleA
@@ -845,6 +871,9 @@ function checkTheatricalExemption(titleA, titleB, typeDescA, typeDescB) {
  * @returns {boolean} true = 类型冲突，false = 兼容
  */
 function checkMediaTypeMismatch(titleA, titleB, typeDescA, typeDescB, countA, countB, sourceA = '', sourceB = '') {
+    // 标题与年份完全相同时豁免类型标签（如电视剧 vs 动漫）
+    if (isExactTitleYearMatch(titleA, titleB)) return false;
+
     const catA = getContentCategory(titleA, typeDescA, sourceA);
     const catB = getContentCategory(titleB, typeDescB, sourceB);
     // 动漫与真人剧绝对不兼容
@@ -1142,7 +1171,7 @@ function identifyRedundantTitle(links, seriesTitle, sourceName) {
         try {
             let regex = _redundantTitleRegexCache.get(sourceName);
             if (!regex) {
-                const escapedSource = sourceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const escapedSource = escapeRegExp(sourceName);
                 regex = new RegExp(`(\\[|【|\\s)?${escapedSource}(\\]|】|\\s)?`, 'gi');
                 _redundantTitleRegexCache.set(sourceName, regex);
             }
@@ -1421,13 +1450,11 @@ function findBestAlignmentOffset(
             }
             // 匹配数量规模奖励（对齐对越多越可信）
             finalScore += Math.min(matchCount * 0.15, 1.5);
-            // 零偏移奖励：偏移为 0 说明主副源集数完全对齐，是最理想情况
+            // 零偏移奖励：主副源出现任意零差对集即表明集号一致，给予强信号
             const zeroDiffCount = numericDiffs.get('0.0000') || 0;
-            if (zeroDiffCount > 3) {
+            if (zeroDiffCount > 0) {
                 finalScore += MergeWeights.EP_ALIGN.ZERO_DIFF_BONUS_BASE;
                 finalScore += zeroDiffCount * MergeWeights.EP_ALIGN.ZERO_DIFF_BONUS_PER_HIT;
-            } else if (zeroDiffCount > 0) {
-                finalScore += zeroDiffCount * 2.0;
             }
             if (finalScore > maxScore) { maxScore = finalScore; bestOffset = offset; }
         }
@@ -1624,7 +1651,7 @@ function stitchUnmatchedEpisodes(derivedAnime, orphans, sourceName) {
     processList(tailList,    derivedAnime.links, '尾部');
     processList(specialList, derivedAnime.links, '特殊');
 
-    if (addedLogs.length > 0) log("info", `[Merge] [${sourceName}] 智能补全:\n${addedLogs.join('\n')}`);
+    if (addedLogs.length > 0) log("info", `[merge] [${sourceName}] 智能补全:\n${addedLogs.join('\n')}`);
 }
 
 
@@ -1733,10 +1760,10 @@ function probeContentMatch(primaryAnime, candidateAnime) {
     }
     if (matchHits >= Math.ceil(sampleSize * 0.6)) {
         result.isStrongMatch = true;
-        log("info", `[Merge-Check] [Probe] 采样对比 (Match): ${logSamples.join(', ')}`);
+        log("info", `[Merge-Check] [probe] 采样对比 (Match): ${logSamples.join(', ')}`);
     } else if (mismatchHits >= Math.ceil(sampleSize * 0.8)) {
         result.isStrongMismatch = true;
-        log("info", `[Merge-Check] [Probe] 采样对比 (Mismatch): ${logSamples.join(', ')}`);
+        log("info", `[Merge-Check] [probe] 采样对比 (Mismatch): ${logSamples.join(', ')}`);
     }
     return result;
 }
@@ -2113,7 +2140,6 @@ function detectCollectionCandidates(curAnimes) {
     const collectionIds = new Set();
     if (!curAnimes || curAnimes.length === 0) return collectionIds;
 
-    const cnNums = {'一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10'};
     const groups = new Map();
 
     curAnimes.forEach(anime => {
@@ -2131,7 +2157,7 @@ function detectCollectionCandidates(curAnimes) {
                 protectedTitle = protectedTitle.replace(startBracketMatch[0], content + ' ');
             }
         }
-        protectedTitle = protectedTitle.replace(/第([一二三四五六七八九十])季/g, (m, num) => `第${cnNums[num]}季`);
+        protectedTitle = protectedTitle.replace(/第([一二三四五六七八九十]+)季/g, (m, num) => `第${convertChineseNumber(num)}季`);
 
         // 去除所有元数据，只保留核心标题用作分组 key
         let clean = protectedTitle
@@ -2149,14 +2175,19 @@ function detectCollectionCandidates(curAnimes) {
         if (!clean) return;
 
         const category = getContentCategory(anime.animeTitle, realAnime.typeDescription, realAnime.source);
-        const groupKey = `${clean}|${category}`;
+        // 3D/2D 维度分离：防止【3D动漫】与【动漫】在同一个合集探测组内被误合并
+        // 如 tencent 择天记(2020)【动漫】(2D) 与 iqiyi 择天记(2026)【3D动漫】(3D) 不应互成合集
+        const is3D = (realAnime.typeDescription || '').includes('3D') || /3[dD]/.test(anime.animeTitle || '');
+        const is2D = (realAnime.typeDescription || '').includes('2D') || /2[dD]/.test(anime.animeTitle || '');
+        const dim = is3D ? '3D' : (is2D ? '2D' : '-');
+        const groupKey = `${clean}|${category}|${dim}`;
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(anime);
     });
 
     for (const [groupKey, list] of groups.entries()) {
         if (list.length < 2) continue;
-        const [baseTitle, category] = groupKey.split('|');
+        const [baseTitle, category, dim] = groupKey.split('|');
         const itemDetails = list.map(a => `   - [${a.source}] ${a.animeTitle}`).join('\n');
         log("info", `[Merge-Check] [合集探测] 正在检查分组: "${baseTitle}" [${category}] (包含 ${list.length} 个条目):\n${itemDetails}`);
 
@@ -2179,7 +2210,7 @@ function detectCollectionCandidates(curAnimes) {
                 const isAmbiguous = markers.has('AMBIGUOUS') || RegexStore.Season.SUFFIX_AMBIGUOUS.test(realAnime.animeTitle);
                 if (isSequel || isAmbiguous) {
                     seasonNum = 2;
-                    log("info", `[Merge-Check] [Detail] [${realAnime.source}] "${realAnime.animeTitle}" -> 判定为 S2 (Reason: Sequel/Ambiguous Suffix)`);
+                    log("info", `[Merge-Check] [detail] [${realAnime.source}] "${realAnime.animeTitle}" -> 判定为 S2 (Reason: Sequel/Ambiguous Suffix)`);
                 }
             }
             if (seasonNum > groupGlobalMaxSeason) groupGlobalMaxSeason = seasonNum;
@@ -2538,7 +2569,7 @@ async function processMergeTask(params) {
                     const sLen = route.sec.end - route.sec.start + 1;
                     const pLen = route.prim.end - route.prim.start + 1;
                     if (sLen !== pLen) {
-                        log("warn", `[Merge] [映射表] 路由区间跨度不对等，跳过此段: E${route.sec.start}~E${route.sec.end} > E${route.prim.start}~E${route.prim.end}`);
+                        log("warn", `[merge] [映射表] 路由区间跨度不对等，跳过此段: E${route.sec.start}~E${route.sec.end} > E${route.prim.start}~E${route.prim.end}`);
                         continue;
                     }
                     for (let i = 0; i < sLen; i++) {
@@ -3017,7 +3048,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     }
 
     if (!groups || groups.length === 0) return;
-    log("info", `[Merge] 启动源合并策略，组合计算后的配置: ${JSON.stringify(groups)}`);
+    log("info", `[merge] 启动源合并策略，组合计算后的配置: ${JSON.stringify(groups)}`);
 
     // 预处理集数过滤正则
     let epFilter = globals.episodeTitleFilter;
@@ -3058,7 +3089,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
          */
         const sortCandidates = (list, phaseName) => {
             if (!list || list.length < 2) return list;
-            log("info", `[Merge-Check] [Sort] ${phaseName} 排序前首个元素: ${list[0].animeTitle}`);
+            log("info", `[Merge-Check] [sort] ${phaseName} 排序前首个元素: ${list[0].animeTitle}`);
             list.sort((a, b) => {
                 // 优先级 1: 源优先级 ASC（?? 99 防止未在 map 中的来源报错）
                 const pA = sourcePriorityMap.get(a.source) ?? 99;
@@ -3088,7 +3119,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                 const pLevel    = sourcePriorityMap.get(a.source) ?? '?';
                 return `[P${pLevel}] [${typeLabel}] [${a.source}] ${a.animeTitle}`;
             });
-            log("info", `[Merge-Check] [Sort] ${phaseName} 执行顺序:\n   ${debugOrder.join('\n   ')}`);
+            log("info", `[Merge-Check] [sort] ${phaseName} 执行顺序:\n   ${debugOrder.join('\n   ')}`);
             return list;
         };
 
@@ -3107,7 +3138,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
             }
         }
         if (cnCandidates.length > 0 && hasCnInSecondaries) {
-            log("info", `[Merge] [Phase 1] 启动 CN 隔离策略: 包含 ${cnCandidates.length} 个 CN 资源。`);
+            log("info", `[merge] [Phase 1] 启动 CN 隔离策略: 包含 ${cnCandidates.length} 个 CN 资源。`);
             sortCandidates(cnCandidates, 'Phase 1');
             for (const pAnime of cnCandidates) {
                 if (groupConsumedIds.has(pAnime.animeId)) continue;
@@ -3117,7 +3148,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                 const resultAnime = await processMergeTask({
                     pAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
-                    currentPrimarySource: pAnime.source, logPrefix: `[Merge][Phase 1: CN-Strict]`,
+                    currentPrimarySource: pAnime.source, logPrefix: `[merge][Phase 1: CN-Strict]`,
                     limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress,
                     baseSecondaries: group.baseSecondaries
                 });
@@ -3138,7 +3169,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
             items.forEach(item => secondaryCnCandidates.push(item));
         }
         if (secondaryCnCandidates.length >= 2) {
-            log("info", `[Merge] [Phase 1.5] 启动副源 CN 自组织: 检测到 ${secondaryCnCandidates.length} 个剩余 CN 资源。`);
+            log("info", `[merge] [Phase 1.5] 启动副源 CN 自组织: 检测到 ${secondaryCnCandidates.length} 个剩余 CN 资源。`);
             sortCandidates(secondaryCnCandidates, 'Phase 1.5');
             for (const tAnime of secondaryCnCandidates) {
                 if (groupConsumedIds.has(tAnime.animeId)) continue;
@@ -3148,7 +3179,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                 const resultAnime = await processMergeTask({
                     pAnime: tAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
-                    currentPrimarySource: tAnime.source, logPrefix: `[Merge][Phase 1.5: CN-Secondary]`,
+                    currentPrimarySource: tAnime.source, logPrefix: `[merge][Phase 1.5: CN-Secondary]`,
                     limitSecondaryLang: 'CN', collectionAnimeIds, collectionProgress,
                     baseSecondaries: group.baseSecondaries
                 });
@@ -3169,7 +3200,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
         });
         const uniqueRemainingSources = new Set(remainingCandidates.map(a => a.source));
         if (remainingCandidates.length > 0 && uniqueRemainingSources.size >= 2) {
-            log("info", `[Merge] [Phase 2] 启动标准回退匹配: 剩余 ${remainingCandidates.length} 个资源。`);
+            log("info", `[merge] [Phase 2] 启动标准回退匹配: 剩余 ${remainingCandidates.length} 个资源。`);
             sortCandidates(remainingCandidates, 'Phase 2');
             for (const pAnime of remainingCandidates) {
                 if (groupConsumedIds.has(pAnime.animeId)) continue;
@@ -3199,7 +3230,7 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
                 const resultAnime = await processMergeTask({
                     pAnime, availableSecondaries, curAnimes, groupConsumedIds, globalConsumedIds,
                     generatedSignatures, epFilter, groupFingerprint,
-                    currentPrimarySource: pAnime.source, logPrefix: `[Merge][Phase 2: Standard]`,
+                    currentPrimarySource: pAnime.source, logPrefix: `[merge][Phase 2: Standard]`,
                     collectionAnimeIds, allowReuseIds, collectionProgress,
                     baseSecondaries: group.baseSecondaries
                 });
@@ -3235,9 +3266,9 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     }
 
     if (newMergedAnimes.length > 0) {
-        log("info", `[Merge] 合并执行完毕，新增了 ${newMergedAnimes.length} 个合并项，最终列表数量: ${curAnimes.length}`);
+        log("info", `[merge] 合并执行完毕，新增了 ${newMergedAnimes.length} 个合并项，最终列表数量: ${curAnimes.length}`);
     } else {
-        log("info", `[Merge] 扫描完毕，未产生任何合并，列表保持不变 (数量: ${curAnimes.length})`);
+        log("info", `[merge] 扫描完毕，未产生任何合并，列表保持不变 (数量: ${curAnimes.length})`);
     }
 }
 
@@ -3333,7 +3364,7 @@ export function mergeDanmakuList(listA, listB) {
 export function alignSourceTimelines(results, sourceNames, realIds, minMatchRatio = 0.8, offsetThreshold = 1) {
     const dandanIndex = sourceNames.indexOf('dandan');
     if (dandanIndex === -1 || !results[dandanIndex]?.length) {
-        log("info", "[Merge][AlignTimeline] 无 dandan 源或无数据，跳过时间轴对齐");
+        log("info", "[merge][aligntimeline] 无 dandan 源或无数据，跳过时间轴对齐");
         return results;
     }
 
@@ -3381,16 +3412,16 @@ export function alignSourceTimelines(results, sourceNames, realIds, minMatchRati
 
         // 匹配率或集中度过低，跳过此次对齐
         if ((matchCount / minCount) < minMatchRatio || effectiveRatio < 0.05 || consensusRatio < 0.15) {
-            log("info", `[Merge][AlignTimeline] ${sourceName}:${realIds[idx]} 匹配率或集中度过低 (有效:${(effectiveRatio * 100).toFixed(1)}%, 集中度:${(consensusRatio * 100).toFixed(1)}%)，跳过对齐`);
+            log("info", `[merge][aligntimeline] ${sourceName}:${realIds[idx]} 匹配率或集中度过低 (有效:${(effectiveRatio * 100).toFixed(1)}%, 集中度:${(consensusRatio * 100).toFixed(1)}%)，跳过对齐`);
             return;
         }
         // 偏移量低于触发阈值，无需对齐
         if (Math.abs(bestOffset) < offsetThreshold) {
-            log("info", `[Merge][AlignTimeline] ${sourceName}:${realIds[idx]} 最佳偏移 ${bestOffset}s 低于阈值，无需对齐`);
+            log("info", `[merge][aligntimeline] ${sourceName}:${realIds[idx]} 最佳偏移 ${bestOffset}s 低于阈值，无需对齐`);
             return;
         }
 
-        log("info", `[Merge][AlignTimeline] ${sourceName}:${realIds[idx]} 应用偏移 ${bestOffset}s (获 ${maxCount} 票)`);
+        log("info", `[merge][aligntimeline] ${sourceName}:${realIds[idx]} 应用偏移 ${bestOffset}s (获 ${maxCount} 票)`);
 
         // 将偏移量应用到该源所有弹幕（支持三种时间戳格式的原地修改）
         parsedCache.forEach(({ danmu, time }) => {

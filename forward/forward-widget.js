@@ -4,20 +4,28 @@ import { log } from '../danmu_api/utils/log-util.js';
 import { simplized } from '../danmu_api/utils/zh-util.js';
 
 const wv = typeof widgetVersion !== 'undefined' ? widgetVersion : Globals.VERSION;
-
 WidgetMetadata = {
-  id: "forward.auto.danmu2",
-  title: "自动链接弹幕v2",
+  id: globalThis.__FORWARD_WIDGET_DEBUG__ === true ? "forward.auto.danmu2.debug" : "forward.auto.danmu2",
+  title: globalThis.__FORWARD_WIDGET_DEBUG__ === true ? "自动链接弹幕v2 [DEBUG]" : "自动链接弹幕v2",
   version: wv,
   requiredVersion: "0.0.2",
   description: "自动获取播放链接并从服务器获取弹幕【五折码：CHEAP.5;七折码：CHEAP】",
   author: "huangxd",
   site: "https://github.com/huangxd-/ForwardWidgets",
   globalParams: [
+    ...(globalThis.__FORWARD_WIDGET_DEBUG__ === true ? [{
+      name: "debugEndpoint",
+      title: "调试回传地址，例如 http://192.168.1.10:9321/87654321",
+      type: "input",
+      placeholders: [{
+        title: "局域网 danmu_api 地址",
+        value: "http://192.168.1.10:9321/87654321",
+      }],
+    }] : []),
     // 源配置
     {
       name: "sourceOrder",
-      title: "源排序配置，默认'douban,360,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "源排序配置，默认'douban,360,renren,hanjutv'，可选['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
@@ -163,7 +171,7 @@ WidgetMetadata = {
     // 匹配配置
     {
       name: "platformOrder",
-      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi, 'xigua', 'maiduidui', 'aiyifan', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
+      title: "平台优选配置，可选['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi, 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'renren', 'hanjutv', 'bahamut', 'dandan', 'custom']",
       type: "input",
       placeholders: [
         {
@@ -427,6 +435,22 @@ WidgetMetadata = {
         },
       ],
     },
+    {
+      name: "hongguoMergeAllEpisodes",
+      title: "红果短剧合并全集弹幕，默认关闭",
+      type: "enumeration",
+      value: "false",
+      enumOptions: [
+        {
+          title: "关闭",
+          value: "false",
+        },
+        {
+          title: "开启",
+          value: "true",
+        },
+      ],
+    },
 
     // 系统配置
     {
@@ -511,11 +535,305 @@ if (typeof window !== 'undefined') {
 
 // 初始化全局配置
 let globals;
+let forwardCachesLoaded = false;
+const FORWARD_CACHE_SCHEMA_VERSION = 2;
+const FORWARD_CACHE_SCHEMA_KEY = 'forward.cache.schema';
+const FORWARD_SEGMENT_CACHE_PREFIX = `forward.segment.v${FORWARD_CACHE_SCHEMA_VERSION}`;
+const FORWARD_SEGMENT_CACHE_TTL_MS = 300 * 60 * 1000;
+const FORWARD_SEGMENT_EMPTY_RETRY_MIN_AGE_MS = 60 * 1000;
+const FORWARD_PERSISTED_LOG_LIMIT = 200;
+const forwardSegmentMemoryCache = new Map();
+const FORWARD_TRACE_MAX_LOGS = 80;
+const FORWARD_TRACE_MAX_ARRAY = 5;
+const FORWARD_TRACE_MAX_STRING = 500;
+const FORWARD_TRACE_BATCH_SIZE = 20;
+let forwardDebugContext = null;
+
+function redactForwardTraceValue(value, key = '', depth = 0, seen = []) {
+  if (/(cookie|token|api.?key|authorization|password|secret|debugEndpoint)/i.test(key)) {
+    return value ? '[REDACTED]' : value;
+  }
+  if (typeof value === 'string') {
+    return value.length > FORWARD_TRACE_MAX_STRING
+      ? `${value.slice(0, FORWARD_TRACE_MAX_STRING)}...[truncated]`
+      : value;
+  }
+  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (depth >= 4) return '[max-depth]';
+  if (seen.includes(value)) return '[circular]';
+
+  const nextSeen = [...seen, value];
+  if (Array.isArray(value)) {
+    const items = value.slice(0, FORWARD_TRACE_MAX_ARRAY)
+      .map((item) => redactForwardTraceValue(item, key, depth + 1, nextSeen));
+    if (value.length > FORWARD_TRACE_MAX_ARRAY) {
+      items.push(`[${value.length - FORWARD_TRACE_MAX_ARRAY} more items]`);
+    }
+    return items;
+  }
+
+  const output = {};
+  Object.keys(value).slice(0, 50).forEach((childKey) => {
+    output[childKey] = redactForwardTraceValue(value[childKey], childKey, depth + 1, nextSeen);
+  });
+  return output;
+}
+
+function summarizeForwardResult(handlerName, result) {
+  if (handlerName === 'searchDanmu') {
+    const animes = Array.isArray(result?.animes) ? result.animes : [];
+    return { animeCount: animes.length, animes: redactForwardTraceValue(animes.slice(0, 5)) };
+  }
+  if (handlerName === 'getDetailById') {
+    const episodes = Array.isArray(result) ? result : [];
+    return { episodeCount: episodes.length, episodes: redactForwardTraceValue(episodes.slice(0, 5)) };
+  }
+  if (handlerName === 'getCommentsById') {
+    const segments = Array.isArray(result) ? result : [];
+    return {
+      segmentCount: segments.length,
+      firstSegment: redactForwardTraceValue(segments[0] || null),
+      lastSegment: redactForwardTraceValue(segments[segments.length - 1] || null),
+    };
+  }
+  if (handlerName === 'getDanmuWithSegmentTime') {
+    const comments = Array.isArray(result?.comments) ? result.comments : [];
+    return {
+      success: result?.success,
+      errorCode: result?.errorCode,
+      errorMessage: result?.errorMessage,
+      count: Number.isFinite(Number(result?.count)) ? Number(result.count) : comments.length,
+      comments: redactForwardTraceValue(comments.slice(0, 3)),
+    };
+  }
+  return redactForwardTraceValue(result);
+}
+
+function buildForwardTraceUrl(debugEndpoint) {
+  const endpoint = String(debugEndpoint || '').trim().replace(/\/+$/, '');
+  if (!endpoint) return '';
+  return endpoint.endsWith('/api/debug/forward-trace')
+    ? endpoint
+    : `${endpoint}/api/debug/forward-trace`;
+}
+
+function redactForwardRequestUrl(url) {
+  return String(url || '').replace(
+    /([?&](?:token|access_token|api_?key|key|signature|x-signature|authorization)=)[^&]*/gi,
+    '$1[REDACTED]'
+  );
+}
+
+function enqueueForwardRuntimeLog(level, message, details = {}) {
+  if (!forwardDebugContext) return;
+  forwardDebugContext.runtimeLogs.push({
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...redactForwardTraceValue(details),
+  });
+  flushForwardRuntimeLogs().catch(() => {});
+}
+
+function installForwardConsoleTrace() {
+  ['log', 'info', 'warn', 'error'].forEach((method) => {
+    const original = console[method];
+    if (typeof original !== 'function' || original.__forwardTraceWrapped) return;
+    const wrapped = (...args) => {
+      const message = args.map((arg) => {
+        if (typeof arg === 'string') return arg;
+        try { return JSON.stringify(redactForwardTraceValue(arg)); } catch (_) { return String(arg); }
+      }).join(' ');
+      enqueueForwardRuntimeLog(method === 'log' ? 'info' : method, message, { kind: 'console' });
+      return original.apply(console, args);
+    };
+    wrapped.__forwardTraceWrapped = true;
+    console[method] = wrapped;
+  });
+}
+
+function collectPendingForwardLogs(context) {
+  const logs = [];
+  const centralLogKeys = new Set();
+  if (globals && Array.isArray(globals.logBuffer)) {
+    globals.logBuffer.forEach((entry) => {
+      if (context.seenLogs.includes(entry)) return;
+      const timestamp = Date.parse(entry?.timestamp || '');
+      if (!Number.isFinite(timestamp) || timestamp < context.startedAt - 1000) return;
+      context.seenLogs.push(entry);
+      const redacted = redactForwardTraceValue(entry);
+      centralLogKeys.add(`${redacted.level}|${redacted.message}`);
+      logs.push(redacted);
+    });
+  }
+  context.runtimeLogs.splice(0).forEach((entry) => {
+    const redacted = redactForwardTraceValue(entry);
+    if (redacted.kind === 'console' && centralLogKeys.has(`${redacted.level}|${redacted.message}`)) return;
+    logs.push(redacted);
+  });
+  return logs.slice(-FORWARD_TRACE_MAX_LOGS);
+}
+
+async function flushForwardRuntimeLogs() {
+  const context = forwardDebugContext;
+  if (!context || !context.debugEndpoint) return;
+  if (context.flushing) {
+    context.flushAgain = true;
+    return context.flushPromise;
+  }
+  context.flushing = true;
+  context.flushPromise = (async () => {
+    try {
+      do {
+        context.flushAgain = false;
+        const logs = collectPendingForwardLogs(context);
+        for (let index = 0; index < logs.length; index += FORWARD_TRACE_BATCH_SIZE) {
+          const batch = logs.slice(index, index + FORWARD_TRACE_BATCH_SIZE);
+          await sendForwardTrace(context.debugEndpoint, {
+            eventType: 'logBatch',
+            widgetId: WidgetMetadata.id,
+            widgetVersion: WidgetMetadata.version,
+            handler: context.handler,
+            status: batch.some((entry) => entry.level === 'error') ? 'error' : 'info',
+            timestamp: new Date().toISOString(),
+            logs: batch,
+          });
+        }
+      } while (context.flushAgain);
+    } finally {
+      context.flushing = false;
+    }
+  })();
+  return context.flushPromise;
+}
+
+async function startForwardRealtimeTrace(handlerName, params, startedAt) {
+  forwardDebugContext = {
+    handler: handlerName,
+    debugEndpoint: params?.debugEndpoint,
+    startedAt,
+    seenLogs: [],
+    runtimeLogs: [],
+    flushing: false,
+    flushAgain: false,
+    flushPromise: null,
+  };
+  await sendForwardTrace(params?.debugEndpoint, {
+    eventType: 'handlerStart',
+    widgetId: WidgetMetadata.id,
+    widgetVersion: WidgetMetadata.version,
+    handler: handlerName,
+    status: 'running',
+    timestamp: new Date(startedAt).toISOString(),
+    params: redactForwardTraceValue(params || {}),
+  });
+}
+
+async function stopForwardRealtimeTrace() {
+  const context = forwardDebugContext;
+  if (!context) return;
+  await flushForwardRuntimeLogs();
+  if (forwardDebugContext === context) forwardDebugContext = null;
+}
+
+async function forwardDebugHttpRequest(method, url, body, options = {}) {
+  const startedAt = Date.now();
+  const safeUrl = redactForwardRequestUrl(url);
+  enqueueForwardRuntimeLog('info', `[HTTP] ${method} ${safeUrl}`, { kind: 'httpStart', method, url: safeUrl });
+  try {
+    const response = method === 'GET'
+      ? await Widget.http.get(url, options)
+      : await Widget.http.post(url, body, options);
+    enqueueForwardRuntimeLog(
+      'info',
+      `[HTTP] ${method} ${response?.status || 200} ${Date.now() - startedAt}ms ${safeUrl}`,
+      { kind: 'httpComplete', method, url: safeUrl, status: response?.status || 200, durationMs: Date.now() - startedAt }
+    );
+    return response;
+  } catch (error) {
+    enqueueForwardRuntimeLog(
+      'error',
+      `[HTTP] ${method} ERROR ${Date.now() - startedAt}ms ${safeUrl}: ${error?.message || error}`,
+      { kind: 'httpError', method, url: safeUrl, durationMs: Date.now() - startedAt, error: error?.message || String(error) }
+    );
+    throw error;
+  }
+}
+
+async function forwardDebugHttpGet(url, options = {}) {
+  return forwardDebugHttpRequest('GET', url, undefined, options);
+}
+
+async function forwardDebugHttpPost(url, body, options = {}) {
+  return forwardDebugHttpRequest('POST', url, body, options);
+}
+
+if (globalThis.__FORWARD_WIDGET_DEBUG__ === true) {
+  installForwardConsoleTrace();
+  globalThis.__forwardDebugHttpGet = forwardDebugHttpGet;
+  globalThis.__forwardDebugHttpPost = forwardDebugHttpPost;
+}
+
+async function sendForwardTrace(debugEndpoint, payload) {
+  const traceUrl = buildForwardTraceUrl(debugEndpoint);
+  if (!traceUrl) return;
+  try {
+    await Widget.http.post(traceUrl, JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 3000,
+    });
+  } catch (error) {
+    console.warn('[ForwardDebug] trace upload failed:', error?.message || error);
+  }
+}
+
+async function runWithForwardTrace(handlerName, params, operation) {
+  if (globalThis.__FORWARD_WIDGET_DEBUG__ !== true) return operation();
+
+  const startedAt = Date.now();
+  await startForwardRealtimeTrace(handlerName, params, startedAt);
+  try {
+    const result = await operation();
+    await stopForwardRealtimeTrace();
+    await sendForwardTrace(params?.debugEndpoint, {
+      eventType: 'handlerComplete',
+      widgetId: WidgetMetadata.id,
+      widgetVersion: WidgetMetadata.version,
+      handler: handlerName,
+      status: 'success',
+      timestamp: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      params: redactForwardTraceValue(params || {}),
+      result: summarizeForwardResult(handlerName, result),
+    });
+    return result;
+  } catch (error) {
+    await stopForwardRealtimeTrace();
+    await sendForwardTrace(params?.debugEndpoint, {
+      eventType: 'handlerComplete',
+      widgetId: WidgetMetadata.id,
+      widgetVersion: WidgetMetadata.version,
+      handler: handlerName,
+      status: 'error',
+      timestamp: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      params: redactForwardTraceValue(params || {}),
+      error: redactForwardTraceValue({
+        name: error?.name,
+        message: error?.message || String(error),
+        stack: error?.stack,
+      }),
+    });
+    throw error;
+  }
+}
+
 async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
                      platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch) {
+                     danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes) {
   // 将传入的参数设置到环境变量中，以便Globals可以访问它们
   const env = {};
+  if (globalThis.__FORWARD_WIDGET_DEBUG__ === true) env.LOG_LEVEL = 'info';
   
   if (sourceOrder !== undefined) env.SOURCE_ORDER = sourceOrder;
   if (otherServer !== undefined) env.OTHER_SERVER = otherServer;
@@ -541,12 +859,11 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
   if (convertColor !== undefined) env.CONVERT_COLOR = convertColor;
   if (colorPool !== undefined) env.COLOR_POOL = colorPool;
   if (likeSwitch !== undefined) env.LIKE_SWITCH = likeSwitch;
+  if (hongguoMergeAllEpisodes !== undefined) env.HONGGUO_MERGE_ALL_EPISODES = hongguoMergeAllEpisodes;
   if (proxyUrl !== undefined) env.PROXY_URL = proxyUrl;
   if (tmdbApiKey !== undefined) env.TMDB_API_KEY = tmdbApiKey;
   
-  if (!globals) {
-    globals = Globals.init(env);
-  }
+  globals = Globals.init(env);
 
   await getCaches();
 
@@ -555,47 +872,93 @@ async function initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServ
 
 // 获取变量数据
 async function getCaches() {
-    if (globals.animes.length === 0) {
-        log("info", '[Forward] getCaches start.');
-        const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
-          Widget.storage.get('animes'),
-          Widget.storage.get('episodeIds'),
-          Widget.storage.get('episodeNum'),
-          Widget.storage.get('logBuffer'),
-          Widget.storage.get('lastSelectMap'),
-        ]);
-
-        globals.animes = kv_animes ? (typeof kv_animes === 'string' ? JSON.parse(kv_animes) : kv_animes) : globals.animes;
-        globals.episodeIds = kv_episodeIds ? (typeof kv_episodeIds === 'string' ? JSON.parse(kv_episodeIds) : kv_episodeIds) : globals.episodeIds;
-        globals.episodeNum = kv_episodeNum ? (typeof kv_episodeNum === 'string' ? JSON.parse(kv_episodeNum) : kv_episodeNum) : globals.episodeNum;
-        globals.logBuffer = kv_logBuffer ? (typeof kv_logBuffer === 'string' ? JSON.parse(kv_logBuffer) : kv_logBuffer) : globals.logBuffer;
-        
-        // 特殊处理 Map
-        if (kv_lastSelectMap) {
-          const parsed = typeof kv_lastSelectMap === 'string' ? JSON.parse(kv_lastSelectMap) : kv_lastSelectMap;
-          globals.lastSelectMap = new Map(
-            Array.isArray(parsed) ? parsed : Object.entries(parsed)
-          );
-        }
+    if (forwardCachesLoaded) {
+      return;
     }
+    forwardCachesLoaded = true;
+
+    log("info", '[Forward] getCaches start.');
+    const storedSchemaVersion = await Widget.storage.get(FORWARD_CACHE_SCHEMA_KEY);
+    if (Number(storedSchemaVersion) !== FORWARD_CACHE_SCHEMA_VERSION) {
+      log("info", `[Forward] Cache schema changed to v${FORWARD_CACHE_SCHEMA_VERSION}; ignoring legacy cache.`);
+      forwardSegmentMemoryCache.clear();
+      if (typeof Widget.storage.clear === 'function') {
+        await Widget.storage.clear();
+      } else {
+        await removeCaches();
+      }
+      await Widget.storage.set(FORWARD_CACHE_SCHEMA_KEY, FORWARD_CACHE_SCHEMA_VERSION);
+      return;
+    }
+
+    const [kv_animes, kv_episodeIds, kv_episodeNum, kv_logBuffer, kv_lastSelectMap] = await Promise.all([
+      Widget.storage.get('animes'),
+      Widget.storage.get('episodeIds'),
+      Widget.storage.get('episodeNum'),
+      Widget.storage.get('logBuffer'),
+      Widget.storage.get('lastSelectMap'),
+    ]);
+
+    globals.animes = parseForwardCacheValue(kv_animes, globals.animes, Array.isArray);
+    globals.episodeIds = parseForwardCacheValue(kv_episodeIds, globals.episodeIds, Array.isArray);
+    globals.episodeNum = parseForwardCacheValue(
+      kv_episodeNum,
+      globals.episodeNum,
+      (value) => Number.isFinite(Number(value))
+    );
+    globals.logBuffer = parseForwardCacheValue(kv_logBuffer, globals.logBuffer, Array.isArray);
+
+    const parsedLastSelectMap = parseForwardCacheValue(
+      kv_lastSelectMap,
+      null,
+      (value) => Array.isArray(value) || (value && typeof value === 'object')
+    );
+    if (parsedLastSelectMap) {
+      globals.lastSelectMap = new Map(
+        Array.isArray(parsedLastSelectMap) ? parsedLastSelectMap : Object.entries(parsedLastSelectMap)
+      );
+    }
+}
+
+function parseForwardCacheValue(value, fallback, validator) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return validator(parsed) ? parsed : fallback;
+  } catch (error) {
+    log("warn", `[Forward] Ignoring invalid persisted cache: ${error.message}`);
+    return fallback;
+  }
 }
 
 // 存储更新后的变量
 async function updateCaches() {
     log("info", '[Forward] updateCaches start.');
-    await Promise.all([
-      Widget.storage.set('animes', globals.animes),
-      Widget.storage.set('episodeIds', globals.episodeIds),
-      Widget.storage.set('episodeNum', globals.episodeNum),
-      Widget.storage.set('logBuffer', globals.logBuffer),
-      Widget.storage.set('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)))
-    ]);
+    const persistedLogs = Array.isArray(globals.logBuffer)
+      ? globals.logBuffer.slice(-FORWARD_PERSISTED_LOG_LIMIT)
+      : [];
+    try {
+      await Promise.all([
+        Widget.storage.set(FORWARD_CACHE_SCHEMA_KEY, FORWARD_CACHE_SCHEMA_VERSION),
+        Widget.storage.set('animes', globals.animes),
+        Widget.storage.set('episodeIds', globals.episodeIds),
+        Widget.storage.set('episodeNum', globals.episodeNum),
+        Widget.storage.set('logBuffer', persistedLogs),
+        Widget.storage.set('lastSelectMap', JSON.stringify(Object.fromEntries(globals.lastSelectMap)))
+      ]);
+    } catch (error) {
+      log("warn", `[Forward] Failed to persist optional global cache: ${error.message}`);
+    }
 }
 
 // 删除存储的变量
 async function removeCaches() {
     log("info", '[Forward] removeCaches start.');
     await Promise.all([
+      Widget.storage.remove(FORWARD_CACHE_SCHEMA_KEY),
       Widget.storage.remove('animes'),
       Widget.storage.remove('episodeIds'),
       Widget.storage.remove('episodeNum'),
@@ -606,14 +969,14 @@ async function removeCaches() {
 
 const PREFIX_URL = "http://localhost:9321"
 
-async function searchDanmu(params) {
+async function searchDanmuCore(params) {
   const { tmdbId, type, title, season, link, videoUrl, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
 
   let simplifiedTitle = title
   // 如果启用了搜索关键字繁转简，则进行转换
@@ -686,97 +1049,312 @@ async function searchDanmu(params) {
   };
 }
 
-async function getDetailById(params) {
+async function getDetailByIdCore(params) {
   const { animeId, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
 
   const response = await getBangumi(`${PREFIX_URL}/api/v2/bangumi/${animeId}`);
   const resJson = await response.json();
 
   log("info", "[Forward] bangumi", resJson);
 
-  await updateCaches();
-
   return resJson.bangumi.episodes;
 }
 
-async function getCommentsById(params) {
-  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
-         platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
-
-  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
-                    platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
-
-  if (commentId) {
-    const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
-    const commentIdKey = `${storeKey}.${commentId}`;
-    const segmentList = Widget.storage.get(storeKey);
-    const lastCommentId = Widget.storage.get(commentIdKey);
-    
-    log("info", "[Forward] storeKey:", storeKey);
-    log("info", "[Forward] commentIdKey:", commentIdKey);
-    log("info", "[Forward] commentId:", commentId);
-    log("info", "[Forward] lastCommentId:", lastCommentId);
-    log("info", "[Forward] segmentList:", segmentList);
-
-    if (lastCommentId === commentId && segmentList) {
-        return await getDanmuWithSegmentTime({ segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
-                                               platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                                               danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch })
-    } else {
-      Widget.storage.remove(storeKey);
-      Widget.storage.remove(commentIdKey);
-    }
-
-    const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
-    const resJson = await response.json();
-
-    log("info", "[Forward] segmentList:", resJson.comments.segmentList);
-
-    Widget.storage.set(storeKey, resJson.comments.segmentList);
-    Widget.storage.set(commentIdKey, commentId);
-
-    await updateCaches();
-
-    return resJson.comments.segmentList;
+function hashForwardCacheIdentity(value) {
+  let hash = 2166136261;
+  const input = String(value);
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  return null;
+  return (hash >>> 0).toString(36);
 }
 
-async function getDanmuWithSegmentTime(params) {
-  const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
+function normalizeForwardCacheKeyPart(value, fallback = 'none') {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  return String(value).trim() || fallback;
+}
+
+function getSegmentCacheKey(params) {
+  const normalizedTmdbId = normalizeForwardCacheKeyPart(params.tmdbId, '');
+  const tmdbId = ['undefined', 'null', 'none'].includes(normalizedTmdbId.toLowerCase())
+    ? ''
+    : normalizedTmdbId;
+  const mediaIdentity = tmdbId
+    ? `tmdb:${normalizeForwardCacheKeyPart(params.type)}:${tmdbId}`
+    : `media:${normalizeForwardCacheKeyPart(params.type)}:${normalizeForwardCacheKeyPart(
+        params.seriesName || params.title || params.link || params.videoUrl,
+        'unknown'
+      )}`;
+  const season = normalizeForwardCacheKeyPart(params.season);
+  const episode = normalizeForwardCacheKeyPart(params.episode);
+  return `${FORWARD_SEGMENT_CACHE_PREFIX}.${hashForwardCacheIdentity(mediaIdentity)}.${season}.${episode}`;
+}
+
+function getLegacySegmentCacheKey(params) {
+  return params.season && params.episode
+    ? `${params.tmdbId}.${params.season}.${params.episode}`
+    : `${params.tmdbId}`;
+}
+
+function isValidSegment(segment) {
+  if (!segment || typeof segment !== 'object' || typeof segment.url !== 'string' || !segment.url.trim()) {
+    return false;
+  }
+  const start = Number(segment.segment_start);
+  const end = Number(segment.segment_end);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+function parseSegmentCacheRecord(value) {
+  const record = parseForwardCacheValue(
+    value,
+    null,
+    (candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+  );
+  if (!record
+      || record.version !== FORWARD_CACHE_SCHEMA_VERSION
+      || record.commentId === null
+      || record.commentId === undefined
+      || !Number.isFinite(Number(record.cachedAt))
+      || !Array.isArray(record.segmentList)
+      || record.segmentList.length === 0
+      || !record.segmentList.every(isValidSegment)) {
+    return null;
+  }
+  return record;
+}
+
+function isSegmentCacheFresh(record) {
+  const age = Date.now() - Number(record.cachedAt);
+  return age >= 0 && age <= FORWARD_SEGMENT_CACHE_TTL_MS;
+}
+
+async function readSegmentCache(params) {
+  const key = getSegmentCacheKey(params);
+  let storedValue = null;
+  try {
+    storedValue = await Widget.storage.get(key);
+  } catch (error) {
+    log("warn", `[Forward] Failed to read segment cache: ${error.message}`);
+  }
+  storedValue ||= forwardSegmentMemoryCache.get(key);
+  const record = parseSegmentCacheRecord(storedValue);
+  if (storedValue && !record) {
+    forwardSegmentMemoryCache.delete(key);
+    try {
+      await Widget.storage.remove(key);
+    } catch (error) {
+      log("warn", `[Forward] Failed to remove invalid segment cache: ${error.message}`);
+    }
+  }
+  return { key, record, fresh: record ? isSegmentCacheFresh(record) : false };
+}
+
+async function removeSegmentCache(params, commentId = null) {
+  const key = getSegmentCacheKey(params);
+  const legacyKey = getLegacySegmentCacheKey(params);
+  forwardSegmentMemoryCache.delete(key);
+  const removals = [
+    Widget.storage.remove(key),
+    Widget.storage.remove(legacyKey),
+  ];
+  if (commentId !== null && commentId !== undefined) {
+    removals.push(Widget.storage.remove(`${legacyKey}.${commentId}`));
+  }
+  const results = await Promise.allSettled(removals);
+  if (results.some((result) => result.status === 'rejected')) {
+    log("warn", '[Forward] Some stale segment cache entries could not be removed.');
+  }
+}
+
+async function fetchAndCacheSegmentList(commentId, params) {
+  const response = await getComment(`${PREFIX_URL}/api/v2/comment/${commentId}`, "json", true);
+  const resJson = await response.json();
+  if (resJson?.success === false || (resJson?.errorCode && Number(resJson.errorCode) !== 0)) {
+    throw new Error(resJson?.errorMessage || `Failed to fetch segment list for comment ${commentId}`);
+  }
+
+  const rawSegmentList = resJson?.comments?.segmentList;
+  const segmentList = Array.isArray(rawSegmentList) ? rawSegmentList.filter(isValidSegment) : [];
+  if (segmentList.length !== (Array.isArray(rawSegmentList) ? rawSegmentList.length : 0)) {
+    log("warn", `[Forward] Ignored invalid segments for comment ${commentId}.`);
+  }
+
+  const key = getSegmentCacheKey(params);
+  if (segmentList.length === 0) {
+    forwardSegmentMemoryCache.delete(key);
+    try {
+      await Widget.storage.remove(key);
+    } catch (error) {
+      log("warn", `[Forward] Failed to remove empty segment cache: ${error.message}`);
+    }
+    return { record: null, segmentList: [] };
+  }
+
+  const record = {
+    version: FORWARD_CACHE_SCHEMA_VERSION,
+    commentId: String(commentId),
+    cachedAt: Date.now(),
+    segmentList,
+  };
+  forwardSegmentMemoryCache.set(key, record);
+  try {
+    await Widget.storage.set(key, record);
+  } catch (error) {
+    log("warn", `[Forward] Failed to persist segment cache; using memory cache: ${error.message}`);
+  }
+  return { record, segmentList };
+}
+
+function findSegmentAtTime(segmentList, segmentTime) {
+  const time = Number(segmentTime);
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+  return segmentList.find((item) => time >= Number(item.segment_start) && time < Number(item.segment_end)) || null;
+}
+
+function buildMissingSegmentResponse(segmentList, segmentTime) {
+  const starts = segmentList.map((item) => Number(item.segment_start)).filter(Number.isFinite);
+  const ends = segmentList.map((item) => Number(item.segment_end)).filter(Number.isFinite);
+  const rangeStart = starts.length ? Math.min(...starts) : null;
+  const rangeEnd = ends.length ? Math.max(...ends) : null;
+  const errorMessage = `No segment covers ${segmentTime}s; available range: ${rangeStart}-${rangeEnd}s`;
+  log("warn", `[Forward] ${errorMessage}`);
+  return { errorCode: 404, success: false, errorMessage, count: 0, comments: [] };
+}
+
+function shouldRefreshSegmentResponse(resJson, record) {
+  if (!resJson || resJson.success === false || Number(resJson.errorCode || 0) !== 0) {
+    return true;
+  }
+  if (!Array.isArray(resJson.comments)) {
+    return true;
+  }
+  const cacheAge = Date.now() - Number(record.cachedAt);
+  return resJson.comments.length === 0 && cacheAge >= FORWARD_SEGMENT_EMPTY_RETRY_MIN_AGE_MS;
+}
+
+async function getCommentsByIdCore(params) {
+  const { commentId, link, videoUrl, season, episode, tmdbId, type, title, segmentTime, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
          platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch } = params;
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
 
   await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
                     platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
-                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch);
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
 
-  const storeKey = season && episode ? `${tmdbId}.${season}.${episode}` : `${tmdbId}`;
-  const segmentList = Widget.storage.get(storeKey);
-  if (segmentList) {
-    const segment = segmentList.find((item) => {
-        const start = Number(item.segment_start);
-        const end = Number(item.segment_end);
-        const time = Number(segmentTime);
-        return time >= start && time < end;
-    });
-    log("info", "[Forward] segment:", segment);
-    const response = await getSegmentComment(segment);
-    const resJson = await response.json();
+  if (!commentId) return null;
 
-    await updateCaches();
-
-    return resJson;
+  const cached = await readSegmentCache(params);
+  if (cached.fresh && String(cached.record.commentId) === String(commentId)) {
+    log("info", "[Forward] Using fresh segment cache:", cached.key);
+    return cached.record.segmentList;
   }
-  return null;
+
+  await removeSegmentCache(params, commentId);
+  const { segmentList } = await fetchAndCacheSegmentList(commentId, params);
+  log("info", "[Forward] segmentList:", segmentList);
+  await updateCaches();
+  return segmentList;
+}
+
+async function getDanmuWithSegmentTimeCore(params) {
+  const { segmentTime, tmdbId, season, episode, sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
+         platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
+         danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes } = params;
+
+  await initGlobals(sourceOrder, otherServer, customSourceApiUrl, vodServers, vodReturnMode, vodRequestTimeout, bilibiliCookie, doubanCookie,
+                    platformOrder, episodeTitleFilter, enableAnimeEpisodeFilter, strictTitleMatch, titleMappingTable, animeTitleFilter, animeTitleSimplified, blockedWords, groupMinute, 
+                    danmuLimit, danmuSimplifiedTraditional, danmuOffset, convertTopBottomToScroll, convertColor, colorPool, proxyUrl, tmdbApiKey, likeSwitch, hongguoMergeAllEpisodes);
+
+  let cached = await readSegmentCache(params);
+  if (!cached.record) return null;
+
+  let record = cached.record;
+  let refreshed = false;
+  if (!cached.fresh) {
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      if (refreshResult.record) record = refreshResult.record;
+      refreshed = true;
+    } catch (error) {
+      log("warn", `[Forward] Failed to refresh expired segment cache: ${error.message}`);
+    }
+  }
+
+  let segment = findSegmentAtTime(record.segmentList, segmentTime);
+  if (!segment && !refreshed) {
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      if (refreshResult.record) {
+        record = refreshResult.record;
+        segment = findSegmentAtTime(record.segmentList, segmentTime);
+      }
+      refreshed = true;
+    } catch (error) {
+      log("warn", `[Forward] Failed to refresh segment range: ${error.message}`);
+    }
+  }
+  if (!segment) {
+    return buildMissingSegmentResponse(record.segmentList, segmentTime);
+  }
+
+  log("info", "[Forward] segment:", segment);
+  let response = await getSegmentComment(segment);
+  let resJson = await response.json();
+
+  if (!refreshed && shouldRefreshSegmentResponse(resJson, record)) {
+    log("warn", "[Forward] Segment response is stale or invalid; refreshing segment list once.");
+    try {
+      const refreshResult = await fetchAndCacheSegmentList(record.commentId, params);
+      refreshed = true;
+      if (refreshResult.record) {
+        record = refreshResult.record;
+        segment = findSegmentAtTime(record.segmentList, segmentTime);
+        if (!segment) return buildMissingSegmentResponse(record.segmentList, segmentTime);
+        response = await getSegmentComment(segment);
+        resJson = await response.json();
+      }
+    } catch (error) {
+      log("warn", `[Forward] Failed to retry stale segment response: ${error.message}`);
+    }
+  }
+
+  return resJson;
+}
+
+async function searchDanmu(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('searchDanmu', params, () => searchDanmuCore(params))
+    : searchDanmuCore(params);
+}
+
+async function getDetailById(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getDetailById', params, () => getDetailByIdCore(params))
+    : getDetailByIdCore(params);
+}
+
+async function getCommentsById(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getCommentsById', params, () => getCommentsByIdCore(params))
+    : getCommentsByIdCore(params);
+}
+
+async function getDanmuWithSegmentTime(params = {}) {
+  return globalThis.__FORWARD_WIDGET_DEBUG__ === true
+    ? runWithForwardTrace('getDanmuWithSegmentTime', params, () => getDanmuWithSegmentTimeCore(params))
+    : getDanmuWithSegmentTimeCore(params);
 }
 
 // 导出函数以供ForwardWidgets调用

@@ -2,7 +2,7 @@ import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
-import { md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
+import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes, decompressBrotli, utf8BytesToString } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { globals } from '../configs/globals.js';
@@ -24,7 +24,7 @@ export default class IqiyiSource extends BaseSource {
    */
   async search(keyword) {
     try {
-      log("info", `[iQiyi] 开始搜索: ${keyword}`);
+      log("info", `[iqiyi] 开始搜索: ${keyword}`);
 
       // 使用桌面版 API 搜索
       const params = {
@@ -56,24 +56,44 @@ export default class IqiyiSource extends BaseSource {
       const queryString = buildQueryString(params);
       const url = `https://mesh.if.iqiyi.com/portal/lw/search/homePageV3?${queryString}`;
 
-      const response = await httpGet(url, {
-        headers: {
-          'accept': '*/*',
-          'origin': 'https://www.iqiyi.com',
-          'referer': 'https://www.iqiyi.com/',
-          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
+      const doSearch = async (bypassCache = false) => {
+        const resp = await httpGet(url, {
+          headers: {
+            'accept': '*/*',
+            'origin': 'https://www.iqiyi.com',
+            'referer': 'https://www.iqiyi.com/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          bypassCache
+        });
+        if (!resp || !resp.data) return null;
+        return typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
+      };
 
-      if (!response || !response.data) {
-        log("info", "[iQiyi] 搜索响应为空");
+      // 搜索接口风控时延迟重试，最多重试两次
+      const MAX_RETRIES = 2;
+      let data = await doSearch();
+      for (let attempt = 0; attempt < MAX_RETRIES && (!data || data.code === "-1"); attempt++) {
+        const reason = !data ? "搜索响应为空" : `搜索接口风控 (code=${data.code})`;
+        log("info", `[iqiyi] ${reason}，等待 3 秒后重试 (${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 3000));
+        data = await doSearch(true);
+      }
+
+      if (!data) {
+        log("info", "[iqiyi] 搜索响应为空");
         return [];
       }
 
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      if (data.code === "-1") {
+        log("info", "[iqiyi] 搜索接口风控 (code=-1)，重试后仍失败");
+        log("info", `[iqiyi] 搜索原始数据: ${JSON.stringify(data)}`);
+        return [];
+      }
 
       if (!data.data || !data.data.templates) {
-        log("info", "[iQiyi] 搜索无结果");
+        log("info", "[iqiyi] 搜索无结果");
+        log("info", `[iqiyi] 搜索原始数据: ${JSON.stringify(data)}`);
         return [];
       }
 
@@ -86,12 +106,12 @@ export default class IqiyiSource extends BaseSource {
 
         // 优先处理意图卡片 (template 112)
         if (template.template === 112 && template.intentAlbumInfos) {
-          log("info", `[iQiyi] 找到意图卡片 (template 112)，处理 ${template.intentAlbumInfos.length} 个结果`);
+          log("info", `[iqiyi] 找到意图卡片 (template 112)，处理 ${template.intentAlbumInfos.length} 个结果`);
           albumsToProcess = template.intentAlbumInfos;
         }
         // 然后处理普通结果卡片
         else if ([101, 102, 103].includes(template.template) && template.albumInfo) {
-          log("info", `[iQiyi] 找到普通结果卡片 (template ${template.template})`);
+          log("info", `[iqiyi] 找到普通结果卡片 (template ${template.template})`);
           albumsToProcess = [template.albumInfo];
         }
 
@@ -103,11 +123,11 @@ export default class IqiyiSource extends BaseSource {
         }
       }
 
-      log("info", `[iQiyi] 搜索找到 ${results.length} 个有效结果`);
+      log("info", `[iqiyi] 搜索找到 ${results.length} 个有效结果`);
       return results;
 
     } catch (error) {
-      log("error", "[iQiyi] 搜索出错:", error.message);
+      log("error", "[iqiyi] 搜索出错:", error.message);
       return [];
     }
   }
@@ -125,7 +145,7 @@ export default class IqiyiSource extends BaseSource {
 
     // 过滤外站付费播放
     if (album.btnText === '外站付费播放') {
-      log("info", `[iQiyi] 过滤掉外站付费播放内容: ${album.title}`);
+      log("info", `[iqiyi] 过滤掉外站付费播放内容: ${album.title}`);
       return null;
     }
 
@@ -173,17 +193,15 @@ export default class IqiyiSource extends BaseSource {
     if (mediaType.includes("电影")) {
       const qipuId = album.qipuId || album.playQipuId;
       if (!qipuId) {
-        log("info", `[iQiyi] 电影缺少 qipuId: ${album.title}`);
+        log("info", `[iqiyi] 电影缺少 qipuId: ${album.title}`);
         return null;
       }
 
-      // 提取年份
+      // 提取年份（普通结果卡片在 year 字段，意图聚合卡片 template 112 无 year 字段，年份在 superscript 角标）
       let year = null;
-      if (album.year) {
-        const yearStr = album.year.value || album.year.name;
-        if (yearStr && typeof yearStr === 'string' && yearStr.length === 4 && /^\d{4}$/.test(yearStr)) {
-          year = parseInt(yearStr);
-        }
+      const yearStr = (album.year && (album.year.value || album.year.name)) || album.superscript;
+      if (yearStr && typeof yearStr === 'string' && /^\d{4}$/.test(yearStr)) {
+        year = parseInt(yearStr);
       }
 
       // 清理标题
@@ -204,24 +222,22 @@ export default class IqiyiSource extends BaseSource {
     // 非电影类型：从 pageUrl 提取 link_id
     const url = album.pageUrl;
     if (!url) {
-      log("info", `[iQiyi] 非电影内容缺少 pageUrl: ${album.title}`);
+      log("info", `[iqiyi] 非电影内容缺少 pageUrl: ${album.title}`);
       return null;
     }
 
     const linkIdMatch = url.match(/v_(\w+?)\.html/);
     if (!linkIdMatch) {
-      log("info", `[iQiyi] 无法从 pageUrl 提取 link_id: ${url}`);
+      log("info", `[iqiyi] 无法从 pageUrl 提取 link_id: ${url}`);
       return null;
     }
     const linkId = linkIdMatch[1];
 
-    // 提取年份
+    // 提取年份（普通结果卡片在 year 字段，意图聚合卡片 template 112 无 year 字段，年份在 superscript 角标）
     let year = null;
-    if (album.year) {
-      const yearStr = album.year.value || album.year.name;
-      if (yearStr && typeof yearStr === 'string' && yearStr.length === 4 && /^\d{4}$/.test(yearStr)) {
-        year = parseInt(yearStr);
-      }
+    const yearStr = (album.year && (album.year.value || album.year.name)) || album.superscript;
+    if (yearStr && typeof yearStr === 'string' && /^\d{4}$/.test(yearStr)) {
+      year = parseInt(yearStr);
     }
 
     // 提取分集数
@@ -258,25 +274,27 @@ export default class IqiyiSource extends BaseSource {
   /**
    * 获取分集列表
    * @param {string} id - 视频 ID (link_id 或 movie_qipuId)
+   * @param {number|null} querySeason - 目标季，指定时只获取该季分集
+   * @param {Map|null} seasonAlbumCache - 跨多次调用共享的分季数据缓存，避免同一 album 重复请求
    * @returns {Promise<Array>} 分集列表
    */
-  async getEpisodes(id) {
+  async getEpisodes(id, querySeason = null, seasonAlbumCache = null, inlinedAlbumIds = null, baseInfoCache = null) {
     try {
-      log("info", `[iQiyi] 获取分集列表: media_id=${id}`);
+      log("info", `[iqiyi] 获取分集列表: media_id=${id}`);
 
       // 检查是否是电影类型（以 movie_ 开头）
       if (id.startsWith('movie_')) {
         const qipuId = id.substring(6); // 移除 "movie_" 前缀
-        log("info", `[iQiyi] 电影类型，调用 base_info API 获取视频ID: qipuId=${qipuId}`);
+        log("info", `[iqiyi] 电影类型，调用 base_info API 获取视频ID: qipuId=${qipuId}`);
 
         // 调用 base_info API 获取电影详情
         const videoId = await this._getMovieVideoId(qipuId);
         if (!videoId) {
-          log("error", `[iQiyi] 无法获取电影的视频ID: qipuId=${qipuId}`);
+          log("error", `[iqiyi] 无法获取电影的视频ID: qipuId=${qipuId}`);
           return [];
         }
 
-        log("info", `[iQiyi] 电影视频ID: ${videoId}`);
+        log("info", `[iqiyi] 电影视频ID: ${videoId}`);
         return [{
           id: videoId,
           title: "正片",
@@ -285,56 +303,21 @@ export default class IqiyiSource extends BaseSource {
         }];
       }
 
-      // 第一步：将 video_id 转换为 entity_id
+      // 将 video_id 转换为 entity_id
       const entityId = /^\d+$/.test(id) ? id : this._videoIdToEntityId(id);
       if (!entityId) {
-        log("error", `[iQiyi] 无法将 media_id '${id}' 转换为 entity_id`);
+        log("error", `[iqiyi] 无法将 media_id '${id}' 转换为 entity_id`);
         return [];
       }
 
-      // 第二步：构建 API 请求参数
-      const params = {
-        entity_id: entityId,
-        device_id: 'qd5fwuaj4hunxxdgzwkcqmefeb3ww5hx',
-        auth_cookie: '',
-        user_id: '0',
-        vip_type: '-1',
-        vip_status: '0',
-        conduit_id: '',
-        pcv: '13.082.22866',
-        app_version: '13.082.22866',
-        ext: '',
-        app_mode: 'standard',
-        scale: '100',
-        timestamp: String(Date.now()),
-        src: 'pca_tvg',
-        os: '',
-        ad_ext: '{"r":"2.2.0-ares6-pure"}'
-      };
-
-      // 生成签名
-      params.sign = this._createSign(params);
-
-      // 第三步：请求 API
-      const queryString = buildQueryString(params);
-      const url = `https://www.iqiyi.com/prelw/tvg/v2/lw/base_info?${queryString}`;
-
-      const response = await httpGet(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://www.iqiyi.com/'
-        }
-      });
-
-      if (!response || !response.data) {
-        log("error", "[iQiyi] 获取分集响应为空");
-        return [];
+      // 分集列表数据；本次搜索已在 handleAnimes 中统一拉取时直接复用，避免重复请求
+      let data;
+      if (baseInfoCache && baseInfoCache.has(id)) {
+        data = baseInfoCache.get(id);
+      } else {
+        data = await this._fetchBaseInfoData(entityId);
       }
-
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-
-      if (data.status_code !== 0 || !data.data || !data.data.template) {
-        log("error", `[iQiyi] API 返回错误，status_code: ${data.status_code}`);
+      if (!data || data.status_code !== 0 || !data.data || !data.data.template) {
         return [];
       }
 
@@ -343,21 +326,22 @@ export default class IqiyiSource extends BaseSource {
       const tabs = data.data.template.tabs || [];
 
       if (tabs.length === 0) {
-        log("info", "[iQiyi] 未找到分集标签页");
+        log("info", "[iqiyi] 未找到分集标签页");
         return [];
       }
 
       const blocks = tabs[0].blocks || [];
       let foundEpisodes = false;
+      const fetchedSeasons = seasonAlbumCache || new Map();
 
       for (const block of blocks) {
         // 查找 video_list 类型的块（新版API）
         if (block.bk_type === "video_list" && block.data?.data) {
-          log("info", `[iQiyi] 找到 video_list 类型的分集数据块, bk_id: ${block.bk_id}`);
+          log("info", `[iqiyi] 找到 video_list 类型的分集数据块, bk_id: ${block.bk_id}`);
 
           // 检查是否是分集选择器块
           if (!block.tag || !block.tag.includes("episodes")) {
-            log("info", `[iQiyi] 跳过非分集块: ${block.bk_id}`);
+            log("info", `[iqiyi] 跳过非分集块: ${block.bk_id}`);
             continue;
           }
 
@@ -365,7 +349,7 @@ export default class IqiyiSource extends BaseSource {
 
           const dataGroups = block.data.data;
           if (!Array.isArray(dataGroups)) {
-            log("warn", "[iQiyi] data.data 不是数组，跳过此块");
+            log("warn", "[iqiyi] data.data 不是数组，跳过此块");
             continue;
           }
 
@@ -409,21 +393,45 @@ export default class IqiyiSource extends BaseSource {
         }
         // 兼容旧版 API 的 album_episodes 类型
         else if (block.bk_type === "album_episodes" && block.data?.data) {
-          log("info", "[iQiyi] 找到 album_episodes 类型的分集数据块");
+          log("info", "[iqiyi] 找到 album_episodes 类型的分集数据块");
           foundEpisodes = true;
 
           const episodeGroups = block.data.data;
           for (const group of episodeGroups) {
+            // 指定季时只处理目标季的分季组，避免拉取并合并无关季的分集
+            if (querySeason !== null && group.tab_name) {
+              const groupSeason = getExplicitSeasonNumber(group.tab_name);
+              if (groupSeason !== null && groupSeason !== querySeason) continue;
+            }
+
             let videosData = group.videos;
 
-            // 如果 videos 是 URL，需要额外请求
+            // 分季数据是 URL 时需额外请求；以 album_id 为键复用已获取或正在获取的请求，
+            // 避免同一次搜索内同一分季被并发或重复请求
             if (typeof videosData === 'string') {
-              log("info", `[iQiyi] 发现分季URL，正在获取: ${videosData}`);
+              // 该季的 album_id 已通过其它结果的 album_episodes 内联数据获取时，无需再请求分季URL
+              const groupAlbumId = group.entity_id ? String(group.entity_id) : (videosData.match(/album_id=(\d+)/)?.[1] || videosData);
+              if (inlinedAlbumIds && inlinedAlbumIds.has(groupAlbumId)) {
+                log("info", `[iqiyi] 该季分集已通过内联数据获取，跳过分季URL: ${groupAlbumId}`);
+                continue;
+              }
+              const albumIdKey = groupAlbumId;
+              let seasonPromise = fetchedSeasons.get(albumIdKey);
+              if (!seasonPromise) {
+                seasonPromise = (async () => {
+                  log("info", `[iqiyi] 发现分季URL，正在获取: ${videosData}`);
+                  const seasonResponse = await httpGet(videosData);
+                  return typeof seasonResponse.data === "string" ? JSON.parse(seasonResponse.data) : seasonResponse.data;
+                })();
+                fetchedSeasons.set(albumIdKey, seasonPromise);
+              } else {
+                log("info", `[iqiyi] 分季URL已获取过，跳过重复请求: ${albumIdKey}`);
+              }
               try {
-                const seasonResponse = await httpGet(videosData);
-                videosData = typeof seasonResponse.data === "string" ? JSON.parse(seasonResponse.data) : seasonResponse.data;
+                videosData = await seasonPromise;
               } catch (error) {
-                log("error", `[iQiyi] 获取分季数据失败: ${error.message}`);
+                fetchedSeasons.delete(albumIdKey);
+                log("error", `[iqiyi] 获取分季数据失败: ${error.message}`);
                 continue;
               }
             }
@@ -465,7 +473,7 @@ export default class IqiyiSource extends BaseSource {
       }
 
       if (!foundEpisodes) {
-        log("info", "[iQiyi] 未找到分集数据块");
+        log("info", "[iqiyi] 未找到分集数据块");
         return [];
       }
 
@@ -475,13 +483,106 @@ export default class IqiyiSource extends BaseSource {
       );
       uniqueEpisodes.sort((a, b) => a.order - b.order);
 
-      log("info", `[iQiyi] 成功获取 ${uniqueEpisodes.length} 个分集`);
+      log("info", `[iqiyi] 成功获取 ${uniqueEpisodes.length} 个分集`);
       return uniqueEpisodes;
 
     } catch (error) {
-      log("error", "[iQiyi] 获取分集出错:", error.message);
+      log("error", "[iqiyi] 获取分集出错:", error.message);
       return [];
     }
+  }
+
+  /**
+   * 请求分集列表接口并解析响应，接口返回空响应或结构残缺时最多重试两次
+   * @param {string} entityId - 实体 id
+   * @returns {Promise<Object|null>} 解析后的响应数据，失败返回 null
+   */
+  async _fetchBaseInfoData(entityId) {
+    const params = {
+      entity_id: entityId,
+      device_id: 'qd5fwuaj4hunxxdgzwkcqmefeb3ww5hx',
+      auth_cookie: '',
+      user_id: '0',
+      vip_type: '-1',
+      vip_status: '0',
+      conduit_id: '',
+      pcv: '13.082.22866',
+      app_version: '13.082.22866',
+      ext: '',
+      app_mode: 'standard',
+      scale: '100',
+      timestamp: String(Date.now()),
+      src: 'pca_tvg',
+      os: '',
+      ad_ext: '{"r":"2.2.0-ares6-pure"}'
+    };
+    params.sign = this._createSign(params);
+
+    const queryString = buildQueryString(params);
+    const url = `https://www.iqiyi.com/prelw/tvg/v2/lw/base_info?${queryString}`;
+
+    // base_info 接口可能返回空响应或结构残缺的响应，此处最多重试两次再放弃
+    const MAX_EPISODE_RETRIES = 2;
+    const fetchEpisodeData = async (bypassCache = false) => {
+      try {
+        const resp = await httpGet(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.iqiyi.com/'
+          },
+          bypassCache
+        });
+        if (!resp || !resp.data) return null;
+        return typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
+      } catch (error) {
+        log("error", `[iqiyi] 获取分集列表请求失败: ${error.message}`);
+        return null;
+      }
+    };
+
+    let data = await fetchEpisodeData();
+    for (let attempt = 0; attempt < MAX_EPISODE_RETRIES && (!data || data.status_code !== 0 || !data.data || !data.data.template); attempt++) {
+      log("info", `[iqiyi] 分集接口返回异常${data ? ` (status_code: ${data.status_code})` : " (响应为空或解析失败)"}，等待 3 秒后重试 (${attempt + 1}/${MAX_EPISODE_RETRIES})`);
+      await new Promise(r => setTimeout(r, 3000));
+      data = await fetchEpisodeData(true);
+    }
+
+    if (!data || data.status_code !== 0 || !data.data || !data.data.template) {
+      log("error", `[iqiyi] 获取分集列表失败: ${data ? `status_code: ${data.status_code}` : "响应为空或解析失败"}`);
+      return null;
+    }
+    return data;
+  }
+
+  /**
+   * 全季搜索时统一拉取各结果的分集列表，收集其中以内联方式返回的季 album_id；
+   * 这些季无需再经分季URL获取，供 getEpisodes 判断跳过对应请求
+   * @param {Array} animes - 搜索结果数组
+   * @param {Map} baseInfoCache - 复用已拉取的分集列表数据，避免重复请求
+   * @returns {Promise<Set<string>>} 已被内联的季 album_id 集合
+   */
+  async _collectInlinedAlbumIds(animes, baseInfoCache) {
+    const inlined = new Set();
+    await Promise.all(animes.map(async (anime) => {
+      if (anime.mediaId.startsWith('movie_')) return;
+      const entityId = /^\d+$/.test(anime.mediaId) ? anime.mediaId : this._videoIdToEntityId(anime.mediaId);
+      if (!entityId) return;
+      const data = await this._fetchBaseInfoData(entityId);
+      baseInfoCache.set(anime.mediaId, data);
+      if (!data || !data.data || !data.data.template) return;
+      const tabs = data.data.template.tabs || [];
+      if (tabs.length === 0) return;
+      for (const block of (tabs[0].blocks || [])) {
+        if (block.bk_type === 'album_episodes' && block.data?.data) {
+          for (const group of block.data.data) {
+            if (group.videos && typeof group.videos === 'object' && group.videos.feature_paged && group.entity_id) {
+              inlined.add(String(group.entity_id));
+            }
+          }
+        }
+      }
+    }));
+    return inlined;
   }
 
   /**
@@ -518,7 +619,7 @@ export default class IqiyiSource extends BaseSource {
       const queryString = buildQueryString(params);
       const url = `https://mesh.if.iqiyi.com/tvg/v2/lw/base_info?${queryString}`;
 
-      log("info", `[iQiyi] 请求电影详情: ${url}`);
+      log("info", `[iqiyi] 请求电影详情: ${url}`);
 
       const response = await httpGet(url, {
         headers: {
@@ -530,7 +631,7 @@ export default class IqiyiSource extends BaseSource {
       });
 
       if (!response || !response.data) {
-        log("error", "[iQiyi] base_info API 响应为空");
+        log("error", "[iqiyi] base_info API 响应为空");
         return null;
       }
 
@@ -541,13 +642,12 @@ export default class IqiyiSource extends BaseSource {
       if (data.data && data.data.base_data) {
         const baseData = data.data.base_data;
 
-        // 尝试 1: 从 share_url 中提取（最可靠）
+        // 尝试 1: 从 share_url 中提取（旧格式 v_xxx.html）
         if (baseData.share_url) {
           const match = baseData.share_url.match(/v_(\w+)\.html/);
           if (match) {
-            const videoId = match[1];
-            log("info", `[iQiyi] 从 share_url 提取视频ID: ${videoId}`);
-            return videoId;
+            log("info", `[iqiyi] 从 share_url 提取视频ID: ${match[1]}`);
+            return match[1];
           }
         }
 
@@ -555,19 +655,19 @@ export default class IqiyiSource extends BaseSource {
         if (baseData.page_url) {
           const match = baseData.page_url.match(/v_(\w+)\.html/);
           if (match) {
-            const videoId = match[1];
-            log("info", `[iQiyi] 从 page_url 提取视频ID: ${videoId}`);
-            return videoId;
+            log("info", `[iqiyi] 从 page_url 提取视频ID: ${match[1]}`);
+            return match[1];
           }
         }
       }
 
-      log("error", "[iQiyi] base_info API 响应中未找到视频ID");
-      log("info", `[iQiyi] 响应数据结构: ${JSON.stringify(data).substring(0, 1000)}...`);
-      return null;
+      // 所有尝试均失败，使用 qipuId（entity_id）作为视频ID
+      log("info", `[iqiyi] 响应中未找到 v_xxx 格式视频ID，使用 entity_id: ${qipuId}`);
+      log("info", `[iqiyi] 响应数据结构: ${JSON.stringify(data).substring(0, 1000)}...`);
+      return qipuId;
 
     } catch (error) {
-      log("error", `[iQiyi] 获取电影视频ID时出错: ${error.message}`);
+      log("error", `[iqiyi] 获取电影视频ID时出错: ${error.message}`);
       return null;
     }
   }
@@ -584,7 +684,7 @@ export default class IqiyiSource extends BaseSource {
       const finalResult = xorResult < 900000 ? 100 * (xorResult + 900000) : xorResult;
       return String(finalResult);
     } catch (error) {
-      log("error", `[iQiyi] 将 video_id '${videoId}' 转换为 entity_id 时出错: ${error.message}`);
+      log("error", `[iqiyi] 将 video_id '${videoId}' 转换为 entity_id 时出错: ${error.message}`);
       return null;
     }
   }
@@ -656,7 +756,7 @@ export default class IqiyiSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[iQiyi] sourceAnimes is not a valid array");
+      log("error", "[iqiyi] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -675,13 +775,24 @@ export default class IqiyiSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[iQiyi] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[iqiyi] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
+    }
+
+    // 跨多个搜索结果共享分季数据缓存，避免同一 album 的分季URL被重复请求
+    const seasonAlbumCache = new Map();
+
+    // 全季搜索时先统一拉取各结果的分集列表，收集已被内联的季 album_id；
+    // 这些季无需再经分季URL获取，后续处理各结果时据此跳过对应请求
+    let inlinedAlbumIds = null;
+    const baseInfoCache = new Map();
+    if (resolvedQuerySeason === null) {
+      inlinedAlbumIds = await this._collectInlinedAlbumIds(filteredAnimes, baseInfoCache);
     }
 
     const processIqiyiAnimes = await Promise.all(filteredAnimes.map(async (anime) => {
         try {
-          const eps = await this.getEpisodes(anime.mediaId);
+          const eps = await this.getEpisodes(anime.mediaId, resolvedQuerySeason, seasonAlbumCache, inlinedAlbumIds, baseInfoCache);
 
           // 格式化分集列表
           const links = [];
@@ -718,7 +829,7 @@ export default class IqiyiSource extends BaseSource {
             }
           }
         } catch (error) {
-          log("error", `[iQiyi] Error processing anime: ${error.message}`);
+          log("error", `[iqiyi] Error processing anime: ${error.message}`);
         }
       })
     );
@@ -728,7 +839,7 @@ export default class IqiyiSource extends BaseSource {
   }
 
   async getEpisodeDanmu(id) {
-    log("info", "[iQiyi] 开始从本地请求爱奇艺弹幕...", id);
+    log("info", "[iqiyi] 开始从本地请求爱奇艺弹幕...", id);
 
     // 获取页面标题
     let res;
@@ -740,14 +851,14 @@ export default class IqiyiSource extends BaseSource {
         },
       });
     } catch (error) {
-      log("error", "[iQiyi] 请求页面失败:", error);
+      log("error", "[iqiyi] 请求页面失败:", error);
       return [];
     }
 
     // 使用正则表达式提取 <title> 标签内容
     const titleMatch = res.data.match(/<title[^>]*>(.*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
-    log("info", `[iQiyi] 标题: ${title}`);
+    log("info", `[iqiyi] 标题: ${title}`);
 
     // 获取弹幕分段数据
     const segmentResult = await this.getEpisodeDanmuSegments(id);
@@ -756,7 +867,7 @@ export default class IqiyiSource extends BaseSource {
     }
 
     const segmentList = segmentResult.segmentList;
-    log("info", `[iQiyi] 弹幕分段数量: ${segmentList.length}`);
+    log("info", `[iqiyi] 弹幕分段数量: ${segmentList.length}`);
 
     // 创建请求Promise数组
     const promises = [];
@@ -777,7 +888,7 @@ export default class IqiyiSource extends BaseSource {
         contents.push(...data);
       });
     } catch (error) {
-      log("error", "[iQiyi] 解析弹幕数据失败:", error);
+      log("error", "[iqiyi] 解析弹幕数据失败:", error);
       return [];
     }
 
@@ -787,25 +898,26 @@ export default class IqiyiSource extends BaseSource {
   }
 
   async getEpisodeDanmuSegments(id) {
-    log("info", "[iQiyi] 获取爱奇艺视频弹幕分段列表...", id);
+    log("info", "[iqiyi] 获取爱奇艺视频弹幕分段列表...", id);
 
     // 弹幕 API 基础地址
     const api_decode_base = "https://pcw-api.iq.com/api/decode/";
     const api_video_info = "https://pcw-api.iqiyi.com/video/video/baseinfo/";
 
     // 解析 URL 获取 tvid
-    let tvid;
+    let tvid, originalTvid;
     try {
       const idMatch = id.match(/v_(\w+)/);
       if (!idMatch) {
-        log("error", "[iQiyi] 无法从 URL 中提取 tvid");
+        log("error", "[iqiyi] 无法从 URL 中提取 tvid");
         return new SegmentListResponse({
           "type": "qiyi",
           "segmentList": []
         });
       }
       tvid = idMatch[1];
-      log("info", `[iQiyi] tvid: ${tvid}`);
+      log("info", `[iqiyi] tvid: ${tvid}`);
+      originalTvid = tvid; // 保存原始 tvid，用于解码失败回退
 
       // 获取 tvid 的解码信息
       const decodeUrl = `${api_decode_base}${tvid}?platformId=3&modeCode=intl&langCode=sg`;
@@ -817,9 +929,9 @@ export default class IqiyiSource extends BaseSource {
       });
       const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
       tvid = data.data.toString();
-      log("info", `[iQiyi] 解码后 tvid: ${tvid}`);
+      log("info", `[iqiyi] 解码后 tvid: ${tvid}`);
     } catch (error) {
-      log("error", "[iQiyi] 请求解码信息失败:", error);
+      log("error", "[iqiyi] 请求解码信息失败:", error);
       return new SegmentListResponse({
         "type": "qiyi",
         "segmentList": []
@@ -840,16 +952,42 @@ export default class IqiyiSource extends BaseSource {
       const videoInfo = data.data;
       duration = Number(videoInfo.durationSec) || 0;
       if (videoInfo.displayBarrage === false) {
-        log("info", "[iQiyi] 爱奇艺视频未开启弹幕");
+        log("info", "[iqiyi] 爱奇艺视频未开启弹幕");
         return new SegmentListResponse({
           "type": "qiyi",
           "duration": duration,
           "segmentList": []
         });
       }
-      log("info", `[iQiyi] 时长: ${duration}`);
+      log("info", `[iqiyi] 时长: ${duration}`);
     } catch (error) {
-      log("error", "[iQiyi] 请求视频基础信息失败:", error);
+      log("error", "[iqiyi] 请求视频基础信息失败:", error);
+    }
+
+    // decode API 输出的 tvid 无效时（duration=0 或请求失败），用原始 tvid 重试
+    if (!duration && originalTvid && originalTvid !== tvid) {
+      log("info", `[iqiyi] decode 后 tvid 无效，用原始 tvid 重试: ${originalTvid}`);
+      try {
+        const retryUrl = `${api_video_info}${originalTvid}`;
+        const retryRes = await httpGet(retryUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+          bypassCache: true
+        });
+        const retryData = typeof retryRes.data === "string" ? JSON.parse(retryRes.data) : retryRes.data;
+        const retryDuration = Number(retryData.data.durationSec) || 0;
+        if (retryDuration > 0) {
+          tvid = originalTvid;
+          duration = retryDuration;
+          log("info", `[iqiyi] 原始 tvid 有效，时长: ${duration}`);
+        }
+      } catch (retryError) {
+        log("error", "[iqiyi] 原始 tvid 重试也失败:", retryError);
+      }
+    }
+    if (!duration) {
       return new SegmentListResponse({
         "type": "qiyi",
         "segmentList": []
@@ -859,7 +997,7 @@ export default class IqiyiSource extends BaseSource {
     // 当前爱奇艺弹幕分片按 60 秒切片，并使用 md5 后缀校验。
     const segmentDuration = 60;
     const page = Math.ceil(duration / segmentDuration);
-    log("info", `[iQiyi] 弹幕分段数量: ${page}`);
+    log("info", `[iqiyi] 弹幕分段数量: ${page}`);
 
     // 构建分段列表
     const segmentList = [];
@@ -901,49 +1039,22 @@ export default class IqiyiSource extends BaseSource {
         return [];
       }
 
-      const compressed = this._base64ToUint8Array(response.data);
+      const compressed = base64ToBytes(response.data);
       const payload = await this._decompressBrotli(compressed);
 
       if (payload[0] === 60) {
-        return this._parseIqiyiXmlDanmu(new TextDecoder("utf-8").decode(payload));
+        return this._parseIqiyiXmlDanmu(utf8BytesToString(payload));
       }
 
       return this._parseIqiyiProtoDanmu(payload);
     } catch (error) {
-      log("error", "[iQiyi] 请求分片弹幕失败:", error);
+      log("error", "[iqiyi] 请求分片弹幕失败:", error);
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }
 
-  _base64ToUint8Array(base64) {
-    if (typeof atob === "function") {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-
-    if (typeof Buffer !== "undefined") {
-      return new Uint8Array(Buffer.from(base64, "base64"));
-    }
-
-    throw new Error("当前环境不支持 base64 解码");
-  }
-
   async _decompressBrotli(bytes) {
-    if (typeof DecompressionStream !== "undefined") {
-      try {
-        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("brotli"));
-        return new Uint8Array(await new Response(stream).arrayBuffer());
-      } catch {
-        log("info", "[iQiyi] DecompressionStream Brotli 解压失败，尝试 Node zlib");
-      }
-    }
-
-    const { brotliDecompressSync } = await import("node:zlib");
-    return new Uint8Array(brotliDecompressSync(bytes));
+    return decompressBrotli(bytes);
   }
 
   _parseIqiyiXmlDanmu(xml) {
@@ -997,7 +1108,6 @@ export default class IqiyiSource extends BaseSource {
   _parseIqiyiProtoFields(bytes) {
     const fields = [];
     let offset = 0;
-    const decoder = new TextDecoder("utf-8");
 
     while (offset < bytes.length) {
       const keyResult = this._readIqiyiVarint(bytes, offset);
@@ -1023,7 +1133,7 @@ export default class IqiyiSource extends BaseSource {
         if (end > bytes.length) break;
 
         const raw = bytes.subarray(offset, end);
-        fields.push({ number, wireType, bytes: raw, value: decoder.decode(raw) });
+        fields.push({ number, wireType, bytes: raw, value: utf8BytesToString(raw) });
         offset = end;
       } else if (wireType === 5) {
         fields.push({ number, wireType });

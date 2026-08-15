@@ -9,8 +9,14 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import dotenv from 'dotenv';
 import { Request as NodeFetchRequest } from 'node-fetch';
 import { handleRequest } from './worker.js';
-import { Globals } from './configs/globals.js';
-import { clearBangumiDataCache, initBangumiData } from './utils/bangumi-data-util.js';
+import { Globals, globals } from './configs/globals.js';
+import { Envs } from './configs/envs.js';
+import { clearBangumiDataCache, initBangumiData, syncBangumiDataLifecycleOnConfigChange } from './utils/bangumi-data-util.js';
+import { getLocalCaches, judgeLocalCacheValid } from './utils/cache-util.js';
+import { getRedisCaches, judgeRedisValid } from './utils/redis-util.js';
+import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.js';
+import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
+import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
 
 // =====================
 // server.js - 本地node智能启动脚本：根据 Node.js 环境自动选择最优启动模式
@@ -18,6 +24,11 @@ import { clearBangumiDataCache, initBangumiData } from './utils/bangumi-data-uti
 
 // 导入 ES module 兼容层（始终加载，但内部会根据需要启用）
 import './esm-shim.cjs';
+
+// 预加载 node-fetch v3：仅在 Node < 20.19.0 等需兼容层的环境实际加载，其他环境为无操作；必须在首个请求前完成，否则 esm-shim 的 require 代理会拒绝同步取用
+if (typeof global.loadNodeFetch === 'function') {
+  await global.loadNodeFetch();
+}
 
 // 构建 CommonJS 环境下才有的全局变量
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +42,9 @@ const envPath = path.join(configDir, '.env');
 
 // 保存系统环境变量的副本，确保它们具有最高优先级
 const systemEnvBackup = { ...process.env };
+
+// 注入到 Envs，供自定义规则变量读取时判定系统环境变量优先级（绕过 dotenv 注释截断）
+Envs.systemEnvBackup = systemEnvBackup;
 
 
 // 引入 zlib 模块，用于响应数据的 GZIP 压缩
@@ -47,6 +61,21 @@ function detectNodeDeployPlatform() {
     return "huggingface";
   }
   return "node";
+}
+
+function resolvePublicRequestProtocol(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (forwardedProto === 'http' || forwardedProto === 'https') {
+    return forwardedProto;
+  }
+
+  const configuredProto = String(process.env.DANMU_API_PUBLIC_PROTO || 'http')
+    .trim()
+    .toLowerCase();
+  return configuredProto === 'https' ? 'https' : 'http';
 }
 
 /**
@@ -111,6 +140,15 @@ function loadEnv() {
     // 最后，恢复系统环境变量的值，确保它们具有最高优先级
     for (const [key, value] of Object.entries(systemEnvBackup)) {
       process.env[key] = value;
+    }
+
+    // 解析 .env 原始内容，供支持自定义规则的变量绕过 dotenv 注释截断（保留 # 等字符）
+    try {
+      if (fs.existsSync(envPath)) {
+        Envs.rawEnvValues = Envs.parseRawEnvText(fs.readFileSync(envPath, 'utf8'));
+      }
+    } catch (e) {
+      // 原始解析失败不影响启动，相关变量回退到普通取值语义
     }
 
     console.log('[server] .env file loaded successfully');
@@ -196,10 +234,11 @@ async function setupEnvWatcher() {
           console.log('[server] Environment variables reloaded successfully');
           console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
 
-          // 如果检测到关闭了 Bangumi Data 功能，主动释放内存与物理磁盘缓存
-          if (process.env.USE_BANGUMI_DATA === 'false' || process.env.USE_BANGUMI_DATA === false) {
-              clearBangumiDataCache(true);
-          }
+          // 配置变更后同步 Bangumi Data 生命周期：开启则立即确保缓存就绪（缺失则下载），
+          // 关闭则释放缓存；先按真实配置同步内存开关，避免重载未刷新 globals 时状态滞后
+          const bangumiEnabled = process.env.USE_BANGUMI_DATA === 'true' || process.env.USE_BANGUMI_DATA === true;
+          globals.useBangumiData = bangumiEnabled;
+          syncBangumiDataLifecycleOnConfigChange('node');
 
         } catch (error) {
           console.log('[server] Error reloading configuration files:', error.message);
@@ -228,7 +267,8 @@ async function setupEnvWatcher() {
 /**
  * 优雅关闭：清理文件监听器并关闭服务器
  */
-function cleanupWatcher() {
+function cleanupWatcher(exitCode = 0) {
+  stopFavoriteScheduler();
   if (envWatcher) {
     console.log('[server] Closing file watcher...');
     envWatcher.close();
@@ -239,14 +279,14 @@ function cleanupWatcher() {
     reloadTimer = null;
   }
   // 优雅关闭主服务器
-  if (mainServer) {
+  if (mainServer?.listening) {
     console.log('[server] Closing main server...');
     mainServer.close(() => {
       console.log('[server] Main server closed');
     });
   }
   // 优雅关闭代理服务器
-  if (proxyServer) {
+  if (proxyServer?.listening) {
     console.log('[server] Closing proxy server...');
     proxyServer.close(() => {
       console.log('[server] Proxy server closed');
@@ -255,13 +295,13 @@ function cleanupWatcher() {
   // 给服务器一点时间关闭后退出
   setTimeout(() => {
     console.log('[server] Exit complete.');
-    process.exit(0);
+    process.exit(exitCode);
   }, 500);
 }
 
 // 监听进程退出信号
-process.on('SIGTERM', cleanupWatcher);
-process.on('SIGINT', cleanupWatcher);
+process.on('SIGTERM', () => cleanupWatcher(0));
+process.on('SIGINT', () => cleanupWatcher(0));
 
 /**
  * 创建主业务服务器实例 (默认端口 9321，可通过 DANMU_API_PORT 配置)
@@ -270,8 +310,9 @@ process.on('SIGINT', cleanupWatcher);
 function createServer() {
   return http.createServer(async (req, res) => {
     try {
-      // 构造完整的请求 URL
-      const fullUrl = `http://${req.headers.host}${req.url}`;
+      // 构造完整的请求 URL，反向代理场景优先使用客户端原始协议
+      const scheme = resolvePublicRequestProtocol(req);
+      const fullUrl = `${scheme}://${req.headers.host}${req.url}`;
 
       // 获取请求客户端的ip，兼容反向代理场景
       let clientIp = 'unknown';
@@ -481,19 +522,44 @@ async function startServer() {
   const configuredMainPort = Number.parseInt(process.env.DANMU_API_PORT ?? '', 10);
   const mainPort = Number.isNaN(configuredMainPort) ? 9321 : configuredMainPort;
   mainServer = createServer();
-  mainServer.listen(mainPort, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${mainPort}`);
+  const mainBinding = await listenOnAllInterfaces(mainServer, mainPort, {
+    serviceName: 'main server'
   });
+  console.log(`Server running on http://${formatHostForUrl(mainBinding.address)}:${mainBinding.port}`);
+  if (detectNodeDeployPlatform() === 'node') {
+    initializeFavoriteScheduler(mainPort).catch(error => {
+      console.error('[server] Favorite scheduler initialization failed:', error.message);
+    });
+  }
 
   // 启动5321端口的代理服务
   proxyServer = createProxyServer();
-  proxyServer.listen(5321, '0.0.0.0', () => {
-    console.log('Proxy server running on http://0.0.0.0:5321');
-
-    // 异步初始化 Bangumi Data 缓存
-    setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
+  const proxyBinding = await listenOnAllInterfaces(proxyServer, 5321, {
+    serviceName: 'proxy server'
   });
+  console.log(`Proxy server running on http://${formatHostForUrl(proxyBinding.address)}:${proxyBinding.port}`);
+
+  // 异步初始化 Bangumi Data 缓存
+  setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
+}
+
+async function initializeFavoriteScheduler(mainPort) {
+  await judgeLocalCacheValid('/api/v2/favorite/list', 'node');
+  if (Globals.localCacheValid) await getLocalCaches();
+
+  await judgeRedisValid('/api/v2/favorite/list');
+  if (Globals.redisValid) await getRedisCaches();
+
+  const refreshUrl = new URL(`http://127.0.0.1:${mainPort}/api/v2/favorite/refresh`);
+  await startFavoriteScheduler({
+    refresh: keyword => refreshFavoriteByKeyword(keyword, refreshUrl, { persist: false }),
+    persist: persistFavorites
+  });
+  console.log('[server] Favorite scheduler started (Node/Docker only, Asia/Shanghai)');
 }
 
 // 启动
-startServer();
+startServer().catch(error => {
+  console.error('[server] Failed to start server:', error);
+  cleanupWatcher(1);
+});

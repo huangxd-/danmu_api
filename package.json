@@ -6,16 +6,20 @@
   "main": "danmu_api/server.js",
   "scripts": {
     "start": "node danmu_api/server.js",
-    "build-forward-widget": "node build-forward-widget.js"
+    "build-forward-widget": "node build-forward-widget.js",
+    "build-forward-widget:debug": "node build-forward-widget.js --debug"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@dan-uni/dan-any": "^2.3.9",
+    "brotli": "^1.3.3",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
     "esbuild": "^0.25.10",
     "https-proxy-agent": "^7.0.6",
     "node-fetch": "^3.3.2",
+    "opencc-js": "^1.4.1",
     "pako": "^2.1.0",
     "redis": "^5.11.0"
   }

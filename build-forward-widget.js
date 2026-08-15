@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs';
+import path from 'node:path';
 
 // 动态获取版本号
 import { Globals } from './danmu_api/configs/globals.js';
@@ -37,6 +38,82 @@ const uiModules = [
 ];
 
 let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8');
+const debugBuild = process.argv.includes('--debug');
+const outputFile = debugBuild ? 'dist/logvar-danmu.debug.js' : 'dist/logvar-danmu.js';
+
+// ForwardWidget runs in a browser-like JS runtime, so Node built-ins must not
+// leak into the bundle. The server still imports the native implementations.
+const forwardRuntimeCompatPlugin = {
+  name: 'forward-runtime-compat',
+  setup(build) {
+    const danAnyModulePath = path.resolve('danmu_api/utils/dan-any.js');
+
+    // Forward only consumes the native JSON/XML response paths. Keep dan-any
+    // available to the server while removing it and its transitive dependencies
+    // from the standalone widget bundle.
+    build.onResolve({ filter: /(?:^|[\\/])dan-any\.js$/ }, (args) => {
+      if (path.resolve(args.resolveDir, args.path) !== danAnyModulePath) return;
+      return { path: 'dan-any', namespace: 'forward-optional-modules' };
+    });
+
+    build.onResolve({ filter: /^node:async_hooks$/ }, () => ({
+      path: 'async-hooks',
+      namespace: 'forward-node-builtins'
+    }));
+
+    build.onResolve({ filter: /^node:(?:http|https)$/ }, (args) => ({
+      path: args.path.slice('node:'.length),
+      namespace: 'forward-node-builtins'
+    }));
+
+    // brotli ships a compressed dictionary specifically for browser bundles.
+    build.onResolve({ filter: /^\.\/dictionary-data$/ }, (args) => {
+      if (/[\\/]node_modules[\\/]brotli[\\/]dec[\\/]dictionary\.js$/.test(args.importer)) {
+        return { path: path.resolve('node_modules/brotli/dec/dictionary-browser.js') };
+      }
+    });
+
+    build.onLoad({ filter: /^async-hooks$/, namespace: 'forward-node-builtins' }, () => ({
+      loader: 'js',
+      contents: `
+        export class AsyncLocalStorage {
+          constructor() {
+            this.store = undefined;
+          }
+
+          getStore() {
+            return this.store;
+          }
+
+          run(store, callback, ...args) {
+            const previousStore = this.store;
+            this.store = store;
+            try {
+              return callback(...args);
+            } finally {
+              this.store = previousStore;
+            }
+          }
+        }
+      `
+    }));
+
+    build.onLoad({ filter: /^(?:http|https)$/, namespace: 'forward-node-builtins' }, () => ({
+      loader: 'js',
+      contents: `export default { Agent: class Agent {} };`
+    }));
+
+    build.onLoad({ filter: /^dan-any$/, namespace: 'forward-optional-modules' }, () => ({
+      loader: 'js',
+      contents: `
+        export const danAnyFormats = [];
+        export function convertDanAny() {
+          return null;
+        }
+      `
+    }));
+  }
+};
 
 (async () => {
   try {
@@ -44,13 +121,15 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
       entryPoints: ['forward/forward-widget.js'], // 新的入口文件
       bundle: true,
       minify: false, // 暂时关闭压缩以便调试
+      minifySyntax: true, // 折叠 debug 编译期开关，但保留可读变量名
       sourcemap: false,
       platform: 'neutral', // 改为neutral以避免Node.js特定的全局变量
       target: 'es2020',
-      outfile: 'dist/logvar-danmu.js',
+      outfile: outputFile,
       format: 'esm', // 保持ES模块格式
       external: ['redis', 'fs', 'path', 'stream/promises', 'node-fetch'],
       plugins: [
+        forwardRuntimeCompatPlugin,
         // 插件：排除UI相关模块
         {
           name: 'exclude-ui-modules',
@@ -73,32 +152,42 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
           setup(build) {
             build.onEnd(async (result) => {
               if (result.errors.length === 0) {
-                let outputContent = fs.readFileSync('dist/logvar-danmu.js', 'utf8');
+                let outputContent = fs.readFileSync(outputFile, 'utf8');
                 
                 // 更通用的模式，匹配包含这四个函数名的导出语句
                 const genericExportPattern = /export\s*{\s*(?:\s*(?:getCommentsById|getDanmuWithSegmentTime|getDetailById|searchDanmu)\s*,?\s*){4}\s*};?/g;
                 outputContent = outputContent.replace(genericExportPattern, '');
 
                 // 替换 httpGet 和 httpPost
-                outputContent = outputContent.replace(/await\s+httpGet/g, 'await Widget.http.get');
-                outputContent = outputContent.replace(/await\s+httpPost/g, 'await Widget.http.post');
+                const httpGetReplacement = debugBuild ? 'forwardDebugHttpGet' : 'Widget.http.get';
+                const httpPostReplacement = debugBuild ? 'forwardDebugHttpPost' : 'Widget.http.post';
+                // Replace awaited and promise-style calls while preserving the bundled declarations.
+                outputContent = outputContent.replace(/(?<!function\s)\bhttpGet\s*\(/g, `${httpGetReplacement}(`);
+                outputContent = outputContent.replace(/(?<!function\s)\bhttpPost\s*\(/g, `${httpPostReplacement}(`);
 
-                // 删除本地redis相关
-                outputContent = outputContent.replace(/.*setLocalRedisKey.*\n?/g, '\n');
-                outputContent = outputContent.replace(/.*updateLocalRedisCaches.*\n?/g, '\n');
-
-                // 删除包含 bangumi-data-util.js 关键字的行
-                outputContent = outputContent.replace(/.*bangumi-data-util\.js.*\n?/g, '');
+                // Keep line removal linear even when dependencies contain very
+                // large single-line dictionaries (for example, opencc-js).
+                const excludedLineFragments = [
+                  'setLocalRedisKey',
+                  'updateLocalRedisCaches',
+                  'bangumi-data-util.js'
+                ];
+                outputContent = outputContent
+                  .split(/\r?\n/)
+                  .filter(line => !excludedLineFragments.some(fragment => line.includes(fragment)))
+                  .join('\n');
                 
                 // 保存修改后的内容
-                fs.writeFileSync('dist/logvar-danmu.js', outputContent);
+                fs.writeFileSync(outputFile, outputContent);
               }
             });
           }
         }
       ],
       define: {
-        'widgetVersion': `"${Globals.VERSION}"`
+        'widgetVersion': `"${Globals.VERSION}"`,
+        'globalThis.__FORWARD_WIDGET__': 'true',
+        'globalThis.__FORWARD_WIDGET_DEBUG__': debugBuild ? 'true' : 'false'
       },
       banner: {
         js: customPolyfillContent
@@ -106,9 +195,11 @@ let customPolyfillContent = fs.readFileSync('forward/custom-polyfill.js', 'utf8'
       logLevel: 'info'
     });
     
-    console.log('Forward widget bundle created successfully!');
+    console.log(`Forward widget ${debugBuild ? 'debug ' : ''}bundle created successfully: ${outputFile}`);
   } catch (error) {
     console.error('Build failed:', error);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await esbuild.stop();
   }
 })();

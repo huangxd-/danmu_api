@@ -327,9 +327,10 @@ function extractLoginCookieFromResponse(response) {
  * 检查二维码扫描状态
  */
 export async function handleQRCheck(request) {
+  let qrcodeKey = null;
   try {
     const body = await request.json();
-    const qrcodeKey = body.qrcodeKey || body.qrcode_key;
+    qrcodeKey = body.qrcodeKey || body.qrcode_key;
 
     if (!qrcodeKey) {
       return jsonResponse({ success: false, message: '缺少qrcodeKey参数' }, 400);
@@ -389,6 +390,11 @@ export async function handleQRCheck(request) {
     return jsonResponse(result);
   } catch (error) {
     return jsonResponse({ success: false, message: error.message }, 500);
+  } finally {
+    // 检查完成后清理会话记录，防止长期运行后内存累积
+    if (qrcodeKey) {
+      qrLoginSessions.delete(qrcodeKey);
+    }
   }
 }
 

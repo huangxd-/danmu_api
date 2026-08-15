@@ -142,12 +142,12 @@ function displayEpisodeListForPush(animeTitle, episodes, pushUrl) {
     
     // 添加跳转到指定集数的功能
     html += \`
-    <div class="jump-to-episode" style="margin-top: 15px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 12px; display: flex; align-items: center; gap: 10px;">
+    <div class="jump-to-episode">
         <span>跳转到第</span>
-        <input type="number" id="jump-episode-input-push" placeholder="输入集数" min="1" style="padding: 8px; width: 90px; border: 1px solid #ccc; border-radius: 8px;">
+        <input type="number" id="jump-episode-input-push" class="jump-episode-input" placeholder="输入集数" min="1">
         <span>集</span>
-        <button class="btn btn-primary btn-sm" onclick="jumpToEpisodeForPushDanmu()" style="margin-left: 5px; border-radius: 8px;">跳转</button>
-        <span style="margin-left: 5px; color: #666; font-size: 14px;">共\${episodes.length}集</span>
+        <button class="btn btn-primary btn-sm jump-episode-btn" onclick="jumpToEpisodeForPushDanmu()">跳转</button>
+        <span class="jump-episode-total">共\${episodes.length}集</span>
     </div>\`;
     
     html += '<div class="episode-list-container">';

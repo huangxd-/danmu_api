@@ -1,3 +1,5 @@
+import { normalizeSpaces } from './common-util.js';
+
 // 弹幕时间偏移独立模块
 // 职责：解析偏移规则、匹配偏移量、应用偏移到弹幕
 
@@ -66,13 +68,13 @@ export function parseOffsetRules(env) {
       all = false;
     }
 
-    // 解析路径：剧名/季/集
-    const segments = pathPart.trim().split('/');
-    const anime = segments[0] || null;
+    // 解析路径：剧名/季/集（仅在 / 后跟季/集标记（S\d+ 或 E\d+）时分隔剧名与季集）
+    const seMatch = pathPart.match(/^(.*?)\/([SE]\d+)(?:\/([SE]\d+))?$/i);
+    const anime = seMatch ? seMatch[1].trim() : pathPart.trim();
     if (!anime) return null;
 
-    const season = segments[1] ? normalizeSegment(segments[1]) : null;
-    const episode = segments[2] ? normalizeSegment(segments[2]) : null;
+    const season = seMatch ? normalizeSegment(seMatch[2]) : null;
+    const episode = seMatch && seMatch[3] ? normalizeSegment(seMatch[3]) : null;
 
     return { anime, season, episode, sources, all, offset, usePercent };
   }).filter(Boolean);
@@ -128,8 +130,8 @@ export function resolveOffsetRule(rules, { anime, season, episode, source }) {
     let genericMatch = null;
 
     for (const rule of rules) {
-      // 匹配剧名
-      if (rule.anime !== anime) continue;
+      // 匹配剧名（归一化后比较，消除 / 等非白名单字符带来的格式差异）
+      if (normalizeSpaces(rule.anime) !== normalizeSpaces(anime)) continue;
 
       // 匹配路径级别
       if (level.matchEpisode) {

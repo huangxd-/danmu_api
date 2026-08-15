@@ -23,7 +23,7 @@ export default class DoubanSource extends BaseSource {
 
       // 兜底策略：如果 searchDoubanTitles 失败或返回空结果，使用 searchDoubanTitlesByPublic
       if (!data || (!data?.subjects?.items?.length && !data?.smart_box?.length)) {
-        log("info", "[Douban] searchDoubanTitles failed or empty, trying searchDoubanTitlesByPublic");
+        log("info", "[douban] searchDoubanTitles failed or empty, trying searchDoubanTitlesByPublic");
         const fallbackResponse = await searchDoubanTitlesByPublic(keyword);
         const fallbackData = fallbackResponse?.data;
 
@@ -46,11 +46,11 @@ export default class DoubanSource extends BaseSource {
         tmpAnimes = [...tmpAnimes, ...data.smart_box];
       }
 
-      log("info", `[Douban] douban animes.length: ${tmpAnimes.length}`);
+      log("info", `[douban] douban animes.length: ${tmpAnimes.length}`);
 
       return tmpAnimes;
     } catch (error) {
-      log("error", "[Douban] getDoubanAnimes error:", {
+      log("error", "[douban] getDoubanAnimes error:", {
         message: error.message,
         name: error.name,
         stack: error.stack,
@@ -126,7 +126,7 @@ export default class DoubanSource extends BaseSource {
 
     // 添加错误处理，确保sourceAnimes是数组
     if (!sourceAnimes || !Array.isArray(sourceAnimes)) {
-      log("error", "[Douban] sourceAnimes is not a valid array");
+      log("error", "[douban] sourceAnimes is not a valid array");
       return [];
     }
 
@@ -150,7 +150,7 @@ export default class DoubanSource extends BaseSource {
       // 如果已命中目标，减少详情请求量
       if (seasonFiltered.length > 0) {
         filteredAnimes = seasonFiltered;
-        log("info", `[Douban] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
+        log("info", `[douban] 结果已命中目标季(第${resolvedQuerySeason}季)，跳过非目标季相关请求`);
       }
     }
 
@@ -160,7 +160,7 @@ export default class DoubanSource extends BaseSource {
         const doubanId = anime.target_id;
         let animeType = anime?.type_name;
         if (animeType !== "电影" && animeType !== "电视剧") return;
-        log("info", "[Douban] doubanId: ", doubanId, anime?.target?.title, animeType);
+        log("info", "[douban] doubanId: ", doubanId, anime?.target?.title, animeType);
 
         // 获取平台详情页面url
         const response = await getDoubanDetail(doubanId);
@@ -171,7 +171,7 @@ export default class DoubanSource extends BaseSource {
           if (!vendor) {
             continue;
           }
-          log("info", "[Douban] vendor uri: ", vendor.uri);
+          log("info", "[douban] vendor uri: ", vendor.uri);
 
           if (response.data?.genres.includes('真人秀')) {
             animeType = "综艺";
@@ -262,7 +262,7 @@ export default class DoubanSource extends BaseSource {
         }
         return results;
       } catch (error) {
-        log("error", `[Douban] Error processing anime: ${error.message}`);
+        log("error", `[douban] Error processing anime: ${error.message}`);
         return [];
       }
     }));

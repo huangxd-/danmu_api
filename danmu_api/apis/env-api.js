@@ -2,6 +2,7 @@ import { jsonResponse } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js';
 import { HandlerFactory } from '../configs/handlers/handler-factory.js';
 import { globals } from '../configs/globals.js';
+import { syncBangumiDataLifecycleOnConfigChange } from '../utils/bangumi-data-util.js';
 import AIClient from '../utils/ai-util.js';
 
 /**
@@ -24,13 +25,17 @@ export async function handleSetEnv(request) {
     // 调用handler的setEnv方法
     const result = await handler.setEnv(key, value);
     
+    if (result && key === 'USE_BANGUMI_DATA') {
+      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
+    }
+
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 设置成功` });
     } else {
       return jsonResponse({ success: false, message: `环境变量 ${key} 设置失败` }, 500);
     }
   } catch (error) {
-    log("error", "[system] [Server] 设置环境变量失败:", error);
+    log("error", "[system] [server] 设置环境变量失败:", error);
     return jsonResponse({ success: false, message: `设置环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -55,13 +60,17 @@ export async function handleAddEnv(request) {
     // 调用handler的addEnv方法
     const result = await handler.addEnv(key, value);
     
+    if (result && key === 'USE_BANGUMI_DATA') {
+      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
+    }
+
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 添加成功` });
     } else {
       return jsonResponse({ success: false, message: `环境变量 ${key} 添加失败` }, 500);
     }
   } catch (error) {
-    log("error", "[system] [Server] 添加环境变量失败:", error);
+    log("error", "[system] [server] 添加环境变量失败:", error);
     return jsonResponse({ success: false, message: `添加环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -86,13 +95,17 @@ export async function handleDelEnv(request) {
     // 调用handler的delEnv方法
     const result = await handler.delEnv(key);
     
+    if (result && key === 'USE_BANGUMI_DATA') {
+      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
+    }
+
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 删除成功` });
     } else {
       return jsonResponse({ success: false, message: `环境变量 ${key} 删除失败` }, 500);
     }
   } catch (error) {
-    log("error", "[system] [Server] 删除环境变量失败:", error);
+    log("error", "[system] [server] 删除环境变量失败:", error);
     return jsonResponse({ success: false, message: `删除环境变量失败: ${error.message}` }, 500);
   }
 }
@@ -142,7 +155,7 @@ export async function handleAiVerify(request) {
       }, 200);
     }
   } catch (error) {
-    log("error", "[system] [Server] AI 连通性验证失败:", error);
+    log("error", "[system] [server] AI 连通性验证失败:", error);
     return jsonResponse({ 
       success: false, 
       ok: false,

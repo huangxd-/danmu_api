@@ -1,7 +1,8 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
-import { jsonResponse, xmlResponse } from "./http-util.js";
-import { traditionalized } from './zh-util.js';
+import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
+import { simplized, traditionalized } from './zh-util.js';
+import { convertDanAny } from './dan-any.js';
 
 // =====================
 // danmu处理相关函数
@@ -28,7 +29,7 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
   const groupedByTime = filteredDanmus.reduce((acc, danmu) => {
     // 获取时间：优先使用 t 字段，如果没有则使用 p 的第一个值
     const time = danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0]);
-    
+
     // 确定分组键：n=0时使用精确时间(保留2位小数)，否则使用分钟索引
     const groupKey = n === 0 ? time.toFixed(2) : Math.floor(time / (n * 60));
 
@@ -64,14 +65,14 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
       acc[message].earliestT = Math.min(acc[message].earliestT, danmu.t);
       // 合并like字段，如果是undefined则视为0
       acc[message].like += (danmu.like !== undefined ? danmu.like : 0);
-      
+
       // 提取当前弹幕的来源并加入集合中，建立弹幕内容与平台的精确映射
       if (danmu.p) {
         const match = danmu.p.match(/\[([^\]]*)\]$/);
         if (match && match[1]) {
-            match[1].split(/[&＆]/).forEach(s => {
-                if (s.trim()) acc[message].sources.add(s.trim());
-            });
+          match[1].split(/[&＆]/).forEach(s => {
+            if (s.trim()) acc[message].sources.add(s.trim());
+          });
         }
       }
       return acc;
@@ -80,11 +81,11 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
     // 转换为结果格式
     return Object.keys(groupedByMessage).map(message => {
       const data = groupedByMessage[message];
-      
+
       // 以当前这句弹幕实际跨越的独立平台数作为除数，进行局部精准降噪，保留单平台内真实的重复计数
       let localSourceCount = Math.max(1, data.sources.size);
       let displayCount = Math.round(data.count / localSourceCount);
-      
+
       if (displayCount < 1) displayCount = 1;
 
       // 将收集到的所有真实独立来源重新拼装回 p 属性标签中
@@ -270,15 +271,15 @@ export function convertToDanmakuJson(contents, platform) {
 
     // 优先使用弹幕自带的 _sourceLabel（应对合并工具），其次是外部传入的宏观 platform
     let currentPlatform = item._sourceLabel || platform;
-    
+
     // 如果存在实时拉取的副源标签，安全追加
     if (item.realTimeSource && !currentPlatform.includes(item.realTimeSource)) {
-        currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
+      currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
     }
 
     // 在组装字符串时，顺带通过符号检测判定当前是否为多源组合数据
     if (!isMultiSource && /[&＆]/.test(currentPlatform)) {
-        isMultiSource = true;
+      isMultiSource = true;
     }
 
     attributes = [
@@ -291,6 +292,22 @@ export function convertToDanmakuJson(contents, platform) {
     danmus.push({ p: attributes, m, cid: cidCounter++, like: item?.like });
   }
 
+  // 文本字段归一化为 m 后统一转换，确保所有来源及输入格式行为一致。
+  const textConverter = globals.danmuSimplifiedTraditional === 'simplified'
+    ? simplized
+    : globals.danmuSimplifiedTraditional === 'traditional'
+      ? traditionalized
+      : null;
+
+  if (textConverter) {
+    danmus = danmus.map(danmu => ({
+      ...danmu,
+      m: typeof danmu.m === 'string' ? textConverter(danmu.m) : danmu.m
+    }));
+    const targetLabel = globals.danmuSimplifiedTraditional === 'simplified' ? '简体字' : '繁体字';
+    log("info", `[system] [danmu] [danmu convert] 转换了 ${danmus.length} 条弹幕为${targetLabel}`);
+  }
+
   // 切割字符串成正则表达式数组
   const regexArray = globals.blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
     // 去除两端的斜杠并转换为正则对象
@@ -300,16 +317,16 @@ export function convertToDanmakuJson(contents, platform) {
         // 去除两边的 `/` 并转化为正则
         return new RegExp(pattern.slice(1, -1));
       } catch (e) {
-        log("error", `[Utils] [Danmu] 无效的正则表达式: ${pattern}`, e);
+        log("error", `[system] [danmu] 无效的正则表达式: ${pattern}`, e);
         return null;
       }
     }
     return null; // 如果不是有效的正则格式则返回 null
   }).filter(regex => regex !== null); // 过滤掉无效的项
 
-  log("info", `[Utils] [Danmu] 原始屏蔽词字符串: ${globals.blockedWords}`);
+  log("info", `[system] [danmu] 原始屏蔽词字符串: ${globals.blockedWords}`);
   const regexArrayToString = array => Array.isArray(array) ? array.map(regex => regex.toString()).join('\n') : String(array);
-  log("info", `[Utils] [Danmu] 屏蔽词列表: ${regexArrayToString(regexArray)}`);
+  log("info", `[system] [danmu] 屏蔽词列表: ${regexArrayToString(regexArray)}`);
 
   // 过滤列表
   const filteredDanmus = danmus.filter(item => {
@@ -317,7 +334,7 @@ export function convertToDanmakuJson(contents, platform) {
   });
 
   // 按n分钟内去重
-  log("info", `[Utils] [Danmu] 去重分钟数: ${globals.groupMinute}`);
+  log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource);
 
   // 处理点赞数
@@ -369,28 +386,19 @@ export function convertToDanmakuJson(contents, platform) {
 
     // 统计输出转换结果
     if (topBottomCount > 0) {
-      log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
+      log("info", `[system] [danmu] [danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
     }
     if (colorCount > 0) {
-      log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色`);
+      log("info", `[system] [danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色`);
     }
   }
 
-  // 根据 danmuSimplifiedTraditional 设置转换弹幕文本
-  if (globals.danmuSimplifiedTraditional === 'traditional') {
-    convertedDanmus = convertedDanmus.map(danmu => ({
-      ...danmu,
-      m: traditionalized(danmu.m)
-    }));
-    log("info", `[Utils] [Danmu] [danmu convert] 转换了 ${convertedDanmus.length} 条弹幕为繁体字`);
-  }
-
-  log("info", `[Utils] [Danmu] danmus_original: ${danmus.length}`);
-  log("info", `[Utils] [Danmu] danmus_filter: ${filteredDanmus.length}`);
-  log("info", `[Utils] [Danmu] danmus_group: ${groupedDanmus.length}`);
-  log("info", `[Utils] [Danmu] danmus_limit: ${convertedDanmus.length}`);
+  log("info", `[system] [danmu] danmus_original: ${danmus.length}`);
+  log("info", `[system] [danmu] danmus_filter: ${filteredDanmus.length}`);
+  log("info", `[system] [danmu] danmus_group: ${groupedDanmus.length}`);
+  log("info", `[system] [danmu] danmus_limit: ${convertedDanmus.length}`);
   // 输出前五条弹幕
-  log("info", "[Utils] [Danmu] Top 5 danmus:", JSON.stringify(convertedDanmus.slice(0, 5), null, 2));
+  log("info", "[system] [danmu] Top 5 danmus:", JSON.stringify(convertedDanmus.slice(0, 5), null, 2));
   return convertedDanmus;
 }
 
@@ -488,24 +496,30 @@ function escapeXmlText(str) {
     .replace(/>/g, '&gt;');
 }
 
-// 根据格式参数返回弹幕数据（JSON 或 XML）
+// 根据格式参数返回弹幕数据
 export function formatDanmuResponse(danmuData, queryFormat) {
   // 确定最终使用的格式：查询参数 > 环境变量 > 默认值
   let format = queryFormat || globals.danmuOutputFormat;
   format = format.toLowerCase();
 
-  log("info", `[Utils] [Danmu] [Format] Using format: ${format}`);
+  log("info", `[system] [danmu] [format] Using format: ${format}`);
 
+  // 兼容旧格式转换
   if (format === 'xml') {
     try {
       const xmlData = convertDanmuToXml(danmuData);
       return xmlResponse(xmlData);
     } catch (error) {
-      log("error", `[Utils] [Danmu] Failed to convert to XML: ${error.message}`);
+      log("error", `[system] [danmu] Failed to convert to XML: ${error.message}`);
       // 转换失败时回退到 JSON
       return jsonResponse(danmuData);
     }
-  }
+  } else if (format === 'json') return jsonResponse(danmuData);
+
+  const converted = convertDanAny(danmuData, format);
+  if (converted?.type === 'json') return jsonResponse(converted.data);
+  if (converted?.type === 'xml') return xmlResponse(converted.data);
+  if (converted?.type === 'binary') return binResponse(converted.data, converted.filename);
 
   // 默认返回 JSON
   return jsonResponse(danmuData);

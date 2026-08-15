@@ -4,9 +4,331 @@ export const systemSettingsJsContent = /* javascript */ `
 let isMergeMode = false;
 let stagingTags = [];
 
+const UI_THEMES = {
+    lavender: '经典默认',
+    shinyo: '新叶绿',
+    sakura: '哔哩粉',
+    tianyi: '天依蓝',
+    hatsune: '初音青',
+    sakuragi: '樱木红',
+    violet: '罗兰紫',
+    amber: 'LCL橘',
+};
+
+const UI_THEME_STORAGE_KEY = 'logvar_ui_theme';
+const UI_SCHEME_STORAGE_KEY = 'logvar_ui_color_scheme';
+
+function getStoredTheme() {
+    try {
+        const theme = String(localStorage.getItem(UI_THEME_STORAGE_KEY) || '').toLowerCase();
+        return Object.prototype.hasOwnProperty.call(UI_THEMES, theme) ? theme : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function getStoredColorScheme() {
+    try { return localStorage.getItem(UI_SCHEME_STORAGE_KEY) || null; } catch(e) { return null; }
+}
+
+function storeColorScheme(scheme) {
+    try { localStorage.setItem(UI_SCHEME_STORAGE_KEY, scheme); } catch(e) {}
+}
+
+function storeTheme(theme) {
+    try { localStorage.setItem(UI_THEME_STORAGE_KEY, theme); return true; } catch (error) { return false; }
+}
+
+function applyTheme(theme) {
+    const normalizedTheme = String(theme || '').toLowerCase();
+    const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'lavender';
+    document.body.dataset.theme = selectedTheme;
+
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        const isSelected = button.dataset.themeOption === selectedTheme;
+        button.setAttribute('aria-checked', String(isSelected));
+    });
+
+    const label = document.getElementById('theme-current-label');
+    if (label) label.textContent = 'UI_THEME · ' + UI_THEMES[selectedTheme];
+    if (typeof updateColorSchemeToggle === 'function') updateColorSchemeToggle();
+    return selectedTheme;
+}
+
+function setThemeButtonsDisabled(disabled) {
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        button.disabled = disabled;
+    });
+}
+
+async function selectTheme(theme) {
+    const selectedTheme = applyTheme(theme);
+    const storedLocally = storeTheme(selectedTheme);
+    setThemeButtonsDisabled(true);
+
+    try {
+        const result = await saveImportedConfigValue('UI_THEME', selectedTheme);
+        if (!result || !result.success) {
+            throw new Error(result?.message || '保存失败');
+        }
+
+        updateLocalImportedConfig('UI_THEME', selectedTheme);
+        renderEnvList();
+        addLog('界面主题已保存为: ' + UI_THEMES[selectedTheme], 'success');
+    } catch (error) {
+        const localMessage = storedLocally ? '，已保存在当前浏览器' : '，仅在当前页面生效';
+        addLog('云端默认主题保存失败' + localMessage + ': ' + error.message, 'warn');
+        customAlert('主题已应用' + localMessage + '。云端默认主题保存失败: ' + error.message);
+    } finally {
+        setThemeButtonsDisabled(false);
+    }
+}
+
+applyTheme(getStoredTheme() || document.body.dataset.theme || 'lavender');
+
+// 导出当前管理员可见的环境变量配置
+async function exportSystemConfig() {
+    try {
+        const response = await fetch(buildApiUrl('/api/config', true));
+        if (!response.ok) {
+            throw new Error('获取配置失败: HTTP ' + response.status);
+        }
+
+        const config = await response.json();
+        const values = config.originalEnvVars || {};
+        const maskedKeys = Object.entries(values)
+            .filter(([, value]) => typeof value === 'string' && /^\\*+$/.test(value))
+            .map(([key]) => key);
+
+        if (maskedKeys.length > 0) {
+            customAlert('当前页面没有权限读取完整配置，无法导出脱敏配置。请使用 ADMIN_TOKEN 访问系统配置。');
+            return;
+        }
+
+        const exportData = {
+            format: 'danmu-api-config',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            values
+        };
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = 'danmu-api-config-' + date + '.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        addLog('配置文件导出成功，共 ' + Object.keys(values).length + ' 项', 'success');
+    } catch (error) {
+        addLog('配置文件导出失败: ' + error.message, 'error');
+        customAlert('配置文件导出失败: ' + error.message);
+    }
+}
+
+// 打开配置文件选择器
+function triggerConfigImport() {
+    const input = document.getElementById('config-import-file');
+    if (!input) return;
+    input.value = '';
+    input.click();
+}
+
+function readConfigFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('读取配置文件失败'));
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+function normalizeImportedConfig(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('配置文件必须是 JSON 对象');
+    }
+
+    const values = data.values || data.variables || data.env || data;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) {
+        throw new Error('配置文件中没有找到有效的 values 配置项');
+    }
+
+    const reservedKeys = new Set(['format', 'version', 'exportedAt']);
+    const entries = [];
+    const invalidKeys = [];
+    const maskedKeys = [];
+
+    Object.entries(values).forEach(([rawKey, rawValue]) => {
+        const key = String(rawKey).trim();
+        if (reservedKeys.has(key)) return;
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            invalidKeys.push(key || '(空键名)');
+            return;
+        }
+
+        if (rawValue !== null && typeof rawValue === 'object') {
+            invalidKeys.push(key + ' (值必须是文本、数字或布尔值)');
+            return;
+        }
+
+        let value = rawValue === null ? '' : String(rawValue);
+        if (/^\\*+$/.test(value)) {
+            maskedKeys.push(key);
+            return;
+        }
+        if (key === 'UI_THEME') {
+            value = value.trim().toLowerCase() || 'lavender';
+            if (!Object.prototype.hasOwnProperty.call(UI_THEMES, value)) {
+                invalidKeys.push(key + ' (不支持的主题: ' + value + ')');
+                return;
+            }
+        }
+        entries.push({ key, value });
+    });
+
+    if (invalidKeys.length > 0) {
+        throw new Error('配置文件包含无效项目: ' + invalidKeys.slice(0, 8).join('、'));
+    }
+    if (entries.length === 0) {
+        throw new Error(maskedKeys.length > 0 ? '配置文件中的值全部为脱敏值，无法导入' : '配置文件中没有可导入的配置');
+    }
+
+    // 令牌最后更新，避免导入过程中提前失去当前页面权限。
+    const importPriority = {
+        DEPLOY_PLATFROM_ACCOUNT: 10,
+        DEPLOY_PLATFROM_PROJECT: 11,
+        DEPLOY_PLATFROM_TOKEN: 12,
+        TOKEN: 20,
+        ADMIN_TOKEN: 30
+    };
+    entries.sort((a, b) => (importPriority[a.key] || 0) - (importPriority[b.key] || 0));
+
+    return { entries, maskedKeys };
+}
+
+async function saveImportedConfigValue(key, value) {
+    const request = (endpoint) => fetch(buildApiUrl(endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value })
+    }).then(response => response.json());
+
+    let result = await request('/api/env/set');
+    if (!result.success) {
+        result = await request('/api/env/add');
+    }
+    return result;
+}
+
+function updateLocalImportedConfig(key, value) {
+    for (const items of Object.values(envVariables)) {
+        const item = items.find(entry => entry.key === key);
+        if (item) {
+            item.value = value;
+            return;
+        }
+    }
+
+    if (!envVariables.system) envVariables.system = [];
+    const isTheme = key === 'UI_THEME';
+    envVariables.system.push({
+        key,
+        value,
+        type: isTheme ? 'select' : 'text',
+        options: isTheme ? Object.keys(UI_THEMES) : [],
+        description: isTheme ? '管理界面主题' : '从配置文件导入的配置项'
+    });
+}
+
+// 读取并批量导入配置文件
+async function importSystemConfigFile(file) {
+    if (!file) return;
+
+    try {
+        const data = JSON.parse(await readConfigFile(file));
+        const { entries, maskedKeys } = normalizeImportedConfig(data);
+        const confirmed = await customConfirm(
+            '即将覆盖 ' + entries.length + ' 项环境变量配置，导入过程可能需要一些时间。是否继续？',
+            '确认导入配置'
+        );
+        if (!confirmed) return;
+
+        showLoading('正在导入配置...', '准备导入 ' + entries.length + ' 项');
+        const failed = [];
+
+        for (let i = 0; i < entries.length; i++) {
+            const { key, value } = entries[i];
+            updateLoadingText('正在导入配置...', (i + 1) + '/' + entries.length + '  ' + key);
+            try {
+                const result = await saveImportedConfigValue(key, value);
+                if (!result || !result.success) {
+                    failed.push(key + ': ' + (result?.message || '保存失败'));
+                } else {
+                    updateLocalImportedConfig(key, value);
+                    if (key === 'UI_THEME') {
+                        applyTheme(value);
+                        storeTheme(value);
+                    }
+                }
+            } catch (error) {
+                failed.push(key + ': ' + error.message);
+            }
+        }
+
+        hideLoading();
+        renderEnvList();
+        renderPreview();
+
+        if (failed.length > 0) {
+            addLog('配置导入部分失败: ' + failed.join('；'), 'error');
+            customAlert('配置导入完成，但有 ' + failed.length + ' 项失败：\\n' + failed.slice(0, 8).join('\\n'));
+            return;
+        }
+
+        let successMessage;
+        if (maskedKeys.length > 0) {
+            addLog('配置导入完成，跳过 ' + maskedKeys.length + ' 项脱敏配置', 'warn');
+            successMessage = '配置导入成功，已跳过 ' + maskedKeys.length + ' 项脱敏值配置。';
+        } else {
+            addLog('配置导入成功，共 ' + entries.length + ' 项', 'success');
+            successMessage = '配置导入成功，共导入 ' + entries.length + ' 项配置。';
+        }
+
+        if (entries.some(entry => entry.key === 'TOKEN' || entry.key === 'ADMIN_TOKEN')) {
+            successMessage += '\\n访问令牌已更新，请使用新 TOKEN 或 ADMIN_TOKEN 地址重新打开管理页面。';
+        }
+        customAlert(successMessage);
+    } catch (error) {
+        hideLoading();
+        addLog('配置文件导入失败: ' + error.message, 'error');
+        customAlert('配置文件导入失败: ' + error.message);
+    }
+}
+
 // 显示清理缓存确认模态框
 function showClearCacheModal() {
+    selectAllCacheItems(true); // 每次打开恢复默认全选
     document.getElementById('clear-cache-modal').classList.add('active');
+}
+
+// 批量勾选或取消勾选所有缓存项，并同步已选数量
+function selectAllCacheItems(checked) {
+    document.querySelectorAll('#clear-cache-modal input[name="cacheItem"]').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateCacheClearCount();
+}
+
+// 刷新清理缓存弹窗中已勾选项的数量统计
+function updateCacheClearCount() {
+    const all = document.querySelectorAll('#clear-cache-modal input[name="cacheItem"]');
+    const checked = document.querySelectorAll('#clear-cache-modal input[name="cacheItem"]:checked');
+    const countEl = document.getElementById('cache-clear-count');
+    if (countEl) {
+        countEl.textContent = '已选 ' + checked.length + ' / ' + all.length;
+    }
 }
 
 // 隐藏清理缓存确认模态框
@@ -16,6 +338,14 @@ function hideClearCacheModal() {
 
 // 确认清理缓存
 async function confirmClearCache() {
+    // 收集勾选的缓存项
+    const checkboxes = document.querySelectorAll('#clear-cache-modal input[name="cacheItem"]:checked');
+    const items = Array.from(checkboxes).map(cb => cb.value);
+    if (items.length === 0) {
+        customAlert('请至少选择一项要清理的缓存');
+        return;
+    }
+
     // 检查部署平台配置
     const configCheck = await checkDeployPlatformConfig();
     if (!configCheck.success) {
@@ -29,12 +359,13 @@ async function confirmClearCache() {
     addLog('开始清理缓存', 'info');
 
     try {
-        // 调用真实的清理缓存API
+        // 调用真实的清理缓存API，附带勾选的待清理项
         const response = await fetch(buildApiUrl('/api/cache/clear', true), { // 使用admin token
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({ items })
         });
 
         const result = await response.json();
@@ -383,12 +714,21 @@ function checkAndHandleAdminToken() {
     }
 }
 
+// 获取配置项类型的显示标签
+function getEnvTypeLabel(type) {
+    return type === 'boolean' ? '布尔' :
+           type === 'number' ? '数字' :
+           type === 'select' ? '单选' :
+           type === 'map' ? '映射' :
+           type === 'multi-select' ? '多选' : '文本';
+}
+
 // 渲染值输入控件
 function renderValueInput(item) {
     const container = document.getElementById('value-input-container');
-    const type = item ? item.type : document.getElementById('value-type').value;
+    const type = item ? item.type : editingType;
     const value = item ? item.value : '';
-    const currentKey = item ? item.key : document.getElementById('env-key').value;
+    const currentKey = item ? item.key : editingKeyName;
 
     if (type === 'boolean') {
         // 布尔开关
@@ -465,7 +805,10 @@ function renderValueInput(item) {
         const options = item && item.options ? item.options : ['option1', 'option2', 'option3', 'option4'];
         // 确保value是字符串类型后再进行split操作
         const stringValue = typeof value === 'string' ? value : String(value || '');
-        const selectedValues = stringValue ? stringValue.split(',').map(v => v.trim()).filter(v => v) : [];
+        // 排序配置中重复项没有语义，渲染时顺便清理历史脏数据。
+        const selectedValues = stringValue
+            ? [...new Set(stringValue.split(',').map(v => v.trim()).filter(v => v))]
+            : [];
         
         // 检查是否为 SOURCE_ORDER，如果是则不显示合并模式
         const shouldShowMergeMode = currentKey === 'MERGE_SOURCE_PAIRS' || currentKey === 'PLATFORM_ORDER';
@@ -574,7 +917,7 @@ function renderValueInput(item) {
 
     } else {
         // 文本输入
-        const currentKey = document.getElementById('env-key') ? document.getElementById('env-key').value : '';
+        const currentKey = editingKeyName;
         const isBilibiliCookie = currentKey === 'BILIBILI_COOKIE';
         const isAiApiKey = currentKey === 'AI_API_KEY';
         const isColorPool = currentKey === 'COLOR_POOL';
@@ -658,9 +1001,9 @@ function renderValueInput(item) {
                         </div>
                     </div>
                     <div style="margin-bottom: 10px; display: flex; align-items: center; width: 100%;">
-                        <label class="offset-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; white-space: nowrap;">
+                        <label class="offset-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
                             启用百分比模式（按视频时长缩放全部弹幕时间）
-                            <input type="checkbox" id="offset-use-percent" style="width: 16px; height: 16px; margin: 0; flex-shrink: 0;">
+                            <input type="checkbox" id="offset-use-percent" class="app-checkbox">
                         </label>
                     </div>
                     \${offsetSources.length > 0 ? \`
@@ -761,13 +1104,12 @@ function renderValueInput(item) {
                             <label class="offset-label">副源实体（副源剧名@源）</label>
                             <input type="text" id="merge-sec-entity" class="offset-input" placeholder="例: 我推的孩子/S01@bahamut" onfocus="setMergeFocus('sec')">
                         </div>
-                        <div style="width: 60px;">
-                            <label class="offset-label" style="text-align: center; display: block;">关系</label>
-                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; padding: 6px; text-align: center; font-weight: bold; font-size: 14px;">
+                        <div style="width: 80px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;">
+                            <label class="offset-label" style="text-align: center; display: block;">关系：<span id="merge-action-hint" style="font-weight: normal; color: var(--theme-muted);">合并</span></label>
+                            <select id="merge-action" class="offset-input" onchange="onMergeActionChange()" style="cursor: pointer; text-align: center; font-weight: bold; font-size: 15px;">
                                 <option value="->">-&gt;</option>
                                 <option value="×">×</option>
                             </select>
-                            <div id="merge-action-hint" style="font-size: 11px; color: #666; text-align: center; margin-top: 4px;">合并</div>
                         </div>
                         <div style="flex: 1; min-width: 120px;">
                             <label class="offset-label">主源实体（主源剧名@源）</label>
@@ -1223,7 +1565,7 @@ function appendMergeRule() {
     toggleMergeRulePanel();
 }
 
-// 调整数字
+// 递增/递减数字输入
 function adjustNumber(delta) {
     const display = document.getElementById('num-value');
     const slider = document.getElementById('num-slider');
@@ -1260,19 +1602,34 @@ function updateTagOptions() {
 }
 
 // 统一的状态检查函数
+function getSelectedTagElements() {
+    const container = document.getElementById('selected-tags');
+    if (!container) return [];
+
+    return Array.from(container.children).filter(element =>
+        element.classList.contains('selected-tag') && !element.dataset.dragGhost
+    );
+}
+
 function updateTagStates() {
     // 确保 DOM 元素存在，防止在渲染过程中被调用出错
-    const keyInput = document.getElementById('env-key');
-    if (!keyInput) return;
+    // 确保当前编辑配置存在
+    if (!editingKeyName) return;
 
-    const currentKey = keyInput.value;
+    const currentKey = editingKeyName;
     const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS';
-
+    const preventDuplicateSources = currentKey === 'SOURCE_ORDER' || currentKey === 'PLATFORM_ORDER';
     // 1. 获取当前暂存区中的Token (防止同组内重复)
     const stagingTokens = new Set(stagingTags);
     
     // 2. 获取已确认的 Selected Tags (仅在非合并模式下需要检查)
-    const selectedTagElements = Array.from(document.querySelectorAll('.selected-tag'));
+    const selectedTagElements = getSelectedTagElements();
+    // PLATFORM_ORDER 的已选项可能是 dandan&animeko，需要将组合拆开后再判断源是否已添加。
+    const selectedSourceTokens = new Set(
+        selectedTagElements.flatMap(element =>
+            String(element.dataset.value || '').split('&').map(value => value.trim()).filter(Boolean)
+        )
+    );
 
     // 3. 更新所有可选项的状态
     const availableTags = document.querySelectorAll('.available-tag');
@@ -1282,15 +1639,17 @@ function updateTagStates() {
 
         if (isMergeMode) {
             // [合并模式逻辑]
-            // 只要不在当前的暂存区中，就可以选（允许 bilibili&a 和 bilibili&b）
-            // 也就是说，我们完全不检查 selectedTagElements
-            if (stagingTokens.has(value)) {
+            // SOURCE_ORDER / PLATFORM_ORDER 中已经添加过的源不能再次加入。
+            // MERGE_SOURCE_PAIRS 保留同一源参与不同合并组的能力。
+            if (stagingTokens.has(value) || (preventDuplicateSources && selectedSourceTokens.has(value))) {
                 shouldDisable = true;
             }
         } else {
             // [普通模式逻辑]
-            // 只要已经被选了，就禁用 (精准匹配)
-            const isAlreadySelected = selectedTagElements.some(el => el.dataset.value === value);
+            // 排序配置按组成源判断，其他多选配置保持完整值精准匹配。
+            const isAlreadySelected = preventDuplicateSources
+                ? selectedSourceTokens.has(value)
+                : selectedTagElements.some(el => el.dataset.value === value);
             if (isAlreadySelected) {
                 shouldDisable = true;
             }
@@ -1313,6 +1672,8 @@ function updateTagStates() {
 function addSelectedTag(element) {
     const value = element.dataset.value;
 
+    if (element.classList.contains('disabled')) return;
+
     if (isMergeMode) {
         if (!stagingTags.includes(value)) {
             stagingTags.push(value);
@@ -1321,8 +1682,6 @@ function addSelectedTag(element) {
         }
         return;
     }
-
-    if (element.classList.contains('disabled')) return;
     
     const container = document.getElementById('selected-tags');
 
@@ -1479,6 +1838,7 @@ function setupStagingDragAndDrop() {
         tag.addEventListener('touchstart', handleStagingTouchStart);
         tag.addEventListener('touchmove', handleStagingTouchMove);
         tag.addEventListener('touchend', handleStagingTouchEnd);
+        tag.addEventListener('touchcancel', handleStagingTouchCancel);
     });
 }
 
@@ -1495,6 +1855,7 @@ function handleStagingDragEnd(e) {
     document.querySelectorAll('.staging-tag').forEach(tag => {
         tag.classList.remove('drag-over');
     });
+    stagingDraggedElement = null;
 }
 
 function handleStagingDragOver(e) {
@@ -1609,7 +1970,7 @@ function handleStagingTouchEnd(e) {
     
     const touch = e.changedTouches[0];
     const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-    const targetTag = targetElement.closest('.staging-tag');
+    const targetTag = targetElement ? targetElement.closest('.staging-tag') : null;
     
     if (targetTag && targetTag !== stagingDraggedElement) {
         const draggedIndex = parseInt(stagingDraggedElement.dataset.index);
@@ -1633,45 +1994,175 @@ function handleStagingTouchEnd(e) {
     stagingDraggedElement = null;
 }
 
+function handleStagingTouchCancel(e) {
+    if (e && e.cancelable) e.preventDefault();
+
+    const ghostElement = document.getElementById('staging-touch-drag-ghost');
+    if (ghostElement) ghostElement.remove();
+
+    if (stagingDraggedElement) {
+        stagingDraggedElement.style.transform = '';
+        stagingDraggedElement.style.opacity = '';
+        stagingDraggedElement.style.zIndex = '';
+        stagingDraggedElement.classList.remove('dragging');
+    }
+
+    document.querySelectorAll('#staging-area .staging-tag').forEach(tag => {
+        tag.classList.remove('drag-over');
+    });
+    stagingDraggedElement = null;
+}
+
 // 设置拖放功能
 let draggedElement = null;
 let touchDragging = false;
+let touchDragFrame = null;
 
-// 为删除按钮添加触摸事件监听器，以确保其可以被点击
 function setupDragAndDrop() {
     const container = document.getElementById('selected-tags');
-    const tags = container.querySelectorAll('.selected-tag');
+    if (!container) return;
+    if (container.dataset.dragEventsBound === 'true') return;
 
+    // 使用事件委托，让初始标签和运行时新增标签走同一套拖拽生命周期。
+    container.addEventListener('dragstart', handleDelegatedDragStart);
+    container.addEventListener('dragend', handleDelegatedDragEnd);
+    container.addEventListener('dragover', handleDelegatedDragOver);
+    container.addEventListener('drop', handleDelegatedDrop);
+    container.addEventListener('dragenter', handleDelegatedDragEnter);
+    container.addEventListener('dragleave', handleDelegatedDragLeave);
+    container.addEventListener('touchstart', handleDelegatedTouchStart, { passive: false });
+    container.dataset.dragEventsBound = 'true';
+}
+
+function getEventSelectedTag(e) {
+    const container = document.getElementById('selected-tags');
+    const tag = e.target && e.target.closest ? e.target.closest('.selected-tag') : null;
+    return tag && container && container.contains(tag) && !tag.dataset.dragGhost ? tag : null;
+}
+
+function handleDelegatedDragStart(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) handleDragStart.call(tag, e);
+}
+
+function handleDelegatedDragEnd(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) handleDragEnd.call(tag, e);
+}
+
+function handleDelegatedDragOver(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) {
+        handleDragOver.call(tag, e);
+    } else {
+        handleSelectedTagsContainerDragOver(e);
+    }
+}
+
+function handleDelegatedDrop(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) {
+        handleDrop.call(tag, e);
+    } else {
+        handleSelectedTagsContainerDrop(e);
+    }
+}
+
+function handleDelegatedDragEnter(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) handleDragEnter.call(tag, e);
+}
+
+function handleDelegatedDragLeave(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) handleDragLeave.call(tag, e);
+}
+
+function handleDelegatedTouchStart(e) {
+    const tag = getEventSelectedTag(e);
+    if (tag) handleTouchStart.call(tag, e);
+}
+
+function getSelectedDropTarget(clientX, clientY) {
+    const container = document.getElementById('selected-tags');
+    if (!container || !draggedElement) return null;
+
+    const pointElement = document.elementFromPoint(clientX, clientY);
+    const directTag = pointElement ? pointElement.closest('.selected-tag') : null;
+    if (directTag === draggedElement) return null;
+    if (directTag && container.contains(directTag) && !directTag.dataset.dragGhost) {
+        return { tag: directTag, direct: true };
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const insideContainer = clientX >= containerRect.left && clientX <= containerRect.right &&
+        clientY >= containerRect.top && clientY <= containerRect.bottom;
+    if (!insideContainer) return null;
+
+    const tags = getSelectedTagElements().filter(tag => tag !== draggedElement);
+    if (tags.length === 0) return { tag: null, direct: false };
+
+    let closestTag = tags[0];
+    let closestDistance = Infinity;
     tags.forEach(tag => {
-        // 鼠标拖放事件
-        tag.addEventListener('dragstart', handleDragStart);
-        tag.addEventListener('dragend', handleDragEnd);
-        tag.addEventListener('dragover', handleDragOver);
-        tag.addEventListener('drop', handleDrop);
-        tag.addEventListener('dragenter', handleDragEnter);
-        tag.addEventListener('dragleave', handleDragLeave);
-        
-        // 触摸拖放事件
-        tag.addEventListener('touchstart', handleTouchStart);
-        tag.addEventListener('touchmove', handleTouchMove);
-        tag.addEventListener('touchend', handleTouchEnd);
-        
-        // 确保删除按钮可以被点击
-        const removeBtn = tag.querySelector('.remove-btn');
-        if (removeBtn) {
-            // 阻止删除按钮上的触摸事件冒泡到父元素
-            removeBtn.addEventListener('touchstart', function(e) {
-                e.stopPropagation();
-            });
-            
-            removeBtn.addEventListener('touchend', function(e) {
-                e.stopPropagation();
-            });
+        const rect = tag.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.pow(clientX - centerX, 2) + Math.pow(clientY - centerY, 2);
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestTag = tag;
         }
     });
+
+    return { tag: closestTag, direct: false };
+}
+
+function moveSelectedTagToPoint(clientX, clientY) {
+    const container = document.getElementById('selected-tags');
+    const dropTarget = getSelectedDropTarget(clientX, clientY);
+    if (!container || !draggedElement || !dropTarget) return false;
+
+    const targetTag = dropTarget.tag;
+    if (!targetTag) {
+        container.appendChild(draggedElement);
+        return true;
+    }
+
+    const allTags = getSelectedTagElements();
+    const draggedIndex = allTags.indexOf(draggedElement);
+    const targetIndex = allTags.indexOf(targetTag);
+
+    if (dropTarget.direct) {
+        container.insertBefore(draggedElement, draggedIndex < targetIndex ? targetTag.nextSibling : targetTag);
+        return true;
+    }
+
+    const targetRect = targetTag.getBoundingClientRect();
+    const onSameRow = clientY >= targetRect.top && clientY <= targetRect.bottom;
+    const insertBefore = onSameRow
+        ? clientX < targetRect.left + targetRect.width / 2
+        : clientY < targetRect.top + targetRect.height / 2;
+    container.insertBefore(draggedElement, insertBefore ? targetTag : targetTag.nextSibling);
+    return true;
+}
+
+function handleSelectedTagsContainerDragOver(e) {
+    if (!draggedElement) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+function handleSelectedTagsContainerDrop(e) {
+    const targetTag = e.target && e.target.closest ? e.target.closest('.selected-tag') : null;
+    if (!draggedElement || targetTag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    moveSelectedTagToPoint(e.clientX, e.clientY);
 }
 
 function handleDragStart(e) {
+    cleanupSelectedTagsTouchDrag();
     draggedElement = this;
     this.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -1679,9 +2170,10 @@ function handleDragStart(e) {
 
 function handleDragEnd(e) {
     this.classList.remove('dragging');
-    document.querySelectorAll('.selected-tag').forEach(tag => {
+    getSelectedTagElements().forEach(tag => {
         tag.classList.remove('drag-over');
     });
+    draggedElement = null;
 }
 
 function handleDragOver(e) {
@@ -1709,7 +2201,7 @@ function handleDrop(e) {
 
     if (draggedElement !== this) {
         const container = document.getElementById('selected-tags');
-        const allTags = Array.from(container.querySelectorAll('.selected-tag'));
+        const allTags = getSelectedTagElements();
         const draggedIndex = allTags.indexOf(draggedElement);
         const targetIndex = allTags.indexOf(this);
 
@@ -1727,7 +2219,7 @@ function handleDrop(e) {
 // 触摸拖动事件处理
 function handleTouchStart(e) {
     // 检查点击的是否是删除按钮
-    if (e.target.classList.contains('remove-btn')) {
+    if (e.target && e.target.closest && e.target.closest('.remove-btn')) {
         // 如果点击的是删除按钮，则不执行拖动操作
         return;
     }
@@ -1735,10 +2227,8 @@ function handleTouchStart(e) {
     // 防止默认的触摸行为
     e.preventDefault();
     
-    // 获取触摸点
-    const touch = e.touches[0];
-    
     // 模拟拖动开始
+    cleanupSelectedTagsTouchDrag();
     draggedElement = this;
     this.classList.add('dragging');
     touchDragging = true;
@@ -1751,6 +2241,7 @@ function handleTouchStart(e) {
     // 添加触摸移动和结束事件监听器到文档
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.addEventListener('touchend', handleTouchEnd, { passive: false });
+    document.addEventListener('touchcancel', handleTouchCancel, { passive: false });
 }
 
 function handleTouchMove(e) {
@@ -1759,111 +2250,51 @@ function handleTouchMove(e) {
     // 防止默认的触摸行为
     e.preventDefault();
     
-    // 使用 requestAnimationFrame 来优化性能
-    if (window.requestAnimationFrame) {
-        window.requestAnimationFrame(() => {
-            // 获取触摸点位置
-            const touch = e.touches[0];
-            
-            // 获取拖动元素的尺寸
-            const elementRect = draggedElement.getBoundingClientRect();
-            
-            // 创建一个临时的拖动元素，而不是移动原始元素
-            if (!document.getElementById('touch-drag-ghost')) {
-                const ghostElement = draggedElement.cloneNode(true);
-                ghostElement.id = 'touch-drag-ghost';
-                ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
-                ghostElement.style.left = '0';
-                ghostElement.style.top = '0';
-                ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
-                ghostElement.style.zIndex = '9999';
-                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
-                ghostElement.style.opacity = '0.8';
-                ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
-                ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
-                ghostElement.style.height = elementRect.height + 'px'; // 固定高度
-                document.body.appendChild(ghostElement);
-            } else {
-                const ghostElement = document.getElementById('touch-drag-ghost');
-                ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
-            }
-            
-            // 检查与其他元素的碰撞
-            const container = document.getElementById('selected-tags');
-            const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
-            let targetElement = null;
-            
-            for (const tag of tags) {
-                const rect = tag.getBoundingClientRect();
-                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-                    targetElement = tag;
-                    break;
-                }
-            }
-            
-            // 高亮目标元素
-            document.querySelectorAll('.selected-tag').forEach(tag => {
-                if (tag !== draggedElement) {
-                    tag.classList.remove('drag-over');
-                }
-            });
-            
-            if (targetElement) {
-                targetElement.classList.add('drag-over');
-            }
-        });
-    } else {
-        // 降级处理，如果不支持 requestAnimationFrame
-        const touch = e.touches[0];
-        
-        // 获取拖动元素的尺寸
+    const touch = e.touches[0];
+    if (!touch) return;
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+
+    if (touchDragFrame !== null && window.cancelAnimationFrame) {
+        window.cancelAnimationFrame(touchDragFrame);
+    }
+
+    const updatePreview = () => {
+        touchDragFrame = null;
+        if (!touchDragging || !draggedElement) return;
+
         const elementRect = draggedElement.getBoundingClientRect();
-        
-        // 创建一个临时的拖动元素，而不是移动原始元素
-        if (!document.getElementById('touch-drag-ghost')) {
-            const ghostElement = draggedElement.cloneNode(true);
+        let ghostElement = document.getElementById('touch-drag-ghost');
+        if (!ghostElement) {
+            ghostElement = draggedElement.cloneNode(true);
             ghostElement.id = 'touch-drag-ghost';
-            ghostElement.style.position = 'fixed'; // 使用 fixed 而不是 absolute
+            ghostElement.dataset.dragGhost = 'true';
+            ghostElement.setAttribute('aria-hidden', 'true');
+            ghostElement.removeAttribute('draggable');
+            ghostElement.style.position = 'fixed';
             ghostElement.style.left = '0';
             ghostElement.style.top = '0';
-            ghostElement.style.pointerEvents = 'none'; // 防止干扰触摸事件
+            ghostElement.style.pointerEvents = 'none';
             ghostElement.style.zIndex = '9999';
-            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
             ghostElement.style.opacity = '0.8';
-            ghostElement.style.boxSizing = 'border-box'; // 确保尺寸计算正确
-            ghostElement.style.width = elementRect.width + 'px'; // 固定宽度
-            ghostElement.style.height = elementRect.height + 'px'; // 固定高度
+            ghostElement.style.boxSizing = 'border-box';
+            ghostElement.style.width = elementRect.width + 'px';
+            ghostElement.style.height = elementRect.height + 'px';
             document.body.appendChild(ghostElement);
-        } else {
-            const ghostElement = document.getElementById('touch-drag-ghost');
-            ghostElement.style.transform = 'translate(' + (touch.clientX - (elementRect.width / 2)) + 'px, ' + (touch.clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
         }
-        
-        // 检查与其他元素的碰撞
-        const container = document.getElementById('selected-tags');
-        const tags = Array.from(container.querySelectorAll('.selected-tag')).filter(tag => tag !== draggedElement);
-        let targetElement = null;
-        
-        for (const tag of tags) {
-            const rect = tag.getBoundingClientRect();
-            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-                targetElement = tag;
-                break;
-            }
-        }
-        
-        // 高亮目标元素
-        document.querySelectorAll('.selected-tag').forEach(tag => {
-            if (tag !== draggedElement) {
-                tag.classList.remove('drag-over');
-            }
+        ghostElement.style.transform = 'translate(' + (clientX - (elementRect.width / 2)) + 'px, ' + (clientY - (elementRect.height / 2)) + 'px) rotate(5deg)';
+
+        const dropTarget = getSelectedDropTarget(clientX, clientY);
+        getSelectedTagElements().forEach(tag => {
+            if (tag !== draggedElement) tag.classList.remove('drag-over');
         });
-        
-        if (targetElement) {
-            targetElement.classList.add('drag-over');
-        }
+        if (dropTarget && dropTarget.tag) dropTarget.tag.classList.add('drag-over');
+    };
+
+    if (window.requestAnimationFrame) {
+        touchDragFrame = window.requestAnimationFrame(updatePreview);
+    } else {
+        updatePreview();
     }
 }
 
@@ -1873,51 +2304,42 @@ function handleTouchEnd(e) {
     // 防止默认的触摸行为
     e.preventDefault();
     
-    // 移除临时拖动元素
-    const ghostElement = document.getElementById('touch-drag-ghost');
-    if (ghostElement) {
-        document.body.removeChild(ghostElement);
-    }
-    
-    // 找到目标元素（如果有）
-    const touch = e.changedTouches[0];
-    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-    
-    const container = document.getElementById('selected-tags');
-    const targetTag = targetElement.closest('.selected-tag');
-    
-    // 如果目标是另一个标签，执行交换
-    if (targetTag && targetTag !== draggedElement && container.contains(targetTag)) {
-        const allTags = Array.from(container.querySelectorAll('.selected-tag'));
-        const draggedIndex = allTags.indexOf(draggedElement);
-        const targetIndex = allTags.indexOf(targetTag);
+    const touch = e.changedTouches && e.changedTouches[0];
+    if (touch) moveSelectedTagToPoint(touch.clientX, touch.clientY);
+    cleanupSelectedTagsTouchDrag();
+}
 
-        if (draggedIndex < targetIndex) {
-            targetTag.parentNode.insertBefore(draggedElement, targetTag.nextSibling);
-        } else {
-            targetTag.parentNode.insertBefore(draggedElement, targetTag);
-        }
+function handleTouchCancel(e) {
+    if (e && e.cancelable) e.preventDefault();
+    cleanupSelectedTagsTouchDrag();
+}
+
+function cleanupSelectedTagsTouchDrag() {
+    if (touchDragFrame !== null && window.cancelAnimationFrame) {
+        window.cancelAnimationFrame(touchDragFrame);
     }
-    
-    // 重置元素样式
-    draggedElement.style.transform = '';
-    draggedElement.style.opacity = '';
-    draggedElement.style.zIndex = '';
-    
-    // 移除拖动类
-    draggedElement.classList.remove('dragging');
-    document.querySelectorAll('.selected-tag').forEach(tag => {
-        tag.classList.remove('drag-over');
-    });
-    
-    // 重置变量
+    touchDragFrame = null;
+
+    const ghostElement = document.getElementById('touch-drag-ghost');
+    if (ghostElement) ghostElement.remove();
+
+    if (draggedElement && touchDragging) {
+        draggedElement.style.transform = '';
+        draggedElement.style.opacity = '';
+        draggedElement.style.zIndex = '';
+        draggedElement.classList.remove('dragging');
+    }
+    getSelectedTagElements().forEach(tag => tag.classList.remove('drag-over'));
+
     touchDragging = false;
-    draggedElement = null;
-    
-    // 移除事件监听器
+    if (draggedElement && !draggedElement.classList.contains('dragging')) draggedElement = null;
+
     document.removeEventListener('touchmove', handleTouchMove);
     document.removeEventListener('touchend', handleTouchEnd);
+    document.removeEventListener('touchcancel', handleTouchCancel);
 }
+
+window.addEventListener('blur', cleanupSelectedTagsTouchDrag);
 
 // 显示加载遮罩
 function showLoading(text, detail) {
@@ -1948,46 +2370,137 @@ function updateProgress(percent) {
     document.getElementById('progress-bar').style.width = percent + '%';
 }
 
-// 渲染环境变量列表
-function renderEnvList() {
-    const list = document.getElementById('env-list');
-    const items = envVariables[currentCategory] || [];
+function renderEnvNavigation() {
+    const navigation = document.getElementById('env-categories');
+    if (!navigation) return;
 
-    if (items.length === 0) {
-        list.innerHTML = '<p class="text-gray padding-20 text-center">暂无配置项</p>';
-        return;
-    }
-
-    list.innerHTML = items.map((item, index) => {
-        const typeLabel = item.type === 'boolean' ? '布尔' :
-                         item.type === 'number' ? '数字' :
-                         item.type === 'select' ? '单选' :
-                         item.type === 'map' ? '映射' :
-                         item.type === 'multi-select' ? '多选' : '文本';
-        const badgeClass = item.type === 'multi-select' ? 'multi' : '';
-
-        const escapedValue = escapeHtml(item.value);
-
+    navigation.innerHTML = previewCategoryOrder.map(category => {
+        const isActive = !envSearchQuery && currentCategory === category;
+        const count = (envVariables[category] || []).length;
         return \`
-            <div class="env-item">
-                <div class="env-info">
-                    <strong>\${item.key}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
-                    <div class="text-dark-gray">\${escapedValue}</div>
-                    <div class="text-gray font-size-12 margin-top-3">\${item.description || '无描述'}</div>
-                </div>
-                <div class="env-actions">
-                    <button class="btn btn-primary" onclick="editEnv(\${index})">编辑</button>
-                    <button class="btn btn-danger" onclick="deleteEnv(\${index})">删除</button>
-                </div>
-            </div>
+            <button
+                type="button"
+                class="preview-category-btn\${isActive ? ' active' : ''}"
+                onclick="switchCategory('\${category}')"
+                aria-pressed="\${isActive}"
+            >
+                <span>\${previewCategoryMeta[category].label}</span>
+                <span class="preview-category-count">\${count}</span>
+            </button>
         \`;
     }).join('');
 }
 
+function envItemMatchesSearch(item, category, normalizedQuery) {
+    const value = item.value === null || item.value === undefined ? '' : String(item.value);
+    const themeLabel = item.key === 'UI_THEME' ? UI_THEMES[value.toLowerCase()] || '' : '';
+    return [
+        item.key,
+        value,
+        item.description,
+        previewCategoryMeta[category].label,
+        themeLabel
+    ].join(' ').toLocaleLowerCase().includes(normalizedQuery);
+}
+
+function renderEnvItem(item, category, originalIndex) {
+    const typeLabel = getEnvTypeLabel(item.type);
+    const badgeClass = item.type === 'multi-select' ? 'multi' : '';
+
+    return \`
+        <div class="env-item">
+            <div class="env-info">
+                <strong>\${escapeHtml(item.key)}<span class="value-type-badge \${badgeClass}">\${typeLabel}</span></strong>
+                <div class="text-dark-gray">\${escapeHtml(item.value)}</div>
+                <div class="text-gray font-size-12 margin-top-3">\${escapeHtml(item.description || '无描述')}</div>
+            </div>
+            <div class="env-actions">
+                <button class="btn btn-primary" onclick="editEnv('\${category}', \${originalIndex}, this)">编辑</button>
+                <button class="btn btn-danger" onclick="deleteEnv('\${category}', \${originalIndex}, this)">删除</button>
+            </div>
+        </div>
+    \`;
+}
+
+function handleEnvSearch(event) {
+    envSearchQuery = event.target.value.trim();
+    const clearButton = document.getElementById('env-search-clear');
+    if (clearButton) clearButton.hidden = !envSearchQuery;
+    renderEnvList();
+}
+
+function clearEnvSearch(shouldRender = true) {
+    envSearchQuery = '';
+    const input = document.getElementById('env-search-input');
+    const clearButton = document.getElementById('env-search-clear');
+    if (input) input.value = '';
+    if (clearButton) clearButton.hidden = true;
+    if (shouldRender) {
+        renderEnvList();
+        if (input) input.focus();
+    }
+}
+
+// 渲染环境变量列表
+function renderEnvList() {
+    const list = document.getElementById('env-list');
+    const status = document.getElementById('env-search-status');
+    const themeSettings = document.getElementById('theme-settings');
+    if (!list) return;
+
+    renderEnvNavigation();
+
+    if (!envSearchQuery) {
+        const categoryItems = envVariables[currentCategory] || [];
+        const items = categoryItems
+            .map((item, originalIndex) => ({ item, originalIndex }))
+            .filter(({ item }) => item.key !== 'UI_THEME');
+
+        if (themeSettings) themeSettings.hidden = currentCategory !== 'system';
+        if (status) status.textContent = previewCategoryMeta[currentCategory].label + ' · ' + categoryItems.length + ' 项';
+        list.innerHTML = items.length
+            ? items.map(({ item, originalIndex }) => renderEnvItem(item, currentCategory, originalIndex)).join('')
+            : '<p class="text-gray padding-20 text-center">暂无配置项</p>';
+        return;
+    }
+
+    const normalizedQuery = envSearchQuery.toLocaleLowerCase();
+    let total = 0;
+    let themeMatched = false;
+    let html = '';
+
+    previewCategoryOrder.forEach(category => {
+        const matches = (envVariables[category] || [])
+            .map((item, originalIndex) => ({ item, originalIndex }))
+            .filter(({ item }) => envItemMatchesSearch(item, category, normalizedQuery));
+
+        const regularMatches = matches.filter(({ item }) => item.key !== 'UI_THEME');
+        themeMatched = themeMatched || matches.some(({ item }) => item.key === 'UI_THEME');
+        total += matches.length;
+
+        if (!regularMatches.length) return;
+        html += \`
+            <section class="preview-group env-search-group">
+                <div class="preview-group-heading">
+                    <h3>\${previewCategoryMeta[category].label}</h3>
+                    <span>\${regularMatches.length} 项</span>
+                </div>
+                <div>
+                    \${regularMatches.map(({ item, originalIndex }) => renderEnvItem(item, category, originalIndex)).join('')}
+                </div>
+            </section>
+        \`;
+    });
+
+    if (themeSettings) themeSettings.hidden = !themeMatched;
+    if (status) status.textContent = '搜索结果 · ' + total + ' 项';
+    list.innerHTML = html || (themeMatched ? '' : '<div class="preview-empty"><strong>未找到匹配配置</strong><span>请尝试其他关键词</span></div>');
+}
+
 // 编辑环境变量
-function editEnv(index) {
-    const item = envVariables[currentCategory][index];
-    const editButton = event.target; // 获取当前点击的编辑按钮
+function editEnv(category, index, editButton) {
+    const item = (envVariables[category] || [])[index];
+    if (!item || !editButton) return;
     
     // 设置按钮为加载状态
     const originalText = editButton.innerHTML;
@@ -1995,22 +2508,22 @@ function editEnv(index) {
     editButton.disabled = true;
     
     editingKey = index;
-    document.getElementById('modal-title').textContent = '编辑配置项';
-    document.getElementById('env-category').value = currentCategory;
-    document.getElementById('env-key').value = item.key;
-    document.getElementById('env-description').value = item.description || '';
-    document.getElementById('value-type').value = item.type || 'text';
+    editingCategory = category;
+    editingKeyName = item.key;
+    editingType = item.type || 'text';
 
-    // 设置字段为只读（编辑模式下）
-    document.getElementById('env-category').disabled = true;
-    document.getElementById('env-key').readOnly = true;
-    document.getElementById('value-type').disabled = true;
-    document.getElementById('env-description').readOnly = true;
+    document.getElementById('modal-title').textContent = '编辑配置项';
+    document.getElementById('env-category-display').textContent =
+        (previewCategoryMeta[category] && previewCategoryMeta[category].label) || category;
+    document.getElementById('env-key-display').textContent = item.key;
+    document.getElementById('value-type-display').textContent = getEnvTypeLabel(item.type || 'text');
+    document.getElementById('env-description-display').textContent = item.description || '';
 
     // 渲染对应的值输入控件
     renderValueInput(item);
 
     document.getElementById('env-modal').classList.add('active');
+    lockPageScroll();
     
     // 恢复按钮状态（在实际场景中，这会在编辑完成后发生，比如在保存后或取消后）
     // 为了演示，这里立即恢复按钮状态，实际使用中应该在适当的地方恢复按钮状态
@@ -2019,12 +2532,12 @@ function editEnv(index) {
 }
 
 // 删除环境变量
-function deleteEnv(index) {
+function deleteEnv(category, index, deleteButton) {
     customConfirm('确定要删除这个配置项吗?', '删除确认').then(confirmed => {
         if (confirmed) {
-            const item = envVariables[currentCategory][index];
+            const item = (envVariables[category] || [])[index];
+            if (!item || !deleteButton) return;
             const key = item.key;
-            const deleteButton = event.target; // 获取当前点击的删除按钮
 
             // 设置按钮为加载状态
             const originalText = deleteButton.innerHTML;
@@ -2043,7 +2556,7 @@ function deleteEnv(index) {
             .then(result => {
                 if (result.success) {
                     // 从本地数据中删除
-                    envVariables[currentCategory].splice(index, 1);
+                    envVariables[category].splice(index, 1);
                     renderEnvList();
                     renderPreview();
                     addLog(\`删除配置项: \${key}\`, 'warn');
@@ -2069,12 +2582,13 @@ function deleteEnv(index) {
 document.getElementById('env-form').addEventListener('submit', async function(e) {
     e.preventDefault();
 
-    const category = document.getElementById('env-category').value;
-    const key = document.getElementById('env-key').value.trim();
-    const description = document.getElementById('env-description').value.trim();
-    const type = document.getElementById('value-type').value;
-    const existingItem = editingKey !== null && envVariables[currentCategory]
-        ? envVariables[currentCategory][editingKey]
+    const category = editingCategory || 'api';
+    const key = editingKeyName;
+    const description = (document.getElementById('env-description-display').textContent || '').trim();
+    const type = editingType;
+    const targetCategory = editingCategory || category;
+    const existingItem = editingKey !== null && envVariables[targetCategory]
+        ? envVariables[targetCategory][editingKey]
         : null;
 
     // 根据类型获取值
@@ -2099,8 +2613,9 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             confirmMergeGroup();
         }
 
-        const selectedTags = Array.from(document.querySelectorAll('.selected-tag'))
-            .map(el => el.dataset.value);
+        const selectedTags = [...new Set(
+            getSelectedTagElements().map(el => el.dataset.value).filter(Boolean)
+        )];
         value = selectedTags.join(',');
         const options = Array.from(document.querySelectorAll('.available-tag')).map(el => el.dataset.value);
         itemData = { key, value, description, type, options };
@@ -2157,7 +2672,7 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
             }
 
             if (editingKey !== null) {
-                envVariables[currentCategory][editingKey] = {
+                envVariables[targetCategory][editingKey] = {
                     ...(existingItem || {}),
                     ...itemData
                 };
@@ -2167,11 +2682,9 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
                 addLog(\`添加配置项: \${key} = \${value}\`, 'success');
             }
 
-            if (category !== currentCategory) {
+            if (editingKey === null && category !== currentCategory) {
                 currentCategory = category;
-                document.querySelectorAll('.category-btn').forEach((btn, i) => {
-                    btn.classList.toggle('active', ['api', 'source', 'match', 'danmu', 'cache', 'system'][i] === category);
-                });
+                clearEnvSearch(false);
             }
 
             renderEnvList();
@@ -2521,6 +3034,11 @@ function toggleMapping(btnEl) {
     }
 }
 
+// 最近数据分页状态
+const RECENT_DATA_PAGE_SIZE = 5;
+let recentAnimeCacheData = []; // 最近数据完整缓存
+let recentAnimeDisplayedCount = 0; // 最近数据已显示条数
+
 // 快捷数据面板业务逻辑
 async function fetchAndShowRecentData() {
     const panel = document.getElementById('recent-data-panel');
@@ -2541,6 +3059,8 @@ async function fetchAndShowRecentData() {
         const result = await response.json();
 
         if (result.success && result.data && result.data.length > 0) {
+            recentAnimeCacheData = result.data;
+            recentAnimeDisplayedCount = 0;
             renderAnimeCachePanel(result.data, listContainer);
         } else {
             listContainer.innerHTML = '<div class="text-gray font-size-12" style="padding: 10px 0;">缓存中暂无番剧数据，请先通过客户端请求弹幕接口以生成缓存。</div>';
@@ -2552,35 +3072,40 @@ async function fetchAndShowRecentData() {
 
 // 渲染animes缓存面板 (含集数解析与映射详情)
 function renderAnimeCachePanel(data, listContainer) {
-    const keyInput = document.getElementById('env-key');
+    if (!listContainer || !editingKeyName) return;
 
-    if (!listContainer || !keyInput) return;
-
-    const currentKey = keyInput.value;
+    const currentKey = editingKeyName;
 
     // 内部辅助函数：生成操作按钮
     const generateButtons = (title, source) => {
+        const safeTitle = escapeHtml(title);
+        const safeSource = escapeHtml(source);
         if (currentKey === 'CUSTOM_MERGE_RULES') {
             return \`
-                <button type="button" class="btn btn-sm btn-xs" onclick="fillMergeEntity('sec', '\${title}', '\${source}')">设为副</button>
-                <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillMergeEntity('prim', '\${title}', '\${source}')">设为主</button>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                    <button type="button" class="btn btn-sm btn-xs" data-fill-action="merge-sec" data-fill-title="\${safeTitle}" data-fill-source="\${safeSource}">设为副</button>
+                    <button type="button" class="btn btn-sm btn-primary btn-xs" data-fill-action="merge-prim" data-fill-title="\${safeTitle}" data-fill-source="\${safeSource}">设为主</button>
+                </div>
             \`;
         } else if (currentKey === 'DANMU_OFFSET') {
             return \`
-                <button type="button" class="btn btn-sm btn-primary btn-xs" onclick="fillOffsetEntity('\${title}', '\${source}')">填入</button>
+                <button type="button" class="btn btn-sm btn-primary btn-xs" data-fill-action="offset" data-fill-title="\${safeTitle}" data-fill-source="\${safeSource}">填入</button>
             \`;
         }
         return '';
     };
 
     // 内部辅助函数：清洗标题
-    const cleanTitleStr = (rawTitle) => rawTitle.replace(/\\s*from\\s+.*$/i, '').trim().replace(/'/g, '&apos;');
+    const cleanTitleStr = (rawTitle) => rawTitle.replace(/\\s*from\\s+.*$/i, '').trim();
 
-    let html = '<div class="anime-cache-list">';
+    const nextCount = Math.min(recentAnimeDisplayedCount + RECENT_DATA_PAGE_SIZE, data.length);
+    const newItems = data.slice(recentAnimeDisplayedCount, nextCount);
 
-    data.forEach(item => {
+    let html = recentAnimeDisplayedCount === 0 ? '<div class="anime-cache-list">' : '';
+
+    newItems.forEach(item => {
         const cleanTitle = cleanTitleStr(item.animeTitle);
-        const coverStyle = item.imageUrl ? \`background-image: url('\${item.imageUrl}');\` : '';
+        const coverHtml = item.imageUrl ? \`<img class="anime-cache-cover" src="\${escapeHtml(item.imageUrl)}" alt="" referrerpolicy="no-referrer" loading="lazy">\` : '<div class="anime-cache-cover"></div>';
 
         // 1. 构建合并子源模块
         let childrenHtml = '';
@@ -2590,7 +3115,7 @@ function renderAnimeCachePanel(data, listContainer) {
             const childItems = item.mergedChildren.map(child => {
                 const childCleanTitle = cleanTitleStr(child.animeTitle);
 
-                const childCoverStyle = child.imageUrl ? \`background-image: url('\${child.imageUrl}');\` : '';
+                const childCoverHtml = child.imageUrl ? \`<img class="anime-cache-child-cover" src="\${escapeHtml(child.imageUrl)}" alt="" referrerpolicy="no-referrer" loading="lazy">\` : '<div class="anime-cache-child-cover"></div>';
 
                 // 解析映射数据并按匹配状态排序
                 let mappingHtml = '';
@@ -2606,8 +3131,8 @@ function renderAnimeCachePanel(data, listContainer) {
 
                         let mainSide = '(主源越界)';
                         if (hasMainMatch) {
-                            const cleanMainEpTitle = (link.title || '未知剧集').replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
-                            mainSide = \`【\${item.source}】\${cleanMainEpTitle}\`;
+                            const cleanMainEpTitle = escapeHtml((link.title || '未知剧集').replace(/^【.*?】\\s*/, ''));
+                            mainSide = \`【\${escapeHtml(item.source)}】\${cleanMainEpTitle}\`;
                         }
 
                         let childSide = '(副源缺失)';
@@ -2625,13 +3150,13 @@ function renderAnimeCachePanel(data, listContainer) {
                                 if (child.links && child.links.length > 0) {
                                     const childLink = child.links.find(l => String(l.url) === String(childId));
                                     if (childLink && childLink.title) {
-                                        childTitleStr = childLink.title.replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+                                        childTitleStr = childLink.title.replace(/^【.*?】\\s*/, '');
                                     }
                                 }
                             } else {
-                                childTitleStr = (link.title || '').replace(/^【.*?】\\s*/, '').replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+                                childTitleStr = (link.title || '').replace(/^【.*?】\\s*/, '');
                             }
-                            childSide = \`【\${child.source}】\${childTitleStr}\`;
+                            childSide = \`【\${escapeHtml(child.source)}】\${escapeHtml(childTitleStr)}\`;
                             
                             const numMatch = childTitleStr.match(/\\d+/);
                             if (numMatch) {
@@ -2679,10 +3204,10 @@ function renderAnimeCachePanel(data, listContainer) {
                 return \`
                     <div class="anime-cache-child-item">
                         <div class="anime-cache-child-main">
-                            <div class="anime-cache-child-cover" style="\${childCoverStyle}"></div>
+                            \${childCoverHtml}
                             <div class="anime-cache-child-info">
-                                <div class="anime-cache-child-title" title="\${child.animeTitle}">\${childCleanTitle}</div>
-                                <div class="anime-cache-meta">[\${child.source}] (\${child.episodes}集)</div>
+                                <div class="anime-cache-child-title" title="\${escapeHtml(child.animeTitle)}">\${escapeHtml(childCleanTitle)}</div>
+                                <div class="anime-cache-meta">[\${escapeHtml(child.source)}] (\${child.episodes}集)</div>
                             </div>
                             <div class="anime-cache-child-actions">
                                 \${generateButtons(childCleanTitle, child.source)}
@@ -2706,7 +3231,7 @@ function renderAnimeCachePanel(data, listContainer) {
         if (item.links && item.links.length > 0) {
             episodesCount = item.links.length;
             const epItems = item.links.map(link => {
-                const safeTitle = link.title ? link.title.replace(/'/g, '&apos;').replace(/"/g, '&quot;') : '未知剧集';
+                const safeTitle = link.title ? escapeHtml(link.title) : '未知剧集';
                 return \`
                     <div class="anime-cache-child-item" style="padding: 6px;">
                         <div class="anime-cache-child-main">
@@ -2742,10 +3267,10 @@ function renderAnimeCachePanel(data, listContainer) {
         html += \`
             <div class="anime-cache-card">
                 <div class="anime-cache-card-body">
-                    <div class="anime-cache-cover" style="\${coverStyle}"></div>
+                    \${coverHtml}
                     <div class="anime-cache-info">
-                        <div class="anime-cache-title" title="\${item.animeTitle}">\${cleanTitle}</div>
-                        <div class="anime-cache-meta">[\${item.source}] (\${item.episodes}集)</div>
+                        <div class="anime-cache-title" title="\${escapeHtml(item.animeTitle)}">\${escapeHtml(cleanTitle)}</div>
+                        <div class="anime-cache-meta">[\${escapeHtml(item.source)}] (\${item.episodes}集)</div>
                     </div>
                     <div class="anime-cache-actions">
                         \${generateButtons(cleanTitle, item.source)}
@@ -2758,8 +3283,40 @@ function renderAnimeCachePanel(data, listContainer) {
         \`;
     });
 
-    html += '</div>';
-    listContainer.innerHTML = html;
+    if (recentAnimeDisplayedCount === 0) {
+        html += '</div>';
+        listContainer.innerHTML = html;
+    } else {
+        const listEl = listContainer.querySelector('.anime-cache-list');
+        if (listEl) listEl.insertAdjacentHTML('beforeend', html);
+    }
+
+    recentAnimeDisplayedCount = nextCount;
+    updateRecentDataLoadMore(listContainer, data.length, nextCount);
+}
+
+// 更新最近数据加载更多按钮
+function updateRecentDataLoadMore(listContainer, total, displayed) {
+    let loadMoreBtn = listContainer.querySelector('.recent-data-load-more');
+    if (displayed < total) {
+        if (!loadMoreBtn) {
+            loadMoreBtn = document.createElement('button');
+            loadMoreBtn.type = 'button';
+            loadMoreBtn.className = 'btn btn-primary btn-sm recent-data-load-more';
+            loadMoreBtn.onclick = loadMoreRecentData;
+            listContainer.appendChild(loadMoreBtn);
+        }
+        loadMoreBtn.textContent = '加载更多 (' + displayed + '/' + total + ')';
+    } else if (loadMoreBtn) {
+        loadMoreBtn.remove();
+    }
+}
+
+// 加载更多最近数据
+function loadMoreRecentData() {
+    const listContainer = document.getElementById('recent-data-list');
+    if (!listContainer) return;
+    renderAnimeCachePanel(recentAnimeCacheData, listContainer);
 }
 
 /* ========================================
@@ -2772,7 +3329,6 @@ function applyInputFeedback(inputEl) {
     const oldBorder = inputEl.style.borderColor;
     inputEl.style.borderColor = '#28a745';
     setTimeout(() => inputEl.style.borderColor = oldBorder, 800);
-    inputEl.focus();
 }
 
 // 表单填充逻辑：合并映射表
@@ -2822,4 +3378,20 @@ function fillOffsetEntity(title, source) {
         applyInputFeedback(inputEl);
     }
 }
+
+// 处理最近数据面板快捷填入按钮的点击
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-fill-action]');
+    if (!btn) return;
+    const action = btn.dataset.fillAction;
+    const title = btn.dataset.fillTitle;
+    const source = btn.dataset.fillSource;
+    if (action === 'offset') {
+        fillOffsetEntity(title, source);
+    } else if (action === 'merge-sec') {
+        fillMergeEntity('sec', title, source);
+    } else if (action === 'merge-prim') {
+        fillMergeEntity('prim', title, source);
+    }
+});
 `;

@@ -36,7 +36,7 @@ async function tmdbApiGet(url, options = {}) {
     if (error.name === 'AbortError') {
        throw error;
     }
-    log("error", "[Utils] [TMDB] Api error:", {
+    log("error", "[system] [tmdb] Api error:", {
       message: error.message,
       name: error.name,
       stack: error.stack,
@@ -89,7 +89,7 @@ export async function searchTmdbTitles(title, mediaType = "multi", options = {})
     }
   }
 
-  log("info", `[Utils] [TMDB] 共获取到 ${allResults.length} 条搜索结果（最多${maxPages}页）`);
+  log("info", `[system] [tmdb] 共获取到 ${allResults.length} 条搜索结果（最多${maxPages}页）`);
 
   // 返回与原格式兼容的结构
   return {
@@ -144,7 +144,7 @@ function extractChineseTitleFromAlternatives(altData, mediaType, queryTitle = ""
     const match = titles.find(rule);
     if (match) {
       const bestMatchTitle = getStr(match);
-      log("info", `[Utils] [TMDB] 按优先级策略成功提取最佳中文别名: ${bestMatchTitle}`);
+      log("info", `[system] [tmdb] 按优先级策略成功提取最佳中文别名: ${bestMatchTitle}`);
       return bestMatchTitle;
     }
   }
@@ -168,7 +168,7 @@ async function getChineseTitleForResult(result, signal, queryTitle = "") {
     return resultTitle;
   }
 
-  log("info", `[Utils] [TMDB] 尝试获取中文别名以寻找更优匹配 (当前标题: "${resultTitle}")`);
+  log("info", `[system] [tmdb] 尝试获取中文别名以寻找更优匹配 (当前标题: "${resultTitle}")`);
 
   const mediaType = result.media_type || (result.name ? "tv" : "movie");
 
@@ -188,10 +188,10 @@ async function getChineseTitleForResult(result, signal, queryTitle = "") {
     const chineseTitle = extractChineseTitleFromAlternatives(altResp, mediaType, queryTitle);
 
     if (chineseTitle) {
-      log("info", `[Utils] [TMDB] 将使用中文别名进行相似匹配: ${chineseTitle}`);
+      log("info", `[system] [tmdb] 将使用中文别名进行相似匹配: ${chineseTitle}`);
       return chineseTitle;
     } else {
-      log("info", `[Utils] [TMDB] 未找到中文别名，使用原标题: ${resultTitle}`);
+      log("info", `[system] [tmdb] 未找到中文别名，使用原标题: ${resultTitle}`);
       return resultTitle;
     }
   } catch (error) {
@@ -199,7 +199,7 @@ async function getChineseTitleForResult(result, signal, queryTitle = "") {
     if (error.name === 'AbortError') {
       throw error;
     }
-    log("error", `[Utils] [TMDB] 获取别名失败: ${error.message}`);
+    log("error", `[system] [tmdb] 获取别名失败: ${error.message}`);
     return resultTitle; // 失败则返回原标题
   }
 }
@@ -209,24 +209,34 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
   // 优化搜索关键词: 剥离 "Season 2", "第二季" 等后缀
   const cleanTitle = cleanSearchQuery(title);
   if (cleanTitle !== title) {
-    log("info", `[Utils] [TMDB] 优化搜索关键词: "${title}" -> "${cleanTitle}"`);
+    log("info", `[system] [tmdb] 优化搜索关键词: "${title}" -> "${cleanTitle}"`);
   }
 
   // 优先尝试使用本地 Bangumi Data 获取原名与翻译，零延迟且无需 API Key
   if (globals.useBangumiData) {
     const localMatches = await searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
     if (localMatches && localMatches.length > 0) {
+      // 按精确度排序：将正好匹配检索词的条目排在前面，避免子串混淆（如 "机动战士高达00" 匹配到 "机动战士高达0079"）
+      if (localMatches.length > 1) {
+        localMatches.sort((a, b) => {
+          const aExact = a.titles.some(t => t === cleanTitle);
+          const bExact = b.titles.some(t => t === cleanTitle);
+          if (aExact && !bExact) return -1;
+          if (!aExact && bExact) return 1;
+          return 0;
+        });
+      }
       const m = localMatches[0]; // 取第一个最佳匹配
       const displayTitle = m.titles.find(t => t && t.includes(cleanTitle)) || m.titles[1] || m.title;
       const jaOriginalTitle = m.title; // Bangumi Data 的主标题就是原名
 
-      log("info", `[Utils] [TMDB] Bangumi-Data 本地命中，提取原名成功: 原名=${jaOriginalTitle}, 别名=${displayTitle}`);
+      log("info", `[system] [tmdb] Bangumi-Data 本地命中，提取原名成功: 原名=${jaOriginalTitle}, 别名=${displayTitle}（检索词：${cleanTitle}）`);
       return { title: jaOriginalTitle, cnAlias: displayTitle };
     }
   }
 
   if (!globals.tmdbApiKey) {
-    log("info", "[Utils] [TMDB] 未配置API密钥，跳过TMDB网络搜索");
+    log("info", "[system] [tmdb] 未配置API密钥，跳过TMDB网络搜索");
     return null;
   }
 
@@ -324,7 +334,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         };
 
         // 第一步：TMDB搜索
-        log("info", `[Utils] [TMDB] 正在搜索 (Shared Task): ${cleanTitle}`);
+        log("info", `[system] [tmdb] 正在搜索 (Shared Task): ${cleanTitle}`);
 
         // 检查 masterController 是否已被中断
         if (backgroundSignal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -332,14 +342,14 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         const respZh = await searchTmdbTitles(cleanTitle, "multi", { signal: backgroundSignal });
 
         if (!respZh || !respZh.data) {
-          log("info", "[Utils] [TMDB] TMDB搜索结果为空");
+          log("info", "[system] [tmdb] TMDB搜索结果为空");
           return null;
         }
 
         const dataZh = typeof respZh.data === "string" ? JSON.parse(respZh.data) : respZh.data;
 
         if (!dataZh.results || dataZh.results.length === 0) {
-          log("info", "[Utils] [TMDB] TMDB未找到任何结果");
+          log("info", "[system] [tmdb] TMDB未找到任何结果");
           return null;
         }
 
@@ -359,11 +369,11 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         }
 
         if (validResults.length === 0) {
-          log("info", `[Utils] [TMDB] 数据清洗拦截: 搜索结果中没有任何目标类型(动画/日文)的内容`);
+          log("info", `[system] [tmdb] 数据清洗拦截: 搜索结果中没有任何目标类型(动画/日文)的内容`);
           return null;
         }
 
-        log("info", `[Utils] [TMDB] 数据清洗完成: 保留 ${validResults.length} 个有效条目参与匹配，过滤 ${invalidItems.length} 个无关条目${invalidItems.length > 0 ? '，过滤详情: ' + invalidItems.join(', ') : ''}`);
+        log("info", `[system] [tmdb] 数据清洗完成: 保留 ${validResults.length} 个有效条目参与匹配，过滤 ${invalidItems.length} 个无关条目${invalidItems.length > 0 ? '，过滤详情: ' + invalidItems.join(', ') : ''}`);
 
         // 第三步：在干净的结果池中找到最相似的结果
         let bestMatch = null;
@@ -387,7 +397,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
           // 如果原标题已经100%匹配，标记跳过后续所有别名搜索
           if (initialScore === 1.0 && !skipAlternativeFetch) {
             skipAlternativeFetch = true;
-            log("info", `[Utils] [TMDB] 匹配检查 "${resultTitle}" - 相似度: 100.00% (完全匹配，跳过后续所有别名搜索)`);
+            log("info", `[system] [tmdb] 匹配检查 "${resultTitle}" - 相似度: 100.00% (完全匹配，跳过后续所有别名搜索)`);
             if (initialScore > bestScore) {
               bestScore = initialScore;
               bestMatch = result;
@@ -409,9 +419,9 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
             finalScore = initialScore;
 
             if (skipAlternativeFetch && isExactMatch) {
-              log("info", `[Utils] [TMDB] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}% (已找到完全匹配，跳过别名搜索)`);
+              log("info", `[system] [tmdb] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}% (已找到完全匹配，跳过别名搜索)`);
             } else {
-              log("info", `[Utils] [TMDB] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}%`);
+              log("info", `[system] [tmdb] 匹配检查 "${resultTitle}" - 相似度: ${(finalScore * 100).toFixed(2)}%`);
             }
           } else {
             // 非完全匹配且未达到别名获取上限，尝试获取别名
@@ -424,12 +434,12 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
               } catch (error) {
                 // 如果是中断错误，抛出
                 if (error.name === 'AbortError') throw error;
-                log("error", `[Utils] [TMDB] 处理结果失败: ${error.message}`);
+                log("error", `[system] [tmdb] 处理结果失败: ${error.message}`);
                 chineseTitle = resultTitle;
               }
             } else {
               chineseTitle = resultTitle;
-              log("info", `[Utils] [TMDB] 已达到别名获取上限(${MAX_ALTERNATIVE_FETCHES})，使用原标题: ${resultTitle}`);
+              log("info", `[system] [tmdb] 已达到别名获取上限(${MAX_ALTERNATIVE_FETCHES})，使用原标题: ${resultTitle}`);
             }
 
             const finalDirectScore = similarity(cleanTitle, chineseTitle);
@@ -438,11 +448,11 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
             const displayInfo = chineseTitle !== resultTitle 
               ? `"${resultTitle}" (别名: ${chineseTitle})` 
               : `"${resultTitle}"`;
-            log("info", `[Utils] [TMDB] 匹配检查 ${displayInfo} - 相似度: ${(finalScore * 100).toFixed(2)}%`);
+            log("info", `[system] [tmdb] 匹配检查 ${displayInfo} - 相似度: ${(finalScore * 100).toFixed(2)}%`);
 
             if (finalScore === 1.0 && !skipAlternativeFetch) {
               skipAlternativeFetch = true;
-              log("info", `[Utils] [TMDB] 通过别名找到完全匹配，跳过后续所有别名搜索`);
+              log("info", `[system] [tmdb] 通过别名找到完全匹配，跳过后续所有别名搜索`);
             }
           }
 
@@ -455,11 +465,11 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
 
         const MIN_SIMILARITY = 0.4;
         if (!bestMatch || bestScore < MIN_SIMILARITY) {
-          log("info", `[Utils] [TMDB] 最佳匹配相似度过低或未找到匹配 (${bestMatch ? (bestScore * 100).toFixed(2) + '%' : 'N/A'}),跳过`);
+          log("info", `[system] [tmdb] 最佳匹配相似度过低或未找到匹配 (${bestMatch ? (bestScore * 100).toFixed(2) + '%' : 'N/A'}),跳过`);
           return null;
         }
 
-        log("info", `[Utils] [TMDB] TMDB最佳匹配: ${bestMatchChineseTitle}, 相似度: ${(bestScore * 100).toFixed(2)}%`);
+        log("info", `[system] [tmdb] TMDB最佳匹配: ${bestMatchChineseTitle}, 相似度: ${(bestScore * 100).toFixed(2)}%`);
 
         // 第四步：获取日语详情
         const mediaType = bestMatch.media_type || (bestMatch.name ? "tv" : "movie");
@@ -469,11 +479,11 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         let jaOriginalTitle;
         if (!detailResp || !detailResp.data) {
           jaOriginalTitle = bestMatch.name || bestMatch.title;
-          log("info", `[Utils] [TMDB] 使用中文搜索结果标题: ${jaOriginalTitle}`);
+          log("info", `[system] [tmdb] 使用中文搜索结果标题: ${jaOriginalTitle}`);
         } else {
           const detail = typeof detailResp.data === "string" ? JSON.parse(detailResp.data) : detailResp.data;
           jaOriginalTitle = detail.original_name || detail.original_title || detail.name || detail.title;
-          log("info", `[Utils] [TMDB] 找到日语原名: ${jaOriginalTitle}`);
+          log("info", `[system] [tmdb] 找到日语原名: ${jaOriginalTitle}`);
         }
 
         // 返回对象，包含原名和别名
@@ -481,10 +491,10 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
 
       } catch (error) {
          if (error.name === 'AbortError') {
-             log("info", `[Utils] [TMDB] 后台搜索任务已完全终止 (${cleanTitle})`);
+             log("info", `[system] [tmdb] 后台搜索任务已完全终止 (${cleanTitle})`);
              return null;
          }
-         log("error", "[Utils] [TMDB] Background Search error:", {
+         log("error", "[system] [tmdb] Background Search error:", {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -504,9 +514,9 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
     };
 
     TMDB_PENDING.set(cleanTitle, task);
-    log("info", `[Utils] [TMDB] 启动新搜索任务: ${cleanTitle}`);
+    log("info", `[system] [tmdb] 启动新搜索任务: ${cleanTitle}`);
   } else {
-    log("info", `[Utils] [TMDB] 加入正在进行的搜索: ${cleanTitle} (${sourceLabel})`);
+    log("info", `[system] [tmdb] 加入正在进行的搜索: ${cleanTitle} (${sourceLabel})`);
   }
 
   // 增加引用计数
@@ -519,7 +529,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
     if (currentTask === task) {
         task.refCount--;
         if (task.refCount <= 0) {
-            log("info", `[Utils] [TMDB] 所有调用者已取消，终止后台请求: ${cleanTitle}`);
+            log("info", `[system] [tmdb] 所有调用者已取消，终止后台请求: ${cleanTitle}`);
             task.controller.abort();
         }
     }
@@ -532,7 +542,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
   if (signal) {
     if (signal.aborted) {
         leaveTask();
-        log("info", `[Utils] [TMDB] 搜索已被中断 (Source: ${sourceLabel})`);
+        log("info", `[system] [tmdb] 搜索已被中断 (Source: ${sourceLabel})`);
         return null;
     }
     signal.addEventListener('abort', leaveTask);
@@ -551,10 +561,10 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
 
   } catch (error) {
     if (error.name === 'AbortError') {
-      log("info", `[Utils] [TMDB] 搜索已被中断 (Source: ${sourceLabel})`);
+      log("info", `[system] [tmdb] 搜索已被中断 (Source: ${sourceLabel})`);
       return null;
     }
-    log("error", `[Utils] [TMDB] 搜索异常: ${error.message}`);
+    log("error", `[system] [tmdb] 搜索异常: ${error.message}`);
     return null;
   } finally {
     // 释放并移除终止信号监听器，防止发生内存泄漏
@@ -583,13 +593,13 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
 // 优先尝试本地 Bangumi Data 转换
   if (globals.useBangumiData) {
     const cleanTitle = cleanSearchQuery(title);
-    const localMatches = searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
+    const localMatches = await searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
     if (localMatches && localMatches.length > 0) {
       const m = localMatches[0];
       // 找一个不全是外文的翻译作为中文名
       const displayTitle = m.titles.find(t => t && !isNonChinese(t)) || m.titles[1];
       if (displayTitle && !isNonChinese(displayTitle)) {
-        log("info", `[Utils] [TMDB] 命中本地 Bangumi Data: ${title} -> ${displayTitle}`);
+        log("info", `[system] [tmdb] 命中本地 Bangumi Data: ${title} -> ${displayTitle}（检索词：${cleanTitle}）`);
         return displayTitle;
       }
     }
@@ -605,7 +615,7 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
 
     // 检查是否有结果
     if (!searchResponse.data.results || searchResponse.data.results.length === 0) {
-      log("info", '[Utils] [TMDB] TMDB未找到任何结果');
+      log("info", '[system] [tmdb] TMDB未找到任何结果');
       return title;
     }
 
@@ -688,7 +698,7 @@ export function smartTitleReplace(animes, cnAlias) {
   // 若有效替换条目数为0，说明均已处理或无需处理，直接静默退出
   if (validCount === 0) return;
 
-  log("info", `[Utils] [TMDB] 启动智能替换，目标别名: "${cnAlias}"，待处理条目: ${validCount}`);
+  log("info", `[system] [tmdb] 启动智能替换，目标别名: "${cnAlias}"，待处理条目: ${validCount}`);
 
   // 计算所有标题主体部分的 LCP (最长公共前缀)
   const baseTitles = animes.map(a => {
@@ -706,7 +716,7 @@ export function smartTitleReplace(animes, cnAlias) {
   }
 
   if (lcp && lcp.length > 1) {
-    log("info", `[Utils] [TMDB] 计算出最长公共前缀 (LCP): "${lcp}"`);
+    log("info", `[system] [tmdb] 计算出最长公共前缀 (LCP): "${lcp}"`);
   }
 
   // 执行具体的智能替换策略
@@ -720,7 +730,7 @@ export function smartTitleReplace(animes, cnAlias) {
     if (lcp && lcp.length > 1 && originalTitle.startsWith(lcp)) {
       const suffix = originalTitle.substring(lcp.length).trim();
       anime._displayTitle = suffix ? `${cnAlias}${suffix.match(/^[~～:：]/) ? '' : ' '}${suffix}` : cnAlias;
-      log("info", `[Utils] [TMDB] [LCP模式] "${originalTitle}" -> "${anime._displayTitle}"`);
+      log("info", `[system] [tmdb] [LCP模式] "${originalTitle}" -> "${anime._displayTitle}"`);
     } else {
       const match = originalTitle.match(SEPARATOR_REGEX);
       if (match) {
@@ -731,21 +741,85 @@ export function smartTitleReplace(animes, cnAlias) {
           const subMatch = suffix.trim().match(SEPARATOR_REGEX);
           const subSuffix = subMatch ? suffix.trim().substring(subMatch.index) : '';
           anime._displayTitle = `${prefix} ${cnAlias}${subSuffix}`;
-          log("info", `[Utils] [TMDB] [前缀保护模式] "${originalTitle}" -> "${anime._displayTitle}"`);
+          log("info", `[system] [tmdb] [前缀保护模式] "${originalTitle}" -> "${anime._displayTitle}"`);
         } else {
           // 策略 B2: 常规分隔符模式
           anime._displayTitle = cnAlias + suffix;
-          log("info", `[Utils] [TMDB] [分隔符模式] "${originalTitle}" -> "${anime._displayTitle}"`);
+          log("info", `[system] [tmdb] [分隔符模式] "${originalTitle}" -> "${anime._displayTitle}"`);
         }
       } else {
         // 策略 C: 安全兜底模式
         if (isNonChinese(originalTitle)) {
           anime._displayTitle = cnAlias;
-          log("info", `[Utils] [TMDB] [纯外文全替模式] "${originalTitle}" -> "${anime._displayTitle}"`);
+          log("info", `[system] [tmdb] [纯外文全替模式] "${originalTitle}" -> "${anime._displayTitle}"`);
         } else {
-          log("info", `[Utils] [TMDB] [跳过替换] "${originalTitle}" 含有中文且特征不符，拒绝强制全替以防误杀`);
+          log("info", `[system] [tmdb] [跳过替换] "${originalTitle}" 含有中文且特征不符，拒绝强制全替以防误杀`);
         }
       }
     }
+  }
+}
+
+// =====================
+// TMDB 季边界映射
+// =====================
+
+/**
+ * 将 bangumi-data 的 TMDB 扁平检索结果转换为跨季边界序列.
+ * 每个 matchedSiteKey 为 'tmdb' 的结果, 其 siteId 形如 "tv/{id}" 或
+ * "tv/{id}/season/N/episode/{M}", M 为该条目在 TMDB 绝对编号中的起始集数;
+ * 收集同一 tv/{id} 下各条目起始集数即可推算跨季映射边界
+ * @param {Array<Object>} matches searchBangumiData 返回的扁平结果数组
+ * @returns {Array<{order:number, startEpisode:number, title:string, tmdbId:string}>|null}
+ */
+export function buildTmdbSeasonBoundaries(matches) {
+  const baseMaps = new Map();
+
+  for (const m of matches) {
+    if (!m || m.matchedSiteKey !== 'tmdb' || !m.siteId) continue;
+
+    const epMatch = m.siteId.match(/^(tv\/\d+)(?:\/season\/\d+\/episode\/(\d+))?$/);
+    if (!epMatch) continue;
+
+    const baseId = epMatch[1];
+    const startEp = epMatch[2] ? parseInt(epMatch[2], 10) : 1;
+
+    const entry = { order: 0, startEpisode: startEp, title: m.title || '', tmdbId: baseId };
+    if (!baseMaps.has(baseId)) {
+      baseMaps.set(baseId, [entry]);
+    } else {
+      baseMaps.get(baseId).push(entry);
+    }
+  }
+
+  if (baseMaps.size === 0) return null;
+
+  const best = [...baseMaps.entries()]
+    .sort((a, b) => b[1].length - a[1].length)[0];
+
+  if (best[1].length < 2) return null;
+
+  best[1].sort((a, b) => a.startEpisode - b.startEpisode);
+  for (let i = 0; i < best[1].length; i++) {
+    best[1][i].order = i + 1;
+  }
+  return best[1];
+}
+
+/**
+ * 依据番剧标题从 bangumi-data 推导 TMDB 跨季边界, 用于在目标集不在首季时跳过无关季号
+ * @param {string} title 检索标题 (直接传给 searchBangumiData, 内部已做季剥离处理)
+ * @param {(title: string, siteKeys: string[]) => Promise<Array<Object>>} [searchFn]
+ * @returns {Promise<Array<{order:number, startEpisode:number, title:string, tmdbId:string}>|null>}
+ */
+export async function getTmdbSeasonBoundaries(title, searchFn = searchBangumiData) {
+  if (!globals.useBangumiData) return null;
+
+  try {
+    const matches = await searchFn(title, ['tmdb']);
+    return buildTmdbSeasonBoundaries(matches);
+  } catch (e) {
+    log('warn', `[system] [tmdb] Bangumi-Data 本地获取TMDB季边界失败: ${e.message}（检索词：${title}）`);
+    return null;
   }
 }
