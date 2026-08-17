@@ -808,5 +808,5 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 
 ### 📈项目 Star 数增长趋势
 #### Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=huangxd-/danmu_api&type=Date)](https://www.star-history.com/#huangxd-/danmu_api&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=huangxd-/danmu_api&type=Date)](https://star-history.dera.page/#huangxd-/danmu_api&Date)
 
