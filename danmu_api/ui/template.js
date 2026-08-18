@@ -205,7 +205,7 @@ export const HTML_TEMPLATE = /* html */ `
                     </div>
 
                     <div class="danmu-test-panel" id="favorite-panel">
-                        <p style="color: #666; margin-bottom: 15px;">收藏后的剧集会永久缓存，后续匹配可秒级返回缓存结果；对于《火影忍者》《名侦探柯南》等集数较多的剧集尤其有用，无需每次重新搜索。可在“手动匹配测试”界面搜索剧集后，点击“收藏”按钮添加搜索结果收藏。只缓存剧集搜索结果，不缓存弹幕。</p>
+                        <p style="color: #666; margin-bottom: 15px;">收藏后的剧集会永久缓存，后续匹配可秒级返回缓存结果；对于《火影忍者》《名侦探柯南》等集数较多的剧集尤其有用，无需每次重新搜索。可在“手动匹配测试”界面搜索剧集后，点击“收藏”按钮添加搜索结果收藏。只缓存剧集搜索结果，不缓存弹幕。Vercel、Netlify、Cloudflare 等云平台需配置 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 才能使用收藏。</p>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label>搜索收藏</label>
                             <div style="display:flex;gap:10px;margin-top:5px;">

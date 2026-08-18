@@ -85,7 +85,11 @@ let danmuTestState = {
     isFavorite: false
 };
 
-let favoriteState = { items: [], loading: false, error: '', loaded: false, searchQuery: '', scheduledRefreshSupported: false };
+let favoriteState = {
+    items: [], loading: false, error: '', loaded: false, searchQuery: '',
+    scheduledRefreshSupported: false, favoriteSupported: false,
+    favoriteSupportMessage: ''
+};
 
 // 初始化接口调试界面
 function initApiTestInterface() {
@@ -789,13 +793,23 @@ function resetManualFavoriteButton() {
     button.classList.add('btn-success');
     button.disabled = true;
     button.textContent = '收藏';
-    button.title = '请先完成手动搜索';
+    button.title = favoriteState.favoriteSupported
+        ? '请先完成手动搜索'
+        : (favoriteState.favoriteSupportMessage || '当前部署未配置 Redis，收藏功能不可用');
 }
 
 function renderManualFavoriteButton() {
     const button = document.getElementById('manual-favorite-btn');
     if (!button || !danmuTestState.favoriteSearchKeyword) return;
     const title = danmuTestState.favoriteAnimeTitle || danmuTestState.favoriteSearchKeyword;
+    if (!favoriteState.favoriteSupported) {
+        button.disabled = true;
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-success');
+        button.textContent = '收藏（需 Redis）';
+        button.title = favoriteState.favoriteSupportMessage || '当前云部署未配置 Redis，收藏功能不可用';
+        return;
+    }
     button.disabled = false;
     button.classList.toggle('btn-success', !danmuTestState.isFavorite);
     button.classList.toggle('btn-danger', danmuTestState.isFavorite);
@@ -830,6 +844,10 @@ async function favoriteManualSearch() {
     const inputKeyword = document.getElementById('manual-search-keyword')?.value.trim() || '';
     if (!button || !inputKeyword) {
         resetManualFavoriteButton();
+        return;
+    }
+    if (!favoriteState.favoriteSupported) {
+        customAlert(favoriteState.favoriteSupportMessage || '当前云部署未配置 Redis，收藏功能不可用');
         return;
     }
     if (inputKeyword !== danmuTestState.favoriteSearchKeyword) {
@@ -960,6 +978,14 @@ function renderFavoriteListView() {
         return;
     }
 
+    if (!favoriteState.favoriteSupported) {
+        if (status) status.textContent = '收藏不可用 · 未配置 Redis';
+        list.innerHTML = '<div class="preview-empty"><strong>当前部署未启用收藏</strong><span>' +
+            escapeHtml(favoriteState.favoriteSupportMessage || '云平台请配置 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 后重新部署') +
+            '</span></div>';
+        return;
+    }
+
     const normalizedQuery = favoriteState.searchQuery.toLocaleLowerCase();
     const items = normalizedQuery
         ? favoriteState.items.filter(item => [item.keyword, item.animeTitle, item.source].join(' ').toLocaleLowerCase().includes(normalizedQuery))
@@ -984,6 +1010,11 @@ async function loadFavoriteList(shouldRender = true) {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.message || 'HTTP ' + response.status);
         favoriteState.items = Array.isArray(data.favorites) ? data.favorites : [];
+        // serverless 平台只有在 Redis 可用时才能跨冷启动持久化收藏。
+        // 兼容旧版本接口：缺少字段时按 Node 平台推断，避免误禁用本地部署。
+        favoriteState.favoriteSupported = data.favoriteSupported === true
+            || (data.favoriteSupported === undefined && data.scheduledRefreshSupported === true);
+        favoriteState.favoriteSupportMessage = String(data.favoriteSupportMessage || '');
         favoriteState.scheduledRefreshSupported = data.scheduledRefreshSupported === true;
         favoriteState.loaded = true;
     } catch (error) {

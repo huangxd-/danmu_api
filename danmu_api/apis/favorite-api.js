@@ -128,8 +128,15 @@ export async function handleFavoriteAdd(req, url) {
 }
 
 export function handleFavoriteList() {
+  // Node/Docker 可以使用本地文件缓存；无持久化存储的 serverless 实例
+  // 会在冷启动或实例切换后丢失收藏，因此不向前端开放收藏写入按钮。
+  const favoriteSupported = globals.deployPlatform === 'node' || globals.redisValid === true;
   return jsonResponse({
     success: true,
+    favoriteSupported,
+    favoriteSupportMessage: favoriteSupported
+      ? ''
+      : '当前云部署未配置 Redis，收藏功能不可用。请配置 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 后重新部署。',
     scheduledRefreshSupported: globals.deployPlatform === 'node',
     favorites: listFavorites()
   });
