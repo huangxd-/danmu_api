@@ -201,6 +201,29 @@ function matchYear(anime, queryYear) {
   return animeYear === queryYear;
 }
 
+// 在带有 SxxExx 的匹配请求中，电影通常也只有一个“第 1 集”链接，
+// 会错误地抢在同名电视剧之前命中。优先使用详情中的有效集数，声明集数作为补充。
+function isMovieMatchCandidate(anime) {
+  const type = `${anime?.type || ''} ${anime?.typeDescription || ''}`;
+  return /(电影|剧场版|movie|film)/i.test(type);
+}
+
+function getMatchEpisodeCount(anime, bangumiData) {
+  // 部分源（如 360）会把同一部电影的多个平台链接都放进 links，
+  // 不能把平台链接数当成电影集数。
+  if (isMovieMatchCandidate(anime)) return 1;
+  const episodes = bangumiData?.bangumi?.episodes;
+  const filtered = Array.isArray(episodes)
+    ? filterSameEpisodeTitle(episodes.filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle)))
+    : [];
+  const declaredCount = Number(anime?.episodeCount) || 0;
+  return Math.max(filtered.length, declaredCount);
+}
+
+function isSingleEpisodeMatchCandidate(anime, bangumiData) {
+  return getMatchEpisodeCount(anime, bangumiData) <= 1;
+}
+
 export function matchSeason(anime, queryTitle, season) {
   // 先从原始带括号的标题中分离出名称主体再对主体进行净化剥离非法字符
   const match = anime.animeTitle.match(/^(.*?)\(\d{4}\)/);
@@ -1167,8 +1190,19 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
       return { resEpisode: null, resAnime: null };
     }
 
+    // AI 有时会把同名电影选为首个候选；存在季集参数时交给常规匹配，
+    // 让多集电视剧候选按季集和集数优先级决策，避免单集电影抢占 S01E01。
     const bangumiData = getBangumiDataForMatch(selectedAnime, detailStore);
     if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
+      return { resEpisode: null, resAnime: null };
+    }
+
+    const hasSeriesCandidate = searchData.animes.some(candidate => {
+      const candidateData = getBangumiDataForMatch(candidate, detailStore);
+      return !isMovieMatchCandidate(candidate) && getMatchEpisodeCount(candidate, candidateData) > 1;
+    });
+    if (season && episode && isSingleEpisodeMatchCandidate(selectedAnime, bangumiData) && hasSeriesCandidate) {
+      log('info', '[system] [match] AI selected a single-episode candidate while series candidates exist; falling back to season/episode matching');
       return { resEpisode: null, resAnime: null };
     }
 
@@ -1398,6 +1432,10 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
   };
 
   const normalizedTitle = normalizeSpaces(title);
+  const hasMultiEpisodeCandidate = season && episode && searchData.animes.some(candidate => {
+    const candidateData = getBangumiDataForMatch(candidate, detailStore);
+    return getMatchEpisodeCount(candidate, candidateData) > 1;
+  });
 
   // 遍历所有搜索结果，寻找最佳匹配
   for (const anime of searchData.animes) {
@@ -1459,6 +1497,13 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
     // 2. 获取剧集详情 (无条件获取，确保数据完整性)
     const bangumiData = getBangumiDataForMatch(anime, detailStore);
     if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
+      continue;
+    }
+
+    // S01E01 不能仅凭“第 1 集”命中电影；只要搜索结果中存在多集候选，
+    // 单集候选就不参与本轮季集匹配。这样不受平台顺序影响。
+    if (hasMultiEpisodeCandidate && isSingleEpisodeMatchCandidate(anime, bangumiData)) {
+      log('info', `[system] [match] Skip single-episode candidate for S${season}E${episode}: ${anime.animeTitle}`);
       continue;
     }
     
@@ -1547,7 +1592,13 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
             currentScore += 9999;
         }
 
-        // 比较并更新最佳结果
+        // 比较并更新最佳结果。带季集时多集候选优先；单集候选仅作为兜底。
+        const isSingleEpisodeCandidate = season && episode && isSingleEpisodeMatchCandidate(anime, bangumiData);
+        if (isSingleEpisodeCandidate) {
+            currentScore -= 100;
+        } else if (season && episode) {
+            currentScore += 100;
+        }
         // 逻辑：如果有更好的分数，或者之前没有匹配到任何结果，则更新
         if (currentScore > bestRes.score) {
              bestRes = {
@@ -1558,8 +1609,8 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
         }
 
         // 已命中最高优先级的手动优选，或不存在平台偏好且无待匹配的优选条目时立刻跳出查找
-        if (isPreferredAnime || (!platform && !preferAnimeId)) {
-            break; 
+        if (isPreferredAnime || (!platform && !preferAnimeId && !isSingleEpisodeCandidate)) {
+          break;
         }
         
         // 如果指定了平台偏好，则继续循环查找是否有得分更高的源（最小杂质匹配）
