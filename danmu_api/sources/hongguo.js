@@ -69,6 +69,55 @@ const CLIENT_CONFIG = {
   },
 };
 
+const WEB_ORIGIN = "https://hongguoduanju.com";
+
+function parseWebSearchResults(html) {
+  const marker = '"searchList":';
+  const start = html.indexOf(marker);
+  if (start < 0) return [];
+  let i = start + marker.length;
+  while (i < html.length && /\s/.test(html[i])) i++;
+  if (html[i] !== "[") return [];
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  let end = i;
+  for (; end < html.length; end++) {
+    const ch = html[end];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') quoted = false;
+      continue;
+    }
+    if (ch === '"') quoted = true;
+    else if (ch === "[") depth++;
+    else if (ch === "]" && --depth === 0) break;
+  }
+  try { return JSON.parse(html.slice(i, end + 1)); } catch { return []; }
+}
+
+function parseWebSeriesDetail(html) {
+  const marker = '"seriesDetail":';
+  const start = html.indexOf(marker);
+  if (start < 0) return null;
+  let i = start + marker.length;
+  while (i < html.length && /\s/.test(html[i])) i++;
+  if (html[i] !== "{") return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  let end = i;
+  for (; end < html.length; end++) {
+    const ch = html[end];
+    if (quoted) { if (escaped) escaped = false; else if (ch === "\\") escaped = true; else if (ch === '"') quoted = false; continue; }
+    if (ch === '"') quoted = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) break;
+  }
+  try { return JSON.parse(html.slice(i, end + 1)); } catch { return null; }
+}
+
 const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
@@ -756,6 +805,14 @@ export default class HongguoSource extends BaseSource {
 
   async search(keyword) {
     try {
+      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { accept: "text/html" }, timeout: 30000 });
+      const items = parseWebSearchResults(typeof response.data === "string" ? response.data : "");
+      if (items.length) return items.map((item) => {
+        const data = item.video_data || {};
+        return { seriesId: String(data.series_id || item.keyword || ""), name: String(data.series_name || data.series_title || item.name || ""), episodeCount: Number(data.episode_cnt) || 0, score: "", year: extractYearFromTimestamp(data.create_time), imageUrl: extractImageUrl(data.series_cover) };
+      }).filter((item) => item.seriesId && item.name && item.episodeCount > 0).slice(0, MAX_SEARCH_ITEMS);
+    } catch (error) { log("warn", `[Hongguo] web search unavailable: ${error.message}`); }
+    try {
       const results = [];
       const seen = new Set();
       let offset = 0;
@@ -798,6 +855,13 @@ export default class HongguoSource extends BaseSource {
   }
 
   async getEpisodes(seriesId) {
+    try {
+      const response = await httpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, { headers: { accept: "text/html" }, timeout: 30000 });
+      const detail = parseWebSeriesDetail(typeof response.data === "string" ? response.data : "");
+      if (detail && Array.isArray(detail.vid_list) && detail.vid_list.length) {
+        return { episodes: detail.vid_list.map((vid, index) => ({ index: index + 1, vid: String(vid), title: `第${index + 1}集`, duration: 0, commentCount: 0, imageUrl: "" })), year: extractYearFromTimestamp(detail.create_time), imageUrl: extractImageUrl(detail.series_cover) };
+      }
+    } catch (error) { log("warn", `[Hongguo] web detail unavailable: ${error.message}`); }
     try {
       const body = {
         biz_param: {
