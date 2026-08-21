@@ -192,6 +192,91 @@ export function limitDanmusByCount(filteredDanmus, danmuLimit) {
   return result;
 }
 
+/**
+ * 转义正则特殊字符，用于将纯文本屏蔽词转为字面量匹配
+ */
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 将 BLOCKED_WORDS 字符串切分为词条数组：
+ * - /pattern/flags 正则词条整体识别，其内部的逗号不作为分隔符
+ * - 兼容中文全角逗号（，）与英文逗号（,），以及逗号前后的空格
+ * - 识别失败时（如字符类中的裸 / ）将 / 作为普通字符处理
+ */
+export function splitBlockedWords(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  const normalized = raw.replace(/，/g, ',');
+
+  // 尝试从 start（指向 '/'）消费一个完整的 /pattern/flags 词条，
+  // 成功返回词条结束位置（分隔符处或末尾），失败返回 -1
+  const tryConsumeRegexToken = (start) => {
+    let j = start + 1;
+    while (j < normalized.length) {
+      if (normalized[j] === '\\') { j += 2; continue; }
+      if (normalized[j] === '/') {
+        // 候选闭合点：其后须为可选 flags（后跟分隔符或结尾）才构成完整词条
+        const rest = normalized.slice(j + 1);
+        const flagMatch = rest.match(/^([a-z]*)(\s*)(?:,|$)/);
+        if (flagMatch) {
+          // 仅消费 flags 与空白，分隔符留给主循环处理
+          return j + 1 + flagMatch[1].length + flagMatch[2].length;
+        }
+      }
+      j++;
+    }
+    return -1;
+  };
+
+  const segments = [];
+  let buf = '';
+  let i = 0;
+  while (i < normalized.length) {
+    const ch = normalized[i];
+    if (ch === '/') {
+      const end = tryConsumeRegexToken(i);
+      if (end !== -1) {
+        buf += normalized.slice(i, end);
+        i = end;
+        continue;
+      }
+      buf += ch;
+      i++;
+      continue;
+    }
+    if (ch === ',') {
+      segments.push(buf);
+      buf = '';
+      i++;
+      continue;
+    }
+    buf += ch;
+    i++;
+  }
+  if (buf.trim() !== '') segments.push(buf);
+  return segments.map(s => s.trim()).filter(s => s !== '');
+}
+
+/**
+ * 将单个屏蔽词条转换为正则对象：
+ * - /pattern/ 或 /pattern/flags 按正则解析（忽略 g/y 标志，避免 lastIndex 状态影响 test 结果）
+ * - 纯文本词条按字面量匹配
+ * - 非法正则降级为字面量匹配并输出警告日志
+ */
+export function parseBlockedWord(segment) {
+  const match = segment.match(/^\/([\s\S]+)\/([a-z]*)$/);
+  if (match) {
+    try {
+      return new RegExp(match[1], match[2].replace(/[gy]/g, ''));
+    } catch (e) {
+      log("warn", `[system] [danmu] 无效的屏蔽词正则(已按字面量处理): ${segment}`, e?.message || e);
+      return new RegExp(escapeRegExp(segment));
+    }
+  }
+  return new RegExp(escapeRegExp(segment));
+}
+
 export function convertToDanmakuJson(contents, platform) {
   let danmus = [];
   let cidCounter = 1;
@@ -308,30 +393,57 @@ export function convertToDanmakuJson(contents, platform) {
     log("info", `[system] [danmu] [danmu convert] 转换了 ${danmus.length} 条弹幕为${targetLabel}`);
   }
 
-  // 切割字符串成正则表达式数组
-  const regexArray = globals.blockedWords.split(/(?<=\/),(?=\/)/).map(str => {
-    // 去除两端的斜杠并转换为正则对象
-    const pattern = str.trim();
-    if (pattern.startsWith('/') && pattern.endsWith('/')) {
-      try {
-        // 去除两边的 `/` 并转化为正则
-        return new RegExp(pattern.slice(1, -1));
-      } catch (e) {
-        log("error", `[system] [danmu] 无效的正则表达式: ${pattern}`, e);
-        return null;
+  // =====================
+  // 屏蔽词过滤（含生效诊断日志）
+  // =====================
+  // 解析屏蔽词：支持 /regex/、/regex/flags 及纯文本词，兼容中英文逗号及空格分隔
+  const blockedSegments = splitBlockedWords(globals.blockedWords);
+  const regexArray = blockedSegments.map(parseBlockedWord);
+
+  // [诊断1] 解析阶段：确认规则是否正确加载
+  if (regexArray.length === 0) {
+    if (globals.blockedWords && globals.blockedWords.trim() !== '') {
+      log("warn", `[system] [danmu] [blocked-words] ❌ 已配置屏蔽词但未解析出有效规则，本次不会过滤任何弹幕！原始配置: ${JSON.stringify(globals.blockedWords)}`);
+    } else {
+      log("info", `[system] [danmu] [blocked-words] 未配置屏蔽词(BLOCKED_WORDS 为空)，跳过过滤`);
+    }
+  } else {
+    log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条 [ ${regexArray.map(r => r.toString()).join(' , ')} ]`);
+  }
+
+  // 过滤列表（统计每条规则命中次数与拦截样本）
+  const ruleHitCounts = new Array(regexArray.length).fill(0);
+  const blockedSamples = [];
+  const filteredDanmus = danmus.filter(item => {
+    for (let i = 0; i < regexArray.length; i++) {
+      if (regexArray[i].test(item.m)) { // 针对 `m` 字段进行匹配
+        ruleHitCounts[i]++;
+        if (blockedSamples.length < 3) {
+          blockedSamples.push(`「${String(item.m).slice(0, 30)}」← ${regexArray[i].toString()}`);
+        }
+        return false;
       }
     }
-    return null; // 如果不是有效的正则格式则返回 null
-  }).filter(regex => regex !== null); // 过滤掉无效的项
-
-  log("info", `[system] [danmu] 原始屏蔽词字符串: ${globals.blockedWords}`);
-  const regexArrayToString = array => Array.isArray(array) ? array.map(regex => regex.toString()).join('\n') : String(array);
-  log("info", `[system] [danmu] 屏蔽词列表: ${regexArrayToString(regexArray)}`);
-
-  // 过滤列表
-  const filteredDanmus = danmus.filter(item => {
-    return !regexArray.some(regex => regex.test(item.m)); // 针对 `m` 字段进行匹配
+    return true;
   });
+
+  // [诊断2] 过滤阶段：明确判定屏蔽词是否生效
+  const removedCount = danmus.length - filteredDanmus.length;
+  if (regexArray.length > 0) {
+    if (removedCount > 0) {
+      const hitSummary = regexArray
+        .map((r, i) => ({ rule: r.toString(), count: ruleHitCounts[i] }))
+        .filter(x => x.count > 0)
+        .map(x => `${x.rule} ×${x.count}`)
+        .join(', ');
+      log("info", `[system] [danmu] [blocked-words] ✅ 屏蔽词已生效: 拦截 ${removedCount}/${danmus.length} 条弹幕${hitSummary ? `，命中明细: ${hitSummary}` : ''}`);
+      if (blockedSamples.length) {
+        log("info", `[system] [danmu] [blocked-words] 拦截示例(最多3条): ${blockedSamples.join(' | ')}`);
+      }
+    } else {
+      log("info", `[system] [danmu] [blocked-words] ⚠️ 规则已加载(${regexArray.length} 条)但本集弹幕无命中`);
+    }
+  }
 
   // 按n分钟内去重
   log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}`);
