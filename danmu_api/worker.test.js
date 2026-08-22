@@ -47,7 +47,7 @@ import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
 import { previewJsContent } from './ui/js/preview.js';
 import { convertToAsciiSum } from "./utils/codec-util.js";
-import { convertToDanmakuJson, handleDanmusLike } from "./utils/danmu-util.js";
+import { convertToDanmakuJson, handleDanmusLike, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 import { initBangumiData, searchBangumiData, clearBangumiDataCache } from "./utils/bangumi-data-util.js";
 import { generateNipaplaySignature, parseNipaplayRelatedLinks, resolveNipaplayLink, applyShiftToDanmu } from "./utils/nipaplay-util.js";
@@ -625,6 +625,49 @@ test('worker.js API endpoints', async (t) => {
       { p: '1,1,16777215,[test]', m: '来看能不能发弹幕' }
     ], 'test');
     assert.equal(traditional[0].m, '來看能不能發彈幕');
+
+    resetSearchState();
+  });
+
+  await t.test('BLOCKED_WORDS 屏蔽词解析与过滤', async () => {
+    const baseEnv = {
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    };
+    const sample = [
+      { timepoint: '1.00', ct: 1, color: 16777215, content: '前方剧透警告' },
+      { timepoint: '2.00', ct: 1, color: 16777215, content: '测试弹幕一' },
+      { timepoint: '3.00', ct: 1, color: 16777215, content: 'AD广告内容' },
+      { timepoint: '4.00', ct: 1, color: 16777215, content: '正常弹幕' },
+    ];
+
+    const filterWith = async (blockedWords, expectGone, expectKeep = ['正常弹幕']) => {
+      Globals.init({ ...baseEnv, BLOCKED_WORDS: blockedWords });
+      const out = await convertToDanmakuJson(structuredClone(sample), 'test');
+      const texts = out.map(d => d.m);
+      for (const word of expectGone) {
+        assert.ok(!texts.some(t => t.includes(word)), `「${word}」应被屏蔽，实际剩余: ${JSON.stringify(texts)}`);
+      }
+      for (const word of expectKeep) {
+        assert.ok(texts.some(t => t.includes(word)), `「${word}」不应被误屏蔽，实际剩余: ${JSON.stringify(texts)}`);
+      }
+    };
+
+    // 标准正则 / 纯文本词 / 全角逗号 / 正则带 i 标志 / 逗号带空格 / 混合写法
+    await filterWith('/剧透/,/广告/', ['剧透', '广告']);
+    await filterWith('剧透,广告', ['剧透', '广告']);
+    await filterWith('/剧透/，/广告/', ['剧透', '广告']);
+    await filterWith('/ad/i,/^测试/', ['AD广告', '测试']);
+    await filterWith('/剧透/, /广告/', ['剧透', '广告']);
+    await filterWith('/^测试/, 剧透 ，/广告/', ['剧透', '广告', '测试']);
+
+    // README 官方示例兼容性：应解析出 16 个正则且不抛错
+    const readmeSample = "/.{20,}/,/^\\d{2,4}[-/.]\\d{1,2}[-/.]\\d{1,2}([日号.]*)?$/,/^(?!哈+$)([a-zA-Z\\u4e00-\\u9fa5])\\1{2,}/,/[0-9]+\\.*[0-9]*\\s*(w|万)+\\s*(\\+|个|人|在看)+/,/^[a-z]{6,}$/,/^(?:qwertyuiop|asdfghjkl|zxcvbnm)$/,/^\\d{5,}$/,/^(\\d)\\1{2,}/,/^\\d{1,4}$/,/(20[0-3][0-9])/,/(0?[1-9]|1[0-2])月/,/\\d{1,2}[.-]\\d{1,2}/,/[@#&$%^*+\\|/\\-_=<>°◆◇■□●○★☆▼▲♥♦♠♣①②③④⑤⑥⑦⑧⑨⑩]/,/[一二三四五六七八九十百\\d]+刷/,/第[一二三四五六七八九十百\\d]+/,/(全体成员|报到|报道|来啦|签到|刷|打卡|我在|来了|考古|爱了|挖坟|留念|你好|回来|哦哦|重温|复习|重刷|再看|在看|前排|沙发|有人看|板凳|末排|我老婆|我老公|撅了|后排|周目|重看|包养|DVD|同上|同样|我也是|俺也|算我|爱豆|我家爱豆|我家哥哥|加我|三连|币|新人|入坑|补剧|冲了|硬了|看完|舔屏|万人|牛逼|煞笔|傻逼|卧槽|tm|啊这|哇哦)/";
+    const segs = splitBlockedWords(readmeSample);
+    assert.equal(segs.length, 16, `README 官方示例应解析出 16 条规则，实际 ${segs.length}`);
+    const regexes = segs.map(parseBlockedWord);
+    assert.ok(regexes.every(r => r instanceof RegExp), '所有词条均应解析为正则');
 
     resetSearchState();
   });
