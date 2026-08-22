@@ -1,0 +1,53 @@
+name: Build danmu-api for UZN
+
+# 为 UZN app 构建打包产物并发布到固定的 latest Release
+# push 到 main 即自动构建，产物覆盖更新到同一个 Release（下载链接不变）；也可手动触发
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 更新 Release 与上传资产所需
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 安装 Node（打包脚本与产物运行环境无关，target 为 node18）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # package-lock.json 被 .gitignore 忽略，无法使用 npm ci
+      - name: Install dependencies
+        run: npm install
+
+      # 打包生成 dist/danmu_api_server.cjs 与 dist/danmu_api_server.cjs.md5
+      - name: Build bundle
+        run: node build-for-uzn.mjs
+
+      # 上传两个构建产物到固定的 latest Release（同名资产自动覆盖）
+      - name: Upload artifacts to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: danmu-api 服务端（UZN 专用构建）
+          body: |
+            每次推送 main 分支后自动构建并覆盖更新，下载链接固定不变。
+
+            - 构建提交: ${{ github.sha }}
+
+            可通过 `danmu_api_server.cjs.md5`（产物内容的 md5）判断是否有新版本。
+          files: |
+            dist/danmu_api_server.cjs
+            dist/danmu_api_server.cjs.md5
+          fail_on_unmatched_files: true
+          make_latest: true
