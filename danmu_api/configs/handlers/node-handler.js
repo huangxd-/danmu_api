@@ -16,12 +16,29 @@ export class NodeHandler extends BaseHandler {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
-    const envPath = path.join(__dirname, '..', '..', '..', 'config', '.env');
+    const configDir = path.join(__dirname, '..', '..', '..', 'config');
+    const envPath = path.join(configDir, '.env');
 
-    const envExists = fs.existsSync(envPath);
+    let envExists = fs.existsSync(envPath);
 
     if (!envExists) {
-      throw new Error('.env not found');
+      // .env 不存在时自动创建（单文件部署场景，如移动设备，config 目录可能尚未生成）：
+      // 优先从 .env.example 模板复制，否则创建空文件
+      const envExamplePath = path.join(configDir, '.env.example');
+      try {
+        fs.mkdirSync(configDir, { recursive: true });
+        if (fs.existsSync(envExamplePath)) {
+          fs.copyFileSync(envExamplePath, envPath);
+          log("info", '[system] [server] Copied .env.example to .env before updating config');
+        } else {
+          fs.writeFileSync(envPath, '', 'utf8');
+          log("info", '[system] [server] Created empty .env before updating config');
+        }
+      } catch (error) {
+        // 创建失败（如目录只读、无权限）时抛出明确错误，由 setEnv 统一捕获并返回失败
+        throw new Error(`Failed to create config/.env: ${error.message}`);
+      }
+      envExists = true;
     }
 
     let updated = false;
