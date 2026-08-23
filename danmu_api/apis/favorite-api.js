@@ -13,6 +13,7 @@ import {
   stripSeasonSuffix
 } from '../utils/favorite-util.js';
 import { extractTitleSeasonEpisode, searchAnime } from './dandan-api.js';
+import { applyTitleMappingWithLog, ensureRemoteTitleMapping } from '../utils/title-mapping-url-util.js';
 import { createFavoriteSchedule } from '../utils/favorite-schedule-util.js';
 
 const favoriteRefreshLocks = new Set();
@@ -21,9 +22,9 @@ async function resolveTitleForFavorite(fileName) {
   const { cleanFileName } = parseFileName(fileName);
   let { title, season, episode, year } = await extractTitleSeasonEpisode(cleanFileName);
 
-  if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
-    title = globals.titleMappingTable.get(title) || title;
-  }
+  // 确保远程映射表已加载后，经本地+远程合并的映射表转换标题
+  await ensureRemoteTitleMapping();
+  title = applyTitleMappingWithLog(title, 'favorite', season, year);
   if (globals.animeTitleSimplified) title = simplized(title);
   if (globals.titleNoiseFilter) title = title.replace(globals.titleNoiseFilter, '').trim();
 

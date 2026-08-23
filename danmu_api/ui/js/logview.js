@@ -19,6 +19,18 @@ function getLogCategory(message) {
     if (tags.some(t => t.toLowerCase() === 'merge' || ['匹配', '落单', '补全', '合集', '略过', 'Merge-Check'].some(key => t.includes(key)))) {
         return 'merge';
     }
+
+    // 远程映射表日志专属分类（仅远程表下载、匹配成功/失败日志）
+    if (tags.some(t => t === 'remote-mapping')) {
+        return 'remote-mapping';
+    }
+    // 本机/通用剧名映射日志分类
+    if (tags.some(t => t === 'title-mapping')) {
+        return 'title-mapping';
+    }
+    if (tags.some(t => t === 'blocked-words')) {
+        return 'blocked-words';
+    }
     
     // 排除时间戳和底层无意义标签，抓取真正的业务源
     const validTags = tags.filter(t => 
@@ -126,7 +138,7 @@ function createFilterContainer() {
 
 // 标签显示顺序：ALL → 系统 → 工具 → 源，组内字母序
 const tagGroupOrder = [
-    ['system', 'ai'],
+    ['remote-mapping', 'title-mapping', 'blocked-words', 'system', 'ai'],
     ['cache', 'merge'],
     ['360kan', 'aiyifan', 'animeko', 'bahamut', 'bilibili', 'custom', 'dandan', 'douban', 'hanjutv', 'hongguo', 'iqiyi', 'leshi', 'maiduidui', 'mango', 'migu', 'other', 'renren', 'sohu', 'tencent', 'tmdb', 'vod', 'xigua', 'youku'],
 ];
@@ -137,7 +149,7 @@ function updateFilterUI() {
     const filterContainer = document.getElementById('log-filters');
     let html = \`<button class="filter-btn \${currentLogFilter === 'ALL' ? 'active' : ''}" onclick="setLogFilter('ALL')">ALL</button>\`;
     
-    const currentTags = new Set();
+    const currentTags = new Set(['remote-mapping']);
     let lastCategory = 'system';
     logs.forEach(log => {
         let category = log._category;

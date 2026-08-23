@@ -143,6 +143,19 @@ export const componentsCssContent = /* css */ `
     gap: 6px;
 }
 
+.remote-refresh-actions {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding-top: 8px;
+}
+
+.remote-refresh-actions .remote-refresh-status {
+    width: 100%;
+    text-align: center;
+}
+
 /* ============ 按钮系统 ============ */
 .btn {
     padding: 8px 18px;
