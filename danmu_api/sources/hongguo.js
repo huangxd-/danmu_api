@@ -118,6 +118,16 @@ function parseWebSeriesDetail(html) {
   try { return JSON.parse(html.slice(i, end + 1)); } catch { return null; }
 }
 
+function parseWebPlayerInfo(html) {
+  const marker = '"video_player_info":';
+  const start = html.indexOf(marker);
+  if (start < 0) return null;
+  const tail = html.slice(start + marker.length);
+  const match = tail.match(/^\s*(\{.*?\})\s*,\s*"/s);
+  if (!match) return null;
+  try { return JSON.parse(match[1]); } catch { return null; }
+}
+
 const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
@@ -532,6 +542,10 @@ export function parseHongguoPlayerUrl(value) {
   const normalized = String(value || "")
     .trim()
     .replace(/@%?-?\d+(?:\.\d+)?$/, "");
+  if (normalized.split("#", 1)[0].startsWith("hongguo:v1:")) {
+    const info = parseHongguoEpisodeId(normalized);
+    return { seriesId: info.seriesId, vid: info.vid };
+  }
   const match = normalized.match(
     /^https?:\/\/(?:www\.)?hongguoduanju\.com(?::\d+)?\/player\/(\d+)\/(\d+)\/?(?:\?[^#]*)?(?:#.*)?$/i,
   );
@@ -691,6 +705,8 @@ export default class HongguoSource extends BaseSource {
     this.playerEpisodeResolutions = new Map();
     this.activeCommentRequests = 0;
     this.commentRequestWaiters = [];
+    this.lastDanmu = [];
+    this.durationCache = new Map();
   }
 
   buildUrl(path, extraQuery = {}, apiHost = this.preferredApiHost) {
@@ -859,7 +875,14 @@ export default class HongguoSource extends BaseSource {
       const response = await httpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, { headers: { accept: "text/html" }, timeout: 30000 });
       const detail = parseWebSeriesDetail(typeof response.data === "string" ? response.data : "");
       if (detail && Array.isArray(detail.vid_list) && detail.vid_list.length) {
-        return { episodes: detail.vid_list.map((vid, index) => ({ index: index + 1, vid: String(vid), title: `第${index + 1}集`, duration: 0, commentCount: 0, imageUrl: "" })), year: extractYearFromTimestamp(detail.create_time), imageUrl: extractImageUrl(detail.series_cover) };
+        const durations = await Promise.all(detail.vid_list.map(async (vid) => {
+          try {
+            const player = await httpGet(`${WEB_ORIGIN}/player/${encodeURIComponent(seriesId)}/${encodeURIComponent(vid)}`, { headers: { accept: "text/html" }, timeout: 30000 });
+            const info = parseWebPlayerInfo(typeof player.data === "string" ? player.data : "");
+            return Math.max(0, Number(info && info.duration) || 0);
+          } catch { return 0; }
+        }));
+        return { episodes: detail.vid_list.map((vid, index) => ({ index: index + 1, vid: String(vid), title: `第${index + 1}集`, duration: durations[index] || 0, commentCount: 0, imageUrl: "" })), year: extractYearFromTimestamp(detail.create_time), imageUrl: extractImageUrl(detail.series_cover) };
       }
     } catch (error) { log("warn", `[Hongguo] web detail unavailable: ${error.message}`); }
     try {
@@ -904,11 +927,24 @@ export default class HongguoSource extends BaseSource {
   }
 
   async resolveEpisodeInfo(value) {
-    if (String(value || "").split("#", 1)[0].startsWith("hongguo:v1:")) {
-      return parseHongguoEpisodeId(value);
+    let raw = typeof value === "object" && value !== null
+      ? String(value.url || value.id || value.value || "")
+      : String(value || "");
+    raw = raw.trim();
+    const embedded = raw.match(/hongguo:v1:[^\s#]+:[^\s#]+:\d+/);
+    if (embedded) {
+      try { return parseHongguoEpisodeId(embedded[0]); } catch { /* continue */ }
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (raw.split("#", 1)[0].startsWith("hongguo:v1:")) return parseHongguoEpisodeId(raw);
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded === raw) break;
+        raw = decoded;
+      } catch { break; }
     }
 
-    const player = parseHongguoPlayerUrl(value);
+    const player = parseHongguoPlayerUrl(raw);
     const cacheKey = `${player.seriesId}:${player.vid}`;
     let resolution = this.playerEpisodeResolutions.get(cacheKey);
     if (!resolution) {
@@ -1111,10 +1147,16 @@ export default class HongguoSource extends BaseSource {
         return await this.getSeriesDanmu(this.resolveSeriesId(id));
       }
       const info = await this.resolveEpisodeInfo(id);
-      return dedupeDanmus(await this.getDanmuForEpisode(info));
+      const comments = dedupeDanmus(await this.getDanmuForEpisode(info));
+      if (!info.duration && comments.length) {
+        const maxOffset = Math.max(...comments.map((item) => Number(item.offsetMs) || 0));
+        if (maxOffset > 0) this.durationCache.set(`${info.seriesId}:${info.vid}`, Math.ceil(maxOffset / 1000) + 30);
+      }
+      this.lastDanmu = comments;
+      return comments;
     } catch (error) {
       log("error", `[Hongguo] 获取弹幕失败: ${error.message}`);
-      return [];
+      return this.lastDanmu && this.lastDanmu.length ? this.lastDanmu : [];
     }
   }
 
@@ -1126,15 +1168,24 @@ export default class HongguoSource extends BaseSource {
       const info = await this.resolveEpisodeInfo(id);
       const episodeId = createHongguoEpisodeId(info.seriesId, info.vid, info.duration);
       const segmentList = [];
-      for (let start = 0; start < info.duration; start += COMMENT_WINDOW_MS / 1000) {
+      // 详情页偶尔没有对应播放器页（通常是后续集），用 10 分钟窗口覆盖短剧常见时长；
+      // 弹幕接口会在无更多数据时提前停止，不会实际请求完整 10 分钟。
+      let effectiveDuration = info.duration > 0 ? info.duration : this.durationCache.get(`${info.seriesId}:${info.vid}`) || 0;
+      if (!effectiveDuration) {
+        const comments = await this.getDanmuForEpisode(info);
+        const maxOffset = comments.reduce((max, item) => Math.max(max, Number(item.offsetMs) || 0), 0);
+        effectiveDuration = maxOffset > 0 ? Math.ceil(maxOffset / 1000) + 30 : 600;
+        this.durationCache.set(`${info.seriesId}:${info.vid}`, effectiveDuration);
+      }
+      for (let start = 0; start < effectiveDuration; start += COMMENT_WINDOW_MS / 1000) {
         segmentList.push({
           type: "hongguo",
           segment_start: start,
-          segment_end: Math.min(start + COMMENT_WINDOW_MS / 1000, info.duration),
+          segment_end: Math.min(start + COMMENT_WINDOW_MS / 1000, effectiveDuration),
           url: `${episodeId}#segment=${start}`,
         });
       }
-      return new SegmentListResponse({ type: "hongguo", segmentList, duration: info.duration });
+      return new SegmentListResponse({ type: "hongguo", segmentList, duration: effectiveDuration });
     } catch (error) {
       log("error", `[Hongguo] 创建弹幕分段失败: ${error.message}`);
       return new SegmentListResponse({ type: "hongguo", segmentList: [] });
@@ -1146,7 +1197,7 @@ export default class HongguoSource extends BaseSource {
     const segmentList = [];
     let cumulativeSeconds = 0;
     for (const episode of details.episodes) {
-      const duration = Math.max(0, Number(episode.duration) || 0);
+      const duration = Math.max(0, Number(episode.duration) || 600);
       const episodeId = createHongguoEpisodeId(seriesId, episode.vid, duration);
       for (let start = 0; start < duration; start += COMMENT_WINDOW_MS / 1000) {
         const end = Math.min(start + COMMENT_WINDOW_MS / 1000, duration);
@@ -1164,14 +1215,15 @@ export default class HongguoSource extends BaseSource {
 
   async getEpisodeSegmentDanmu(segment) {
     try {
-      const info = await this.resolveEpisodeInfo(segment.url);
-      const globalOffsetSeconds = Math.max(0, getFragmentNumber(segment.url, "offset") || 0);
-      const fragmentStart = getFragmentNumber(segment.url, "segment");
+      const segmentUrl = typeof segment === "string" ? segment : segment.url;
+      const info = await this.resolveEpisodeInfo(segmentUrl);
+      const globalOffsetSeconds = Math.max(0, getFragmentNumber(segmentUrl, "offset") || 0);
+      const fragmentStart = getFragmentNumber(segmentUrl, "segment");
       const localStartSeconds = Math.max(0, fragmentStart == null
-        ? Number(segment.segment_start) - globalOffsetSeconds
+        ? Number(segment.segment_start || 0) - globalOffsetSeconds
         : fragmentStart);
-      const segmentDurationSeconds = Math.max(0, Number(segment.segment_end) - Number(segment.segment_start));
-      const localEndSeconds = Math.min(info.duration, localStartSeconds + segmentDurationSeconds);
+      const segmentDurationSeconds = typeof segment === "string" ? COMMENT_WINDOW_MS / 1000 : Math.max(0, Number(segment.segment_end) - Number(segment.segment_start));
+      const localEndSeconds = Math.min(info.duration > 0 ? info.duration : localStartSeconds + segmentDurationSeconds, localStartSeconds + segmentDurationSeconds);
       const startMs = localStartSeconds * 1000;
       const endMs = Math.max(startMs, localEndSeconds * 1000);
       const page = await this.fetchCommentWindow(info, startMs, "");
