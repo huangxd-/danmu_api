@@ -896,6 +896,8 @@ function renderValueInput(item) {
 
         container.innerHTML = \`
             <label>映射配置</label>
+            <textarea id="map-bulk-value" rows="6" placeholder="原值->映射值;原值2->映射值2">\${escapeHtml(value || '')}</textarea>
+            <button type="button" class="btn btn-secondary" onclick="parseBulkMapItems()">解析并更新列表</button>
             <div class="map-container" id="map-container">
                 \${mapItems.map((item, index) => \`
                     <div class="map-item" data-index="\${index}">
@@ -914,6 +916,8 @@ function renderValueInput(item) {
             </div>
             <button type="button" class="btn btn-primary" onclick="addMapItem()">添加映射项</button>
         \`;
+
+        bindMapInputSync();
 
     } else {
         // 文本输入
@@ -2621,6 +2625,7 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
         itemData = { key, value, description, type, options };
     } else if (type === 'map') {
         // 获取映射表值
+        parseBulkMapItems(true);
         const mapItems = document.querySelectorAll('#map-container .map-item');
         const pairs = [];
         mapItems.forEach(item => {
@@ -2702,6 +2707,29 @@ document.getElementById('env-form').addEventListener('submit', async function(e)
     }
 });
 
+function parseBulkMapItems(silent = false) {
+    const input = document.getElementById('map-bulk-value');
+    const container = document.getElementById('map-container');
+    if (!input || !container) return false;
+    const latest = new Map(); const invalid = [];
+    String(input.value || '').split(/[;\\r\\n]+/).forEach((raw, index) => {
+        const text = raw.trim(); if (!text) return;
+        const pos = text.indexOf('->');
+        if (pos < 1 || !text.slice(pos + 2).trim()) { invalid.push(index + 1); return; }
+        latest.set(text.slice(0, pos).trim(), text.slice(pos + 2).trim());
+    });
+    container.querySelectorAll('.map-item').forEach(item => item.remove());
+    for (const [left, right] of latest) {
+        const row = document.createElement('div'); row.className = 'map-item';
+        row.innerHTML = '<input type="text" class="map-input-left"><span class="map-separator">-&gt;</span><input type="text" class="map-input-right"><button type="button" class="btn btn-danger map-remove-btn" onclick="removeMapItem(this)">删除</button>';
+        row.querySelector('.map-input-left').value = left;
+        row.querySelector('.map-input-right').value = right;
+        container.insertBefore(row, container.querySelector('.map-item-template'));
+    }
+    if (invalid.length && !silent) addLog('Invalid mapping entries ignored: ' + invalid.join(', '), 'warning');
+    return invalid.length === 0;
+}
+
 // 添加映射项
 function addMapItem() {
     const container = document.getElementById('map-container');
@@ -2713,6 +2741,8 @@ function addMapItem() {
     const index = container.querySelectorAll('.map-item').length;
     newItem.setAttribute('data-index', index);
     container.appendChild(newItem);
+    newItem.querySelectorAll('.map-input-left, .map-input-right').forEach(input => input.addEventListener('input', syncBulkMapValue));
+    syncBulkMapValue();
 }
 
 // 删除映射项
@@ -2720,7 +2750,24 @@ function removeMapItem(button) {
     const item = button.closest('.map-item');
     if (item) {
         item.remove();
+        syncBulkMapValue();
     }
+}
+
+function syncBulkMapValue() {
+    const input = document.getElementById('map-bulk-value');
+    if (!input) return;
+    input.value = Array.from(document.querySelectorAll('#map-container .map-item')).map(item => {
+        const l = item.querySelector('.map-input-left')?.value.trim();
+        const r = item.querySelector('.map-input-right')?.value.trim();
+        return l && r ? l + '->' + r : '';
+    }).filter(Boolean).join(';');
+}
+
+function bindMapInputSync() {
+    document.querySelectorAll('#map-container .map-input-left, #map-container .map-input-right').forEach(input => {
+        input.addEventListener('input', syncBulkMapValue);
+    });
 }
 /* ========================================
    Bilibili Cookie 扫码登录功能
