@@ -118,16 +118,6 @@ function parseWebSeriesDetail(html) {
   try { return JSON.parse(html.slice(i, end + 1)); } catch { return null; }
 }
 
-function parseWebPlayerInfo(html) {
-  const marker = '"video_player_info":';
-  const start = html.indexOf(marker);
-  if (start < 0) return null;
-  const tail = html.slice(start + marker.length);
-  const match = tail.match(/^\s*(\{.*?\})\s*,\s*"/s);
-  if (!match) return null;
-  try { return JSON.parse(match[1]); } catch { return null; }
-}
-
 const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
@@ -710,6 +700,7 @@ export default class HongguoSource extends BaseSource {
     this.commentRequestWaiters = [];
     this.lastDanmu = [];
     this.durationCache = new Map();
+    this.pendingEpisodeDanmu = new Map();
   }
 
   buildUrl(path, extraQuery = {}, apiHost = this.preferredApiHost) {
@@ -895,40 +886,26 @@ export default class HongguoSource extends BaseSource {
   }
 
   async getEpisodes(seriesId) {
-    try {
-      const response = await httpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, { headers: { accept: "text/html" }, timeout: 30000 });
-      const detail = parseWebSeriesDetail(typeof response.data === "string" ? response.data : "");
-      if (detail && Array.isArray(detail.vid_list) && detail.vid_list.length) {
-        const durations = await Promise.all(detail.vid_list.map(async (vid) => {
-          try {
-            const player = await httpGet(`${WEB_ORIGIN}/player/${encodeURIComponent(seriesId)}/${encodeURIComponent(vid)}`, { headers: { accept: "text/html" }, timeout: 30000 });
-            const info = parseWebPlayerInfo(typeof player.data === "string" ? player.data : "");
-            return Math.max(0, Number(info && info.duration) || 0);
-          } catch { return 0; }
-        }));
-        return { episodes: detail.vid_list.map((vid, index) => ({ index: index + 1, vid: String(vid), title: `第${index + 1}集`, duration: durations[index] || 0, commentCount: 0, imageUrl: "" })), year: extractYearFromTimestamp(detail.create_time), imageUrl: extractImageUrl(detail.series_cover) };
-      }
-    } catch (error) { log("warn", `[Hongguo] web detail unavailable: ${error.message}`); }
-    try {
-      const body = {
-        biz_param: {
-          detail_page_version: 0,
-          disable_digg_stat: false,
-          disable_video_relate_book: false,
-          image_shrink_datas_str: IMAGE_SHRINK,
-          need_all_video_definition: false,
-          need_mp4_align: false,
-          screen_width_px: "900",
-          source: 7,
-          use_os_player: false,
-          use_server_dns: false,
-        },
-        series_id: String(seriesId),
-      };
-      const payload = await this.request("POST", "/novel/player/multi_video_detail/v1/", { body });
-      const responseData = payload.data || {};
+    const body = {
+      biz_param: {
+        detail_page_version: 0,
+        disable_digg_stat: false,
+        disable_video_relate_book: false,
+        image_shrink_datas_str: IMAGE_SHRINK,
+        need_all_video_definition: false,
+        need_mp4_align: false,
+        screen_width_px: "900",
+        source: 7,
+        use_os_player: false,
+        use_server_dns: false,
+      },
+      series_id: String(seriesId),
+    };
+
+    const parseApiEpisodes = (payload) => {
+      const responseData = payload && payload.data || {};
       const entry = responseData[String(seriesId)] || responseData;
-      const videoData = (entry && entry.video_data) || {};
+      const videoData = entry && entry.video_data || {};
       const episodes = (videoData.video_list || []).map((item) => ({
         index: Number(item.vid_index) || 0,
         vid: String(item.vid || ""),
@@ -937,6 +914,7 @@ export default class HongguoSource extends BaseSource {
         commentCount: Math.max(0, Number(item.comment_count) || 0),
         imageUrl: extractImageUrl(item.episode_cover || item.cover),
       })).filter((item) => item.vid).sort((a, b) => a.index - b.index);
+      if (!episodes.length) return null;
       return {
         episodes,
         year: extractYearFromTimestamp(videoData.create_time),
@@ -944,10 +922,42 @@ export default class HongguoSource extends BaseSource {
           (episodes.find((episode) => episode.imageUrl) || {}).imageUrl ||
           "",
       };
+    };
+
+    try {
+      const apiResult = parseApiEpisodes(await this.request("POST", "/novel/player/multi_video_detail/v1/", { body }));
+      if (apiResult) return apiResult;
+      log("warn", `[Hongguo] API detail returned no episodes for series ${seriesId}, falling back to web detail`);
     } catch (error) {
-      log("error", `[Hongguo] 获取剧集失败: ${error.message}`);
-      return { episodes: [], year: null, imageUrl: "" };
+      log("warn", `[Hongguo] API detail unavailable: ${error.message}, falling back to web detail`);
     }
+
+    try {
+      const response = await httpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, { headers: { accept: "text/html" }, timeout: 30000 });
+      const detail = parseWebSeriesDetail(typeof response.data === "string" ? response.data : "");
+      if (detail && Array.isArray(detail.vid_list) && detail.vid_list.length) {
+        return {
+          episodes: detail.vid_list.map((item, index) => {
+            const value = item && typeof item === "object" ? item : {};
+            const vid = typeof item === "object"
+              ? (value.vid || value.video_id || value.id || "")
+              : item;
+            if (!vid) return null;
+            return {
+              index: index + 1,
+              vid: String(vid),
+              title: String(value.episode_title || value.title || `第${index + 1}集`).trim().slice(0, 30),
+              duration: Math.max(0, Number(value.duration || value.video_duration) || 0),
+              commentCount: Math.max(0, Number(value.comment_count) || 0),
+              imageUrl: extractImageUrl(value.episode_cover || value.cover),
+            };
+          }).filter(Boolean),
+          year: extractYearFromTimestamp(detail.create_time),
+          imageUrl: extractImageUrl(detail.series_cover),
+        };
+      }
+    } catch (error) { log("warn", `[Hongguo] web detail unavailable: ${error.message}`); }
+    return { episodes: [], year: null, imageUrl: "" };
   }
 
   async resolveEpisodeInfo(value) {
@@ -1171,16 +1181,36 @@ export default class HongguoSource extends BaseSource {
         return await this.getSeriesDanmu(this.resolveSeriesId(id));
       }
       const info = await this.resolveEpisodeInfo(id);
-      const comments = dedupeDanmus(await this.getDanmuForEpisode(info));
-      if (!info.duration && comments.length) {
-        const maxOffset = Math.max(...comments.map((item) => Number(item.offsetMs) || 0));
-        if (maxOffset > 0) this.durationCache.set(`${info.seriesId}:${info.vid}`, Math.ceil(maxOffset / 1000) + 30);
+      const cacheKey = `${info.seriesId}:${info.vid}`;
+      // in-flight 去重：同一集并发请求只抓取一次，避免重复命中接口加重风控
+      const pending = this.pendingEpisodeDanmu.get(cacheKey);
+      if (pending) {
+        log("info", `[Hongguo] 复用进行中的整段弹幕请求: ${cacheKey}`);
+        return pending;
       }
-      this.lastDanmu = comments;
-      return comments;
+      const task = (async () => {
+        const comments = dedupeDanmus(await this.getDanmuForEpisode(info));
+        if (!info.duration && comments.length) {
+          const maxOffset = Math.max(...comments.map((item) => Number(item.offsetMs) || 0));
+          if (maxOffset > 0) this.durationCache.set(cacheKey, Math.ceil(maxOffset / 1000) + 30);
+        }
+        this.lastDanmu = comments;
+        return comments;
+      })().catch((error) => {
+        // 仅网络/风控等抓取阶段失败才允许回退 lastDanmu
+        const fetchError = new Error(`弹幕抓取失败: ${error.message}`);
+        fetchError.danmuFetchFailed = true;
+        throw fetchError;
+      }).finally(() => {
+        this.pendingEpisodeDanmu.delete(cacheKey);
+      });
+      this.pendingEpisodeDanmu.set(cacheKey, task);
+      return task;
     } catch (error) {
-      log("error", `[Hongguo] 获取弹幕失败: ${error.message}`);
-      return this.lastDanmu && this.lastDanmu.length ? this.lastDanmu : [];
+      log("error", `[Hongguo] 获取弹幕失败(${String(id).slice(0, 80)}): ${error.message}`);
+      // 链接/ID 解析失败等不应回退旧数据，避免误报并重复输出；仅抓取失败时回退最近一次成功结果
+      if (error.danmuFetchFailed && this.lastDanmu && this.lastDanmu.length) return this.lastDanmu;
+      return [];
     }
   }
 
