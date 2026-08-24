@@ -132,7 +132,10 @@ const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
 const COMMENT_COUNT = 90;
-const COMMENT_CONCURRENCY = 30;
+const COMMENT_CONCURRENCY = 3;
+// 弹幕请求的最小节流间隔（毫秒），随机抖动避免固定节律被平台识别
+const COMMENT_THROTTLE_MS = 180;
+const COMMENT_THROTTLE_JITTER_MS = 240;
 const MAX_SEARCH_ITEMS = 20;
 const IMAGE_SHRINK =
   "W3siaW1hZ2VfdHlwZSI6MywiaW1hZ2Vfd2lkdGgiOjkwMCwic2hyaW5rX3R5cGUiOjN9LHsiaW1h\n" +
@@ -743,10 +746,10 @@ export default class HongguoSource extends BaseSource {
     }
   }
 
-  async throttle() {
+  async throttle(baseMs = 600, jitterMs = 401) {
     const now = Date.now();
     const scheduled = Math.max(now, this.nextRequestAt);
-    this.nextRequestAt = scheduled + 600 + Math.floor(Math.random() * 401);
+    this.nextRequestAt = scheduled + baseMs + Math.floor(Math.random() * jitterMs);
     if (scheduled > now) await sleep(scheduled - now);
   }
 
@@ -759,6 +762,19 @@ export default class HongguoSource extends BaseSource {
     const authFailed = [401, 403, 8, 1001].includes(Number(code)) ||
       ["token", "login", "登录", "未登录", "expire"].some((word) => normalizedMessage.includes(word));
     if (authFailed) throw new Error(`鉴权失败 code=${code}: ${message}`);
+    // 频控冷却指令：服务端以 JSON 返回 {"min_ban_time": 3, "max_ban_time": 5, "ban_rate": 0}
+    let coolDownMs = 0;
+    try {
+      const detail = JSON.parse(message);
+      if (detail && typeof detail === "object") {
+        coolDownMs = Math.max(0, Number(detail.min_ban_time) || Number(detail.max_ban_time) || 0) * 1000;
+      }
+    } catch { /* message 不是 JSON 时忽略 */ }
+    if (coolDownMs > 0) {
+      const error = new Error(`风控冷却: 需暂停 ${Math.round(coolDownMs / 1000)}s (code=${code})`);
+      error.coolDownMs = coolDownMs;
+      return error;
+    }
     throw new Error(`风控或平台异常 code=${code}: ${message}`);
   }
 
@@ -768,47 +784,55 @@ export default class HongguoSource extends BaseSource {
     const payload = body == null ? null : JSON.stringify(body);
     for (let index = 0; index < apiHosts.length; index++) {
       const apiHost = apiHosts[index];
-      try {
-        const url = this.buildUrl(path, extraQuery, apiHost);
-        const headers = {};
-        for (const [key, value] of Object.entries(CLIENT_CONFIG.sessionHeaders)) {
-          if (value) headers[key] = String(value);
-        }
-        headers["content-type"] = "application/json; charset=utf-8";
-        if (comment) {
-          headers["comment-source"] = String(COMMENT_SOURCE);
-          headers["server-channel"] = String(SERVER_CHANNEL);
-          headers["x-ss-stub"] = "";
-        } else if (payload != null) {
-          headers["x-ss-stub"] = md5(stringToUtf8Bytes(payload)).toUpperCase();
-        }
-        Object.assign(headers, signHongguoRequest(url, { headers }));
-        const releaseCommentSlot = comment ? await this.acquireCommentSlot() : null;
-        if (!comment) await this.throttle();
-        let response;
+      // 风控冷却是按设备身份生效的（与具体主机无关），在主机内做有限次退避重试，之后再切换线路
+      const maxAttempts = 3;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-          response = method === "GET"
-            ? await httpGet(url, { headers, timeout: 30000 })
-            : await httpPost(url, payload, { headers, timeout: 30000 });
-        } finally {
-          if (releaseCommentSlot) releaseCommentSlot();
-        }
-        const result = this.parseApiResponse(response);
-        try {
-          this.checkResponse(result);
+          const url = this.buildUrl(path, extraQuery, apiHost);
+          const headers = {};
+          for (const [key, value] of Object.entries(CLIENT_CONFIG.sessionHeaders)) {
+            if (value) headers[key] = String(value);
+          }
+          headers["content-type"] = "application/json; charset=utf-8";
+          if (comment) {
+            headers["comment-source"] = String(COMMENT_SOURCE);
+            headers["server-channel"] = String(SERVER_CHANNEL);
+            headers["x-ss-stub"] = "";
+          } else if (payload != null) {
+            headers["x-ss-stub"] = md5(stringToUtf8Bytes(payload)).toUpperCase();
+          }
+          Object.assign(headers, signHongguoRequest(url, { headers }));
+          const releaseCommentSlot = comment ? await this.acquireCommentSlot() : null;
+          // 弹幕请求同样需要节流，避免分页/整剧连发触发风控
+          if (comment) await this.throttle(COMMENT_THROTTLE_MS, COMMENT_THROTTLE_JITTER_MS);
+          else await this.throttle();
+          let response;
+          try {
+            response = method === "GET"
+              ? await httpGet(url, { headers, timeout: 30000 })
+              : await httpPost(url, payload, { headers, timeout: 30000 });
+          } finally {
+            if (releaseCommentSlot) releaseCommentSlot();
+          }
+          const result = this.parseApiResponse(response);
+          const responseError = this.checkResponse(result);
+          if (responseError) throw responseError;
+          this.preferredApiHost = apiHost;
+          return result;
         } catch (error) {
-          error.retryable = false;
-          throw error;
-        }
-        this.preferredApiHost = apiHost;
-        return result;
-      } catch (error) {
-        if (error && error.retryable === false) throw error;
-        const message = error && error.message ? error.message : String(error);
-        failures.push({ host: apiHost, message });
-        const nextApiHost = apiHosts[index + 1];
-        if (nextApiHost) {
-          log("warn", `[Hongguo] ${apiHost} 请求失败，切换到 ${nextApiHost}: ${message}`);
+          if (error && error.coolDownMs) {
+            // 遵守服务端给出的冷却时间并稍作随机，退避后重试当前主机
+            log("warn", `[Hongguo] ${apiHost} 触发风控冷却 ${Math.round(error.coolDownMs / 1000)}s，退避后重试`);
+            await sleep(error.coolDownMs + Math.floor(Math.random() * 1000));
+            if (attempt < maxAttempts - 1) continue;
+          }
+          const message = error && error.message ? error.message : String(error);
+          failures.push({ host: apiHost, message });
+          const nextApiHost = apiHosts[index + 1];
+          if (nextApiHost) {
+            log("warn", `[Hongguo] ${apiHost} 请求失败，切换到 ${nextApiHost}: ${message}`);
+          }
+          break;
         }
       }
     }
