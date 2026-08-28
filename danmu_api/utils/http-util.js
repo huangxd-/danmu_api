@@ -16,7 +16,9 @@ export function runWithHttpCache(fn) {
 
 // 源调度键名（sourceOrderArr）到日志标签规范名称的映射
 // sourceOrderArr 中部分键名与对应源文件的标签命名不一致（如 360→360kan, imgo→mango）
-// 此映射表统一转换，确保 HTTP 日志标签与源文件内部标签一致
+// 此映射表为本地 fallback，与 sources/registry.js 的 logName 字段保持一致。
+// 注意：http-util.js 是各源依赖的底层工具，不可反向 import registry（会形成
+// http-util → registry → 各源 → http-util 的静态循环依赖），故保留本地表。
 const SOURCE_KEY_TO_LOG_NAME = {
   '360': '360kan',
   'imgo': 'mango',
