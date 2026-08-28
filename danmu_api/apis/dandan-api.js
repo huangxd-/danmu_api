@@ -13,6 +13,7 @@ import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { resolveOffset, resolveOffsetRule, applyOffset, stripLinkOffset } from "../utils/offset-util.js";
 import { filterMappingQualifierCandidates, filterMappingTargetCandidates, resolveAutoMatchMapping } from "../utils/auto-match-mapping-util.js";
+import { ensureRemoteAutoMatchMapping, getEffectiveAutoMatchMappingRules } from "../utils/auto-match-mapping-url-util.js";
 import { 
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, 
   extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, extractAnimeTitle
@@ -1915,7 +1916,8 @@ export async function matchAnime(url, req, clientIp) {
     const originalYear = parsed.year;
 
     const preferenceTitles = [...new Set([originalTitle, parsed.title].filter(Boolean))];
-    const configuredMapping = resolveAutoMatchMapping(globals.autoMatchMappingTable, {
+    await ensureRemoteAutoMatchMapping();
+    const configuredMapping = resolveAutoMatchMapping(getEffectiveAutoMatchMappingRules(), {
       title: originalTitle,
       season: originalSeason,
       episode: originalEpisode

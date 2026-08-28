@@ -8,7 +8,7 @@ import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes, handleRemoteAutoMatchMappingRefresh } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { extendBangumiDownloadLifecycle } from "./utils/bangumi-data-util.js";
@@ -284,6 +284,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // 智能处理API路径前缀，确保最终有一个正确的 /api/v2
   if (path !== "/" && path !== "/danmaku" && path !== "/api/logs" && !path.startsWith('/api/env') 
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
+    && !path.startsWith('/api/auto-match-mapping')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/favorite')
     && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')) {
@@ -556,6 +557,14 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/logs/clear
   if (path === "/api/logs/clear" && method === "POST") {
     return handleClearLogs();
+  }
+
+  // POST /api/auto-match-mapping/refresh - 手动刷新远程季集转换表
+  if (path === "/api/auto-match-mapping/refresh" && method === "POST") {
+    if (!isValidToken) {
+      return jsonResponse({ success: false, errorMessage: "需要有效 TOKEN" }, 403);
+    }
+    return handleRemoteAutoMatchMappingRefresh();
   }
 
   // POST /api/env/set - 设置环境变量
