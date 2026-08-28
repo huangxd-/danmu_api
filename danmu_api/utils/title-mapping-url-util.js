@@ -314,10 +314,9 @@ export function applyRemoteTitleMappingText(url, text) {
   // 1. 解析文本 → 规则表
   const mappings = parseRemoteTitleMappings(text);
 
-  // 2. 如果本地表快照还不存在（比如第一次使用），先拍一份纯本地表的快照
-  if (!remoteState.localMappings) {
-    remoteState.localMappings = readPureLocalMappingTable();
-  }
+  // 2. 每次应用远程内容时都重新读取纯本地表，避免运行期间修改本地配置后
+  //    继续使用旧快照，导致远程规则错误覆盖最新的本地规则。
+  remoteState.localMappings = readPureLocalMappingTable();
 
   // 3. 校验：一张有效的表里至少要有一条规则，否则拒绝本次更新
   if (mappings.size === 0) {

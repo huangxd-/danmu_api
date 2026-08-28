@@ -25,10 +25,11 @@ import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { HuggingfaceHandler } from "./configs/handlers/huggingface-handler.js";
 import { HandlerFactory } from "./configs/handlers/handler-factory.js";
-import { Globals } from "./configs/globals.js";
+import { Globals, globals } from "./configs/globals.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
+import { applyRemoteTitleMappingText, applyTitleMappingWithLog, ensureRemoteTitleMapping, normalizeMappingSourceUrl, parseRemoteTitleMappings } from './utils/title-mapping-url-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
@@ -2878,6 +2879,85 @@ test('worker.js API endpoints', async (t) => {
   //     config.sourceOrderArr = originalSourceOrderArr;
   //   }
   // });
+
+  await t.test('remote title mapping table', async (t) => {
+    await t.test('normalizes supported source URLs', () => {
+      assert.equal(
+        normalizeMappingSourceUrl('https://github.com/alice/danmu-maps/blob/main/mappings.txt'),
+        'https://raw.githubusercontent.com/alice/danmu-maps/main/mappings.txt'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://gist.github.com/alice/abc123def'),
+        'https://gist.githubusercontent.com/alice/abc123def/raw'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://cdn.jsdelivr.net/gh/a/b@main/m.txt'),
+        'https://cdn.jsdelivr.net/gh/a/b@main/m.txt'
+      );
+    });
+
+    await t.test('parses relaxed and single-line mapping formats', () => {
+      const parsed = parseRemoteTitleMappings([
+        '# 共享剧名映射表',
+        '// 由用户维护',
+        '唐朝诡事录->唐朝诡事录之西行',
+        '"国色芳华" -> 锦绣芳华，',
+        '永生－>永生动画',
+        '庆余年 -> 庆余年(剧集版) # 备注',
+        '无效行没有箭头',
+      ].join('\n'));
+
+      assert.equal(parsed.size, 4);
+      assert.equal(parsed.get('唐朝诡事录'), '唐朝诡事录之西行');
+      assert.equal(parsed.get('国色芳华'), '锦绣芳华');
+      assert.equal(parsed.get('永生'), '永生动画');
+      assert.equal(parsed.get('庆余年'), '庆余年(剧集版)');
+
+      const singleLine = parseRemoteTitleMappings('A->B;C->D');
+      assert.equal(singleLine.size, 2);
+      assert.equal(singleLine.get('A'), 'B');
+      assert.equal(singleLine.get('C'), 'D');
+    });
+
+    await t.test('prefers local mappings and preserves state after invalid remote content', async () => {
+      Globals.init({
+        TITLE_MAPPING_TABLE: '本地剧A->本地映射A;本地剧B->本地映射B',
+        TITLE_MAPPING_TABLE_URL: 'https://github.com/user/repo/blob/main/mappings.txt'
+      });
+      applyRemoteTitleMappingText(
+        'https://raw.githubusercontent.com/user/repo/main/mappings.txt',
+        '本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y'
+      );
+
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.equal(globals.titleMappingTable.get('远程剧Y'), '远程映射Y');
+      assert.equal(globals.titleMappingTable.get('本地剧A'), '本地映射A');
+      assert.equal(globals.titleMappingTable.get('本地剧B'), '本地映射B');
+
+      await ensureRemoteTitleMapping();
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.throws(() => applyRemoteTitleMappingText('u', '# 只有注释'));
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+    });
+
+    await t.test('prefers title and season keys before the bare title', () => {
+      Globals.init({
+        TITLE_MAPPING_TABLE: [
+          'Moving->搬家(通用错误目标)',
+          'Moving S01->超异能族',
+          'Moving S02->超异能族 第二季'
+        ].join(';')
+      });
+
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 1), '超异能族');
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 2), '超异能族 第二季');
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 3), '搬家(通用错误目标)');
+      assert.equal(applyTitleMappingWithLog('Moving'), '搬家(通用错误目标)');
+      assert.equal(applyTitleMappingWithLog('Moving', 'favorite', null), '搬家(通用错误目标)');
+    });
+
+    Globals.init({});
+  });
 
 });
 
