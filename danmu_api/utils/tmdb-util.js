@@ -11,6 +11,10 @@ import { searchBangumiData } from './bangumi-data-util.js';
 // 全局任务队列，用于管理并发请求的合并与中断
 // Key: title, Value: { promise, controller, refCount }
 const TMDB_PENDING = new Map();
+const TMDB_ACTOR_NAMES_CACHE = new Map();
+const TMDB_ACTOR_NAMES_PENDING = new Map();
+const TMDB_ACTOR_NAMES_TTL = 24 * 60 * 60 * 1000;
+const TMDB_ACTOR_NAMES_CACHE_LIMIT = 100;
 
 // TMDB API 请求基础函数
 async function tmdbApiGet(url, options = {}) {
@@ -45,6 +49,174 @@ async function tmdbApiGet(url, options = {}) {
   }
 }
 
+function readTmdbData(response) {
+  if (!response?.data) return null;
+  if (typeof response.data !== 'string') return response.data;
+  try {
+    return JSON.parse(response.data);
+  } catch {
+    return null;
+  }
+}
+
+// 允许由 TMDB 反代/网关提供认证；直连时仍可通过 TMDB_API_KEY 认证。
+function tmdbQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (globals.tmdbApiKey) query.set('api_key', globals.tmdbApiKey);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+  }
+  return query.toString();
+}
+
+function normalizePersonLookupTitle(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/(?:from|season|s)\s*\d+.*$/i, '')
+    .replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+export function selectTmdbActorCandidate(results, title) {
+  const query = normalizePersonLookupTitle(cleanSearchQuery(String(title || '')));
+  const requestedYear = String(title || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+
+  return (Array.isArray(results) ? results : [])
+    .filter(item => item && (item.media_type === 'tv' || item.media_type === 'movie'))
+    .map((item, index) => {
+      const titles = [item.name, item.title, item.original_name, item.original_title]
+        .map(normalizePersonLookupTitle)
+        .filter(Boolean);
+      let score = Math.max(...titles.map(candidate => {
+        if (!query || !candidate) return 0;
+        if (candidate === query) return 100;
+        if (candidate.includes(query) || query.includes(candidate)) return 40;
+        return 0;
+      }), 0);
+      const resultYear = String(item.first_air_date || item.release_date || '').slice(0, 4);
+      if (requestedYear && requestedYear === resultYear) score += 20;
+      score += Math.max(0, 10 - index) / 100;
+      return { item, score };
+    })
+    .filter(candidate => candidate.score >= 40)
+    .sort((a, b) => b.score - a.score)[0]?.item || null;
+}
+
+export function isDomesticTmdbProduction(candidate) {
+  const countries = Array.isArray(candidate?.origin_country) ? candidate.origin_country : [];
+  const language = String(candidate?.original_language || '').toLowerCase();
+  return countries.some(country => ['CN', 'HK', 'TW'].includes(country))
+    || ['zh', 'cn', 'yue'].includes(language);
+}
+
+function normalizeTmdbChineseName(value) {
+  const name = String(value || '')
+    .normalize('NFKC')
+    .replace(/^(?:饰演?|配音|as)\s*/i, '')
+    .trim();
+  if (!/\p{Script=Han}/u.test(name) || Array.from(name.replace(/\s/g, '')).length < 2) return '';
+  if (/^(?:本人|自己|演员|角色|未知|旁白)$/.test(name)) return '';
+  return name;
+}
+
+function splitTmdbCharacterNames(value) {
+  const raw = String(value || '').normalize('NFKC').trim();
+  if (!raw) return [];
+
+  const variants = new Set();
+  for (const part of raw.split(/\s*(?:\/|\||｜|、|,|，|&|＆)\s*/)) {
+    variants.add(part);
+    // NFKC 已把全角括号转成 ASCII；保留角色主名，去掉“少年/配音”等说明。
+    variants.add(part.replace(/\([^)]*\)/g, '').trim());
+  }
+  return [...variants].map(normalizeTmdbChineseName).filter(Boolean);
+}
+
+export function extractTmdbChineseCastNames(credits, mediaType = 'movie') {
+  const actorNames = new Set();
+  const characterNames = new Set();
+  for (const cast of (credits?.cast || []).slice(0, 80)) {
+    for (const value of [cast?.name, cast?.original_name]) {
+      const name = normalizeTmdbChineseName(value);
+      if (name) actorNames.add(name);
+    }
+    const roles = mediaType === 'tv'
+      ? (cast?.roles || []).map(role => role?.character)
+      : [cast?.character];
+    for (const role of roles) {
+      for (const name of splitTmdbCharacterNames(role)) characterNames.add(name);
+    }
+  }
+  return {
+    actorNames: [...actorNames],
+    characterNames: [...characterNames],
+    names: [...new Set([...actorNames, ...characterNames])]
+  };
+}
+
+/**
+ * 从 TMDB 搜索当前国产/港台作品并取得其中文演员名。
+ * 不要求应用层配置 TMDB_API_KEY；无 Key 时交由反代/网关认证，直连失败则安全返回空数组。
+ * 仅接受标题精确或包含关系的候选；非华语作品或无法可靠匹配时返回空数组，
+ * 避免把普通人名、外国演员或角色名当成国内明星。
+ */
+export async function getTmdbDomesticCastNamesForTitle(title) {
+  if (!String(title || '').trim()) return [];
+
+  const searchTitle = cleanSearchQuery(String(title).trim());
+  const cacheKey = normalizePersonLookupTitle(searchTitle);
+  if (!cacheKey) return [];
+
+  const cached = TMDB_ACTOR_NAMES_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < TMDB_ACTOR_NAMES_TTL) {
+    return cached.names.slice();
+  }
+  if (TMDB_ACTOR_NAMES_PENDING.has(cacheKey)) {
+    return (await TMDB_ACTOR_NAMES_PENDING.get(cacheKey)).slice();
+  }
+
+  const task = (async () => {
+    try {
+      const searchResponse = await searchTmdbTitles(searchTitle, 'multi', { page: 1 });
+      const candidate = selectTmdbActorCandidate(readTmdbData(searchResponse)?.results, title);
+      if (!candidate) {
+        log('warn', `[system] [tmdb] 未找到可靠的作品匹配，跳过国内明星屏蔽: ${title}`);
+        return [];
+      }
+      if (!isDomesticTmdbProduction(candidate)) {
+        log('info', `[system] [tmdb] 「${title}」未识别为国产/港台作品，跳过国内明星屏蔽`);
+        return [];
+      }
+
+      const creditsPath = candidate.media_type === 'tv' ? 'aggregate_credits' : 'credits';
+      const creditsResponse = await tmdbApiGet(
+        `${candidate.media_type}/${candidate.id}/${creditsPath}?${tmdbQuery({ language: 'zh-CN' })}`
+      );
+      const credits = readTmdbData(creditsResponse);
+      if (!credits) return [];
+
+      const resolved = extractTmdbChineseCastNames(credits, candidate.media_type);
+      log('info', `[system] [tmdb] 已为「${title}」加载 ${resolved.actorNames.length} 个中文演员名 + ${resolved.characterNames.length} 个角色名`);
+      return resolved.names;
+    } catch (error) {
+      log('warn', `[system] [tmdb] 作品演员表加载失败，已跳过国内明星屏蔽: ${error.message}`);
+      return [];
+    }
+  })();
+
+  TMDB_ACTOR_NAMES_PENDING.set(cacheKey, task);
+  try {
+    const names = await task;
+    TMDB_ACTOR_NAMES_CACHE.set(cacheKey, { names, timestamp: Date.now() });
+    while (TMDB_ACTOR_NAMES_CACHE.size > TMDB_ACTOR_NAMES_CACHE_LIMIT) {
+      TMDB_ACTOR_NAMES_CACHE.delete(TMDB_ACTOR_NAMES_CACHE.keys().next().value);
+    }
+    return names.slice();
+  } finally {
+    TMDB_ACTOR_NAMES_PENDING.delete(cacheKey);
+  }
+}
+
 // 使用 TMDB API 查询片名
 export async function searchTmdbTitles(title, mediaType = "multi", options = {}) {
   const {
@@ -55,7 +227,7 @@ export async function searchTmdbTitles(title, mediaType = "multi", options = {})
 
   // 如果指定了具体页码，只获取单页
   if (options.page !== undefined) {
-    const url = `search/${mediaType}?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN&page=${page}`;
+    const url = `search/${mediaType}?${tmdbQuery({ query: title, language: 'zh-CN', page })}`;
     return await tmdbApiGet(url, { signal });
   }
 
@@ -68,7 +240,7 @@ export async function searchTmdbTitles(title, mediaType = "multi", options = {})
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    const url = `search/${mediaType}?api_key=${globals.tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN&page=${currentPage}`;
+    const url = `search/${mediaType}?${tmdbQuery({ query: title, language: 'zh-CN', page: currentPage })}`;
     const response = await tmdbApiGet(url, { signal });
 
     if (!response || !response.data) {

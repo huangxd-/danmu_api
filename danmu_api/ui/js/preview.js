@@ -28,7 +28,7 @@ const previewGroupDefinitions = {
         { name: '动画元数据', keys: ['USE_BANGUMI_DATA'] }
     ],
     danmu: [
-        { name: '过滤与数量', keys: ['BLOCKED_WORDS', 'GROUP_MINUTE', 'DANMU_LIMIT'] },
+        { name: '过滤与数量', keys: ['BLOCKED_WORDS', 'BLOCK_DOMESTIC_CELEBRITIES', 'GROUP_MINUTE', 'DANMU_LIMIT'] },
         { name: '显示与转换', keys: ['DANMU_SIMPLIFIED_TRADITIONAL', 'CONVERT_TOP_BOTTOM_TO_SCROLL', 'CONVERT_COLOR', 'COLOR_POOL', 'GRADIENT_CHANCE', 'GRADIENT_COLORS', 'LIKE_SWITCH'] },
         { name: '输出与推送', keys: ['DANMU_OUTPUT_FORMAT', 'DANMU_PUSH_URL'] },
         { name: '时间与来源适配', keys: ['DANMU_OFFSET', 'HONGGUO_MERGE_ALL_EPISODES'] }
