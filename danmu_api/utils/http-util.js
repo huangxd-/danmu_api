@@ -224,7 +224,18 @@ export async function httpGet(url, options = {}) {
 
         data = decodedData; // 更新解压后的数据
       } else {
-        data = await response.text();
+        // 个别旧站点（如搜狐 videolist）仍返回 GBK；调用方可显式指定编码。
+        if (options.encoding) {
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          let encoding = options.encoding;
+          if (encoding === 'auto') {
+            const contentType = response.headers.get('content-type') || '';
+            encoding = /charset\s*=\s*(gbk|gb2312|big5)/i.exec(contentType)?.[1] || 'utf-8';
+          }
+          data = new TextDecoder(encoding).decode(bytes);
+        } else {
+          data = await response.text();
+        }
       }
 
       let parsedData;

@@ -8,6 +8,34 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
+const SOHU_SEARCH_SECRET = 'vxWaXm3C5SA9&fpc';
+
+// 纯 JavaScript MD5，兼容 Node 与 ForwardWidget 浏览器运行时。
+function md5(value) {
+  const data = new TextEncoder().encode(String(value));
+  const bitLen = data.length * 8;
+  const padded = new Uint8Array(((data.length + 9 + 63) >> 6) * 64);
+  padded.set(data); padded[data.length] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, bitLen >>> 0, true);
+  dv.setUint32(padded.length - 4, Math.floor(bitLen / 0x100000000), true);
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  const s = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  const K = Array.from({length:64}, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000));
+  const rol = (x,n) => (x << n) | (x >>> (32-n));
+  for (let off=0; off<padded.length; off+=64) {
+    const M = Array.from({length:16}, (_,i) => dv.getUint32(off+i*4,true));
+    let A=a0,B=b0,C=c0,D=d0;
+    for (let i=0;i<64;i++) {
+      let F,g;
+      if(i<16){F=(B&C)|((~B)&D);g=i;} else if(i<32){F=(D&B)|((~D)&C);g=(5*i+1)%16;} else if(i<48){F=B^C^D;g=(3*i+5)%16;} else {F=C^(B|(~D));g=(7*i)%16;}
+      const t=D; D=C; C=B; B=(B + rol((A+F+K[i]+M[g])|0,s[i]))|0; A=t;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  return [a0,b0,c0,d0].map(n => Array.from({length:4},(_,i)=>((n >>> (i*8))&255).toString(16).padStart(2,'0')).join('')).join('');
+}
+
 // =====================
 // 获取搜狐视频弹幕
 // =====================
@@ -30,7 +58,10 @@ export default class SohuSource extends BaseSource {
    * @returns {Object|null} 过滤后的结果
    */
   filterSohuSearchItem(item, keyword) {
-    if (!item.aid || !item.album_name) {
+    // 搜索接口同时返回专辑项和视频项；视频项可能只有 video_name/vid。
+    const mediaId = item.aid || item.vid;
+    const albumName = item.album_name || item.video_name;
+    if (!mediaId || !albumName) {
       return null;
     }
 
@@ -45,7 +76,7 @@ export default class SohuSource extends BaseSource {
     }
 
     // 清理标题中的高亮标记
-    let title = item.album_name.replace('<<<', '').replace('>>>', '');
+    let title = String(albumName).replace(/<<<|>>>/g, '');
 
     // 从meta中提取类型信息
     // meta格式: ["20集全", "电视剧 | 内地 | 2018年", "主演：..."]
@@ -53,8 +84,9 @@ export default class SohuSource extends BaseSource {
     if (item.meta && Array.isArray(item.meta)) {
       // 遍历 meta 数组，寻找包含 "|" 的条目 (例如: "电视剧 | 美国 | 2018年")
       for (const metaData of item.meta) {
-        if (metaData.txt && metaData.txt.includes('|')) {
-          const parts = metaData.txt.split('|');
+        const metaText = typeof metaData === 'string' ? metaData : metaData?.txt;
+        if (metaText && metaText.includes('|')) {
+          const parts = metaText.split('|');
           if (parts.length > 0) {
             const firstPart = parts[0].trim();
             // 额外处理：如果第一部分是 "别名：XXX"，则取第二部分
@@ -70,12 +102,15 @@ export default class SohuSource extends BaseSource {
       }
     }
 
+    const metaYear = Array.isArray(item.meta)
+      ? item.meta.map(v => typeof v === 'string' ? v : v?.txt || '').join(' ').match(/((?:19|20)\d{2})年?/)?.[1]
+      : null;
     return {
-      mediaId: String(item.aid),
+      mediaId: String(mediaId),
       title: title,
-      type: categoryName,
-      year: item.year || null,
-      imageUrl: item.ver_big_pic || null,
+      type: categoryName || item.type_name || item.type || '剧集',
+      year: item.year || item.year_name || metaYear || null,
+      imageUrl: item.ver_big_pic || item.album_pic || item.poster || null,
       episodeCount: item.total_video_count || 0
     };
   }
@@ -104,13 +139,21 @@ export default class SohuSource extends BaseSource {
         'ssl': '0'
       };
 
+      // 搜狐新版接口要求 fpc、timeStamp、code 三个签名参数。
+      // fpc 不需要与真实浏览器指纹一致，但 code 必须由同一 fpc 和时间戳计算。
+      const fpc = md5(`sohu-${Math.random()}${Date.now()}`);
+      const timeStamp = Date.now().toString();
+      params.fpc = fpc;
+      params.timeStamp = timeStamp;
+      params.code = md5(`${timeStamp}${fpc}${SOHU_SEARCH_SECRET}`);
+
       // 设置请求头
       const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': 'https://so.tv.sohu.com/',
-        'Origin': 'https://so.tv.sohu.com'
+        'Referer': 'https://tv.sohu.com/',
+        'Origin': 'https://tv.sohu.com'
       };
 
       const searchUrl = `https://m.so.tv.sohu.com/search/pc/keyword?${buildQueryString(params)}`;
@@ -159,7 +202,8 @@ export default class SohuSource extends BaseSource {
     };
 
     const playlistUrl = `https://pl.hd.sohu.com/videolist?${buildQueryString(params)}`;
-    const response = await httpGet(playlistUrl, { headers, timeout: 15000 });
+    // videolist 历史接口常以 GBK 返回中文标题，显式指定编码避免出现“���”。
+    const response = await httpGet(playlistUrl, { headers, timeout: 15000, encoding: 'gbk' });
 
     if (!response || !response.data) {
       return null;
@@ -209,12 +253,16 @@ export default class SohuSource extends BaseSource {
         // 处理SohuVideo对象或字典
         if (typeof video === 'object') {
           vid = String(video.vid || '');
-          title = video.video_name || `第${i+1}集`;
-          url = video.url_html5 || '';
+          title = video.video_name || video.name || `第${i+1}集`;
+          url = video.url_html5 || video.pageUrl || '';
         } else {
-          vid = String(video.vid || video.vid || '');
+          vid = String(video.vid || '');
           title = video.name || video.video_name || `第${i+1}集`;
           url = video.pageUrl || video.url_html5 || '';
+        }
+
+        if (!url && vid) {
+          url = `https://tv.sohu.com/v/${vid}.html`;
         }
 
         // 转换为HTTPS
@@ -351,23 +399,44 @@ export default class SohuSource extends BaseSource {
     let vid;
     let aid = '0';
 
-    const resp = await httpGet(id, {
+    if (!id) return { vid, aid };
+
+    // 允许直接传入 vid:aid，或从播放 URL 查询参数中提取，避免不必要的页面请求。
+    const rawId = String(id);
+    const pair = rawId.match(/(?:^|[/:])([0-9]{4,}):([0-9]+)$/);
+    if (pair) return { vid: pair[1], aid: pair[2] };
+    try {
+      const parsed = new URL(rawId);
+      vid = parsed.searchParams.get('vid') || parsed.searchParams.get('videoId') || undefined;
+      aid = parsed.searchParams.get('aid') || parsed.searchParams.get('albumId') || aid;
+      if (aid === '0') {
+        const albumMatch = parsed.pathname.match(/(?:album|playlist|show)[/_-]?(\d+)/i);
+        if (albumMatch) aid = albumMatch[1];
+      }
+      if (vid && aid !== '0') return { vid, aid };
+    } catch {
+      // id 也可能只是一个页面片段，继续走页面解析逻辑。
+    }
+
+    const resp = await httpGet(rawId, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
       },
     });
 
-    const match = resp.data.match(/vid="(\d+)"/);
+    const html = typeof resp?.data === 'string' ? resp.data : '';
+    const match = html.match(/(?:vid|videoId)\s*["']?\s*[:=]\s*["']?(\d+)/i)
+      || html.match(/vid="(\d+)"/i);
 
     if (match) {
       vid = match[1];
     }
 
     // 1. 优先从 <input id="aid" ...> 获取
-    aid = resp.data.match(/id="aid"[^>]*value=['"](\d+)['"]/)?.[1];
+    aid = html.match(/id="aid"[^>]*value=['"](\d+)['"]/i)?.[1];
     // 2. 如果没拿到，再从 playlistId="..." 获取
     if (!aid) {
-      aid = resp.data.match(/playlistId="(\d+)"/)?.[1];
+      aid = html.match(/playlistId\s*=\s*["'](\d+)["']/i)?.[1];
     }
     
     return { vid, aid };
@@ -463,7 +532,7 @@ export default class SohuSource extends BaseSource {
         return [];
       }
     } catch (error) {
-      log("error", `[sohu] 搜狐视频: 获取弹幕段失败 (vid=${vid}, ${start}-${end}s): ${error.message}`);
+      log("error", `[sohu] 搜狐视频: 获取弹幕段失败 (${segment?.segment_start}-${segment?.segment_end}s): ${error.message}`);
       return [];
     }
   }
@@ -473,6 +542,10 @@ export default class SohuSource extends BaseSource {
 
     // 解析 episode_id
     const { vid, aid } = await this.extractVidAndAid(id);
+    if (!vid) {
+      log("warn", `[sohu] 无法从视频页面提取 vid: ${id}`);
+      return new SegmentListResponse({ type: "sohu", duration: 0, segmentList: [] });
+    }
 
     const duration = await this.getEpisodeDuration(aid, vid);
     const maxTime = duration > 0 ? Math.ceil(duration) : 10800;
