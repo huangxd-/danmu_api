@@ -68,11 +68,12 @@ LogVar 弹幕 API 服务器
   - `POST /api/v2/favorite/schedule`：设置或关闭收藏的定时刷新（仅 Node/Docker 部署可用）。设置使用 `{ "keyword": "火影忍者", "schedule": { "frequency": "daily", "time": "03:00" } }`；每周模式需额外传 `"weekday": 1-7`（周一至周日），例如 `{ "frequency": "weekly", "time": "03:00", "weekday": 1 }`。关闭使用 `{ "keyword": "火影忍者", "schedule": null }`。固定按北京时间（`Asia/Shanghai`）执行，serverless 平台返回 `501`。
   - `POST /api/v2/favorite/remove`：使用 `{ "keyword": "火影忍者" }` 删除收藏及对应搜索缓存。
 - **弹幕格式输出**：支持 JSON 和 XML 及 [@dan-uni/dan-any](https://github.com/ani-uni/dan-any)支持的全部输出格式 输出，通过以下方式配置：
-  - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml|artplayer.json|baha.json|bili.xml|danuni.json|danuni.binpb|ddplay.json|dplayer.json|vod.json`（默认：json）
-  - 查询参数：`?format=xml` 或 `?format=json` ...（优先级最高）
+  - 环境变量：`DANMU_OUTPUT_FORMAT=json|xml|danmux|artplayer.json|baha.json|bili.xml|danuni.json|danuni.binpb|ddplay.json|dplayer.json|vod.json`（默认：json）
+  - 查询参数：`?format=xml`、`?format=json` 或 `?format=danmux`（优先级最高）
   - 优先级：查询参数 > 环境变量 > 默认值
   - 示例：`GET /api/v2/comment/10001?format=xml` 返回 XML 格式弹幕
   - **XML 格式说明**：完全遵循 Bilibili 标准格式，8字段标准弹幕属性
+  - **DanmuX v1 格式**：使用 `?format=danmux` 返回 `schemaVersion: 1` 的增强 JSON；每条评论保留 `p/m`，并可在 `danmux.effects` 中携带标准 `linear` 渐变。只有 `CONVERT_COLOR=color` 且 `GRADIENT_CHANCE` 命中时，普通白色弹幕才生成渐变；颜色来自 `GRADIENT_COLORS`，默认使用 `default` 皮肤。带 B 站 `color_v2/colorfulSrc` 的原生纹理弹幕不参与渐变、不会输出特效，并改标为 `[dandan]`。
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **永久收藏缓存**：适合《火影忍者》《名侦探柯南》等集数较多、重复搜索耗时较长的剧集。只缓存剧集搜索结果，不缓存弹幕。
   - `GET /api/v2/favorite/list` 是公开只读接口，无需 token。其他收藏接口在自定义 `TOKEN` 时，必须使用 `/{TOKEN}/api/v2/favorite/...` 或 `/{ADMIN_TOKEN}/api/v2/favorite/...` 形式显式携带 token；使用默认 `TOKEN=87654321` 且未开启管理员限制时可省略 token。配置 `FAVORITE_REQUIRE_ADMIN=true` 后，写入和管理操作仅允许 `ADMIN_TOKEN`。
@@ -150,6 +151,15 @@ LogVar 弹幕 API 服务器
    HTTPS 反向代理应传递 `X-Forwarded-Proto`；无法传递时可设置 `DANMU_API_PUBLIC_PROTO=https`，用于生成正确的对外弹幕链接。
 
    **热更新支持**：修改 `config/.env`，应用会自动检测并重新加载配置（无需重启应用）。
+
+   要看到标准渐变，请将普通弹幕转换设为 `color`，并打开渐变概率。例如全量验证：
+   ```text
+   CONVERT_COLOR=color
+   GRADIENT_CHANCE=100
+   GRADIENT_COLORS=default
+   ```
+
+   `GRADIENT_CHANCE` 可以改为 `20` 等百分比值；只有普通白色弹幕会参与转换。`GRADIENT_COLORS=bilibili` 只是可选的粉蓝颜色皮肤，并不启用 B 站原生纹理渐变。若需要覆盖皮肤颜色，可额外设置 `DANMUX_GRADIENT_STOPS`。
 
    或者使用下面的命令
    ```bash
@@ -477,7 +487,9 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | CONVERT_COLOR    | 【可选】弹幕转换颜色配置，默认为`default`（不转换），`white` 将所有非白色的弹幕颜色转换为纯白色，`color` 将所有白色弹幕转换为随机颜色（包含白色），可选值：`default`、`white`、`color`       |
 | COLOR_POOL    | 【可选】自定义颜色池（`CONVERT_COLOR`为`color`时生效），不配置使用默认颜色池（白、红、橙、黄、绿、青、蓝、紫、粉），格式：十进制颜色值逗号分隔，例如：`16711680,65280,255,16776960`       |
 | LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
-| DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式）及所有`@dan-uni/dan-any`支持的输出格式，支持通过查询参数`?format=xml`或`?format=json`等覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
+| DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式）、`danmux`（DanmuX v1 增强格式）及所有`@dan-uni/dan-any`支持的输出格式，支持通过查询参数`?format=xml`、`?format=json`或`?format=danmux`等覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
+| DANMUX_GRADIENT_STOPS | 【可选】覆盖 DanmuX 标准渐变的 stops；仅对已由 `CONVERT_COLOR=color` 与 `GRADIENT_CHANCE` 选中的普通白色弹幕生效，必须是 JSON 数组，例如 `[ {"position":0,"color":"#FF6B8B"}, {"position":1,"color":"#A259FF"} ]`。 |
+| DANMUX_GRADIENT_ANGLE | 【可选】DanmuX v1 线性渐变角度，默认为 `0`；对由渐变皮肤或 `DANMUX_GRADIENT_STOPS` 生成的标准渐变生效。 |
 | DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
 | DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式，在路径/来源末尾添加 `%`，例如：`东方/S03/E02@tencent%:11`，按 `原时间 * (视频时长 + 偏移秒数) / 视频时长` 计算新的弹幕发送时间。       |
 | UI_THEME    | 【可选】管理界面默认主题，默认为 `lavender`（经典默认）。浏览器中选择的主题会保存在本地并优先使用。可选值：`lavender`（经典默认）、`shinyo`（新叶绿）、`sakura`（哔哩粉）、`tianyi`（天依蓝）、`hatsune`（初音青）、`sakuragi`（樱木红）、`violet`（罗兰紫）、`amber`（LCL橘）       |

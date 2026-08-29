@@ -3,6 +3,18 @@ import { log } from './log-util.js'
 import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
 import { simplized, traditionalized } from './zh-util.js';
 import { convertDanAny } from './dan-any.js';
+import { convertCommentsToDanmux, parseDanmuxGradientStops } from './danmux-adapter.js';
+import { DANMUX_GRADIENT_META } from './danmux-meta.js';
+
+const NATIVE_GRADIENT_FIELDS = ['color_v2', 'colorV2', 'colorfulSrc', 'colorful_src', 'gradient'];
+
+function getNativeGradientValue(item) {
+  if (!item || typeof item !== 'object') return { present: false, value: undefined };
+  for (const field of NATIVE_GRADIENT_FIELDS) {
+    if (item[field] !== undefined) return { present: true, value: item[field] };
+  }
+  return { present: false, value: undefined };
+}
 
 // =====================
 // danmu处理相关函数
@@ -299,6 +311,7 @@ function lerpColor(a, b, frac) {
  */
 // 渐变皮肤预设：GRADIENT_COLORS 可填皮肤名直接使用，也可填十进制颜色值串自定义
 export const GRADIENT_SKINS = {
+  'default': '16739211,10639871', // 默认标准粉紫（#FF6B8B→#A259FF）
   'bilibili': '16478873,3389695',   // 粉→蓝（B站标准 #FB7299→#33B8FF）
   'sweet': '16739211,10639871',     // 粉紫·甜美（#FF6B8B→#A259FF）
   'cyber': '65415,6352895',         // 荧光绿→天青·电竞（#00FF87→#60EFFF）
@@ -327,11 +340,22 @@ export function buildGradientSampler(rawStops) {
   };
 }
 
+function gradientStopsForDanmux(rawStops) {
+  const colors = String(rawStops || '').split(',')
+    .map(c => parseInt(c.trim(), 10))
+    .filter(c => !isNaN(c) && c >= 0 && c <= 16777215);
+  if (colors.length < 2) return undefined;
+  return colors.map((color, index) => ({
+    position: index / (colors.length - 1),
+    color: `#${color.toString(16).padStart(6, '0').toUpperCase()}`,
+  }));
+}
+
 export function convertToDanmakuJson(contents, platform) {
   let danmus = [];
   let cidCounter = 1;
   let isMultiSource = false; // 用于记录当前弹幕集合是否为多源组合
-  let colorV2Count = 0; // 源渐变色弹幕（B站 color_v2）透传计数
+  let colorV2Count = 0; // 源渐变色弹幕（B站 color_v2）识别计数；DanmuX 不输出原生纹理
 
   // 统一处理输入为数组
   let items = [];
@@ -365,6 +389,7 @@ export function convertToDanmakuJson(contents, platform) {
   for (const item of items) {
     let attributes, m;
     let time, mode, color;
+    const nativeGradient = getNativeGradientValue(item);
 
     // 新增：处理新格式的弹幕数据
     if ("progress" in item && "mode" in item && "content" in item) {
@@ -407,6 +432,8 @@ export function convertToDanmakuJson(contents, platform) {
 
     // 优先使用弹幕自带的 _sourceLabel（应对合并工具），其次是外部传入的宏观 platform
     let currentPlatform = item._sourceLabel || platform;
+    // 原生 color_v2 由 dandan 兼容链路接管：不参与本项目渐变规则。
+    if (nativeGradient.present) currentPlatform = 'dandan';
 
     // 如果存在实时拉取的副源标签，安全追加
     if (item.realTimeSource && !currentPlatform.includes(item.realTimeSource)) {
@@ -425,18 +452,17 @@ export function convertToDanmakuJson(contents, platform) {
       `[${currentPlatform}]`
     ].join(",");
 
-    // B站渐变色弹幕透传：源数据携带 color_v2（大会员渐变弹幕扩展色）时原样保留，
-    // color 字段仍输出单色保持协议兼容，支持的播放器可读取 color_v2 渲染文字渐变
+    // 识别源数据中的 color_v2；DanmuX 输出阶段不会把 B 站原生纹理作为效果输出。
     const danmu = { p: attributes, m, cid: cidCounter++, like: item?.like };
-    if (item.color_v2) {
-      danmu.color_v2 = item.color_v2;
+    if (nativeGradient.present) {
+      danmu.color_v2 = nativeGradient.value;
       colorV2Count++;
     }
     danmus.push(danmu);
   }
 
   if (colorV2Count > 0) {
-    log("info", `[system] [danmu] [danmu convert] 透传了 ${colorV2Count} 条源渐变色弹幕（color_v2）`);
+    log("info", `[system] [danmu] [danmu convert] 识别了 ${colorV2Count} 条源渐变色弹幕（color_v2）`);
   }
 
   // 文本字段归一化为 m 后统一转换，确保所有来源及输入格式行为一致。
@@ -520,8 +546,10 @@ export function convertToDanmakuJson(contents, platform) {
     let topBottomCount = 0;
     let colorCount = 0;
     let gradientCount = 0;
-    // 渐变色带采样器与命中概率：color 模式下按概率将白色弹幕转为渐变色（以出现时间在色带上定位，颜色随时间流转）
-    const gradientSampler = globals.convertColor === 'color' ? buildGradientSampler(resolveGradientSkin(globals.gradientColors)) : null;
+    // 仅 color 模式下的普通白色弹幕按概率生成标准渐变。
+    const gradientRawStops = globals.convertColor === 'color' ? resolveGradientSkin(globals.gradientColors) : null;
+    const gradientSampler = buildGradientSampler(gradientRawStops);
+    const danmuxGradientStops = gradientStopsForDanmux(gradientRawStops);
     const gradientChance = Math.min(Math.max(globals.gradientChance || 0, 0), 100) / 100;
 
     convertedDanmus = convertedDanmus.map(danmu => {
@@ -531,6 +559,7 @@ export function convertToDanmakuJson(contents, platform) {
       let mode = parseInt(pValues[1], 10);
       let color = parseInt(pValues[2], 10);
       let modified = false;
+      let selectedGradient = false;
 
       // 1. 将顶部/底部弹幕转换为浮动弹幕
       if (globals.convertTopBottomToScroll && (mode === 4 || mode === 5)) {
@@ -555,13 +584,14 @@ export function convertToDanmakuJson(contents, platform) {
         .filter(c => !isNaN(c) && c >= 0 && c <= 16777215);
       const safeColors = colors.length > 0 ? colors : [16777215];
       let randomColor = safeColors[Math.floor(Math.random() * safeColors.length)];
-      // 源渐变弹幕（color_v2）透传优先：即使基色为白也不参与转换，保持原始渐变数据
+      // B 站原生渐变不参与本规则；这里只处理没有 color_v2 的普通白色弹幕。
       if (globals.convertColor === 'color' && color === 16777215 && danmu.color_v2 === undefined) {
         let target = randomColor;
-        if (gradientSampler && Math.random() < gradientChance) {
+        if (gradientSampler && danmuxGradientStops && Math.random() < gradientChance) {
           // 渐变色弹幕：以弹幕出现时间在色带上取色（60 秒循环一个来回），相邻弹幕颜色平滑过渡
           const appearTime = parseFloat(pValues[0]) || 0;
           target = gradientSampler((appearTime % 60) / 60);
+          selectedGradient = true;
           gradientCount++;
         }
         if (color !== target) {
@@ -573,8 +603,17 @@ export function convertToDanmakuJson(contents, platform) {
 
       if (modified) {
         const newP = [pValues[0], mode, color, ...pValues.slice(3)].join(',');
-        return { ...danmu, p: newP };
+        const converted = { ...danmu, p: newP };
+        if (selectedGradient) Object.defineProperty(converted, DANMUX_GRADIENT_META, {
+          value: { angle: globals.danmuxGradientAngle, stops: danmuxGradientStops },
+          enumerable: false,
+        });
+        return converted;
       }
+      if (selectedGradient) Object.defineProperty(danmu, DANMUX_GRADIENT_META, {
+        value: { angle: globals.danmuxGradientAngle, stops: danmuxGradientStops },
+        enumerable: false,
+      });
       return danmu;
     });
 
@@ -697,6 +736,21 @@ export function formatDanmuResponse(danmuData, queryFormat) {
   format = format.toLowerCase();
 
   log("info", `[system] [danmu] [format] Using format: ${format}`);
+
+  if (format === 'danmux') {
+    try {
+      const gradientStops = parseDanmuxGradientStops(globals.danmuxGradientStops);
+      return jsonResponse(convertCommentsToDanmux(danmuData, {
+        sourceLabel: 'danmu_api',
+        gradientStops,
+        gradientAngle: globals.danmuxGradientAngle,
+        applyGradientToAll: false,
+      }));
+    } catch (error) {
+      log("error", `[system] [danmu] Failed to convert to DanmuX: ${error.message}`);
+      return jsonResponse({ format: 'danmux', schemaVersion: 1, count: 0, comments: [], diagnostics: [{ code: 'danmux_output_failed', message: error.message }] }, 500);
+    }
+  }
 
   // 兼容旧格式转换
   if (format === 'xml') {

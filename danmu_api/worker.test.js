@@ -34,7 +34,8 @@ import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
 import { previewJsContent } from './ui/js/preview.js';
 import { convertToAsciiSum } from "./utils/codec-util.js";
-import { convertToDanmakuJson, handleDanmusLike, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
+import { convertToDanmakuJson, formatDanmuResponse, handleDanmusLike, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
+import { convertCommentsToDanmux } from './utils/danmux-adapter.js';
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 import { initBangumiData, searchBangumiData, clearBangumiDataCache, dedupeBangumiSearchResults } from "./utils/bangumi-data-util.js";
 import { generateNipaplaySignature, parseNipaplayRelatedLinks, resolveNipaplayLink, applyShiftToDanmu } from "./utils/nipaplay-util.js";
@@ -612,6 +613,133 @@ test('worker.js API endpoints', async (t) => {
       { p: '1,1,16777215,[test]', m: '来看能不能发弹幕' }
     ], 'test');
     assert.equal(traditional[0].m, '來看能不能發彈幕');
+
+    resetSearchState();
+  });
+
+  await t.test('DanmuX v1 standard gradient output', async (t) => {
+    const explicitStops = [
+      { position: 0, color: '#FB7299', alpha: 0.85 },
+      { position: 1, color: '#33B8FF', alpha: 0.85 },
+    ];
+
+    await t.test('formal API applies configured stops to selected white comments', async () => {
+      Globals.init({
+        CONVERT_COLOR: 'color',
+        GRADIENT_CHANCE: '100',
+        GRADIENT_COLORS: 'default',
+        DANMUX_GRADIENT_STOPS: JSON.stringify(explicitStops),
+        DANMUX_GRADIENT_ANGLE: '0',
+        DANMU_OUTPUT_FORMAT: 'json',
+      });
+      const comments = convertToDanmakuJson([
+        { p: '12.5,1,16777215,[bilibili]', m: 'API integration', cid: 9 },
+      ], 'bilibili');
+      const response = formatDanmuResponse({ comments }, 'danmux');
+      const payload = await response.json();
+
+      assert.equal(response.status, 200);
+      assert.equal(payload.schemaVersion, 1);
+      assert.equal(payload.comments[0].danmux.effects[0].source.type, 'linear');
+      assert.match(payload.comments[0].p, /^12\.5,1,\d+,\[danmu_api\]$/u);
+    });
+
+    await t.test('default skin affects only ordinary white comments', async () => {
+      Globals.init({
+        CONVERT_COLOR: 'color',
+        GRADIENT_CHANCE: '100',
+        GRADIENT_COLORS: 'default',
+        DANMUX_GRADIENT_STOPS: '',
+        DANMU_OUTPUT_FORMAT: 'json',
+      });
+      const comments = convertToDanmakuJson([
+        { p: '1,1,16777215,[bilibili]', m: 'white comment' },
+        { p: '2,1,16711680,[bilibili]', m: 'red comment' },
+        {
+          p: '3,1,16777215,[bilibili]',
+          m: 'native comment',
+          color_v2: JSON.stringify({ stroke_color: 'https://cdn.example.test/stroke.png' }),
+        },
+      ], 'bilibili');
+      const payload = await (formatDanmuResponse({ comments }, 'danmux')).json();
+
+      assert.equal(payload.comments[0].danmux.effects[0].source.type, 'linear');
+      assert.equal(payload.comments[0].danmux.effects[0].origin, 'generated');
+      assert.equal(payload.comments[1].danmux.effects, undefined);
+      assert.equal(payload.comments[2].danmux.effects, undefined);
+      assert.equal(payload.comments[2].p, '3,1,16777215,[dandan]');
+    });
+
+    await t.test('invalid explicit stops fall back without failing the response', async () => {
+      Globals.init({
+        CONVERT_COLOR: 'color',
+        GRADIENT_CHANCE: '100',
+        GRADIENT_COLORS: 'default',
+        DANMUX_GRADIENT_STOPS: '{invalid json',
+        DANMU_OUTPUT_FORMAT: 'danmux',
+      });
+      const comments = convertToDanmakuJson([
+        { p: '3.5,1,16777215,[bilibili]', m: 'fallback gradient' },
+      ], 'bilibili');
+      const response = formatDanmuResponse({ comments });
+      const payload = await response.json();
+
+      assert.equal(response.status, 200);
+      assert.equal(payload.comments.length, 1);
+      assert.equal(payload.comments[0].danmux.effects[0].source.type, 'linear');
+    });
+
+    await t.test('native aliases and empty color_v2 stay dandan without effects', async () => {
+      Globals.init({
+        CONVERT_COLOR: 'color',
+        GRADIENT_CHANCE: '100',
+        GRADIENT_COLORS: 'default',
+        DANMUX_GRADIENT_STOPS: '',
+        DANMU_OUTPUT_FORMAT: 'danmux',
+      });
+      const comments = convertToDanmakuJson([
+        { p: '7,1,16777215,[bilibili]', m: 'empty native', color_v2: '' },
+        { p: '8,1,16777215,[bilibili]', m: 'camel alias', colorV2: '{}' },
+        { p: '9,1,16777215,[bilibili]', m: 'colorful alias', colorfulSrc: '{}' },
+      ], 'bilibili');
+      const payload = await (formatDanmuResponse({ comments }, 'danmux')).json();
+
+      assert.equal(payload.comments.length, 3);
+      for (const comment of payload.comments) {
+        assert.match(comment.p, /\[dandan\]$/u);
+        assert.equal(comment.danmux.effects, undefined);
+      }
+    });
+
+    await t.test('adapter keeps p/m fallback and ignores native color_v2 effects', () => {
+      const enhanced = convertCommentsToDanmux({
+        comments: [{ p: '4,1,16777215,[bilibili]', m: 'enhanced', cid: 42 }]
+      }, { sourceLabel: 'danmu_api', gradientStops: explicitStops });
+      assert.equal(enhanced.comments[0].p, '4,1,16777215,[danmu_api]');
+      assert.equal(enhanced.comments[0].m, 'enhanced');
+      assert.equal(enhanced.comments[0].danmux.effects[0].source.type, 'linear');
+
+      const fallback = convertCommentsToDanmux({
+        comments: [{ p: '5,1,16777215,[bilibili]', m: 'fallback' }]
+      });
+      assert.equal(fallback.comments[0].danmux.effects, undefined);
+
+      const native = convertCommentsToDanmux({ comments: [{
+        p: '6,1,16777215,[bilibili]',
+        m: 'native ignored',
+        color_v2: JSON.stringify({ stroke_color: 'https://cdn.example.test/stroke.png' }),
+      }] }, { gradientStops: explicitStops });
+      assert.equal(native.comments[0].p, '6,1,16777215,[dandan]');
+      assert.equal(native.comments[0].danmux.effects, undefined);
+
+      const alias = convertCommentsToDanmux({ comments: [{
+        p: '7,1,16777215,[bilibili]',
+        m: 'native alias ignored',
+        colorfulSrc: '{}',
+      }] }, { gradientStops: explicitStops });
+      assert.equal(alias.comments[0].p, '7,1,16777215,[dandan]');
+      assert.equal(alias.comments[0].danmux.effects, undefined);
+    });
 
     resetSearchState();
   });
