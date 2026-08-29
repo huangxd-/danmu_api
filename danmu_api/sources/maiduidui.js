@@ -63,9 +63,17 @@ class MaiduiduiSource extends BaseSource {
     };
   }
 
+  // vodType 数字到类型名的映射（埋堆堆搜索接口已不返回 typeName 字符串，改用 vodType 数字）
+  // 0=剧集(正剧，多集), 1=电影, 2=纪录片/相关, 3=短视频/花絮
+  static get VOD_TYPE_MAP() {
+    return { 0: "剧集", 1: "电影", 2: "综艺" };
+  }
+
+  // 旧接口 getAllSearchResult4820.action 已失效(返回空数组)，新接口去掉版本号后缀
+  // 新接口数据结构变化：typeItem.typeName 不再存在，改用 vodItem.vodType + vodItem.materialName
   async search(keyword) {
     try {
-      const urlSuffix = "/searchApi/search/getAllSearchResult4820.action";
+      const urlSuffix = "/searchApi/search/getAllSearchResult.action";
       const searchUrl = `${this.domain}${urlSuffix}`;
       const dataBody = {
         "keyWord": keyword
@@ -83,18 +91,27 @@ class MaiduiduiSource extends BaseSource {
       const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
 
       const animes = [];
-      const typeList = data?.data;
+      const typeList = Array.isArray(data?.data) ? data.data : [];
       for (const typeItem of typeList) {
-        if (typeItem?.typeName === "剧集" || typeItem?.typeName === "电影" || typeItem?.typeName === "综艺") {
-          for (const vodItem of typeItem?.vodList) {
-            animes.push({
-              name: vodItem.name,
-              type: typeItem.typeName,
-              year: vodItem.yearName,
-              img: vodItem.downImage,
-              url: vodItem.uuid
-            });
-          }
+        // 新接口不再有 typeName 字段，改为遍历 vodList，根据 vodType 判断类型
+        const vodList = Array.isArray(typeItem?.vodList) ? typeItem.vodList : [];
+        for (const vodItem of vodList) {
+          if (!vodItem?.name || !vodItem?.uuid) continue;
+
+          const vodType = Number(vodItem.vodType);
+          // 仅保留正剧(0)、电影(1)、综艺/纪录片(2)；过滤花絮短视频(3)
+          if (vodType !== 0 && vodType !== 1 && vodType !== 2) continue;
+
+          // 类型描述优先取 materialName（如"警匪""奇幻""职业,警匪"），回退到 vodType 映射
+          const typeName = vodItem.materialName || MaiduiduiSource.VOD_TYPE_MAP[vodType] || "剧集";
+
+          animes.push({
+            name: vodItem.name,
+            type: typeName,
+            year: vodItem.yearName || null,
+            img: vodItem.downImage,
+            url: vodItem.uuid
+          });
         }
       }
 
@@ -246,10 +263,12 @@ class MaiduiduiSource extends BaseSource {
           }
 
           if (links.length > 0) {
+            // 新搜索接口不再返回 yearName，year 可能为 null；为 null 时标题不显示年份括号
+            const yearPart = anime.year ? `(${anime.year})` : '';
             let transformedAnime = {
               animeId: convertToAsciiSum(anime.url),
               bangumiId: anime.url,
-              animeTitle: `${anime.name}(${anime.year})【${anime.type}】from maiduidui`,
+              animeTitle: `${anime.name}${yearPart}【${anime.type}】from maiduidui`,
               type: anime.type,
               typeDescription: anime.type,
               imageUrl: anime.img,
