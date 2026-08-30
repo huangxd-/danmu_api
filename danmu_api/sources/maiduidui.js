@@ -63,8 +63,9 @@ class MaiduiduiSource extends BaseSource {
     };
   }
 
-  // vodType 数字到类型名的映射（埋堆堆搜索接口已不返回 typeName 字符串，改用 vodType 数字）
-  // 0=剧集(正剧，多集), 1=电影, 2=纪录片/相关, 3=短视频/花絮
+  // vodType 数字到类型名的映射（埋堆堆搜索接口已不返回 typeName 字符串，改用 vodType 数字）。
+  // 按埋堆堆旧接口的 typeName 分类约定解释：0=剧集(正剧，多集), 1=电影, 2=综艺，3=短视频/花絮。
+  // materialName 是题材标签（如“奇幻”“警匪”），不作为剧集/电影/综艺类型使用。
   static get VOD_TYPE_MAP() {
     return { 0: "剧集", 1: "电影", 2: "综艺" };
   }
@@ -99,11 +100,11 @@ class MaiduiduiSource extends BaseSource {
           if (!vodItem?.name || !vodItem?.uuid) continue;
 
           const vodType = Number(vodItem.vodType);
-          // 仅保留正剧(0)、电影(1)、综艺/纪录片(2)；过滤花絮短视频(3)
-          if (vodType !== 0 && vodType !== 1 && vodType !== 2) continue;
+          // 仅保留映射表中的正剧、电影和综艺；未收录的类型（如短视频/花絮 3）直接过滤。
+          if (!Number.isInteger(vodType) || !Object.prototype.hasOwnProperty.call(MaiduiduiSource.VOD_TYPE_MAP, vodType)) continue;
 
-          // 类型描述优先取 materialName（如"警匪""奇幻""职业,警匪"），回退到 vodType 映射
-          const typeName = vodItem.materialName || MaiduiduiSource.VOD_TYPE_MAP[vodType] || "剧集";
+          // materialName 是题材标签（如“警匪”“奇幻”），资源类型统一由 vodType 映射。
+          const typeName = MaiduiduiSource.VOD_TYPE_MAP[vodType];
 
           animes.push({
             name: vodItem.name,
