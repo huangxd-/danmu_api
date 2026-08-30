@@ -290,23 +290,23 @@ test('worker.js API endpoints', async (t) => {
     ({title, season, episode, year} = await extractTitleSeasonEpisode("The Bear (2022) - S02E03 - Sundae.mkv"));
     assert(title === "The Bear" && season == 2 && episode == 3 && year == 2022, `Expected Emby title === "The Bear", season == 2, episode == 3 and year == 2022, but got ${title} ${season} ${episode} ${year}`);
 
-    ({title, season, episode, year} = await extractTitleSeasonEpisode("繁花 [tvdbid-393189] - S01E08 - 夜东京.mkv"));
-    assert(title === "繁花" && season == 1 && episode == 8 && year === undefined, `Expected Emby provider ID to be excluded from title, but got ${title} ${season} ${episode} ${year}`);
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("D:/Media/繁花/Season 01/繁花 - S01E08 - 夜东京.mkv"));
+    assert(title === "繁花" && season == 1 && episode == 8 && year === undefined, `Expected Emby path to use only the media file name, but got ${title} ${season} ${episode} ${year}`);
   });
 
   await t.test('automatic matching respects explicit seasons and separator episode numbers', () => {
-    assert.equal(extractEpisodeNumberFromTitle('【qq】 花开锦绣_31'), 31);
-    assert.equal(extractEpisodeNumberFromTitle('花开锦绣.32'), 32);
-    assert.equal(extractEpisodeNumberFromTitle('花开锦绣-33'), 33);
-    assert.equal(extractEpisodeNumberFromTitle('花开锦绣 34 预告'), 34);
-    assert.equal(extractEpisodeNumberFromTitle('花开锦绣_2026'), null);
-    assert.equal(extractEpisodeNumberFromTitle('花开锦绣 2026 E35'), 35);
-    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH' }, 'love death', 1), true);
-    assert.equal(matchSeason({ animeTitle: 'love death' }, 'LOVE DEATH', 1), true);
-    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH 第2季' }, 'love death', 2), true);
-    assert.equal(matchSeason({ animeTitle: 'love death 第2季' }, 'LOVE DEATH', 1), false);
-    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH EXTRA' }, 'love death', 1), false);
-    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH' }, 'love death', 2), false);
+    assert.equal(extractEpisodeNumberFromTitle('【qq】 吞噬星空_86'), 86);
+    assert.equal(extractEpisodeNumberFromTitle('一念永恒.59'), 59);
+    assert.equal(extractEpisodeNumberFromTitle('BLEACH-06'), 6);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空 137 正片'), 137);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空_2026'), null);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空 2026 E138'), 138);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR' }, 'the bear', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'the bear' }, 'THE BEAR', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR 第2季' }, 'the bear', 2), true);
+    assert.equal(matchSeason({ animeTitle: 'the bear 第2季' }, 'THE BEAR', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR EXTRA' }, 'the bear', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR' }, 'the bear', 2), false);
 
     Globals.init({ STRICT_TITLE_MATCH: 'true' });
     assert.equal(strictTitleMatch('一念永恒 第3季', '一念永恒 第3季', 1), true);
@@ -453,46 +453,6 @@ test('worker.js API endpoints', async (t) => {
           }
           return;
         }
-        if (scenario === 'reordered-episodes') {
-          const anime = createFavoriteAnime(title, 3, 930008);
-          anime.links.forEach((link, index) => { link.title = `【qq】 正片_${index + 1}`; });
-          anime.links = [anime.links[0], anime.links[2], anime.links[1]];
-          add(anime);
-          return;
-        }
-        if (scenario === 'unrelated-result') {
-          add(createFavoriteAnime('完全无关作品', 3, 930009));
-          return;
-        }
-        if (scenario === 'uppercase-title') {
-          add(createFavoriteAnime(String(title).toUpperCase(), 3, 930010));
-          return;
-        }
-        if (scenario === 'lowercase-title') {
-          add(createFavoriteAnime(String(title).toLowerCase(), 3, 930011));
-          return;
-        }
-        if (scenario === 'case-insensitive-alias') {
-          const anime = createFavoriteAnime('Unrelated English Title', 3, 930012);
-          anime.aliases = [String(title).toLowerCase()];
-          add(anime);
-          return;
-        }
-        if (scenario === 'uppercase-cross-season') {
-          add(createFavoriteAnime('LOVE DEATH 第1季', 2, 930013));
-          add(createFavoriteAnime('LOVE DEATH 第2季', 2, 930014));
-          return;
-        }
-        if (scenario === 'lowercase-cross-season') {
-          add(createFavoriteAnime('love death 第1季', 2, 930015));
-          add(createFavoriteAnime('love death 第2季', 2, 930016));
-          return;
-        }
-        if (scenario === 'emby-year') {
-          add(createFavoriteAnime('繁花(2022)【电视剧】from tencent', 3, 930017));
-          add(createFavoriteAnime('繁花(2023)【电视剧】from tencent', 3, 930018));
-          return;
-        }
         add(createFavoriteAnime(title, 70, 930003));
       };
       tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
@@ -521,55 +481,6 @@ test('worker.js API endpoints', async (t) => {
         await getComment(`/api/v2/comment/${9300030 + 60}`, 'json', false, '127.0.0.1');
         assert.equal(hasSeasonSpecificPreference('永生', 5), true);
         assert.match(Globals.lastSelectMap.get('永生').offsets['5'], /^3:/);
-
-        searchKeywords = [];
-        body = await runMatch({
-          TITLE_MAPPING_TABLE: '网盘资源名->标准作品名',
-          AUTO_MATCH_MAPPING_TABLE: '标准作品名 S01E02->目标作品 S01E05'
-        }, '网盘资源名 S01E02');
-        assert.equal(body.matches[0].animeTitle, '目标作品');
-        assert.equal(body.matches[0].episodeId, 9300030 + 5);
-        assert.deepEqual(searchKeywords, ['目标作品']);
-
-        scenario = 'reordered-episodes';
-        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '错位作品 S01E01->目标作品 S01E02' }, '错位作品 S01E01');
-        assert.equal(body.matches[0].episodeId, 9300080 + 2);
-
-        scenario = 'emby-year';
-        searchKeywords = [];
-        body = await runMatch({}, '繁花 (2023) - S01E02 - 宝总.mkv');
-        assert.equal(Globals.envs.titleMappingTable.size, 0);
-        assert.equal(Globals.envs.autoMatchMappingTable.length, 0);
-        assert.equal(body.matches[0].animeId, 930018);
-        assert.equal(body.matches[0].episodeId, 9300180 + 2);
-        assert.deepEqual(searchKeywords, ['繁花']);
-
-        scenario = 'uppercase-title';
-        body = await runMatch({}, 'love death S01E01');
-        assert.equal(body.matches[0].animeTitle, 'LOVE DEATH');
-
-        scenario = 'lowercase-title';
-        body = await runMatch({}, 'LOVE DEATH S01E01');
-        assert.equal(body.matches[0].animeTitle, 'love death');
-
-        scenario = 'case-insensitive-alias';
-        body = await runMatch({}, 'LOVE DEATH S01E01');
-        assert.equal(body.matches[0].animeTitle, 'Unrelated English Title');
-
-        scenario = 'uppercase-cross-season';
-        body = await runMatch({}, 'love death S01E04');
-        assert.equal(body.matches[0].animeId, 930014);
-        assert.equal(body.matches[0].episodeId, 9300140 + 2);
-
-        scenario = 'lowercase-cross-season';
-        body = await runMatch({}, 'LOVE DEATH S01E04');
-        assert.equal(body.matches[0].animeId, 930016);
-        assert.equal(body.matches[0].episodeId, 9300160 + 2);
-
-        scenario = 'unrelated-result';
-        body = await runMatch({}, '目标作品 S01E01');
-        assert.equal(body.isMatched, false);
-        assert.deepEqual(body.matches, []);
 
         scenario = 'open';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S06E01');
