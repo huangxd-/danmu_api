@@ -6,12 +6,10 @@ import {
 } from 'danmux';
 import { DANMUX_GRADIENT_META } from './danmux-meta.js';
 
-const NATIVE_GRADIENT_FIELDS = ['color_v2', 'colorV2', 'colorfulSrc', 'colorful_src', 'gradient'];
-
 // 上游原生渐变通常引用平台纹理，不能直接等价为本项目生成的 linear 渐变。
-// 这里只识别其存在性，后续将弹幕交给 dandan 兼容链路，并禁止叠加人工渐变。
+// 解码器只会产出 color_v2；后续将该弹幕交给 dandan 兼容链路，并禁止叠加人工渐变。
 function hasNativeGradient(comment) {
-  return NATIVE_GRADIENT_FIELDS.some((field) => comment?.[field] !== undefined);
+  return comment?.color_v2 !== undefined;
 }
 
 function parseComment(comment, sourceLabel) {

@@ -379,9 +379,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -389,11 +389,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -424,7 +424,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -561,9 +561,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -689,7 +689,7 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(payload.comments[0].danmux.effects[0].source.type, 'linear');
     });
 
-    await t.test('native aliases and empty color_v2 stay dandan without effects', async () => {
+    await t.test('empty decoded color_v2 stays dandan without effects', async () => {
       Globals.init({
         CONVERT_COLOR: 'color',
         GRADIENT_CHANCE: '100',
@@ -699,12 +699,10 @@ test('worker.js API endpoints', async (t) => {
       });
       const comments = convertToDanmakuJson([
         { p: '7,1,16777215,[bilibili]', m: 'empty native', color_v2: '' },
-        { p: '8,1,16777215,[bilibili]', m: 'camel alias', colorV2: '{}' },
-        { p: '9,1,16777215,[bilibili]', m: 'colorful alias', colorfulSrc: '{}' },
       ], 'bilibili');
       const payload = await (formatDanmuResponse({ comments }, 'danmux')).json();
 
-      assert.equal(payload.comments.length, 3);
+      assert.equal(payload.comments.length, 1);
       for (const comment of payload.comments) {
         assert.match(comment.p, /\[dandan\]$/u);
         assert.equal(comment.danmux.effects, undefined);
@@ -732,13 +730,6 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(native.comments[0].p, '6,1,16777215,[dandan]');
       assert.equal(native.comments[0].danmux.effects, undefined);
 
-      const alias = convertCommentsToDanmux({ comments: [{
-        p: '7,1,16777215,[bilibili]',
-        m: 'native alias ignored',
-        colorfulSrc: '{}',
-      }] }, { gradientStops: explicitStops });
-      assert.equal(alias.comments[0].p, '7,1,16777215,[dandan]');
-      assert.equal(alias.comments[0].danmux.effects, undefined);
     });
 
     resetSearchState();
@@ -1105,15 +1096,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1134,8 +1125,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });

@@ -6,14 +6,11 @@ import { convertDanAny } from './dan-any.js';
 import { convertCommentsToDanmux, parseDanmuxGradientStops } from './danmux-adapter.js';
 import { DANMUX_GRADIENT_META } from './danmux-meta.js';
 
-const NATIVE_GRADIENT_FIELDS = ['color_v2', 'colorV2', 'colorfulSrc', 'colorful_src', 'gradient'];
-
 function getNativeGradientValue(item) {
-  if (!item || typeof item !== 'object') return { present: false, value: undefined };
-  for (const field of NATIVE_GRADIENT_FIELDS) {
-    if (item[field] !== undefined) return { present: true, value: item[field] };
+  if (!item || typeof item !== 'object' || item.color_v2 === undefined) {
+    return { present: false, value: undefined };
   }
-  return { present: false, value: undefined };
+  return { present: true, value: item.color_v2 };
 }
 
 // =====================
