@@ -218,9 +218,10 @@ export function normalizeSpaces(str) {
  * 严格标题匹配函数
  * @param {string} title - 动漫标题
  * @param {string} query - 搜索关键词
+ * @param {number|null} parsedSeason - 请求中解析出的季度
  * @returns {boolean} 是否匹配
  */
-export function strictTitleMatch(title, query) {
+export function strictTitleMatch(title, query, parsedSeason = null) {
   if (!title || !query) return false;
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
@@ -228,16 +229,19 @@ export function strictTitleMatch(title, query) {
   const cleanTitle = tagFilter ? title.replace(tagFilter, '').trim() : title;
   const cleanQuery = tagFilter ? query.replace(tagFilter, '').trim() : query;
 
-  const t = normalizeSpaces(cleanTitle);
-  const q = normalizeSpaces(cleanQuery);
+  const t = normalizeSpaces(cleanTitle).toLowerCase();
+  const q = normalizeSpaces(cleanQuery).toLowerCase();
 
   // 完全匹配
   if (t === q) return true;
 
+  const candidateSeason = getExplicitSeasonNumber(cleanTitle);
+  if (parsedSeason !== null && candidateSeason !== null && Number(candidateSeason) !== Number(parsedSeason)) return false;
+
   // 标题以搜索词开头，且后面为季号或有效关键词时，允许严格匹配通过
   if (t.startsWith(q) && t.length > q.length) {
     const suffix = t.substring(q.length);
-    const seasonPattern = /^(?:[\dⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[sS]\d+|Season\s*\d+|Part\s*\d+|第\d+|[第]?\s*[零一二三四五六七八九十]+\s*[季期部]|年番|合集|部(?!分)|部分|篇|剧场|完结|最终)/;
+    const seasonPattern = /^(?:[\dⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ]|s\d+|Season\s*\d+|Part\s*\d+|第\d+|[第]?\s*[零一二三四五六七八九十]+\s*[季期部]|年番|合集|部(?!分)|部分|篇|剧场|完结|最终)/i;
     if (seasonPattern.test(suffix)) return true;
   }
 
@@ -277,7 +281,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
   if (!titleText || !queryText) return false;
 
   // 策略1：严格模式仅允许头部或完全匹配（forceNonStrict 为 true 时跳过，用于偏好记录等场景）
-  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText);
+  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText, parsedSeason);
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
   const tagFilter = globals.titleNoiseFilter || null;
@@ -470,8 +474,9 @@ export function extractEpisodeNumberFromTitle(episodeTitle) {
     return parseInt(epMatch[1], 10);
   }
 
-  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
-  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
+  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）；
+  // 同时兼容“剧名_32”“剧名.32”“剧名-32”等站点常见命名。
+  const numberMatch = episodeTitle.match(/(?:^|[\s._-])(\d{1,3})(?:\s|$)/);
   if (numberMatch) {
     return parseInt(numberMatch[1], 10);
   }

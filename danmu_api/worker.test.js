@@ -5,8 +5,9 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, matchSeason, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
+import { extractEpisodeNumberFromTitle, strictTitleMatch, titleMatches } from "./utils/common-util.js";
 import { handleFavoriteRefresh } from './apis/favorite-api.js';
 import { handleClearCache } from './apis/system-api.js';
 import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
@@ -264,7 +265,7 @@ test('worker.js API endpoints', async (t) => {
 
   // 测试标题解析
   await t.test('PARSE TitleSeasonEpisode', async () => {
-    let title, season, episode;
+    let title, season, episode, year;
     ({title, season, episode} = await extractTitleSeasonEpisode("生万物 S02E08"));
     assert(title === "生万物" && season == 2 && episode == 8, `Expected title === "生万物" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
 
@@ -282,6 +283,37 @@ test('worker.js API endpoints', async (t) => {
 
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("繁花 (2023) - S01E08 - 夜东京.mkv"));
+    assert(title === "繁花" && season == 1 && episode == 8 && year == 2023, `Expected Emby title === "繁花", season == 1, episode == 8 and year == 2023, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("The Bear (2022) - S02E03 - Sundae.mkv"));
+    assert(title === "The Bear" && season == 2 && episode == 3 && year == 2022, `Expected Emby title === "The Bear", season == 2, episode == 3 and year == 2022, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("繁花 [tvdbid-393189] - S01E08 - 夜东京.mkv"));
+    assert(title === "繁花" && season == 1 && episode == 8 && year === undefined, `Expected Emby provider ID to be excluded from title, but got ${title} ${season} ${episode} ${year}`);
+  });
+
+  await t.test('automatic matching respects explicit seasons and separator episode numbers', () => {
+    assert.equal(extractEpisodeNumberFromTitle('【qq】 花开锦绣_31'), 31);
+    assert.equal(extractEpisodeNumberFromTitle('花开锦绣.32'), 32);
+    assert.equal(extractEpisodeNumberFromTitle('花开锦绣-33'), 33);
+    assert.equal(extractEpisodeNumberFromTitle('花开锦绣 34 预告'), 34);
+    assert.equal(extractEpisodeNumberFromTitle('花开锦绣_2026'), null);
+    assert.equal(extractEpisodeNumberFromTitle('花开锦绣 2026 E35'), 35);
+    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH' }, 'love death', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'love death' }, 'LOVE DEATH', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH 第2季' }, 'love death', 2), true);
+    assert.equal(matchSeason({ animeTitle: 'love death 第2季' }, 'LOVE DEATH', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH EXTRA' }, 'love death', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'LOVE DEATH' }, 'love death', 2), false);
+
+    Globals.init({ STRICT_TITLE_MATCH: 'true' });
+    assert.equal(strictTitleMatch('一念永恒 第3季', '一念永恒 第3季', 1), true);
+    assert.equal(strictTitleMatch('一念永恒 第2季', '一念永恒', 3), false);
+    assert.equal(titleMatches('一念永恒 第3季', '一念永恒', 3), true);
+    assert.equal(titleMatches('一念永恒 第2季', '一念永恒', 3), false);
+    Globals.init({});
   });
 
   await t.test('auto match mapping table', async t => {
@@ -378,9 +410,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +420,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -421,9 +453,49 @@ test('worker.js API endpoints', async (t) => {
           }
           return;
         }
+        if (scenario === 'reordered-episodes') {
+          const anime = createFavoriteAnime(title, 3, 930008);
+          anime.links.forEach((link, index) => { link.title = `【qq】 正片_${index + 1}`; });
+          anime.links = [anime.links[0], anime.links[2], anime.links[1]];
+          add(anime);
+          return;
+        }
+        if (scenario === 'unrelated-result') {
+          add(createFavoriteAnime('完全无关作品', 3, 930009));
+          return;
+        }
+        if (scenario === 'uppercase-title') {
+          add(createFavoriteAnime(String(title).toUpperCase(), 3, 930010));
+          return;
+        }
+        if (scenario === 'lowercase-title') {
+          add(createFavoriteAnime(String(title).toLowerCase(), 3, 930011));
+          return;
+        }
+        if (scenario === 'case-insensitive-alias') {
+          const anime = createFavoriteAnime('Unrelated English Title', 3, 930012);
+          anime.aliases = [String(title).toLowerCase()];
+          add(anime);
+          return;
+        }
+        if (scenario === 'uppercase-cross-season') {
+          add(createFavoriteAnime('LOVE DEATH 第1季', 2, 930013));
+          add(createFavoriteAnime('LOVE DEATH 第2季', 2, 930014));
+          return;
+        }
+        if (scenario === 'lowercase-cross-season') {
+          add(createFavoriteAnime('love death 第1季', 2, 930015));
+          add(createFavoriteAnime('love death 第2季', 2, 930016));
+          return;
+        }
+        if (scenario === 'emby-year') {
+          add(createFavoriteAnime('繁花(2022)【电视剧】from tencent', 3, 930017));
+          add(createFavoriteAnime('繁花(2023)【电视剧】from tencent', 3, 930018));
+          return;
+        }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -450,6 +522,56 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(hasSeasonSpecificPreference('永生', 5), true);
         assert.match(Globals.lastSelectMap.get('永生').offsets['5'], /^3:/);
 
+        searchKeywords = [];
+        body = await runMatch({
+          TITLE_MAPPING_TABLE: '网盘资源名->标准作品名',
+          AUTO_MATCH_MAPPING_TABLE: '标准作品名 S01E02->目标作品 S01E05'
+        }, '网盘资源名 S01E02');
+        assert.equal(body.matches[0].animeTitle, '目标作品');
+        assert.equal(body.matches[0].episodeId, 9300030 + 5);
+        assert.deepEqual(searchKeywords, ['目标作品']);
+
+        scenario = 'reordered-episodes';
+        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '错位作品 S01E01->目标作品 S01E02' }, '错位作品 S01E01');
+        assert.equal(body.matches[0].episodeId, 9300080 + 2);
+
+        scenario = 'emby-year';
+        searchKeywords = [];
+        body = await runMatch({}, '繁花 (2023) - S01E02 - 宝总.mkv');
+        assert.equal(Globals.envs.titleMappingTable.size, 0);
+        assert.equal(Globals.envs.autoMatchMappingTable.length, 0);
+        assert.equal(body.matches[0].animeId, 930018);
+        assert.equal(body.matches[0].episodeId, 9300180 + 2);
+        assert.deepEqual(searchKeywords, ['繁花']);
+
+        scenario = 'uppercase-title';
+        body = await runMatch({}, 'love death S01E01');
+        assert.equal(body.matches[0].animeTitle, 'LOVE DEATH');
+
+        scenario = 'lowercase-title';
+        body = await runMatch({}, 'LOVE DEATH S01E01');
+        assert.equal(body.matches[0].animeTitle, 'love death');
+
+        scenario = 'case-insensitive-alias';
+        body = await runMatch({}, 'LOVE DEATH S01E01');
+        assert.equal(body.matches[0].animeTitle, 'Unrelated English Title');
+
+        scenario = 'uppercase-cross-season';
+        body = await runMatch({}, 'love death S01E04');
+        assert.equal(body.matches[0].animeId, 930014);
+        assert.equal(body.matches[0].episodeId, 9300140 + 2);
+
+        scenario = 'lowercase-cross-season';
+        body = await runMatch({}, 'LOVE DEATH S01E04');
+        assert.equal(body.matches[0].animeId, 930016);
+        assert.equal(body.matches[0].episodeId, 9300160 + 2);
+
+        scenario = 'unrelated-result';
+        body = await runMatch({}, '目标作品 S01E01');
+        assert.equal(body.isMatched, false);
+        assert.deepEqual(body.matches, []);
+
+        scenario = 'open';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S06E01');
         assert.equal(body.matches[0].episodeId, 9300030 + 1);
         await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');
@@ -560,9 +682,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -977,15 +1099,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1006,8 +1128,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });
