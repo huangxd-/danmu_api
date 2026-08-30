@@ -14,6 +14,44 @@ function normalizeRuleTitle(value) {
     .toLowerCase();
 }
 
+const ruleIndexCache = new WeakMap();
+
+function getRuleIndex(rules) {
+  if (!Array.isArray(rules)) return new Map();
+  const cached = ruleIndexCache.get(rules);
+  if (cached) return cached;
+  const index = new Map();
+  for (const rule of rules) {
+    const key = `${rule.sourceTitleKey}\u0000${rule.sourceSeason}`;
+    const bucket = index.get(key) || [];
+    bucket.push(rule);
+    index.set(key, bucket);
+  }
+  ruleIndexCache.set(rules, index);
+  return index;
+}
+
+function splitRuleEntries(value) {
+  const entries = [];
+  let current = '';
+  const source = String(value || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter(line => !/^\s*(?:#|\/\/)/.test(line))
+    .join('\n');
+
+  for (const char of source) {
+    if (char === ';' || char === '\n') {
+      if (current.trim()) entries.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) entries.push(current.trim());
+  return entries;
+}
+
 function parseEpisodeSide(value, { allowPlatform = false } = {}) {
   let text = String(value || '').trim();
   let platform = '';
@@ -64,7 +102,7 @@ export function parseAutoMatchMappingRules(value, allowedPlatforms = []) {
   const warnings = [];
   const allowed = new Set((allowedPlatforms || []).map(item => String(item).toLowerCase()));
 
-  for (const [index, rawRule] of String(value || '').split(';').entries()) {
+  for (const [index, rawRule] of splitRuleEntries(value).entries()) {
     const text = rawRule.trim();
     if (!text) continue;
 
@@ -130,8 +168,7 @@ export function resolveAutoMatchMapping(rules, { title, season, episode }) {
   const episodeNumber = Number(episode);
   if (!titleKey || !Number.isInteger(seasonNumber) || !Number.isInteger(episodeNumber)) return null;
 
-  const matches = (Array.isArray(rules) ? rules : []).filter(rule => {
-    if (rule.sourceTitleKey !== titleKey || rule.sourceSeason !== seasonNumber) return false;
+  const matches = (getRuleIndex(rules).get(`${titleKey}\u0000${seasonNumber}`) || []).filter(rule => {
     if (episodeNumber < rule.sourceStartEpisode) return false;
     return rule.sourceEndEpisode === null || episodeNumber <= rule.sourceEndEpisode;
   });
