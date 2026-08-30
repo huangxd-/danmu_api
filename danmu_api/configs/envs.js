@@ -18,7 +18,7 @@ export class Envs {
   static rawEnvValues = null;
 
   // 允许在值中写入 # 等 dotenv 视为注释字符的文本类变量；读取时绕过 dotenv 截断以保留完整内容。仅纳入 encrypt=false 变量（带令牌/密码 URL 若入此集合会绕过加密返回明文，故禁止纳入）。
-  static RAW_ENV_KEYS = new Set(['AI_MATCH_PROMPT', 'ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'DANMU_OFFSET', 'DANMU_PUSH_URL', 'EPISODE_TITLE_FILTER', 'IP_BLACKLIST', 'OTHER_SERVER', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'VOD_SERVERS']);
+  static RAW_ENV_KEYS = new Set(['AI_MATCH_PROMPT', 'ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'DANMU_OFFSET', 'DANMU_PUSH_URL', 'DANMUX_GRADIENT_STOPS', 'EPISODE_TITLE_FILTER', 'IP_BLACKLIST', 'OTHER_SERVER', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'VOD_SERVERS']);
 
   static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan']; // vod允许的播放平台
   static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 全部源允许的播放平台
@@ -733,8 +733,10 @@ export class Envs {
       'CONVERT_COLOR': { category: 'danmu', type: 'select', options: ['default', 'white', 'color'], description: '弹幕转换颜色配置' },
       'COLOR_POOL': { category: 'danmu', type: 'text', description: '自定义颜色池（CONVERT_COLOR为color时生效），不配置使用默认颜色池，格式：十进制颜色值逗号分隔' },
       'GRADIENT_CHANCE': { category: 'danmu', type: 'number', min: 0, max: 100, description: '渐变色弹幕概率（CONVERT_COLOR为color时生效），单位百分比 0-100，默认 0，弹幕按此概率从渐变色带取色（随出现时间平滑流转），0 表示关闭' },
-      'GRADIENT_COLORS': { category: 'danmu', type: 'text', description: '渐变色带（CONVERT_COLOR为color时生效），可填皮肤名：bilibili(默认)/sweet/cyber/sunset/ocean/mint/rainbow，或十进制颜色值逗号分隔（至少2个）' },
-      'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml', ...danAnyFormats], description: '弹幕输出格式，默认json' },
+      'GRADIENT_COLORS': { category: 'danmu', type: 'text', description: '渐变色带（CONVERT_COLOR为color时生效），默认使用default；可选皮肤：bilibili/sweet/cyber/sunset/ocean/mint/rainbow，或十进制颜色值逗号分隔（至少2个）' },
+      'DANMUX_GRADIENT_STOPS': { category: 'danmu', type: 'text', description: 'DanmuX 标准渐变 stops JSON；留空时使用 GRADIENT_COLORS 皮肤' },
+      'DANMUX_GRADIENT_ANGLE': { category: 'danmu', type: 'number', min: 0, max: 360, description: 'DanmuX 标准线性渐变角度，默认0' },
+      'DANMU_OUTPUT_FORMAT': { category: 'danmu', type: 'select', options: ['json', 'xml', 'danmux', ...danAnyFormats], description: '弹幕输出格式，默认json' },
       'DANMU_PUSH_URL': { category: 'danmu', type: 'text', description: '弹幕推送地址，示例 http://127.0.0.1:9978/action?do=refresh&type=danmaku&path= ' },
       'LIKE_SWITCH': { category: 'danmu', type: 'boolean', description: '弹幕点赞数显示开关，默认开启' },
       'HONGGUO_MERGE_ALL_EPISODES': { category: 'danmu', type: 'boolean', description: '红果短剧合并全集弹幕，默认关闭' },
@@ -811,7 +813,9 @@ export class Envs {
       convertColor: this.get('CONVERT_COLOR', 'default', 'string'), // 弹幕转换颜色配置，支持 default、white、color（默认 default，禁用转换）
       colorPool: this.get('COLOR_POOL', '16777215,16777215,16777215,16777215,16777215,16777215,16777215,16777215,16744319,16752762,16774799,9498256,8388564,8900346,14204888,16758465', 'string'), // 自定义颜色池，CONVERT_COLOR为color时生效
       gradientChance: this.get('GRADIENT_CHANCE', 0, 'number'), // 渐变色弹幕出现概率（百分比），CONVERT_COLOR为color时生效，0 表示关闭
-      gradientColors: this.get('GRADIENT_COLORS', '16478873,3389695', 'string'), // 渐变色带（B站标准粉蓝 #FB7299→#33B8FF），CONVERT_COLOR为color时生效
+      gradientColors: this.get('GRADIENT_COLORS', 'default', 'string'), // 普通白色弹幕使用的渐变皮肤
+      danmuxGradientStops: this.get('DANMUX_GRADIENT_STOPS', '', 'string'), // DanmuX v1 显式 stops JSON；为空时不生成普通弹幕渐变
+      danmuxGradientAngle: this.get('DANMUX_GRADIENT_ANGLE', 0, 'number'), // DanmuX v1 linear angle
       danmuOutputFormat: this.get('DANMU_OUTPUT_FORMAT', 'json', 'string'), // 弹幕输出格式配置（默认 json，可选值：json, xml, ...danAnyFormats）
       strictTitleMatch: this.get('STRICT_TITLE_MATCH', false, 'boolean'), // 严格标题匹配模式配置（默认 false，宽松模糊匹配）
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
