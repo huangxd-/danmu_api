@@ -4,6 +4,9 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
@@ -29,7 +32,7 @@ import { Globals, globals } from "./configs/globals.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
-import { applyRemoteTitleMappingText, applyTitleMappingWithLog, ensureRemoteTitleMapping, normalizeMappingSourceUrl, parseRemoteTitleMappings } from './utils/title-mapping-url-util.js';
+import { applyRemoteTitleMappingText, applyTitleMappingWithLog, ensureRemoteTitleMapping, normalizeMappingSourceUrl, parseRemoteTitleMappings, refreshRemoteTitleMappingNow } from './utils/title-mapping-url-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
@@ -379,9 +382,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -389,11 +392,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -424,7 +427,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -561,9 +564,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -978,15 +981,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1007,8 +1010,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });
@@ -2938,6 +2941,35 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
       assert.throws(() => applyRemoteTitleMappingText('u', '# 只有注释'));
       assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+    });
+
+    await t.test('manual refresh downloads, parses, merges, and caches the configured table', async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), 'danmu-api-title-mapping-'));
+      const originalCwd = process.cwd();
+      const sourceUrl = 'https://maps.example.test/title-mapping.txt';
+      let requestedUrl = '';
+      try {
+        process.chdir(cacheRoot);
+        Globals.init({
+          TITLE_MAPPING_TABLE: '本地剧->本地优先',
+          TITLE_MAPPING_TABLE_URL: sourceUrl,
+        });
+        const result = await withMockFetch(async url => {
+          requestedUrl = String(url);
+          return new Response('本地剧->远程值\n下载剧->下载映射', {
+            status: 200,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          });
+        }, () => refreshRemoteTitleMappingNow());
+
+        assert.deepEqual(result, { success: true, count: 2 });
+        assert.equal(requestedUrl, sourceUrl);
+        assert.equal(globals.titleMappingTable.get('本地剧'), '本地优先');
+        assert.equal(globals.titleMappingTable.get('下载剧'), '下载映射');
+      } finally {
+        process.chdir(originalCwd);
+        await rm(cacheRoot, { recursive: true, force: true });
+      }
     });
 
     await t.test('prefers title and season keys before the bare title', () => {
