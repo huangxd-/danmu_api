@@ -5,8 +5,9 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { handleRequest } from './worker.js';
-import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
+import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, matchSeason, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
+import { extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, strictTitleMatch, titleMatches } from "./utils/common-util.js";
 import { handleFavoriteRefresh } from './apis/favorite-api.js';
 import { handleClearCache } from './apis/system-api.js';
 import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
@@ -251,6 +252,10 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(searchUrl.searchParams.get('season'), '1');
     assert.equal(searchUrl.searchParams.get('episode'), '2');
     assert.equal(searchUrl.searchParams.has(' Death'), false);
+
+    const specialUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/match`, '进击的巨人', 0, 1);
+    assert.equal(specialUrl.searchParams.get('season'), '0');
+    assert.equal(specialUrl.searchParams.get('episode'), '1');
   });
 
   await t.test('buildSearchAnimeUrl should derive /search/anime from /search/episodes requests', async () => {
@@ -264,7 +269,7 @@ test('worker.js API endpoints', async (t) => {
 
   // 测试标题解析
   await t.test('PARSE TitleSeasonEpisode', async () => {
-    let title, season, episode;
+    let title, season, episode, year;
     ({title, season, episode} = await extractTitleSeasonEpisode("生万物 S02E08"));
     assert(title === "生万物" && season == 2 && episode == 8, `Expected title === "生万物" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
 
@@ -282,6 +287,53 @@ test('worker.js API endpoints', async (t) => {
 
     ({title, season, episode} = await extractTitleSeasonEpisode("宇宙Marry Me? S02E08"));
     assert(title === "宇宙Marry Me?" && season == 2 && episode == 8, `Expected title === "宇宙Marry Me?" && season == 2 && episode == 8, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("繁花 (2023) - S01E08 - 夜东京.mkv"));
+    assert(title === "繁花" && season == 1 && episode == 8 && year == 2023, `Expected Emby title === "繁花", season == 1, episode == 8 and year == 2023, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("The Bear (2022) - S02E03 - Sundae.mkv"));
+    assert(title === "The Bear" && season == 2 && episode == 3 && year == 2022, `Expected Emby title === "The Bear", season == 2, episode == 3 and year == 2022, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode, year} = await extractTitleSeasonEpisode("D:/Media/繁花/Season 01/繁花 - S01E08 - 夜东京.mkv"));
+    assert(title === "繁花" && season == 1 && episode == 8 && year === undefined, `Expected Emby path to use only the media file name, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("进击的巨人 - S00E01 - 伊尔泽的笔记.mkv"));
+    assert(title === "进击的巨人" && season === 0 && episode === 1, `Expected special episode S00E01, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("进击的巨人 S0E02"));
+    assert(title === "进击的巨人" && season === 0 && episode === 2, `Expected special episode S0E02, but got ${title} ${season} ${episode}`);
+  });
+
+  await t.test('automatic matching respects explicit seasons and separator episode numbers', () => {
+    assert.equal(extractEpisodeNumberFromTitle('【qq】 吞噬星空_86'), 86);
+    assert.equal(extractEpisodeNumberFromTitle('一念永恒.59'), 59);
+    assert.equal(extractEpisodeNumberFromTitle('BLEACH-06'), 6);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空 137 正片'), 137);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空_2026'), null);
+    assert.equal(extractEpisodeNumberFromTitle('吞噬星空 2026 E138'), 138);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR' }, 'the bear', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'the bear' }, 'THE BEAR', 1), true);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR 第2季' }, 'the bear', 2), true);
+    assert.equal(matchSeason({ animeTitle: 'the bear 第2季' }, 'THE BEAR', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR EXTRA' }, 'the bear', 1), false);
+    assert.equal(matchSeason({ animeTitle: 'THE BEAR' }, 'the bear', 2), false);
+    assert.deepEqual(extractSeasonNumberFromAnimeTitle('进击的巨人 OVA'), { season: 0, baseTitle: '进击的巨人' });
+    assert.deepEqual(extractSeasonNumberFromAnimeTitle('进击的巨人 特别篇'), { season: 0, baseTitle: '进击的巨人' });
+    assert.equal(getExplicitSeasonNumber('进击的巨人 番外篇'), 0);
+    assert.equal(getExplicitSeasonNumber('NOVA'), null);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人 OVA' }, '进击的巨人', 0), true);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人' }, '进击的巨人', 0), false);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人 OVA' }, '进击的巨人', 1), false);
+
+    Globals.init({ STRICT_TITLE_MATCH: 'true' });
+    assert.equal(strictTitleMatch('进击的巨人', '进击的巨人'), true);
+    assert.equal(strictTitleMatch('进击的巨人', '进击的巨人', 0), false);
+    assert.equal(strictTitleMatch('进击的巨人 OVA', '进击的巨人', 0), true);
+    assert.equal(strictTitleMatch('一念永恒 第3季', '一念永恒 第3季', 1), true);
+    assert.equal(strictTitleMatch('一念永恒 第2季', '一念永恒', 3), false);
+    assert.equal(titleMatches('一念永恒 第3季', '一念永恒', 3), true);
+    assert.equal(titleMatches('一念永恒 第2季', '一念永恒', 3), false);
+    Globals.init({});
   });
 
   await t.test('auto match mapping table', async t => {
@@ -349,6 +401,11 @@ test('worker.js API endpoints', async (t) => {
         typeDescription: '动漫',
         startDate: '2007-02-15T00:00:00.000Z'
       }, narutoRule), true);
+
+      const specialRule = parseAutoMatchMappingRules('进击的巨人 S00E01->进击的巨人 OVA S00E01').rules[0];
+      assert.equal(specialRule.sourceSeason, 0);
+      assert.equal(specialRule.targetSeason, 0);
+      assert.equal(resolveAutoMatchMapping([specialRule], { title: '进击的巨人', season: 0, episode: 2 }).targetEpisode, 2);
     });
 
     await t.test('rejects invalid ranges and keeps declaration order for equal specificity', () => {
@@ -377,10 +434,10 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 166 }).targetTitle, '一念永恒 完结季');
     });
 
-    await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+    await t.test('prefers local matches, then applies mapping qualifiers and manual season preferences', async () => {
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +445,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -421,9 +478,19 @@ test('worker.js API endpoints', async (t) => {
           }
           return;
         }
+        if (scenario === 'special') {
+          add(createFavoriteAnime('进击的巨人', 25, 930008));
+          add(createFavoriteAnime('进击的巨人 OVA', 8, 930009));
+          return;
+        }
+        if (scenario === 'special-single') {
+          add(createFavoriteAnime('进击的巨人', 25, 930008));
+          add(createFavoriteAnime('进击的巨人 特别篇', 1, 930010));
+          return;
+        }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -443,16 +510,17 @@ test('worker.js API endpoints', async (t) => {
         scenario = 'open';
         let body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S05E03');
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
-        assert.deepEqual(searchKeywords, ['永生']);
+        assert.deepEqual(searchKeywords, ['永生', '永生']);
         await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');
         assert.equal(hasSeasonSpecificPreference('永生', 5), false);
         await getComment(`/api/v2/comment/${9300030 + 60}`, 'json', false, '127.0.0.1');
         assert.equal(hasSeasonSpecificPreference('永生', 5), true);
         assert.match(Globals.lastSelectMap.get('永生').offsets['5'], /^3:/);
 
+        scenario = 'open';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S06E01');
-        assert.equal(body.matches[0].episodeId, 9300030 + 1);
-        await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');
+        assert.equal(body.isMatched, false);
+        assert.deepEqual(body.matches, []);
         assert.equal(hasSeasonSpecificPreference('永生', 6), false);
 
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' });
@@ -493,7 +561,8 @@ test('worker.js API endpoints', async (t) => {
 
         scenario = 'platform';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '航海王 S01E01->航海王 S01E01 @qiyi' }, '航海王 S01E01 @qq');
-        assert.equal(body.matches[0].animeId, 930005);
+        // 原始请求已能按 @qq 本机命中时，不使用映射规则改写为 @qiyi。
+        assert.equal(body.matches[0].animeId, 930004);
 
         scenario = 'naruto';
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '火影忍者 S01E57->火影忍者 疾风传(2007)【日番】 S01E59' });
@@ -511,8 +580,9 @@ test('worker.js API endpoints', async (t) => {
           body: JSON.stringify({ fileName: '火影忍者 S01E58' })
         });
         body = await parseResponse(await matchAnime(new URL(narutoRequest.url), narutoRequest, '127.0.0.1'));
-        assert.equal(body.matches[0].animeId, 930006);
-        assert.equal(body.matches[0].episodeId, 9300060 + 60);
+        // 原始《火影忍者》第 58 集可由本机直接识别，不再先改写到《疾风传》。
+        assert.equal(body.matches[0].animeId, 930007);
+        assert.equal(body.matches[0].episodeId, 9300070 + 58);
 
         scenario = 'open';
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' });
@@ -554,15 +624,35 @@ test('worker.js API endpoints', async (t) => {
         body = await parseResponse(await matchAnime(new URL(disabledPreferenceRequest.url), disabledPreferenceRequest, '127.0.0.1'));
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
 
+        // 本机能直接匹配真实作品时，不允许季集表覆盖结果或触发目标标题搜索。
         searchKeywords = [];
-        scenario = 'fallback';
-        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '原始剧 S01E01->缺失目标 S01E01' }, '原始剧 S01E01');
-        assert.equal(body.matches[0].animeTitle, '原始剧');
-        assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
+        scenario = 'open';
+        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '一念永恒 S01E01->一念永恒 第三季 S01E01' }, '一念永恒 S01E01');
+        assert.equal(body.matches[0].animeTitle, '一念永恒');
+        assert.equal(body.matches[0].episodeId, 9300030 + 1);
+        assert.deepEqual(searchKeywords, ['一念永恒']);
+
+        // Emby 的 S00/S0 只命中明确的 OVA/特别篇候选，不会混入普通第一季。
+        searchKeywords = [];
+        scenario = 'special';
+        body = await runMatch({}, '进击的巨人 - S00E01 - 伊尔泽的笔记.mkv');
+        assert.equal(body.matches[0].animeId, 930009);
+        assert.equal(body.matches[0].episodeId, 9300090 + 1);
+        assert.deepEqual(searchKeywords, ['进击的巨人']);
+
+        body = await runMatch({}, '进击的巨人 S0E02');
+        assert.equal(body.matches[0].animeId, 930009);
+        assert.equal(body.matches[0].episodeId, 9300090 + 2);
+
+        // 单集特别篇不能因为同名第一季是多集剧集而被排除。
+        scenario = 'special-single';
+        body = await runMatch({}, '进击的巨人 S00E01');
+        assert.equal(body.matches[0].animeId, 930010);
+        assert.equal(body.matches[0].episodeId, 9300100 + 1);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -977,15 +1067,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1006,8 +1096,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });

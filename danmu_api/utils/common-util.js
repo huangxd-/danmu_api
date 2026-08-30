@@ -218,9 +218,10 @@ export function normalizeSpaces(str) {
  * 严格标题匹配函数
  * @param {string} title - 动漫标题
  * @param {string} query - 搜索关键词
+ * @param {number|null} parsedSeason - 请求中解析出的季度
  * @returns {boolean} 是否匹配
  */
-export function strictTitleMatch(title, query) {
+export function strictTitleMatch(title, query, parsedSeason = null) {
   if (!title || !query) return false;
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
@@ -228,16 +229,22 @@ export function strictTitleMatch(title, query) {
   const cleanTitle = tagFilter ? title.replace(tagFilter, '').trim() : title;
   const cleanQuery = tagFilter ? query.replace(tagFilter, '').trim() : query;
 
-  const t = normalizeSpaces(cleanTitle);
-  const q = normalizeSpaces(cleanQuery);
+  const t = normalizeSpaces(cleanTitle).toLowerCase();
+  const q = normalizeSpaces(cleanQuery).toLowerCase();
+
+  const candidateSeason = getExplicitSeasonNumber(cleanTitle);
+  // Season 00 只能匹配明确的特别篇标识；普通同名标题按第一季处理。
+  if (parsedSeason !== null && parsedSeason !== undefined && Number(parsedSeason) === 0 && candidateSeason !== 0) return false;
 
   // 完全匹配
   if (t === q) return true;
 
+  if (parsedSeason !== null && candidateSeason !== null && Number(candidateSeason) !== Number(parsedSeason)) return false;
+
   // 标题以搜索词开头，且后面为季号或有效关键词时，允许严格匹配通过
   if (t.startsWith(q) && t.length > q.length) {
     const suffix = t.substring(q.length);
-    const seasonPattern = /^(?:[\dⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[sS]\d+|Season\s*\d+|Part\s*\d+|第\d+|[第]?\s*[零一二三四五六七八九十]+\s*[季期部]|年番|合集|部(?!分)|部分|篇|剧场|完结|最终)/;
+    const seasonPattern = /^(?:[\dⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ]|s\d+|Season\s*\d+|Part\s*\d+|第\d+|[第]?\s*[零一二三四五六七八九十]+\s*[季期部]|特别篇|特別篇|番外篇?|OVA|OAD|SP|Specials?|年番|合集|部(?!分)|部分|篇|剧场|完结|最终)/i;
     if (seasonPattern.test(suffix)) return true;
   }
 
@@ -259,6 +266,14 @@ export function getExplicitSeasonNumber(text) {
       return convertChineseNumber(numStr); 
     }
   }
+
+  // Emby/Jellyfin 将特别篇通常保存为 Season 00。源站标题未必写 S00，
+  // 因此把常见的特别篇后缀统一归入第 0 季。拉丁缩写要求前一字符不是
+  // 拉丁字母，避免把 NOVA 之类作品名误识别成 OVA。
+  const trimmed = String(text).trim().replace(/[】)）\]\s]+$/g, '');
+  if (/(?:特别篇|特別篇|番外篇?)$/.test(trimmed) || /(?:^|[^A-Za-z])(?:OVA|OAD|SP|Specials?)$/i.test(trimmed)) {
+    return 0;
+  }
   return null;
 }
 
@@ -277,7 +292,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
   if (!titleText || !queryText) return false;
 
   // 策略1：严格模式仅允许头部或完全匹配（forceNonStrict 为 true 时跳过，用于偏好记录等场景）
-  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText);
+  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText, parsedSeason);
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
   const tagFilter = globals.titleNoiseFilter || null;
@@ -326,6 +341,9 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
     } else if (querySeason === 1) {
       // 搜索第1季时，拦截明确标明为其他季度(如第2季、第3季)的结果
       if (titleSeason !== null && titleSeason !== 1) return false;
+    } else if (querySeason === 0) {
+      // 第 0 季只接受明确标记为特别篇的结果，不能让无季号的第一季混入。
+      if (titleSeason !== 0) return false;
     }
   }
 
@@ -428,7 +446,25 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
     };
   }
 
-  // 4) 尾部阿拉伯数字（如"某某 2" 或 "某某2"，但不超过2位）
+  // 4) 特别篇/番外/OVA/OAD/SP/Special：统一映射为 Emby 的第 0 季。
+  // 中文后缀可直接连接标题；拉丁缩写只在前一字符不是拉丁字母时识别，
+  // 避免将 NOVA 等完整作品名截成普通标题。
+  const chineseSpecialMatch = titleWithoutYear.match(/(?:特别篇|特別篇|番外篇?)$/);
+  if (chineseSpecialMatch) {
+    return {
+      season: 0,
+      baseTitle: titleWithoutYear.slice(0, chineseSpecialMatch.index).trim(),
+    };
+  }
+  const latinSpecialMatch = titleWithoutYear.match(/(^|[^A-Za-z])(OVA|OAD|SP|Specials?)$/i);
+  if (latinSpecialMatch) {
+    return {
+      season: 0,
+      baseTitle: titleWithoutYear.slice(0, latinSpecialMatch.index + latinSpecialMatch[1].length).trim(),
+    };
+  }
+
+  // 5) 尾部阿拉伯数字（如"某某 2" 或 "某某2"，但不超过2位）
   const trailingNumber = titleWithoutYear.match(/(?:^|\s|[^\d])(\d{1,2})$/);
   if (trailingNumber) {
     const season = parseInt(trailingNumber[1], 10);
@@ -442,7 +478,7 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
     };
   }
 
-  // 5) 尾部中文数字（如"某某二"）
+  // 6) 尾部中文数字（如"某某二"）
   const trailingChinese = titleWithoutYear.match(/([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)$/);
   if (trailingChinese) {
     return {
@@ -470,8 +506,9 @@ export function extractEpisodeNumberFromTitle(episodeTitle) {
     return parseInt(epMatch[1], 10);
   }
 
-  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）
-  const numberMatch = episodeTitle.match(/(?:^|\s)(\d+)(?:\s|$)/);
+  // 匹配格式：01、1（纯数字，通常在标题开头或结尾）；
+  // 同时兼容“剧名_32”“剧名.32”“剧名-32”等站点常见命名。
+  const numberMatch = episodeTitle.match(/(?:^|[\s._-])(\d{1,3})(?:\s|$)/);
   if (numberMatch) {
     return parseInt(numberMatch[1], 10);
   }
