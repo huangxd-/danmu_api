@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, matchSeason, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
-import { extractEpisodeNumberFromTitle, strictTitleMatch, titleMatches } from "./utils/common-util.js";
+import { extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, strictTitleMatch, titleMatches } from "./utils/common-util.js";
 import { handleFavoriteRefresh } from './apis/favorite-api.js';
 import { handleClearCache } from './apis/system-api.js';
 import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
@@ -252,6 +252,10 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(searchUrl.searchParams.get('season'), '1');
     assert.equal(searchUrl.searchParams.get('episode'), '2');
     assert.equal(searchUrl.searchParams.has(' Death'), false);
+
+    const specialUrl = buildSearchAnimeUrl(`${urlPrefix}/api/v2/match`, '进击的巨人', 0, 1);
+    assert.equal(specialUrl.searchParams.get('season'), '0');
+    assert.equal(specialUrl.searchParams.get('episode'), '1');
   });
 
   await t.test('buildSearchAnimeUrl should derive /search/anime from /search/episodes requests', async () => {
@@ -292,6 +296,12 @@ test('worker.js API endpoints', async (t) => {
 
     ({title, season, episode, year} = await extractTitleSeasonEpisode("D:/Media/繁花/Season 01/繁花 - S01E08 - 夜东京.mkv"));
     assert(title === "繁花" && season == 1 && episode == 8 && year === undefined, `Expected Emby path to use only the media file name, but got ${title} ${season} ${episode} ${year}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("进击的巨人 - S00E01 - 伊尔泽的笔记.mkv"));
+    assert(title === "进击的巨人" && season === 0 && episode === 1, `Expected special episode S00E01, but got ${title} ${season} ${episode}`);
+
+    ({title, season, episode} = await extractTitleSeasonEpisode("进击的巨人 S0E02"));
+    assert(title === "进击的巨人" && season === 0 && episode === 2, `Expected special episode S0E02, but got ${title} ${season} ${episode}`);
   });
 
   await t.test('automatic matching respects explicit seasons and separator episode numbers', () => {
@@ -307,8 +317,18 @@ test('worker.js API endpoints', async (t) => {
     assert.equal(matchSeason({ animeTitle: 'the bear 第2季' }, 'THE BEAR', 1), false);
     assert.equal(matchSeason({ animeTitle: 'THE BEAR EXTRA' }, 'the bear', 1), false);
     assert.equal(matchSeason({ animeTitle: 'THE BEAR' }, 'the bear', 2), false);
+    assert.deepEqual(extractSeasonNumberFromAnimeTitle('进击的巨人 OVA'), { season: 0, baseTitle: '进击的巨人' });
+    assert.deepEqual(extractSeasonNumberFromAnimeTitle('进击的巨人 特别篇'), { season: 0, baseTitle: '进击的巨人' });
+    assert.equal(getExplicitSeasonNumber('进击的巨人 番外篇'), 0);
+    assert.equal(getExplicitSeasonNumber('NOVA'), null);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人 OVA' }, '进击的巨人', 0), true);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人' }, '进击的巨人', 0), false);
+    assert.equal(matchSeason({ animeTitle: '进击的巨人 OVA' }, '进击的巨人', 1), false);
 
     Globals.init({ STRICT_TITLE_MATCH: 'true' });
+    assert.equal(strictTitleMatch('进击的巨人', '进击的巨人'), true);
+    assert.equal(strictTitleMatch('进击的巨人', '进击的巨人', 0), false);
+    assert.equal(strictTitleMatch('进击的巨人 OVA', '进击的巨人', 0), true);
     assert.equal(strictTitleMatch('一念永恒 第3季', '一念永恒 第3季', 1), true);
     assert.equal(strictTitleMatch('一念永恒 第2季', '一念永恒', 3), false);
     assert.equal(titleMatches('一念永恒 第3季', '一念永恒', 3), true);
@@ -381,6 +401,11 @@ test('worker.js API endpoints', async (t) => {
         typeDescription: '动漫',
         startDate: '2007-02-15T00:00:00.000Z'
       }, narutoRule), true);
+
+      const specialRule = parseAutoMatchMappingRules('进击的巨人 S00E01->进击的巨人 OVA S00E01').rules[0];
+      assert.equal(specialRule.sourceSeason, 0);
+      assert.equal(specialRule.targetSeason, 0);
+      assert.equal(resolveAutoMatchMapping([specialRule], { title: '进击的巨人', season: 0, episode: 2 }).targetEpisode, 2);
     });
 
     await t.test('rejects invalid ranges and keeps declaration order for equal specificity', () => {
@@ -451,6 +476,16 @@ test('worker.js API endpoints', async (t) => {
           } else {
             add(createFavoriteAnime('火影忍者(2002)【动漫】from 360', 70, 930007));
           }
+          return;
+        }
+        if (scenario === 'special') {
+          add(createFavoriteAnime('进击的巨人', 25, 930008));
+          add(createFavoriteAnime('进击的巨人 OVA', 8, 930009));
+          return;
+        }
+        if (scenario === 'special-single') {
+          add(createFavoriteAnime('进击的巨人', 25, 930008));
+          add(createFavoriteAnime('进击的巨人 特别篇', 1, 930010));
           return;
         }
         add(createFavoriteAnime(title, 70, 930003));
@@ -596,6 +631,24 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '一念永恒');
         assert.equal(body.matches[0].episodeId, 9300030 + 1);
         assert.deepEqual(searchKeywords, ['一念永恒']);
+
+        // Emby 的 S00/S0 只命中明确的 OVA/特别篇候选，不会混入普通第一季。
+        searchKeywords = [];
+        scenario = 'special';
+        body = await runMatch({}, '进击的巨人 - S00E01 - 伊尔泽的笔记.mkv');
+        assert.equal(body.matches[0].animeId, 930009);
+        assert.equal(body.matches[0].episodeId, 9300090 + 1);
+        assert.deepEqual(searchKeywords, ['进击的巨人']);
+
+        body = await runMatch({}, '进击的巨人 S0E02');
+        assert.equal(body.matches[0].animeId, 930009);
+        assert.equal(body.matches[0].episodeId, 9300090 + 2);
+
+        // 单集特别篇不能因为同名第一季是多集剧集而被排除。
+        scenario = 'special-single';
+        body = await runMatch({}, '进击的巨人 S00E01');
+        assert.equal(body.matches[0].animeId, 930010);
+        assert.equal(body.matches[0].episodeId, 9300100 + 1);
       } finally {
         tencentSource.search = originalSearch;
         tencentSource.handleAnimes = originalHandleAnimes;

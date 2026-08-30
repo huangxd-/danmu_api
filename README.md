@@ -52,7 +52,7 @@ LogVar 弹幕 API 服务器
 ## 功能
 - **API 接口**：
   - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
-  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；可通过 `AUTO_MATCH_MAPPING_TABLE` 配置跨标题、跨季和集数范围映射；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
+  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode；`S00E01`与`S0E01`按特别篇匹配，只接受标题明确带`特别篇`、`番外`、`OVA`、`OAD`、`SP`或`Special`的候选，不会混入普通第一季）；可通过 `AUTO_MATCH_MAPPING_TABLE` 配置跨标题、跨季和集数范围映射；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?format=json&duration=true`：获取指定弹幕评论；当 `duration=true` 且返回 JSON 时，会额外附带 `videoDuration` 字段，优先返回源站时长，拿不到时返回 `0`。

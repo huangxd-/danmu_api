@@ -692,6 +692,10 @@ export async function searchBangumiData(keyword, siteKeys) {
             else if (querySeason === 1) {
                 return itemSeason === null || itemSeason === 1;
             }
+            // Season 00 仅接受明确标记为特别篇/OVA 的条目。
+            else if (querySeason === 0) {
+                return itemSeason === 0;
+            }
             return true;
         });
 
