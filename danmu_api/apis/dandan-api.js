@@ -1113,6 +1113,33 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
       return { resEpisode: null, resAnime: null };
     }
 
+    // AI 只负责候选选择，最终结果仍必须通过本机标题、季度和年份规则。
+    // 否则第一季候选可能被直接当成续季命中，从而错误阻断映射表兜底。
+    const candidateTitles = [
+      selectedAnime.animeTitle,
+      ...(Array.isArray(selectedAnime.aliases) ? selectedAnime.aliases : [])
+    ].filter(Boolean);
+    const titleAndSeasonMatched = season && episode
+      ? candidateTitles.some(candidateTitle =>
+          titleMatches(candidateTitle, title, season) &&
+          matchSeason({ ...selectedAnime, animeTitle: candidateTitle }, title, season)
+        )
+      : candidateTitles.some(candidateTitle => {
+          const cleanTitle = candidateTitle.split("(")[0].trim();
+          return normalizeSpaces(cleanTitle).toLowerCase() === normalizeSpaces(title).toLowerCase();
+        });
+    if (!titleAndSeasonMatched) {
+      log('warn', `[system] [match] Rejecting AI candidate that failed local title/season validation: ${selectedAnime.animeTitle}`);
+      return { resEpisode: null, resAnime: null };
+    }
+    const aiYearRank = getYearMatchRank(selectedAnime, year);
+    if (year && aiYearRank === 0 &&
+        (isMovieMatchCandidate(selectedAnime) || !season || Number(season) === 1 ||
+         !hasExplicitCandidateSeason(selectedAnime, season))) {
+      log('warn', `[system] [match] Rejecting AI candidate with mismatched year: ${selectedAnime.animeTitle}`);
+      return { resEpisode: null, resAnime: null };
+    }
+
     const hasSeriesCandidate = searchData.animes.some(candidate => {
       const candidateData = getBangumiDataForMatch(candidate, detailStore);
       return !isMovieMatchCandidate(candidate) && getMatchEpisodeCount(candidate, candidateData) > 1;
@@ -1560,8 +1587,15 @@ async function fallbackMatchAniAndEp(searchData, req, season, episode, year, tit
 
   for (const anime of orderedAnimes) {
     const candidateTitles = [anime.animeTitle, ...(Array.isArray(anime.aliases) ? anime.aliases : [])].filter(Boolean);
-    if (!candidateTitles.some(candidateTitle => titleMatches(candidateTitle, title, season))) {
+    const matchingTitles = candidateTitles.filter(candidateTitle => titleMatches(candidateTitle, title, season));
+    if (matchingTitles.length === 0) {
       log("info", `Fallback: Title mismatch: ${anime.animeTitle} vs ${title}`);
+      continue;
+    }
+    if (season && episode && !matchingTitles.some(candidateTitle =>
+      matchSeason({ ...anime, animeTitle: candidateTitle }, title, season)
+    )) {
+      log("info", `Fallback: Season mismatch: ${anime.animeTitle} vs S${season}`);
       continue;
     }
 
@@ -1953,75 +1987,102 @@ export async function matchAnime(url, req, clientIp) {
     const originalSeason = parsed.season;
     const originalEpisode = parsed.episode;
     const originalYear = parsed.year;
-    const titleMappedTitle = resolveLegacyMatchTitle(parsed.title);
-
-    const preferenceTitles = [...new Set([originalTitle, parsed.title, titleMappedTitle].filter(Boolean))];
-    // 原始标题规则保持最高优先级；未命中时再以剧名映射后的标准标题查季集转换表。
-    // 远程剧名表与远程季集表合并进各自有效规则后，也复用同一条组合链路。
-    const configuredMapping = resolveConfiguredAutoMatchMapping(
-      globals.autoMatchMappingTable,
-      [originalTitle, titleMappedTitle],
-      originalSeason,
-      originalEpisode
+    const localPreferenceTitle = findSeasonPreferenceTitle(
+      [...new Set([originalTitle, parsed.title].filter(Boolean))],
+      originalSeason
     );
-    const manualPreferenceTitle = findSeasonPreferenceTitle(preferenceTitles, originalSeason);
-    const mapping = manualPreferenceTitle ? null : configuredMapping;
-    if (configuredMapping && manualPreferenceTitle) {
-      log('info', `[system] [auto-match-mapping] Explicit manual preference for "${manualPreferenceTitle}" S${originalSeason} overrides rule "${configuredMapping.raw}"`);
-    } else if (configuredMapping) {
-      const legacyPreferenceTitle = findLegacySeasonPreferenceTitle(preferenceTitles, originalSeason);
-      if (legacyPreferenceTitle) {
-        log('info', `[system] [auto-match-mapping] Ignoring unmarked legacy preference for "${legacyPreferenceTitle}" S${originalSeason}`);
-      }
-    }
+    const localPreferenceKey = localPreferenceTitle || originalTitle;
+    const [localPreferAnimeId, localPreferSource, localOffsets] = globals.rememberLastSelect && localPreferenceTitle
+      ? getPreferAnimeId(localPreferenceKey, originalSeason)
+      : [null, null, null];
+    log("info", `[system] [match] local prefer animeId: ${localPreferAnimeId} from ${localPreferSource}`);
 
-    let attempt;
+    // 当前本机匹配机制始终先处理 Emby 原始文件名。只有本机无法得到有效结果时，
+    // 才允许剧名表或季集转换表参与兜底，避免远程规则覆盖本机已经正确的结果。
+    let attempt = await executeMatchAttempt({
+      req,
+      title: originalTitle,
+      season: originalSeason,
+      episode: originalEpisode,
+      year: originalYear,
+      preferredPlatform,
+      secondaryPreferredPlatform: null,
+      preferAnimeId: localPreferAnimeId,
+      preferSource: localPreferSource,
+      offsets: localOffsets,
+      mapping: null
+    });
+
+    let mapping = null;
     let mappingApplied = false;
+    const localMatched = Boolean(attempt.resAnime && attempt.resEpisode);
 
-    if (mapping) {
-      const mappedTitle = normalizeMatchTitle(mapping.targetTitle);
-      const mappedPlatform = mapping.targetPlatform || preferredPlatform;
-      log('info', `[system] [auto-match-mapping] ${originalTitle} S${originalSeason}E${originalEpisode} -> ${mappedTitle} S${mapping.targetSeason}E${mapping.targetEpisode}${mapping.targetPlatform ? ` @${mapping.targetPlatform}` : ''}`);
-      attempt = await executeMatchAttempt({
-        req,
-        title: mappedTitle,
-        season: mapping.targetSeason,
-        episode: mapping.targetEpisode,
-        // 目标规则显式写年份时以目标年份为准；未写时保留 Emby 文件名年份继续消歧。
-        year: mapping.targetYear || originalYear,
-        preferredPlatform: mappedPlatform,
-        secondaryPreferredPlatform: mapping.targetPlatform ? preferredPlatform : null,
-        preferAnimeId: null,
-        preferSource: null,
-        offsets: null,
-        mapping
-      });
-      mappingApplied = Boolean(attempt.resAnime && attempt.resEpisode);
-      if (!mappingApplied) {
-        log('warn', `[system] [auto-match-mapping] Target failed for "${mapping.raw}", falling back to original match`);
+    if (!localMatched) {
+      const titleMappedTitle = resolveLegacyMatchTitle(parsed.title);
+      const preferenceTitles = [...new Set([originalTitle, parsed.title, titleMappedTitle].filter(Boolean))];
+      // 本机匹配失败后，先查原始标题季集规则，再查剧名映射后的标准标题季集规则。
+      // 远程规则加载进对应表后复用此兜底链路，不具有覆盖本机匹配的优先级。
+      const configuredMapping = resolveConfiguredAutoMatchMapping(
+        globals.autoMatchMappingTable,
+        [originalTitle, titleMappedTitle],
+        originalSeason,
+        originalEpisode
+      );
+      const manualPreferenceTitle = findSeasonPreferenceTitle(preferenceTitles, originalSeason);
+      mapping = manualPreferenceTitle ? null : configuredMapping;
+      if (configuredMapping && manualPreferenceTitle) {
+        log('info', `[system] [auto-match-mapping] Explicit manual preference for "${manualPreferenceTitle}" S${originalSeason} overrides rule "${configuredMapping.raw}"`);
+      } else if (configuredMapping) {
+        const legacyPreferenceTitle = findLegacySeasonPreferenceTitle(preferenceTitles, originalSeason);
+        if (legacyPreferenceTitle) {
+          log('info', `[system] [auto-match-mapping] Ignoring unmarked legacy preference for "${legacyPreferenceTitle}" S${originalSeason}`);
+        }
       }
-    }
 
-    if (!mappingApplied) {
-      const title = manualPreferenceTitle || titleMappedTitle;
-      const preferenceKey = manualPreferenceTitle || title;
-      const [preferAnimeId, preferSource, offsets] = globals.rememberLastSelect
-        ? getPreferAnimeId(preferenceKey, originalSeason)
-        : [null, null, null];
-      log("info", `[system] [match] prefer animeId: ${preferAnimeId} from ${preferSource}`);
-      attempt = await executeMatchAttempt({
-        req,
-        title,
-        season: originalSeason,
-        episode: originalEpisode,
-        year: originalYear,
-        preferredPlatform,
-        secondaryPreferredPlatform: null,
-        preferAnimeId,
-        preferSource,
-        offsets,
-        mapping: null
-      });
+      if (mapping) {
+        const mappedTitle = normalizeMatchTitle(mapping.targetTitle);
+        const mappedPlatform = mapping.targetPlatform || preferredPlatform;
+        log('info', `[system] [auto-match-mapping] ${originalTitle} S${originalSeason}E${originalEpisode} -> ${mappedTitle} S${mapping.targetSeason}E${mapping.targetEpisode}${mapping.targetPlatform ? ` @${mapping.targetPlatform}` : ''}`);
+        attempt = await executeMatchAttempt({
+          req,
+          title: mappedTitle,
+          season: mapping.targetSeason,
+          episode: mapping.targetEpisode,
+          // 目标规则显式写年份时以目标年份为准；未写时保留 Emby 文件名年份继续消歧。
+          year: mapping.targetYear || originalYear,
+          preferredPlatform: mappedPlatform,
+          secondaryPreferredPlatform: mapping.targetPlatform ? preferredPlatform : null,
+          preferAnimeId: null,
+          preferSource: null,
+          offsets: null,
+          mapping
+        });
+        mappingApplied = Boolean(attempt.resAnime && attempt.resEpisode);
+        if (!mappingApplied) {
+          log('warn', `[system] [auto-match-mapping] Target failed for "${mapping.raw}", falling back to title mapping`);
+        }
+      }
+
+      // 季集规则未命中时，剧名映射只作为最后一级搜索标题兜底。
+      if (!mappingApplied && !manualPreferenceTitle && titleMappedTitle !== originalTitle) {
+        const [preferAnimeId, preferSource, offsets] = globals.rememberLastSelect
+          ? getPreferAnimeId(titleMappedTitle, originalSeason)
+          : [null, null, null];
+        log("info", `[system] [match] mapped-title prefer animeId: ${preferAnimeId} from ${preferSource}`);
+        attempt = await executeMatchAttempt({
+          req,
+          title: titleMappedTitle,
+          season: originalSeason,
+          episode: originalEpisode,
+          year: originalYear,
+          preferredPlatform,
+          secondaryPreferredPlatform: null,
+          preferAnimeId,
+          preferSource,
+          offsets,
+          mapping: null
+        });
+      }
     }
 
     const { resAnime, resEpisode, spilloverMatched } = attempt;

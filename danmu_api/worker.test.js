@@ -409,7 +409,7 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 166 }).targetTitle, '一念永恒 完结季');
     });
 
-    await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
+    await t.test('prefers local matches, then applies mapping qualifiers and manual season preferences', async () => {
       const originalSearch = tencentSource.search;
       const originalHandleAnimes = tencentSource.handleAnimes;
       const originalGetComments = tencentSource.getComments;
@@ -475,7 +475,7 @@ test('worker.js API endpoints', async (t) => {
         scenario = 'open';
         let body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S05E03');
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
-        assert.deepEqual(searchKeywords, ['永生']);
+        assert.deepEqual(searchKeywords, ['永生', '永生']);
         await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');
         assert.equal(hasSeasonSpecificPreference('永生', 5), false);
         await getComment(`/api/v2/comment/${9300030 + 60}`, 'json', false, '127.0.0.1');
@@ -484,8 +484,8 @@ test('worker.js API endpoints', async (t) => {
 
         scenario = 'open';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S06E01');
-        assert.equal(body.matches[0].episodeId, 9300030 + 1);
-        await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');
+        assert.equal(body.isMatched, false);
+        assert.deepEqual(body.matches, []);
         assert.equal(hasSeasonSpecificPreference('永生', 6), false);
 
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' });
@@ -526,7 +526,8 @@ test('worker.js API endpoints', async (t) => {
 
         scenario = 'platform';
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '航海王 S01E01->航海王 S01E01 @qiyi' }, '航海王 S01E01 @qq');
-        assert.equal(body.matches[0].animeId, 930005);
+        // 原始请求已能按 @qq 本机命中时，不使用映射规则改写为 @qiyi。
+        assert.equal(body.matches[0].animeId, 930004);
 
         scenario = 'naruto';
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '火影忍者 S01E57->火影忍者 疾风传(2007)【日番】 S01E59' });
@@ -544,8 +545,9 @@ test('worker.js API endpoints', async (t) => {
           body: JSON.stringify({ fileName: '火影忍者 S01E58' })
         });
         body = await parseResponse(await matchAnime(new URL(narutoRequest.url), narutoRequest, '127.0.0.1'));
-        assert.equal(body.matches[0].animeId, 930006);
-        assert.equal(body.matches[0].episodeId, 9300060 + 60);
+        // 原始《火影忍者》第 58 集可由本机直接识别，不再先改写到《疾风传》。
+        assert.equal(body.matches[0].animeId, 930007);
+        assert.equal(body.matches[0].episodeId, 9300070 + 58);
 
         scenario = 'open';
         resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' });
@@ -587,11 +589,13 @@ test('worker.js API endpoints', async (t) => {
         body = await parseResponse(await matchAnime(new URL(disabledPreferenceRequest.url), disabledPreferenceRequest, '127.0.0.1'));
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
 
+        // 本机能直接匹配真实作品时，不允许季集表覆盖结果或触发目标标题搜索。
         searchKeywords = [];
-        scenario = 'fallback';
-        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '原始剧 S01E01->缺失目标 S01E01' }, '原始剧 S01E01');
-        assert.equal(body.matches[0].animeTitle, '原始剧');
-        assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
+        scenario = 'open';
+        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '一念永恒 S01E01->一念永恒 第三季 S01E01' }, '一念永恒 S01E01');
+        assert.equal(body.matches[0].animeTitle, '一念永恒');
+        assert.equal(body.matches[0].episodeId, 9300030 + 1);
+        assert.deepEqual(searchKeywords, ['一念永恒']);
       } finally {
         tencentSource.search = originalSearch;
         tencentSource.handleAnimes = originalHandleAnimes;
