@@ -4,6 +4,9 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
@@ -29,6 +32,7 @@ import { Globals } from "./configs/globals.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
+import { applyRemoteAutoMatchMappingText, getEffectiveAutoMatchMappingRules, normalizeRemoteSeasonMappingUrl, parseRemoteAutoMatchMappingRules, refreshRemoteAutoMatchMappingNow, resetRemoteAutoMatchMappingForTests } from './utils/auto-match-mapping-url-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
@@ -377,10 +381,97 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(resolveAutoMatchMapping(parsed.rules, { title: '一念永恒', season: 1, episode: 166 }).targetTitle, '一念永恒 完结季');
     });
 
+    await t.test('loads remote season rules and gives local rules priority', () => {
+      const sourceUrl = 'https://github.com/xlmc/danmu-mapping/blob/main/Word/season-candidates.txt';
+      const rawUrl = 'https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/season-candidates.txt';
+      assert.equal(normalizeRemoteSeasonMappingUrl(sourceUrl), rawUrl);
+      assert.equal(normalizeRemoteSeasonMappingUrl('file:///tmp/season-candidates.txt'), '');
+
+      Globals.init({
+        AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->本地目标 S01E10',
+        AUTO_MATCH_MAPPING_TABLE_URL: sourceUrl
+      });
+      resetRemoteAutoMatchMappingForTests();
+
+      const remoteText = [
+        '# comments and blank lines are ignored',
+        '',
+        '永生 S05E02 -> 远程目标 S01E58',
+        '一念永恒 S01E53 -> 一念永恒 S02E01'
+      ].join('\n');
+      assert.equal(parseRemoteAutoMatchMappingRules(remoteText).length, 2);
+      applyRemoteAutoMatchMappingText(sourceUrl, remoteText);
+
+      const effectiveRules = getEffectiveAutoMatchMappingRules();
+      assert.equal(resolveAutoMatchMapping(effectiveRules, { title: '永生', season: 5, episode: 2 }).targetTitle, '本地目标');
+      const remoteMatch = resolveAutoMatchMapping(effectiveRules, { title: '一念永恒', season: 1, episode: 54 });
+      assert.equal(remoteMatch.targetSeason, 2);
+      assert.equal(remoteMatch.targetEpisode, 2);
+
+      resetRemoteAutoMatchMappingForTests();
+      Globals.init({});
+    });
+
+    await t.test('manual refresh downloads, parses, merges, and caches remote season rules', async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), 'danmu-api-season-mapping-'));
+      const originalCwd = process.cwd();
+      const sourceUrl = 'https://maps.example.test/season-mapping.txt';
+      let requestedUrl = '';
+      try {
+        process.chdir(cacheRoot);
+        Globals.init({
+          AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->本地目标 S01E10',
+          AUTO_MATCH_MAPPING_TABLE_URL: sourceUrl,
+        });
+        resetRemoteAutoMatchMappingForTests();
+        const result = await withMockFetch(async url => {
+          requestedUrl = String(url);
+          return new Response([
+            '永生 S05E02->远程目标 S01E58',
+            '一念永恒 S01E53->一念永恒 S02E01',
+          ].join('\n'), {
+            status: 200,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          });
+        }, () => refreshRemoteAutoMatchMappingNow());
+
+        assert.deepEqual(result, { success: true, count: 2 });
+        assert.equal(requestedUrl, sourceUrl);
+        const effectiveRules = getEffectiveAutoMatchMappingRules();
+        assert.equal(resolveAutoMatchMapping(effectiveRules, { title: '永生', season: 5, episode: 2 }).targetTitle, '本地目标');
+        assert.equal(resolveAutoMatchMapping(effectiveRules, { title: '一念永恒', season: 1, episode: 54 }).targetEpisode, 2);
+      } finally {
+        resetRemoteAutoMatchMappingForTests();
+        Globals.init({});
+        process.chdir(originalCwd);
+        await rm(cacheRoot, { recursive: true, force: true });
+      }
+    });
+
+    await t.test('protects the manual remote season refresh endpoint with a token', async () => {
+      const env = { TOKEN: '87654321', AUTO_MATCH_MAPPING_TABLE_URL: '' };
+      const denied = await handleRequest(
+        new Request('http://localhost/api/auto-match-mapping/refresh', { method: 'POST' }),
+        env,
+        'vercel',
+        '127.0.0.1'
+      );
+      assert.equal(denied.status, 403);
+
+      const allowed = await handleRequest(
+        new Request('http://localhost/87654321/api/auto-match-mapping/refresh', { method: 'POST' }),
+        env,
+        'vercel',
+        '127.0.0.1'
+      );
+      assert.equal(allowed.status, 502);
+      assert.equal((await parseResponse(allowed)).error, '未配置 AUTO_MATCH_MAPPING_TABLE_URL');
+    });
+
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +479,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -423,7 +514,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -449,6 +540,13 @@ test('worker.js API endpoints', async (t) => {
         await getComment(`/api/v2/comment/${9300030 + 60}`, 'json', false, '127.0.0.1');
         assert.equal(hasSeasonSpecificPreference('永生', 5), true);
         assert.match(Globals.lastSelectMap.get('永生').offsets['5'], /^3:/);
+
+        const remoteUrl = 'https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/season-candidates.txt';
+        resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE_URL: remoteUrl });
+        resetRemoteAutoMatchMappingForTests();
+        applyRemoteAutoMatchMappingText(remoteUrl, '一念永恒 S01E53->一念永恒 S02E01');
+        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE_URL: remoteUrl }, '一念永恒 S01E54');
+        assert.equal(body.matches[0].episodeId, 9300030 + 2);
 
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S06E01');
         assert.equal(body.matches[0].episodeId, 9300030 + 1);
@@ -560,12 +658,13 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
+        resetRemoteAutoMatchMappingForTests();
       }
     });
   });
@@ -977,15 +1076,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1006,8 +1105,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });

@@ -4,6 +4,7 @@ import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
 import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-util.js";
+import { refreshRemoteAutoMatchMappingNow } from "../utils/auto-match-mapping-url-util.js";
 
 const UI_THEMES = new Set([
   'lavender', 'shinyo', 'sakura', 'tianyi', 'hatsune', 'sakuragi', 'violet', 'amber'
@@ -165,6 +166,12 @@ export function handleLogs() {
 export function handleClearLogs() {
   globals.logBuffer = [];
   return jsonResponse({ success: true, message: "Logs cleared" }, 200);
+}
+
+/** 手动下载并立即应用远程季集转换表。 */
+export async function handleRemoteAutoMatchMappingRefresh() {
+  const result = await refreshRemoteAutoMatchMappingNow();
+  return jsonResponse(result, result.success ? 200 : 502);
 }
 
 /**
