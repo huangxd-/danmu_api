@@ -715,7 +715,8 @@ export class Envs {
       'STRICT_TITLE_MATCH': { category: 'match', type: 'boolean', description: '严格标题匹配模式' },
       'TITLE_TO_CHINESE': { category: 'match', type: 'boolean', description: '外语标题转换中文开关' },
       'ANIME_TITLE_SIMPLIFIED': { category: 'match', type: 'boolean', description: '搜索的剧名标题自动繁转简' },
-      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
+      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '本机剧名映射表，用于自动匹配时替换标题进行搜索。本机规则优先于远程规则。远程映射默认关闭；启用时请在下方 TITLE_MAPPING_TABLE_URL 填写：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。格式：原始标题->映射标题;原始标题->映射标题;...，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
+      'TITLE_MAPPING_TABLE_URL': { category: 'match', type: 'text', description: '远程剧名映射表（默认关闭，填写后启用）。推荐地址：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。程序首次下载后保存到本地，匹配时只读取本地缓存，不连接远程；每天北京时间05:30更新，失败保留旧缓存。本机 TITLE_MAPPING_TABLE 优先于远程表。支持 GitHub 文件页、Gist、jsDelivr 及任意 TXT 直链；内容格式为每行 原始标题->映射标题，# 或 // 开头为注释' },
       'AUTO_MATCH_MAPPING_TABLE': { category: 'match', type: 'map', description: '自动匹配映射表，仅作用于 POST /api/v2/match。多个规则使用分号分隔。\n开放映射：永生 S05E02 -> 永生 S01E58\n有限范围：永生 S05E02~03 -> 永生 S01E58~59\n指定结果：海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62\n指定平台：航海王 S01E01 -> 航海王 S01E01 @qiyi' },
       'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。默认值：[（(\\[](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）]，中英文圆方括号均匹配。设为空值可禁用' },
       'AI_BASE_URL': { category: 'match', type: 'text', description: 'AI服务基础URL，不填默认为https://api.openai.com/v1' },
@@ -817,6 +818,7 @@ export class Envs {
       titleToChinese: this.get('TITLE_TO_CHINESE', false, 'boolean'), // 外语标题转换中文开关
       animeTitleSimplified: this.get('ANIME_TITLE_SIMPLIFIED', false, 'boolean'), // 搜索的剧名标题自动繁转简
       titleMappingTable: this.resolveTitleMappingTable(), // 剧名映射表，用于自动匹配时替换标题进行搜索
+      titleMappingTableUrl: this.get('TITLE_MAPPING_TABLE_URL', '', 'string'), // 远程剧名映射表地址（由用户托管维护，自动拉取生效）
       autoMatchMappingTable: this.resolveAutoMatchMappingTable(), // 自动匹配标题/季度/集数映射规则
       ipBlacklist: this.resolveIpBlacklist(), // IP 黑名单（支持正则）
       aiBaseUrl: this.get('AI_BASE_URL', 'https://api.openai.com/v1', 'string'), // AI服务基础URL

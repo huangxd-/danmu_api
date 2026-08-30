@@ -4,6 +4,9 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, matchAnime, searchAnime, buildSearchAnimeUrl } from "./apis/dandan-api.js";
 import { stripLinkOffset, applyOffset } from "./utils/offset-util.js";
@@ -25,10 +28,11 @@ import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { HuggingfaceHandler } from "./configs/handlers/huggingface-handler.js";
 import { HandlerFactory } from "./configs/handlers/handler-factory.js";
-import { Globals } from "./configs/globals.js";
+import { Globals, globals } from "./configs/globals.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
+import { applyRemoteTitleMappingText, applyTitleMappingWithLog, ensureRemoteTitleMapping, normalizeMappingSourceUrl, parseRemoteTitleMappings, refreshRemoteTitleMappingNow } from './utils/title-mapping-url-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
@@ -378,9 +382,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +392,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -423,7 +427,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -560,9 +564,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -977,15 +981,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1006,8 +1010,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });
@@ -2878,6 +2882,114 @@ test('worker.js API endpoints', async (t) => {
   //     config.sourceOrderArr = originalSourceOrderArr;
   //   }
   // });
+
+  await t.test('remote title mapping table', async (t) => {
+    await t.test('normalizes supported source URLs', () => {
+      assert.equal(
+        normalizeMappingSourceUrl('https://github.com/alice/danmu-maps/blob/main/mappings.txt'),
+        'https://raw.githubusercontent.com/alice/danmu-maps/main/mappings.txt'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://gist.github.com/alice/abc123def'),
+        'https://gist.githubusercontent.com/alice/abc123def/raw'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://cdn.jsdelivr.net/gh/a/b@main/m.txt'),
+        'https://cdn.jsdelivr.net/gh/a/b@main/m.txt'
+      );
+    });
+
+    await t.test('parses relaxed and single-line mapping formats', () => {
+      const parsed = parseRemoteTitleMappings([
+        '# 共享剧名映射表',
+        '// 由用户维护',
+        '唐朝诡事录->唐朝诡事录之西行',
+        '"国色芳华" -> 锦绣芳华，',
+        '永生－>永生动画',
+        '庆余年 -> 庆余年(剧集版) # 备注',
+        '无效行没有箭头',
+      ].join('\n'));
+
+      assert.equal(parsed.size, 4);
+      assert.equal(parsed.get('唐朝诡事录'), '唐朝诡事录之西行');
+      assert.equal(parsed.get('国色芳华'), '锦绣芳华');
+      assert.equal(parsed.get('永生'), '永生动画');
+      assert.equal(parsed.get('庆余年'), '庆余年(剧集版)');
+
+      const singleLine = parseRemoteTitleMappings('A->B;C->D');
+      assert.equal(singleLine.size, 2);
+      assert.equal(singleLine.get('A'), 'B');
+      assert.equal(singleLine.get('C'), 'D');
+    });
+
+    await t.test('prefers local mappings and preserves state after invalid remote content', async () => {
+      Globals.init({
+        TITLE_MAPPING_TABLE: '本地剧A->本地映射A;本地剧B->本地映射B',
+        TITLE_MAPPING_TABLE_URL: 'https://github.com/user/repo/blob/main/mappings.txt'
+      });
+      applyRemoteTitleMappingText(
+        'https://raw.githubusercontent.com/user/repo/main/mappings.txt',
+        '本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y'
+      );
+
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.equal(globals.titleMappingTable.get('远程剧Y'), '远程映射Y');
+      assert.equal(globals.titleMappingTable.get('本地剧A'), '本地映射A');
+      assert.equal(globals.titleMappingTable.get('本地剧B'), '本地映射B');
+
+      await ensureRemoteTitleMapping();
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.throws(() => applyRemoteTitleMappingText('u', '# 只有注释'));
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+    });
+
+    await t.test('manual refresh downloads, parses, merges, and caches the configured table', async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), 'danmu-api-title-mapping-'));
+      const originalCwd = process.cwd();
+      const sourceUrl = 'https://maps.example.test/title-mapping.txt';
+      let requestedUrl = '';
+      try {
+        process.chdir(cacheRoot);
+        Globals.init({
+          TITLE_MAPPING_TABLE: '本地剧->本地优先',
+          TITLE_MAPPING_TABLE_URL: sourceUrl,
+        });
+        const result = await withMockFetch(async url => {
+          requestedUrl = String(url);
+          return new Response('本地剧->远程值\n下载剧->下载映射', {
+            status: 200,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          });
+        }, () => refreshRemoteTitleMappingNow());
+
+        assert.deepEqual(result, { success: true, count: 2 });
+        assert.equal(requestedUrl, sourceUrl);
+        assert.equal(globals.titleMappingTable.get('本地剧'), '本地优先');
+        assert.equal(globals.titleMappingTable.get('下载剧'), '下载映射');
+      } finally {
+        process.chdir(originalCwd);
+        await rm(cacheRoot, { recursive: true, force: true });
+      }
+    });
+
+    await t.test('prefers title and season keys before the bare title', () => {
+      Globals.init({
+        TITLE_MAPPING_TABLE: [
+          'Moving->搬家(通用错误目标)',
+          'Moving S01->超异能族',
+          'Moving S02->超异能族 第二季'
+        ].join(';')
+      });
+
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 1), '超异能族');
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 2), '超异能族 第二季');
+      assert.equal(applyTitleMappingWithLog('Moving', 'match', 3), '搬家(通用错误目标)');
+      assert.equal(applyTitleMappingWithLog('Moving'), '搬家(通用错误目标)');
+      assert.equal(applyTitleMappingWithLog('Moving', 'favorite', null), '搬家(通用错误目标)');
+    });
+
+    Globals.init({});
+  });
 
 });
 

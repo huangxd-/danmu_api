@@ -2407,6 +2407,14 @@ function envItemMatchesSearch(item, category, normalizedQuery) {
     ].join(' ').toLocaleLowerCase().includes(normalizedQuery);
 }
 
+function renderRemoteMappingRefreshItem() {
+    return '<div class="env-item">' +
+        '<div class="env-info"><strong>Remote Mapping Update</strong>' +
+        '<div class="text-gray font-size-12 margin-top-3">手动下载并立即应用远程剧名映射表；失败时保留旧缓存。</div></div>' +
+        '<div class="env-actions remote-refresh-actions"><button class="btn btn-secondary" onclick="refreshRemoteMapping(this)">立即更新</button>' +
+        '<span class="remote-refresh-status text-gray font-size-12" style="display:block;margin-top:4px;" aria-live="polite"></span></div></div>';
+}
+
 function renderEnvItem(item, category, originalIndex) {
     const typeLabel = getEnvTypeLabel(item.type);
     const badgeClass = item.type === 'multi-select' ? 'multi' : '';
@@ -2463,7 +2471,7 @@ function renderEnvList() {
         if (themeSettings) themeSettings.hidden = currentCategory !== 'system';
         if (status) status.textContent = previewCategoryMeta[currentCategory].label + ' · ' + categoryItems.length + ' 项';
         list.innerHTML = items.length
-            ? items.map(({ item, originalIndex }) => renderEnvItem(item, currentCategory, originalIndex)).join('')
+            ? items.map(({ item, originalIndex }) => renderEnvItem(item, currentCategory, originalIndex) + (item.key === 'TITLE_MAPPING_TABLE_URL' ? renderRemoteMappingRefreshItem() : '')).join('')
             : '<p class="text-gray padding-20 text-center">暂无配置项</p>';
         return;
     }
@@ -2490,7 +2498,7 @@ function renderEnvList() {
                     <span>\${regularMatches.length} 项</span>
                 </div>
                 <div>
-                    \${regularMatches.map(({ item, originalIndex }) => renderEnvItem(item, category, originalIndex)).join('')}
+                    \${regularMatches.map(({ item, originalIndex }) => renderEnvItem(item, category, originalIndex) + (item.key === 'TITLE_MAPPING_TABLE_URL' ? renderRemoteMappingRefreshItem() : '')).join('')}
                 </div>
             </section>
         \`;
@@ -2499,6 +2507,44 @@ function renderEnvList() {
     if (themeSettings) themeSettings.hidden = !themeMatched;
     if (status) status.textContent = '搜索结果 · ' + total + ' 项';
     list.innerHTML = html || (themeMatched ? '' : '<div class="preview-empty"><strong>未找到匹配配置</strong><span>请尝试其他关键词</span></div>');
+}
+
+// 手动更新远程剧名映射表
+async function refreshRemoteMapping(button) {
+    if (!button || button.disabled) return;
+    const status = button.parentElement && button.parentElement.querySelector('.remote-refresh-status');
+    const setStatus = (text, isError = false) => {
+        if (status) {
+            status.textContent = text;
+            status.className = 'remote-refresh-status font-size-12 ' + (isError ? 'text-red' : 'text-gray');
+        }
+    };
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '更新中...';
+    setStatus('正在连接远程表…');
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        let response;
+        try {
+            response = await fetch(buildApiUrl('/api/title-mapping/refresh', true), { method: 'POST', signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || result.errorMessage || '远程映射表更新失败');
+        }
+        button.textContent = '更新成功';
+        setStatus('成功更新' + (result.count || 0) + '条规则');
+        setTimeout(() => { button.textContent = originalText; button.disabled = false; }, 1500);
+    } catch (error) {
+        button.textContent = originalText;
+        button.disabled = false;
+        // 界面只显示简短状态，详细原因由服务端写入 remote-mapping 日志
+        setStatus('失败', true);
+    }
 }
 
 // 编辑环境变量
