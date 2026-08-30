@@ -341,6 +341,9 @@ export function buildGradientSampler(rawStops) {
 }
 
 function gradientStopsForDanmux(rawStops) {
+  // 同一套 GRADIENT_COLORS 同时产生两种表示：
+  // 1. p 字段中的采样单色，供旧播放器降级显示；
+  // 2. DanmuX linear stops，供支持增强协议的播放器绘制文字渐变。
   const colors = String(rawStops || '').split(',')
     .map(c => parseInt(c.trim(), 10))
     .filter(c => !isNaN(c) && c >= 0 && c <= 16777215);
@@ -546,7 +549,8 @@ export function convertToDanmakuJson(contents, platform) {
     let topBottomCount = 0;
     let colorCount = 0;
     let gradientCount = 0;
-    // 仅 color 模式下的普通白色弹幕按概率生成标准渐变。
+    // 渐变选择发生在服务端：仅 color 模式下的普通白色弹幕参与概率判断。
+    // 播放器不需要重复执行概率或颜色规则，只需按 danmux.effects 渲染命中的弹幕。
     const gradientRawStops = globals.convertColor === 'color' ? resolveGradientSkin(globals.gradientColors) : null;
     const gradientSampler = buildGradientSampler(gradientRawStops);
     const danmuxGradientStops = gradientStopsForDanmux(gradientRawStops);
@@ -588,7 +592,8 @@ export function convertToDanmakuJson(contents, platform) {
       if (globals.convertColor === 'color' && color === 16777215 && danmu.color_v2 === undefined) {
         let target = randomColor;
         if (gradientSampler && danmuxGradientStops && Math.random() < gradientChance) {
-          // 渐变色弹幕：以弹幕出现时间在色带上取色（60 秒循环一个来回），相邻弹幕颜色平滑过渡
+          // p 中写入沿色带采样的单色作为兼容回退；非枚举 metadata 会在 danmux 输出时升级为完整 linear 渐变。
+          // 采样位置由弹幕时间决定（60 秒循环），因此旧播放器看到的相邻弹幕也能保持平滑色彩过渡。
           const appearTime = parseFloat(pValues[0]) || 0;
           target = gradientSampler((appearTime % 60) / 60);
           selectedGradient = true;
@@ -739,6 +744,8 @@ export function formatDanmuResponse(danmuData, queryFormat) {
 
   if (format === 'danmux') {
     try {
+      // DanmuX 响应保留 p/m，并只为服务端已选中的弹幕附加 effects。
+      // 下层播放器应优先读取 gradient/linear；不认识增强层时可安全忽略并继续显示 p/m。
       const gradientStops = parseDanmuxGradientStops(globals.danmuxGradientStops);
       return jsonResponse(convertCommentsToDanmux(danmuData, {
         sourceLabel: 'danmu_api',

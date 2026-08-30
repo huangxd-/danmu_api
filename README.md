@@ -74,6 +74,7 @@ LogVar 弹幕 API 服务器
   - 示例：`GET /api/v2/comment/10001?format=xml` 返回 XML 格式弹幕
   - **XML 格式说明**：完全遵循 Bilibili 标准格式，8字段标准弹幕属性
   - **DanmuX v1 格式**：使用 `?format=danmux` 返回 `schemaVersion: 1` 的增强 JSON；每条评论保留 `p/m`，并可在 `danmux.effects` 中携带标准 `linear` 渐变。只有 `CONVERT_COLOR=color` 且 `GRADIENT_CHANCE` 命中时，普通白色弹幕才生成渐变；颜色来自 `GRADIENT_COLORS`，默认使用 `default` 皮肤。带 B 站 `color_v2/colorfulSrc` 的原生纹理弹幕不参与渐变、不会输出特效，并改标为 `[dandan]`。
+  - **播放器渲染约定**：播放器继续使用 `p/m` 作为基础数据；当 `danmux.effects` 中存在 `type=gradient`、`target=fill` 且 `source.type=linear` 的效果时，按其中的 `angle/stops` 渲染文字填充。没有该效果或不支持 DanmuX 时直接按 `p` 中的单色显示。渐变命中概率和皮肤选择已经由服务端完成，播放器不应再次随机选择，也不应给全部弹幕统一添加渐变。
 - **日志记录**：捕获 `console.log`（info 级别）和 `console.error`（error 级别），JSON 内容格式化输出。
 - **永久收藏缓存**：适合《火影忍者》《名侦探柯南》等集数较多、重复搜索耗时较长的剧集。只缓存剧集搜索结果，不缓存弹幕。
   - `GET /api/v2/favorite/list` 是公开只读接口，无需 token。其他收藏接口在自定义 `TOKEN` 时，必须使用 `/{TOKEN}/api/v2/favorite/...` 或 `/{ADMIN_TOKEN}/api/v2/favorite/...` 形式显式携带 token；使用默认 `TOKEN=87654321` 且未开启管理员限制时可省略 token。配置 `FAVORITE_REQUIRE_ADMIN=true` 后，写入和管理操作仅允许 `ADMIN_TOKEN`。
