@@ -12,7 +12,7 @@ import { handleClearCache } from './apis/system-api.js';
 import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
-import { extractTmdbChineseCastNames, getTMDBChineseTitle, getTmdbJpDetail, isDomesticTmdbProduction, searchTmdbTitles, selectTmdbActorCandidate } from "./utils/tmdb-util.js";
+import { extractTmdbChineseCastNames, getTMDBChineseTitle, getTmdbDomesticCastNamesForTitle, getTmdbJpDetail, isDomesticTmdbProduction, searchTmdbTitles, selectTmdbActorCandidate } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
 import AIClient from './utils/ai-util.js';
 import { getSourceByKey } from './sources/registry.js';
@@ -378,9 +378,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +388,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -423,7 +423,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -560,9 +560,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -723,6 +723,37 @@ test('worker.js API endpoints', async (t) => {
     });
     assert.deepEqual(castNames.actorNames, ['赵丽颖', '张·三']);
     assert.deepEqual(castNames.characterNames, ['盛明兰', '顾廷烨(少年)', '顾廷烨', '顾二叔', '角色名']);
+  });
+
+  await t.test('当前作品演员表通过真实 TMDB 搜索与 credits 链路取得', async () => {
+    Globals.init({ TMDB_API_KEY: 'test-key' });
+    const requestedUrls = [];
+    const names = await withMockFetch(async url => {
+      const requestedUrl = String(url);
+      requestedUrls.push(requestedUrl);
+      if (requestedUrl.includes('/search/multi?')) {
+        return new Response(JSON.stringify({ results: [{
+          id: 24680,
+          media_type: 'tv',
+          name: '链路测试剧',
+          original_language: 'zh',
+          origin_country: ['CN'],
+        }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (requestedUrl.includes('/tv/24680/aggregate_credits?')) {
+        return new Response(JSON.stringify({ cast: [{
+          name: '测试演员',
+          original_name: '测试演员',
+          roles: [{ character: '测试角色' }],
+        }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected TMDB request: ${requestedUrl}`);
+    }, () => getTmdbDomesticCastNamesForTitle('链路测试剧'));
+
+    assert.deepEqual(names, ['测试演员', '测试角色']);
+    assert.equal(requestedUrls.length, 2);
+    assert.ok(requestedUrls.every(url => url.includes('api_key=test-key')));
+    resetSearchState();
   });
 
   await t.test('Upstash Redis persists favorites without storing search or comment caches', async () => {
@@ -1043,15 +1074,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1072,8 +1103,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });

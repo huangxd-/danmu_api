@@ -156,7 +156,7 @@ export function extractTmdbChineseCastNames(credits, mediaType = 'movie') {
 
 /**
  * 从 TMDB 搜索当前国产/港台作品并取得其中文演员名。
- * 不要求应用层配置 TMDB_API_KEY；无 Key 时交由反代/网关认证，直连失败则安全返回空数组。
+ * 直连使用 TMDB_API_KEY，也可由反代/网关提供认证；请求失败时安全返回空数组。
  * 仅接受标题精确或包含关系的候选；非华语作品或无法可靠匹配时返回空数组，
  * 避免把普通人名、外国演员或角色名当成国内明星。
  */
