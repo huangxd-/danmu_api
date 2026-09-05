@@ -12,7 +12,7 @@ import { handleClearCache } from './apis/system-api.js';
 import { getRedisCaches, getRedisKey, pingRedis, setRedisKey, setRedisKeyWithExpiry, updateRedisCaches } from "./utils/redis-util.js";
 import { getLocalRedisKey, setLocalRedisKey, setLocalRedisKeyWithExpiry } from "./utils/local-redis-util.js";
 import { getImdbepisodes } from "./utils/imdb-util.js";
-import { getTMDBChineseTitle, getTmdbJpDetail, searchTmdbTitles } from "./utils/tmdb-util.js";
+import { extractTmdbChineseCastNames, getTMDBChineseTitle, getTmdbDomesticCastNamesForTitle, getTmdbJpDetail, isDomesticTmdbProduction, searchTmdbTitles, selectTmdbActorCandidate } from "./utils/tmdb-util.js";
 import { getDoubanDetail, getDoubanInfoByImdbId, searchDoubanTitles } from "./utils/douban-util.js";
 import AIClient from './utils/ai-util.js';
 import { getSourceByKey } from './sources/registry.js';
@@ -34,7 +34,7 @@ import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
 import { previewJsContent } from './ui/js/preview.js';
 import { convertToAsciiSum } from "./utils/codec-util.js";
-import { convertToDanmakuJson, handleDanmusLike, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
+import { buildBlockedNameMatchers, buildBlockedSurnameMatchers, convertToDanmakuJson, filterDanmusByBlockedNames, handleDanmusLike, isBlockedNameEntry, isBlockedRegionEntry, parseBlockedNameEntry, parseBlockedRegionEntry, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 import { initBangumiData, searchBangumiData, clearBangumiDataCache, dedupeBangumiSearchResults } from "./utils/bangumi-data-util.js";
 import { generateNipaplaySignature, parseNipaplayRelatedLinks, resolveNipaplayLink, applyShiftToDanmu } from "./utils/nipaplay-util.js";
@@ -378,9 +378,9 @@ test('worker.js API endpoints', async (t) => {
     });
 
     await t.test('maps match input, honors qualifiers and manual season preference, then falls back to original', async () => {
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
-      const originalGetComments = TencentSource.prototype.getComments;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
+      const originalGetComments = tencentSource.getComments;
       const originalAiAsk = AIClient.prototype.ask;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
@@ -388,11 +388,11 @@ test('worker.js API endpoints', async (t) => {
       let aiMatchInput = null;
       let scenario = 'open';
 
-      TencentSource.prototype.search = async keyword => {
+      tencentSource.search = async keyword => {
         searchKeywords.push(keyword);
         return [{ keyword }];
       };
-      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+      tencentSource.handleAnimes = async (_source, title, results, details) => {
         const add = anime => {
           results.push(anime);
           details.set(String(anime.animeId), anime);
@@ -423,7 +423,7 @@ test('worker.js API endpoints', async (t) => {
         }
         add(createFavoriteAnime(title, 70, 930003));
       };
-      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
+      tencentSource.getComments = async () => [{ p: '1,1,16777215,test', m: 'mapping-test' }];
       Globals.envs.sourceOrderArr = ['tencent'];
 
       const runMatch = async (env, fileName, useAi = false) => {
@@ -560,9 +560,9 @@ test('worker.js API endpoints', async (t) => {
         assert.equal(body.matches[0].animeTitle, '原始剧');
         assert.deepEqual(searchKeywords, ['缺失目标', '原始剧']);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
-        TencentSource.prototype.getComments = originalGetComments;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
+        tencentSource.getComments = originalGetComments;
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
@@ -656,6 +656,215 @@ test('worker.js API endpoints', async (t) => {
     const regexes = segs.map(parseBlockedWord);
     assert.ok(regexes.every(r => r instanceof RegExp), '所有词条均应解析为正则');
 
+    resetSearchState();
+  });
+
+  await t.test('演员/角色短名称只在人物语境中屏蔽', () => {
+    const blockedNames = ['赵丽颖', '张·三', '盛明兰', '白鹿', 'Tom Hanks', '王'];
+    const matchers = buildBlockedNameMatchers(blockedNames);
+    assert.deepEqual(matchers.map(item => item.label), ['赵丽颖', '张·三', '盛明兰', '白鹿']);
+
+    const input = [
+      { p: '1,1,16777215,[test]', m: '赵丽颖演得很好' },
+      { p: '2,1,16777215,[test]', m: '张 三演员今天状态不错' },
+      { p: '3,1,16777215,[test]', m: '白鹿老师演得很好' },
+      { p: '4,1,16777215,[test]', m: '@白鹿' },
+      { p: '5,1,16777215,[test]', m: '喜欢白鹿' },
+      { p: '6,1,16777215,[test]', m: '白鹿原很好看' },
+      { p: '7,1,16777215,[test]', m: '喜欢白鹿原' },
+      { p: '8,1,16777215,[test]', m: '张三丰终于出场了' },
+      { p: '9,1,16777215,[test]', m: '这个角色叫林黛玉' },
+      { p: '10,1,16777215,[test]', m: 'Tom Hanks is great' },
+      { p: '11,1,16777215,[test]', m: '盛明兰终于出场了' },
+    ];
+    const result = filterDanmusByBlockedNames(input, blockedNames);
+
+    assert.equal(result.removedCount, 6);
+    assert.deepEqual(result.danmus.map(item => item.m), [
+      '白鹿原很好看',
+      '喜欢白鹿原',
+      '张三丰终于出场了',
+      '这个角色叫林黛玉',
+      'Tom Hanks is great',
+    ]);
+
+    const surnameMatchers = buildBlockedSurnameMatchers(['王一博', '欧阳娜娜']);
+    assert.deepEqual(surnameMatchers.map(item => item.label), ['姓氏:王', '姓氏:欧阳']);
+    const surnameResult = filterDanmusByBlockedNames([
+      { m: '王老师这场演得好' },
+      { m: '欧阳导演太会拍了' },
+      { m: '王者荣耀也太燃了' },
+      { m: '赵丽颖演得很好' },
+    ], ['赵丽颖'], { surnameNames: ['王一博', '欧阳娜娜'] });
+    assert.equal(surnameResult.removedCount, 3);
+    assert.deepEqual(surnameResult.danmus.map(item => item.m), ['王者荣耀也太燃了']);
+
+    Globals.init({ BLOCK_DOMESTIC_CELEBRITIES: 'true' });
+    assert.equal(Globals.envs.blockDomesticCelebrities, true);
+    resetSearchState();
+  });
+
+  await t.test('BLOCKED_WORDS 支持 @人名 条目并按语境匹配', () => {
+    const raw = '@白鹿, @盛明兰, 打卡, /广告/';
+    const segments = splitBlockedWords(raw);
+    assert.deepEqual(segments, ['@白鹿', '@盛明兰', '打卡', '/广告/']);
+    assert.deepEqual(segments.filter(isBlockedNameEntry).map(parseBlockedNameEntry), ['白鹿', '盛明兰']);
+    // 普通词条不受 @ 前缀判断影响
+    assert.equal(isBlockedNameEntry('打卡'), false);
+    assert.equal(isBlockedNameEntry('/@白鹿/'), false);
+
+    Globals.init({
+      BLOCKED_WORDS: raw,
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    });
+    const out = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '喜欢白鹿' },          // 二字人名 + 喜好语境 → 拦截
+      { p: '2,1,16777215,[test]', m: '@白鹿 演技真好' },     // @ 指代 → 拦截
+      { p: '3,1,16777215,[test]', m: '白鹿老师出场了' },      // 称谓后缀 → 拦截
+      { p: '4,1,16777215,[test]', m: '白鹿原很好看' },        // 普通词 → 保留
+      { p: '5,1,16777215,[test]', m: '盛明兰终于出场了' },    // 三字人名按全名匹配 → 拦截
+      { p: '6,1,16777215,[test]', m: '今天打卡第三天' },      // 纯文本词条保持字面匹配 → 拦截
+      { p: '7,1,16777215,[test]', m: '这条广告真多' },        // 正则词条 → 拦截
+      { p: '8,1,16777215,[test]', m: 'normal text' },      // 保留
+    ], 'test');
+    assert.deepEqual(out.map(item => item.m), [
+      '白鹿原很好看',
+      'normal text'
+    ]);
+
+    resetSearchState();
+  });
+
+  await t.test('@人名 条目启用严格版姓氏指代匹配', () => {
+    Globals.init({
+      BLOCKED_WORDS: '@杨幂,@欧阳娜娜',
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    });
+    const out = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '杨幂演得真好' },      // 二字人名 + 称谓后缀 → 拦截
+      { p: '2,1,16777215,[test]', m: '杨老师演得不错' },     // 姓氏 + 称谓 → 拦截
+      { p: '3,1,16777215,[test]', m: '欧阳导演太会拍了' },   // 复姓 + 称谓 → 拦截
+      { p: '4,1,16777215,[test]', m: '@杨' },               // @姓氏 指代 → 拦截
+      { p: '5,1,16777215,[test]', m: '我是杨' },            // 裸姓氏无称谓 → 保留
+      { p: '6,1,16777215,[test]', m: '杨树很高' },           // 姓氏后接汉字 → 保留
+      { p: '7,1,16777215,[test]', m: '欧阳娜娜出场了' },     // 全名 → 拦截
+    ], 'test');
+    assert.deepEqual(out.map(item => item.m), [
+      '我是杨',
+      '杨树很高'
+    ]);
+
+    resetSearchState();
+  });
+
+  await t.test('BLOCKED_WORDS 支持 地区: 条目并按地区语境匹配', () => {
+    const raw = '地区:海南, 地区:朝阳, 打卡';
+    const segments = splitBlockedWords(raw);
+    assert.deepEqual(segments, ['地区:海南', '地区:朝阳', '打卡']);
+    assert.deepEqual(segments.filter(isBlockedRegionEntry).map(parseBlockedRegionEntry), ['海南', '朝阳']);
+    // 普通词条与人名词条不受地区前缀判断影响
+    assert.equal(isBlockedRegionEntry('打卡'), false);
+    assert.equal(isBlockedRegionEntry('@白鹿'), false);
+
+    Globals.init({
+      BLOCKED_WORDS: raw,
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    });
+    const out = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '来自海南的朋友' },   // "来自"+地区语境 → 拦截
+      { p: '2,1,16777215,[test]', m: '海南网友来了' },      // "网友"后缀 → 拦截
+      { p: '3,1,16777215,[test]', m: '朝阳区天气不错' },     // "区"后缀 → 拦截
+      { p: '4,1,16777215,[test]', m: '海南鸡饭真好吃' },     // 无地区语境 → 保留
+      { p: '5,1,16777215,[test]', m: '朝阳升起来了' },       // 无地区语境 → 保留
+      { p: '6,1,16777215,[test]', m: '今天打卡第三天' },     // 纯文本字面匹配 → 拦截
+    ], 'test');
+    assert.deepEqual(out.map(item => item.m), [
+      '海南鸡饭真好吃',
+      '朝阳升起来了'
+    ]);
+
+    resetSearchState();
+  });
+
+  await t.test('地区:* 展开为内置预设地区名单并按地区语境匹配', () => {
+    Globals.init({
+      BLOCKED_WORDS: '地区:*, 地区:雄安',
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    });
+    const out = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '来自四川的网友' },   // 内置预设(四川) + "来自"语境 → 拦截
+      { p: '2,1,16777215,[test]', m: '长沙网友现身说法' },  // 内置预设(长沙) + "网友"后缀 → 拦截
+      { p: '3,1,16777215,[test]', m: '雄安网友留言' },      // 自定义地区(雄安) + "网友"后缀 → 拦截
+      { p: '4,1,16777215,[test]', m: '海南鸡饭真好吃' },     // 语境不符 → 保留
+      { p: '5,1,16777215,[test]', m: '朝阳升起来了' },       // 语境不符 → 保留
+      { p: '6,1,16777215,[test]', m: '新区建设真快' },       // 与地区无关 → 保留
+    ], 'test');
+    assert.deepEqual(out.map(item => item.m), [
+      '海南鸡饭真好吃',
+      '朝阳升起来了',
+      '新区建设真快'
+    ]);
+
+    resetSearchState();
+  });
+
+  await t.test('TMDB 演员元数据只接受可靠的华语作品和中文演员名', () => {
+    const results = [
+      { id: 1, media_type: 'tv', name: '同名剧场版', original_language: 'ja', origin_country: ['JP'] },
+      { id: 2, media_type: 'tv', name: '同名剧', original_language: 'zh', origin_country: ['CN'] },
+    ];
+    const selected = selectTmdbActorCandidate(results, '同名剧');
+    assert.equal(selected.id, 2);
+    assert.equal(isDomesticTmdbProduction(selected), true);
+    assert.equal(isDomesticTmdbProduction(results[0]), false);
+
+    const castNames = extractTmdbChineseCastNames({
+      cast: [
+        { name: '赵丽颖', original_name: '赵丽颖', character: '盛明兰' },
+        { name: '张·三', original_name: 'Zhang San', character: '顾廷烨（少年） / 顾二叔' },
+        { name: 'Tom Hanks', original_name: 'Tom Hanks', character: '角色名' },
+      ]
+    });
+    assert.deepEqual(castNames.actorNames, ['赵丽颖', '张·三']);
+    assert.deepEqual(castNames.characterNames, ['盛明兰', '顾廷烨(少年)', '顾廷烨', '顾二叔', '角色名']);
+  });
+
+  await t.test('当前作品演员表通过真实 TMDB 搜索与 credits 链路取得', async () => {
+    Globals.init({ TMDB_API_KEY: 'test-key' });
+    const requestedUrls = [];
+    const names = await withMockFetch(async url => {
+      const requestedUrl = String(url);
+      requestedUrls.push(requestedUrl);
+      if (requestedUrl.includes('/search/multi?')) {
+        return new Response(JSON.stringify({ results: [{
+          id: 24680,
+          media_type: 'tv',
+          name: '链路测试剧',
+          original_language: 'zh',
+          origin_country: ['CN'],
+        }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (requestedUrl.includes('/tv/24680/aggregate_credits?')) {
+        return new Response(JSON.stringify({ cast: [{
+          name: '测试演员',
+          original_name: '测试演员',
+          roles: [{ character: '测试角色' }],
+        }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected TMDB request: ${requestedUrl}`);
+    }, () => getTmdbDomesticCastNamesForTitle('链路测试剧'));
+
+    assert.deepEqual(names, ['测试演员', '测试角色']);
+    assert.equal(requestedUrls.length, 2);
+    assert.ok(requestedUrls.every(url => url.includes('api_key=test-key')));
     resetSearchState();
   });
 
@@ -977,15 +1186,15 @@ test('worker.js API endpoints', async (t) => {
       favorite.timestamp = originalTimestamp;
       favorite.lastRefreshAt = originalTimestamp;
 
-      const originalSearch = TencentSource.prototype.search;
-      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalSearch = tencentSource.search;
+      const originalHandleAnimes = tencentSource.handleAnimes;
       const originalOrder = Globals.envs.sourceOrderArr;
       let searchCount = 0;
-      TencentSource.prototype.search = async () => {
+      tencentSource.search = async () => {
         searchCount++;
         return [{}];
       };
-      TencentSource.prototype.handleAnimes = async (_source, _title, results, details) => {
+      tencentSource.handleAnimes = async (_source, _title, results, details) => {
         results.push(refreshedAnime);
         details.set(String(refreshedAnime.animeId), refreshedAnime);
       };
@@ -1006,8 +1215,8 @@ test('worker.js API endpoints', async (t) => {
         assert.ok(resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt > originalTimestamp);
         assert.equal(listFavorites()[0].lastRefreshAt, resolveFavoriteForKeyword('刷新测试').entry.lastRefreshAt);
       } finally {
-        TencentSource.prototype.search = originalSearch;
-        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        tencentSource.search = originalSearch;
+        tencentSource.handleAnimes = originalHandleAnimes;
         Globals.envs.sourceOrderArr = originalOrder;
       }
     });
