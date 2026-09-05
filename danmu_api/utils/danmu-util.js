@@ -303,6 +303,23 @@ export function parseBlockedNameEntry(segment) {
 }
 
 /**
+ * 判断屏蔽词条是否为 地区: 条目（如 "地区:海南"）：
+ * 交由地区语境分析引擎匹配，仅命中"来自海南""海南网友""朝阳区"等明确地区语境。
+ */
+export function isBlockedRegionEntry(segment) {
+  return /^地区[:：]/.test(String(segment || '').trim());
+}
+
+/**
+ * 解析 地区: 词条，返回地区名（去掉前缀与空白）；非地区词条返回 null。
+ */
+export function parseBlockedRegionEntry(segment) {
+  const match = String(segment || '').trim().match(/^地区[:：]\s*([\s\S]+)$/);
+  const name = match ? match[1].trim() : '';
+  return name || null;
+}
+
+/**
  * 两个 0xRRGGBB 颜色按比例线性插值
  */
 function lerpColor(a, b, frac) {
@@ -378,6 +395,32 @@ export function buildBlockedNameMatchers(names) {
   return matchers;
 }
 
+const REGION_CONTEXT_PREFIX = /(?:来自|人在|身在|坐标|定位|住在|回到|去过|前往|老家(?:在|是)?|IP(?:在|属地)?)/u;
+const REGION_CONTEXT_SUFFIX = /(?:省|市|区|县|州|盟|旗|人|网友|观众|口音|方言|地区|本地|那边|这边|的朋友)/u;
+const REGION_CONTEXT_TAIL = /(?:$|[^\p{Script=Han}]|的|这边|那边|工作|生活|上学|旅游|出差)/u;
+
+/**
+ * 构建地区名称匹配项：地区名仅在明确地区语境（"来自海南""海南网友""朝阳区"）中匹配，
+ * 避免"海南鸡饭""朝阳升起"等同形词误伤。地区名单由用户在 BLOCKED_WORDS 中自行填写，无内置地区表。
+ */
+export function buildBlockedRegionMatchers(names) {
+  if (!Array.isArray(names)) return [];
+  const seen = new Set();
+  const matchers = [];
+  for (const rawName of names) {
+    const label = String(rawName || '').normalize('NFKC').trim();
+    const compact = label.replace(/[\s·・•‧·･]+/g, '').toLocaleLowerCase();
+    if (!/\p{Script=Han}/u.test(compact) || Array.from(compact).length < 2 || seen.has(compact)) continue;
+    seen.add(compact);
+    const escaped = escapeRegExp(compact);
+    matchers.push({
+      label: `地区:${label}`,
+      regex: new RegExp(`(?:${REGION_CONTEXT_PREFIX.source}${escaped}(?=${REGION_CONTEXT_TAIL.source})|${escaped}${REGION_CONTEXT_SUFFIX.source})`, 'u')
+    });
+  }
+  return matchers;
+}
+
 const COMMON_COMPOUND_SURNAMES = new Set([
   '欧阳', '司马', '上官', '诸葛', '东方', '独孤', '南宫', '慕容', '尉迟', '皇甫',
   '令狐', '长孙', '宇文', '闻人', '夏侯', '公孙', '轩辕', '百里', '钟离', '澹台'
@@ -436,7 +479,8 @@ export function filterDanmusByBlockedNames(danmus, names, options = {}) {
 
   const matchers = buildBlockedNameMatchers(names);
   const surnameMatchers = buildBlockedSurnameMatchers(options.surnameNames, options.surnameMatcherOptions);
-  if (matchers.length === 0 && surnameMatchers.length === 0) return { danmus, removedCount: 0, hits: [] };
+  const regionMatchers = buildBlockedRegionMatchers(options.regionNames);
+  if (matchers.length === 0 && surnameMatchers.length === 0 && regionMatchers.length === 0) return { danmus, removedCount: 0, hits: [] };
 
   const hitCounts = new Map();
   const filtered = danmus.filter(item => {
@@ -446,7 +490,8 @@ export function filterDanmusByBlockedNames(danmus, names, options = {}) {
       .toLocaleLowerCase();
     const matcher = matchers.find(candidate => candidate.regex ? candidate.regex.test(text) : text.includes(candidate.needle));
     const surnameMatcher = matcher ? null : surnameMatchers.find(candidate => matchesBlockedSurname(text, candidate));
-    const hit = matcher || surnameMatcher;
+    const regionMatcher = matcher || surnameMatcher ? null : regionMatchers.find(candidate => candidate.regex.test(text));
+    const hit = matcher || surnameMatcher || regionMatcher;
     if (!hit) return true;
     hitCounts.set(hit.label, (hitCounts.get(hit.label) || 0) + 1);
     return false;
@@ -590,29 +635,34 @@ export function convertToDanmakuJson(contents, platform) {
   // =====================
   // 屏蔽词过滤（含生效诊断日志）
   // =====================
-  // 解析屏蔽词：支持 /regex/、/regex/flags、纯文本词及 @人名（语境匹配），兼容中英文逗号及空格分隔
+  // 解析屏蔽词：支持 /regex/、/regex/flags、纯文本词、@人名（语境匹配）及 地区:地区名（地区语境匹配），
+  // 兼容中英文逗号及空格分隔
   const blockedSegments = splitBlockedWords(globals.blockedWords);
   const blockedNameEntries = [];
+  const blockedRegionEntries = [];
   const otherSegments = [];
   for (const segment of blockedSegments) {
-    if (!isBlockedNameEntry(segment)) {
+    if (!isBlockedNameEntry(segment) && !isBlockedRegionEntry(segment)) {
       otherSegments.push(segment);
       continue;
     }
-    const name = parseBlockedNameEntry(segment);
-    const compact = String(name || '').normalize('NFKC').replace(/[\s·・•‧·･]+/g, '');
-    if (name && /\p{Script=Han}/u.test(compact) && Array.from(compact).length >= 2) {
-      blockedNameEntries.push(name);
+    const name = isBlockedNameEntry(segment) ? parseBlockedNameEntry(segment) : null;
+    const region = isBlockedRegionEntry(segment) ? parseBlockedRegionEntry(segment) : null;
+    const value = name || region;
+    const compact = String(value || '').normalize('NFKC').replace(/[\s·・•‧·･]+/g, '');
+    if (value && /\p{Script=Han}/u.test(compact) && Array.from(compact).length >= 2) {
+      if (name) blockedNameEntries.push(name);
+      else blockedRegionEntries.push(region);
     } else {
-      // 人名条目无效（非中文或不足两字）时保留原有字面量语义，避免静默失效
-      log("warn", `[system] [danmu] [blocked-words] 人名词条无效(需至少两个汉字)，已按字面量处理: ${segment}`);
+      // 人名/地区条目无效（非中文或不足两字）时保留原有字面量语义，避免静默失效
+      log("warn", `[system] [danmu] [blocked-words] 人名/地区词条无效(需至少两个汉字)，已按字面量处理: ${segment}`);
       otherSegments.push(segment);
     }
   }
   const regexArray = otherSegments.map(parseBlockedWord);
 
   // [诊断1] 解析阶段：确认规则是否正确加载
-  if (regexArray.length === 0 && blockedNameEntries.length === 0) {
+  if (regexArray.length === 0 && blockedNameEntries.length === 0 && blockedRegionEntries.length === 0) {
     if (globals.blockedWords && globals.blockedWords.trim() !== '') {
       log("warn", `[system] [danmu] [blocked-words] ❌ 已配置屏蔽词但未解析出有效规则，本次不会过滤任何弹幕！原始配置: ${JSON.stringify(globals.blockedWords)}`);
     } else {
@@ -620,8 +670,11 @@ export function convertToDanmakuJson(contents, platform) {
     }
   } else {
     const ruleSummary = regexArray.map(r => r.toString()).join(' , ');
-    const nameSummary = blockedNameEntries.length ? `${ruleSummary ? ' , ' : ''}人名(语境匹配): ${blockedNameEntries.join(' , ')}` : '';
-    log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名 [ ${ruleSummary}${nameSummary} ]`);
+    const extras = [];
+    if (blockedNameEntries.length) extras.push(`人名(语境匹配): ${blockedNameEntries.join(' , ')}`);
+    if (blockedRegionEntries.length) extras.push(`地区(语境匹配): ${blockedRegionEntries.join(' , ')}`);
+    const extraSummary = extras.length ? `${ruleSummary ? ' , ' : ''}${extras.join(' , ')}` : '';
+    log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名 + ${blockedRegionEntries.length} 个地区 [ ${ruleSummary}${extraSummary} ]`);
   }
 
   // 过滤列表（统计每条规则命中次数与拦截样本）
@@ -641,33 +694,35 @@ export function convertToDanmakuJson(contents, platform) {
   });
 
   // @人名 条目走语境分析引擎：三字及以上按完整名称匹配，二字仅在明确人物语境（称谓/指代）中命中；
-  // 并启用严格版姓氏指代（仅“姓氏+称谓”或“@/# 姓氏”），裸姓氏不命中
-  let nameHits = [];
-  if (blockedNameEntries.length > 0) {
-    const nameResult = filterDanmusByBlockedNames(filteredDanmus, blockedNameEntries, {
+  // 地区: 条目仅在明确地区语境（"来自海南""海南网友"）中命中；
+  // 姓氏指代为严格版（仅“姓氏+称谓”或“@/# 姓氏”），裸姓氏不命中
+  let entityHits = [];
+  if (blockedNameEntries.length > 0 || blockedRegionEntries.length > 0) {
+    const entityResult = filterDanmusByBlockedNames(filteredDanmus, blockedNameEntries, {
       surnameNames: blockedNameEntries,
-      surnameMatcherOptions: { bareSurname: false }
+      surnameMatcherOptions: { bareSurname: false },
+      regionNames: blockedRegionEntries
     });
-    nameHits = nameResult.hits;
-    filteredDanmus = nameResult.danmus;
+    entityHits = entityResult.hits;
+    filteredDanmus = entityResult.danmus;
   }
 
   // [诊断2] 过滤阶段：明确判定屏蔽词是否生效
   const removedCount = danmus.length - filteredDanmus.length;
-  if (regexArray.length > 0 || blockedNameEntries.length > 0) {
+  if (regexArray.length > 0 || blockedNameEntries.length > 0 || blockedRegionEntries.length > 0) {
     if (removedCount > 0) {
       const hitSummary = regexArray
         .map((r, i) => ({ rule: r.toString(), count: ruleHitCounts[i] }))
         .filter(x => x.count > 0)
         .map(x => `${x.rule} ×${x.count}`)
-        .concat(nameHits.map(h => `人名:${h.name} ×${h.count}`))
+        .concat(entityHits.map(h => h.name.startsWith('地区:') ? `${h.name} ×${h.count}` : `人名:${h.name} ×${h.count}`))
         .join(', ');
       log("info", `[system] [danmu] [blocked-words] ✅ 屏蔽词已生效: 拦截 ${removedCount}/${danmus.length} 条弹幕${hitSummary ? `，命中明细: ${hitSummary}` : ''}`);
       if (blockedSamples.length) {
         log("info", `[system] [danmu] [blocked-words] 拦截示例(最多3条): ${blockedSamples.join(' | ')}`);
       }
     } else {
-      log("info", `[system] [danmu] [blocked-words] ⚠️ 规则已加载(${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名)但本集弹幕无命中`);
+      log("info", `[system] [danmu] [blocked-words] ⚠️ 规则已加载(${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名 + ${blockedRegionEntries.length} 个地区)但本集弹幕无命中`);
     }
   }
 

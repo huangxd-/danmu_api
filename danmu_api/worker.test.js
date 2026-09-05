@@ -34,7 +34,7 @@ import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
 import { previewJsContent } from './ui/js/preview.js';
 import { convertToAsciiSum } from "./utils/codec-util.js";
-import { buildBlockedNameMatchers, buildBlockedSurnameMatchers, convertToDanmakuJson, filterDanmusByBlockedNames, handleDanmusLike, isBlockedNameEntry, parseBlockedNameEntry, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
+import { buildBlockedNameMatchers, buildBlockedSurnameMatchers, convertToDanmakuJson, filterDanmusByBlockedNames, handleDanmusLike, isBlockedNameEntry, isBlockedRegionEntry, parseBlockedNameEntry, parseBlockedRegionEntry, splitBlockedWords, parseBlockedWord } from "./utils/danmu-util.js";
 import { Segment, SegmentListResponse } from "./models/dandan-model.js"
 import { initBangumiData, searchBangumiData, clearBangumiDataCache, dedupeBangumiSearchResults } from "./utils/bangumi-data-util.js";
 import { generateNipaplaySignature, parseNipaplayRelatedLinks, resolveNipaplayLink, applyShiftToDanmu } from "./utils/nipaplay-util.js";
@@ -756,6 +756,37 @@ test('worker.js API endpoints', async (t) => {
     assert.deepEqual(out.map(item => item.m), [
       '我是杨',
       '杨树很高'
+    ]);
+
+    resetSearchState();
+  });
+
+  await t.test('BLOCKED_WORDS 支持 地区: 条目并按地区语境匹配', () => {
+    const raw = '地区:海南, 地区:朝阳, 打卡';
+    const segments = splitBlockedWords(raw);
+    assert.deepEqual(segments, ['地区:海南', '地区:朝阳', '打卡']);
+    assert.deepEqual(segments.filter(isBlockedRegionEntry).map(parseBlockedRegionEntry), ['海南', '朝阳']);
+    // 普通词条与人名词条不受地区前缀判断影响
+    assert.equal(isBlockedRegionEntry('打卡'), false);
+    assert.equal(isBlockedRegionEntry('@白鹿'), false);
+
+    Globals.init({
+      BLOCKED_WORDS: raw,
+      GROUP_MINUTE: '0',
+      DANMU_LIMIT: '0',
+      CONVERT_COLOR: 'default'
+    });
+    const out = convertToDanmakuJson([
+      { p: '1,1,16777215,[test]', m: '来自海南的朋友' },   // "来自"+地区语境 → 拦截
+      { p: '2,1,16777215,[test]', m: '海南网友来了' },      // "网友"后缀 → 拦截
+      { p: '3,1,16777215,[test]', m: '朝阳区天气不错' },     // "区"后缀 → 拦截
+      { p: '4,1,16777215,[test]', m: '海南鸡饭真好吃' },     // 无地区语境 → 保留
+      { p: '5,1,16777215,[test]', m: '朝阳升起来了' },       // 无地区语境 → 保留
+      { p: '6,1,16777215,[test]', m: '今天打卡第三天' },     // 纯文本字面匹配 → 拦截
+    ], 'test');
+    assert.deepEqual(out.map(item => item.m), [
+      '海南鸡饭真好吃',
+      '朝阳升起来了'
     ]);
 
     resetSearchState();
