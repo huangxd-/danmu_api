@@ -274,7 +274,7 @@ WidgetMetadata = {
     // 弹幕配置
     {
       name: "blockedWords",
-      title: "屏蔽词列表",
+      title: "屏蔽词列表（支持 /正则/、纯文本词、@人名 语境匹配）",
       type: "input",
       placeholders: [
         {

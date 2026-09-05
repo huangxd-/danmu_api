@@ -285,6 +285,24 @@ export function parseBlockedWord(segment) {
 }
 
 /**
+ * 判断屏蔽词条是否为 @人名 条目（如 "@白鹿"）：
+ * 以半角 @ 或全角 ＠ 开头即视为按人名处理，交由语境分析引擎匹配，
+ * 避免把普通词（如"打卡"）误当人名而改变既有字面匹配语义。
+ */
+export function isBlockedNameEntry(segment) {
+  return /^[＠@]/.test(String(segment || '').trim());
+}
+
+/**
+ * 解析 @人名 词条，返回人名本身（去掉 @ 前缀与空白）；非人名词条返回 null。
+ */
+export function parseBlockedNameEntry(segment) {
+  const match = String(segment || '').trim().match(/^[＠@]\s*([\s\S]+)$/);
+  const name = match ? match[1].trim() : '';
+  return name || null;
+}
+
+/**
  * 两个 0xRRGGBB 颜色按比例线性插值
  */
 function lerpColor(a, b, frac) {
@@ -367,11 +385,12 @@ const COMMON_COMPOUND_SURNAMES = new Set([
 const SURNAME_REFERENCE_SUFFIX = /(?:老师|导演|主演|演员|饰演|扮演|出演|姐姐|哥哥|妹妹|弟弟|大哥|二哥|三哥|大姐|二姐|叔叔|阿姨|公子|姑娘|小姐|先生|娘娘|皇后|皇帝|王爷|殿下|公主|太子|少爷|夫人|老婆|老公|宝宝|本人|同学|好美|好帅|家族|一哥|一姐)/u;
 
 /**
- * 从当前作品元数据中提取姓氏匹配项。
- * 只用于当前作品演员/角色；
- * 仅匹配“姓氏 + 称谓/身份”等明显指代，避免单字姓氏误伤普通词语。
+ * 从姓名中提取带明确称谓/身份上下文的姓氏匹配项。
+ * bareSurname !== false 时（当前作品演员表路径），姓氏处于独立边界也算命中；
+ * bareSurname === false 时（用户 @人名 路径），仅“姓氏 + 称谓/身份”或“@/# 姓氏”等显式指代才命中，
+ * 避免单字姓氏在无关语境下误伤普通词语。
  */
-export function buildBlockedSurnameMatchers(names) {
+export function buildBlockedSurnameMatchers(names, options = {}) {
   if (!Array.isArray(names)) return [];
 
   const seen = new Set();
@@ -389,8 +408,11 @@ export function buildBlockedSurnameMatchers(names) {
     if (seen.has(surname)) continue;
     seen.add(surname);
     const escaped = escapeRegExp(surname);
+    const reference = `[@＃#]${escaped}(?=[^\\p{Script=Han}]|$)`;
+    const bare = `(?:[@＃#]|^|[^\\p{Script=Han}])${escaped}(?=[^\\p{Script=Han}]|$|${SURNAME_REFERENCE_SUFFIX.source})`;
+    const titled = `${escaped}${SURNAME_REFERENCE_SUFFIX.source}`;
     const regex = new RegExp(
-      `(?:[@＃#]|^|[^\\p{Script=Han}])${escaped}(?=[^\\p{Script=Han}]|$|${SURNAME_REFERENCE_SUFFIX.source})|${escaped}${SURNAME_REFERENCE_SUFFIX.source}`,
+      options.bareSurname === false ? `${reference}|${titled}` : `${bare}|${titled}`,
       'u'
     );
     matchers.push({ label: `姓氏:${surname}`, surname, regex });
@@ -413,7 +435,7 @@ export function filterDanmusByBlockedNames(danmus, names, options = {}) {
   }
 
   const matchers = buildBlockedNameMatchers(names);
-  const surnameMatchers = buildBlockedSurnameMatchers(options.surnameNames);
+  const surnameMatchers = buildBlockedSurnameMatchers(options.surnameNames, options.surnameMatcherOptions);
   if (matchers.length === 0 && surnameMatchers.length === 0) return { danmus, removedCount: 0, hits: [] };
 
   const hitCounts = new Map();
@@ -568,25 +590,44 @@ export function convertToDanmakuJson(contents, platform) {
   // =====================
   // 屏蔽词过滤（含生效诊断日志）
   // =====================
-  // 解析屏蔽词：支持 /regex/、/regex/flags 及纯文本词，兼容中英文逗号及空格分隔
+  // 解析屏蔽词：支持 /regex/、/regex/flags、纯文本词及 @人名（语境匹配），兼容中英文逗号及空格分隔
   const blockedSegments = splitBlockedWords(globals.blockedWords);
-  const regexArray = blockedSegments.map(parseBlockedWord);
+  const blockedNameEntries = [];
+  const otherSegments = [];
+  for (const segment of blockedSegments) {
+    if (!isBlockedNameEntry(segment)) {
+      otherSegments.push(segment);
+      continue;
+    }
+    const name = parseBlockedNameEntry(segment);
+    const compact = String(name || '').normalize('NFKC').replace(/[\s·・•‧·･]+/g, '');
+    if (name && /\p{Script=Han}/u.test(compact) && Array.from(compact).length >= 2) {
+      blockedNameEntries.push(name);
+    } else {
+      // 人名条目无效（非中文或不足两字）时保留原有字面量语义，避免静默失效
+      log("warn", `[system] [danmu] [blocked-words] 人名词条无效(需至少两个汉字)，已按字面量处理: ${segment}`);
+      otherSegments.push(segment);
+    }
+  }
+  const regexArray = otherSegments.map(parseBlockedWord);
 
   // [诊断1] 解析阶段：确认规则是否正确加载
-  if (regexArray.length === 0) {
+  if (regexArray.length === 0 && blockedNameEntries.length === 0) {
     if (globals.blockedWords && globals.blockedWords.trim() !== '') {
       log("warn", `[system] [danmu] [blocked-words] ❌ 已配置屏蔽词但未解析出有效规则，本次不会过滤任何弹幕！原始配置: ${JSON.stringify(globals.blockedWords)}`);
     } else {
       log("info", `[system] [danmu] [blocked-words] 未配置屏蔽词(BLOCKED_WORDS 为空)，跳过过滤`);
     }
   } else {
-    log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条 [ ${regexArray.map(r => r.toString()).join(' , ')} ]`);
+    const ruleSummary = regexArray.map(r => r.toString()).join(' , ');
+    const nameSummary = blockedNameEntries.length ? `${ruleSummary ? ' , ' : ''}人名(语境匹配): ${blockedNameEntries.join(' , ')}` : '';
+    log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名 [ ${ruleSummary}${nameSummary} ]`);
   }
 
   // 过滤列表（统计每条规则命中次数与拦截样本）
   const ruleHitCounts = new Array(regexArray.length).fill(0);
   const blockedSamples = [];
-  const filteredDanmus = danmus.filter(item => {
+  let filteredDanmus = danmus.filter(item => {
     for (let i = 0; i < regexArray.length; i++) {
       if (regexArray[i].test(item.m)) { // 针对 `m` 字段进行匹配
         ruleHitCounts[i]++;
@@ -599,21 +640,34 @@ export function convertToDanmakuJson(contents, platform) {
     return true;
   });
 
+  // @人名 条目走语境分析引擎：三字及以上按完整名称匹配，二字仅在明确人物语境（称谓/指代）中命中；
+  // 并启用严格版姓氏指代（仅“姓氏+称谓”或“@/# 姓氏”），裸姓氏不命中
+  let nameHits = [];
+  if (blockedNameEntries.length > 0) {
+    const nameResult = filterDanmusByBlockedNames(filteredDanmus, blockedNameEntries, {
+      surnameNames: blockedNameEntries,
+      surnameMatcherOptions: { bareSurname: false }
+    });
+    nameHits = nameResult.hits;
+    filteredDanmus = nameResult.danmus;
+  }
+
   // [诊断2] 过滤阶段：明确判定屏蔽词是否生效
   const removedCount = danmus.length - filteredDanmus.length;
-  if (regexArray.length > 0) {
+  if (regexArray.length > 0 || blockedNameEntries.length > 0) {
     if (removedCount > 0) {
       const hitSummary = regexArray
         .map((r, i) => ({ rule: r.toString(), count: ruleHitCounts[i] }))
         .filter(x => x.count > 0)
         .map(x => `${x.rule} ×${x.count}`)
+        .concat(nameHits.map(h => `人名:${h.name} ×${h.count}`))
         .join(', ');
       log("info", `[system] [danmu] [blocked-words] ✅ 屏蔽词已生效: 拦截 ${removedCount}/${danmus.length} 条弹幕${hitSummary ? `，命中明细: ${hitSummary}` : ''}`);
       if (blockedSamples.length) {
         log("info", `[system] [danmu] [blocked-words] 拦截示例(最多3条): ${blockedSamples.join(' | ')}`);
       }
     } else {
-      log("info", `[system] [danmu] [blocked-words] ⚠️ 规则已加载(${regexArray.length} 条)但本集弹幕无命中`);
+      log("info", `[system] [danmu] [blocked-words] ⚠️ 规则已加载(${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名)但本集弹幕无命中`);
     }
   }
 
