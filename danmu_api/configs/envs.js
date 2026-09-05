@@ -725,7 +725,7 @@ export class Envs {
       'USE_BANGUMI_DATA': { category: 'match', type: 'boolean', description: 'Bangumi Data 加速匹配开关，开启后将动画元数据缓存至本地或内存中给源调用，提升动画源的检索与匹配速度并解锁隐藏/区域番剧。\n本地和Docker部署使用时请先挂载.cache目录获得最佳体验，云部署使用时会将数据缓存至临时内存中如果体验不佳请关闭。' },
 
       // 弹幕配置
-      'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表：支持 /正则/flags、纯文本词、@人名（按语境分析匹配，二字人名仅在明确人物语境中命中，避免误伤同名词；姓氏仅在被称谓指代时命中，如"杨老师"）及 地区:地区名（仅命中"来自海南""海南网友"等明确地区语境，避免误伤"海南鸡饭"）' },
+      'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表：支持 /正则/flags、纯文本词、@人名（按语境分析匹配，二字人名仅在明确人物语境中命中，避免误伤同名词；姓氏仅在被称谓指代时命中，如"杨老师"）及 地区:地区名（仅命中"来自海南""海南网友"等明确地区语境；地区:* 启用全部内置预设地区名单）' },
       'BLOCK_DOMESTIC_CELEBRITIES': { category: 'danmu', type: 'boolean', description: '当前华语作品演员/角色名屏蔽开关，默认关闭。开启后通过 TMDB 获取当前作品的中文演员名和角色名；二字名称仅在明确人物语境中匹配，三字及以上按完整名称匹配。需要可用的 TMDB_API_KEY，或能够代为认证的 TMDB 反代；查询失败时不执行该项过滤。' },
       'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0表示不去重），默认1', min: 0, max: 30 },
       'DANMU_LIMIT': { category: 'danmu', type: 'number', description: '弹幕数量限制，单位为k，即千：默认 0，表示不限制弹幕数', min: 0, max: 100 },

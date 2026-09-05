@@ -3,6 +3,7 @@ import { log } from './log-util.js'
 import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
 import { simplized, traditionalized } from './zh-util.js';
 import { convertDanAny } from './dan-any.js';
+import { BLOCKED_REGION_PRESET_NAMES } from '../data/blocked-region-presets.js';
 
 // =====================
 // danmu处理相关函数
@@ -303,7 +304,7 @@ export function parseBlockedNameEntry(segment) {
 }
 
 /**
- * 判断屏蔽词条是否为 地区: 条目（如 "地区:海南"）：
+ * 判断屏蔽词条是否为 地区: 条目（如 "地区:海南"、"地区:*"）：
  * 交由地区语境分析引擎匹配，仅命中"来自海南""海南网友""朝阳区"等明确地区语境。
  */
 export function isBlockedRegionEntry(segment) {
@@ -312,6 +313,7 @@ export function isBlockedRegionEntry(segment) {
 
 /**
  * 解析 地区: 词条，返回地区名（去掉前缀与空白）；非地区词条返回 null。
+ * 特殊值 `*` 或 `全部` 表示启用内置预设地区名单（省级行政区+地级行政区）。
  */
 export function parseBlockedRegionEntry(segment) {
   const match = String(segment || '').trim().match(/^地区[:：]\s*([\s\S]+)$/);
@@ -640,6 +642,7 @@ export function convertToDanmakuJson(contents, platform) {
   const blockedSegments = splitBlockedWords(globals.blockedWords);
   const blockedNameEntries = [];
   const blockedRegionEntries = [];
+  let usedRegionPreset = false;
   const otherSegments = [];
   for (const segment of blockedSegments) {
     if (!isBlockedNameEntry(segment) && !isBlockedRegionEntry(segment)) {
@@ -650,6 +653,12 @@ export function convertToDanmakuJson(contents, platform) {
     const region = isBlockedRegionEntry(segment) ? parseBlockedRegionEntry(segment) : null;
     const value = name || region;
     const compact = String(value || '').normalize('NFKC').replace(/[\s·・•‧·･]+/g, '');
+    // 地区:* / 地区:全部 → 展开为内置预设地区名单（省级行政区+地级行政区）
+    if (region && (region === '*' || region === '全部')) {
+      blockedRegionEntries.push(...BLOCKED_REGION_PRESET_NAMES);
+      usedRegionPreset = true;
+      continue;
+    }
     if (value && /\p{Script=Han}/u.test(compact) && Array.from(compact).length >= 2) {
       if (name) blockedNameEntries.push(name);
       else blockedRegionEntries.push(region);
@@ -672,7 +681,7 @@ export function convertToDanmakuJson(contents, platform) {
     const ruleSummary = regexArray.map(r => r.toString()).join(' , ');
     const extras = [];
     if (blockedNameEntries.length) extras.push(`人名(语境匹配): ${blockedNameEntries.join(' , ')}`);
-    if (blockedRegionEntries.length) extras.push(`地区(语境匹配): ${blockedRegionEntries.join(' , ')}`);
+    if (blockedRegionEntries.length) extras.push(`地区(语境匹配): ${usedRegionPreset ? `内置预设名单 ${blockedRegionEntries.length} 个` : blockedRegionEntries.join(' , ')}`);
     const extraSummary = extras.length ? `${ruleSummary ? ' , ' : ''}${extras.join(' , ')}` : '';
     log("info", `[system] [danmu] [blocked-words] 规则解析成功: 共 ${regexArray.length} 条规则 + ${blockedNameEntries.length} 个人名 + ${blockedRegionEntries.length} 个地区 [ ${ruleSummary}${extraSummary} ]`);
   }
