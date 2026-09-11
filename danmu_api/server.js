@@ -18,6 +18,13 @@ import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.
 import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
 import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
 
+// 读取 Node HTTP 请求体的原始字节，避免多字节字符和上传文件在分块读取时被破坏。
+async function readRequestBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 // =====================
 // server.js - 本地node智能启动脚本：根据 Node.js 环境自动选择最优启动模式
 // =====================
@@ -340,11 +347,7 @@ function createServer() {
       // 异步读取 POST/PUT 请求的请求体
       let body;
       if (req.method === 'POST' || req.method === 'PUT') {
-        body = await new Promise((resolve) => {
-          let data = '';
-          req.on('data', chunk => data += chunk);
-          req.on('end', () => resolve(data));
-        });
+        body = await readRequestBody(req);
       }
 
       // 创建一个 Web API 兼容的 Request 对象

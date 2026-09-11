@@ -11,6 +11,13 @@ import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
 import { requestRecordsJsContent } from "./js/requestrecords.js";
 import { systemSettingsJsContent } from "./js/systemsettings.js";
+import { localDanmuJsContent } from "./js/localdanmu.js";
+
+const localDanmuLatestYear = new Date().getFullYear();
+const localDanmuYearOptions = Array.from({ length: localDanmuLatestYear - 1900 + 1 }, (_, index) => {
+    const year = localDanmuLatestYear - index;
+    return `<option value="${year}"${index === 0 ? ' selected' : ''}>${year}年</option>`;
+}).join('');
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -75,6 +82,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn" onclick="switchSection('api', event)">接口调试</button>
                 <button class="nav-btn" onclick="switchSection('push', event)">推送弹幕</button>
                 <button class="nav-btn" onclick="switchSection('request-records', event)">请求记录</button>
+                <button class="nav-btn" onclick="switchSection('local-danmu', event)">本地弹幕</button>
                 <button class="nav-btn" onclick="switchSection('env', event)" id="env-nav-btn">系统配置</button>
             </div>
         </div>
@@ -289,6 +297,41 @@ export const HTML_TEMPLATE = /* html */ `
                     <span style="color: #666;">云服务部署需要配置redis</span>
                 </div>
                 <div class="request-records-container" id="request-records-list"></div>
+            </div>
+
+            <div class="section" id="local-danmu-section">
+                <h2>本地弹幕</h2>
+                <p id="local-danmu-permission" class="preview-description"></p>
+                <div id="local-danmu-upload-panel">
+                    <div class="form-group local-danmu-file-field">
+                        <label for="local-danmu-file">弹幕文件</label>
+                        <input type="file" id="local-danmu-file" accept=".xml,.json,.ass,.ssa,.csv,.txt" aria-describedby="local-danmu-file-hint" data-can-upload="globals.localDanmuCanUpload" onclick="return checkLocalDanmuWritePermission('上传', event)">
+                        <p id="local-danmu-file-hint" class="local-danmu-file-hint">支持 XML、JSON、ASS、SSA、CSV、TXT，单个文件不超过 10 MB</p>
+                    </div>
+                    <div class="local-danmu-fields">
+                        <div class="form-group local-danmu-name-field"><label for="local-danmu-title">标题（必填）</label><input id="local-danmu-title" placeholder="电视剧或影片标题"></div>
+                        <div class="form-group">
+                            <label id="local-danmu-year-label" for="local-danmu-year">年份（必填）</label>
+                            <select id="local-danmu-year" required>
+                                ${localDanmuYearOptions}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="local-danmu-type">类型（必填）</label>
+                            <select id="local-danmu-type" required>
+                                <option value="" disabled selected>请选择</option>
+                                <option value="tv">tv</option>
+                                <option value="movie">movie</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label id="local-danmu-season-label" for="local-danmu-season">季</label><input id="local-danmu-season" type="number" min="1" step="1" value="1"></div>
+                        <div class="form-group"><label id="local-danmu-episode-label" for="local-danmu-episode">集</label><input id="local-danmu-episode" type="number" min="1" step="1" value="1"></div>
+                        <button id="local-danmu-upload-button" type="button" class="btn btn-success" onclick="uploadLocalDanmu()">上传并解析</button>
+                    </div>
+                    <p class="preview-description">tv 默认第 1 季第 1 集，movie 的季和集可留空。标题、年份、类型和季相同的文件会归为一个剧集，展开后可查看各集。同一季的同一集重新上传会替换原文件。</p>
+                    <div id="local-danmu-upload-status" class="preview-status" aria-live="polite"></div>
+                </div>
+                <div id="local-danmu-list" class="favorite-list"></div>
             </div>
 
             <!-- 系统配置 -->
@@ -511,6 +554,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${pushDanmuJsContent}
         ${requestRecordsJsContent}
         ${systemSettingsJsContent}
+        ${localDanmuJsContent}
     </script>
 </body>
 </html>

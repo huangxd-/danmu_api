@@ -15,9 +15,12 @@ function resolveUiTheme(theme) {
 }
 
 export function handleUI() {
+  const localDanmuCanUpload = globals.localDanmuNotRequireAdmin
+    || (!!globals.adminToken && globals.currentToken === globals.adminToken);
   const html = HTML_TEMPLATE
     .replace("globals.currentToken", () => globals.currentToken)
-    .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme));
+    .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme))
+    .replace("globals.localDanmuCanUpload", String(localDanmuCanUpload));
 
   return new Response(html, {
     headers: {
