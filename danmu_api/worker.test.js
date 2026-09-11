@@ -3165,9 +3165,7 @@ test('fongmi-api season aware scoring', () => {
   // 目标无季标注: 完全不受影响(向后兼容); 文本包含加分(+4500)为原有行为
   const plain = mk('凡人修仙传', '第05集', 4);
   assert.equal(scoreOf(plain, '凡人修仙传 第05集'), 196 + 7000 + 4000 + 4500);
-
-
-
+});
 
 const comment = '标题警告‼️ 中文弹幕 😀 \uFFFD';
 const json = JSON.stringify({ count: 1, comments: [{ p: '1.00,1,16777215,[qiyi]', m: comment }] }, null, 2);
