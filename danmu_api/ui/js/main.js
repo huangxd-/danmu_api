@@ -179,6 +179,7 @@ function loadEnvVariables() {
         .then(config => {
             // 从配置中获取admin token
             currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+            updateLocalDanmuPermission(config);
 
             originalToken = config.originalEnvVars?.TOKEN || '';
             
@@ -393,7 +394,7 @@ function switchSection(section, event = null) {
     }
 
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、推送弹幕、请求记录、系统配置需要token访问）
-    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push' || section === 'request-records') {
+    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push' || section === 'request-records' || section === 'local-danmu') {
         let _reverseProxy = customBaseUrl; // 使用全局配置
 
         // 获取URL路径并提取token

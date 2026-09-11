@@ -9,7 +9,8 @@
   - [3. 接口调试/弹幕测试](#3-接口调试弹幕测试)
   - [4. 推送弹幕](#4-推送弹幕)
   - [5. 请求记录](#5-请求记录)
-  - [6. 系统配置](#6-系统配置)
+  - [6. 本地弹幕](#6-本地弹幕)
+  - [7. 系统配置](#7-系统配置)
 - [安全说明](#安全说明)
 - [部署平台支持](#部署平台支持)
 - [部署平台环境变量配置指南](#部署平台环境变量配置指南)
@@ -35,7 +36,8 @@ UI 系统提供了以下主要功能模块：
 3. **接口调试/弹幕测试** - 测试和调试弹幕 API 接口
 4. **推送弹幕** - 向播放器推送弹幕
 5. **请求记录** - 查看最近的 API 请求记录
-6. **系统配置** - 环境变量配置和系统管理
+6. **本地弹幕** - 上传、解析和管理本地弹幕文件
+7. **系统配置** - 环境变量配置和系统管理
 
 ## 访问方式
 
@@ -110,7 +112,17 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
   - 请求来源 IP
 - 查看今日请求总数
 
-### 6. 系统配置
+### 6. 本地弹幕
+
+本地弹幕页面用于将本地弹幕文件导入服务，并在搜索和自动匹配中使用。页面支持 XML、JSON、ASS、SSA、CSV、TXT 格式，单个文件大小上限为 10 MB。
+
+上传时需要填写标题、年份和类型（`tv` 或 `movie`）。电视剧默认第 1 季第 1 集，也可以指定季数和集数；电影的季数和集数可以留空。标题、年份、类型和季相同的资源会归为一组，列表中可展开查看每一集并单独删除。重新上传同一季同一集会替换原文件。
+
+本地弹幕页面和接口需要有效的 `TOKEN` 或 `ADMIN_TOKEN`。默认只有 `ADMIN_TOKEN` 可以上传和删除，普通 `TOKEN` 只能查看列表；设置 `LOCAL_DANMU_NOT_REQUIRE_ADMIN=true` 后，普通 `TOKEN` 也可以上传和删除。资源保存方式取决于部署环境：Node/Docker 保存到 `.cache/local-danmu`，云端部署使用已配置的 Redis。
+
+导入完成后，需要在 `SOURCE_ORDER` 中加入 `local`，例如 `SOURCE_ORDER=local,douban,360`，搜索接口才会检索并返回本地弹幕。`local` 是数据源，不属于 `PLATFORM_ORDER` 的播放平台选项。
+
+### 7. 系统配置
 
 系统配置页面包含：
 
@@ -137,6 +149,7 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 
 - 访问 UI 系统需要在 URL 中配置 TOKEN
 - 系统管理功能（日志查看、环境变量配置等）需要 ADMIN_TOKEN
+- 本地弹幕上传和删除默认需要 ADMIN_TOKEN；可通过 `LOCAL_DANMU_NOT_REQUIRE_ADMIN=true` 放宽为普通 TOKEN
 - 确保 TOKEN 和 ADMIN_TOKEN 的安全性
 
 ## 部署平台支持
@@ -338,8 +351,18 @@ A: 大多数平台的 Token 只显示一次,如果忘记复制需要删除后重
 
 在 UI 页面顶部显示当前 API 端点，可点击复制到剪贴板。
 
+本地弹幕管理使用以下接口：
+
+- `POST /api/v2/local-danmu/upload`：上传并解析本地弹幕文件，使用 `multipart/form-data`，必填字段为 `file`、`title`、`year`、`type`。
+- `GET /api/v2/local-danmu/list`：获取资源列表和分组信息。
+- `GET /api/v2/local-danmu/:resourceKey`：获取单个资源元数据。
+- `DELETE /api/v2/local-danmu/:resourceKey`：删除单个资源。
+
+这些接口也支持去掉 `/v2` 的 `/api/local-danmu/...` 路径。上传和删除默认需要 `ADMIN_TOKEN`；设置 `LOCAL_DANMU_NOT_REQUIRE_ADMIN=true` 后，普通 `TOKEN` 也可以执行。
+
 ## 故障排除
 
 - 如果无法访问功能页面，请检查 URL 中的 TOKEN 是否正确
 - 如果系统管理功能不可用，请确认 ADMIN_TOKEN 等环境变量是否已配置
+- 如果本地弹幕列表为空，请确认已在 `SOURCE_ORDER` 中加入 `local`；如果上传或删除返回 403，请使用 `ADMIN_TOKEN` 或启用 `LOCAL_DANMU_NOT_REQUIRE_ADMIN=true`
 - 如遇到其他问题，请查看系统日志获取更多信息

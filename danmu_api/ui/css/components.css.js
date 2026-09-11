@@ -250,6 +250,177 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     margin-top: 8px;
 }
 
+.local-danmu-file-field input[type="file"] {
+    min-height: 48px;
+    padding: 6px;
+    border-radius: var(--app-radius-btn);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.local-danmu-file-field input[type="file"]::file-selector-button {
+    margin-right: 12px;
+    padding: 9px 18px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--theme-accent), var(--theme-accent-hover));
+    color: #ffffff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px var(--theme-accent-soft);
+    transition: filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.local-danmu-file-field input[type="file"]::file-selector-button:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 3px 10px var(--theme-accent-soft);
+}
+
+.local-danmu-file-field input[type="file"]::file-selector-button:active {
+    filter: brightness(0.96);
+}
+
+.local-danmu-file-hint {
+    margin: 7px 0 0;
+    color: var(--theme-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.local-danmu-fields {
+    display: grid;
+    grid-template-columns: minmax(190px, 2fr) repeat(4, minmax(100px, 1fr)) auto;
+    align-items: end;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.local-danmu-fields .form-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+.local-danmu-fields .form-group label {
+    min-height: 18px;
+    margin-bottom: 6px;
+    line-height: 18px;
+    white-space: nowrap;
+}
+
+.local-danmu-fields .form-group input,
+.local-danmu-fields .form-group select {
+    box-sizing: border-box;
+    width: 100%;
+    height: 42px;
+    min-height: 42px;
+    margin: 0;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.local-danmu-fields select {
+    cursor: pointer;
+}
+
+.local-danmu-fields > button {
+    height: 42px;
+    min-height: 42px;
+}
+
+.local-danmu-group {
+    margin-bottom: 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--app-radius-card-sm);
+    background: var(--theme-input-bg);
+    overflow: hidden;
+}
+
+.local-danmu-group > summary {
+    padding: 14px 16px;
+    cursor: pointer;
+    color: var(--theme-text);
+    overflow-wrap: anywhere;
+}
+
+.local-danmu-group > summary::marker {
+    color: var(--theme-accent);
+}
+
+.local-danmu-group[open] > summary {
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.local-danmu-group-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.local-danmu-group-meta,
+.local-danmu-group-count {
+    display: block;
+    margin: 5px 0 0 18px;
+    font-size: 12px;
+    color: var(--theme-muted);
+}
+
+.local-danmu-episodes {
+    margin: 8px 16px 12px 34px;
+    padding: 0 0 0 16px;
+    border-left: 2px solid var(--theme-border);
+}
+
+.local-danmu-episode {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.local-danmu-episode:last-child {
+    border-bottom: 0;
+}
+
+.local-danmu-episode-info {
+    min-width: 0;
+    margin-left: 12px;
+}
+
+.local-danmu-episode-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theme-text);
+}
+
+.local-danmu-filename,
+.local-danmu-episode-meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--theme-muted);
+    overflow-wrap: anywhere;
+}
+
+.local-danmu-episode > button {
+    flex-shrink: 0;
+}
+
+@media (max-width: 960px) {
+    .local-danmu-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .local-danmu-name-field,
+    .local-danmu-fields > button {
+        grid-column: 1 / -1;
+    }
+}
+
 .btn-primary {
     background: linear-gradient(135deg, var(--theme-accent), var(--theme-accent-hover));
     color: #ffffff;
