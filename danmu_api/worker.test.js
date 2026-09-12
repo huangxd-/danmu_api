@@ -3950,6 +3950,42 @@ test('local danmu list filters uploaded groups by title', async () => {
   assert.equal(box.querySelectorAll('.local-danmu-group').length, 2);
 });
 
+test('local danmu can delete an entire series in one action', async () => {
+  const rows = [resource(1, 1), resource(1, 2)];
+  let groups = groupLocalDanmuResources(rows);
+  const requests = [];
+  let confirmations = 0;
+  const { context, box } = makePage(async (url, options = {}) => {
+    requests.push({ url, method: options.method || 'GET' });
+    if (options.method === 'DELETE') {
+      groups = [];
+      return { ok: true, json: async () => ({ success: true }) };
+    }
+    return { ok: true, json: async () => ({ success: true, groups }) };
+  }, { confirm: () => { confirmations++; return true; } });
+  await context.loadLocalDanmuList();
+  const card = box.querySelectorAll('.local-danmu-group')[0];
+  const removeGroup = card.querySelectorAll('button').at(-1);
+  await removeGroup.listeners.get('click')({ preventDefault() {}, stopPropagation() {} });
+  assert.equal(confirmations, 1);
+  assert.equal(requests.filter(request => request.method === 'DELETE').length, 2);
+  assert.equal(box.querySelectorAll('.local-danmu-group').length, 0, JSON.stringify(requests));
+});
+
+test('local danmu re-upload fills the original resource metadata', async () => {
+  const row = resource(2, 7);
+  const { context, elements, box } = makePage(async () => ({ ok: true, json: async () => ({ success: true, groups: [] }) }));
+  context.renderLocalDanmuGroups(box, groupLocalDanmuResources([row]));
+  const reupload = box.querySelectorAll('button')[1];
+  await reupload.listeners.get('click')();
+  assert.equal(elements.get('local-danmu-title').value, row.title);
+  assert.equal(elements.get('local-danmu-year').value, String(row.year));
+  assert.equal(elements.get('local-danmu-type').value, row.type);
+  assert.equal(elements.get('local-danmu-season').value, String(row.season));
+  assert.equal(elements.get('local-danmu-episode').value, String(row.episode));
+  assert.match(elements.get('local-danmu-upload-status').textContent, /请选择新文件/);
+});
+
 test('upload sends the selected season and retains series fields for the next episode', async () => {
   let uploaded = null;
   const { context, elements } = makePage(async (_url, options = {}) => {

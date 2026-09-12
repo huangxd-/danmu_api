@@ -101,6 +101,13 @@ function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
       localDanmuElement('span', 'local-danmu-group-meta', (group.year || '年份未填写') + ' · ' + (typeNames[group.type] || group.type || '类型未填写') + seasonText),
       localDanmuElement('span', 'local-danmu-group-count', '已上传 ' + group.episodeCount + (group.type === 'movie' ? ' 个文件 · ' : ' 集 · ') + Number(group.count || 0).toLocaleString() + ' 条弹幕')
     );
+    const removeGroup = localDanmuElement('button', 'btn btn-danger local-danmu-group-remove', '删除整个剧集');
+    removeGroup.type = 'button';
+    removeGroup.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      await deleteLocalDanmuGroup(group);
+    });
     const episodes = localDanmuElement('div', 'local-danmu-episodes');
     for (const resource of group.episodes) {
       const row = localDanmuElement('div', 'local-danmu-episode');
@@ -112,15 +119,33 @@ function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
         localDanmuElement('div', 'local-danmu-filename', resource.filename || '弹幕文件'),
         localDanmuElement('div', 'local-danmu-episode-meta', Number(resource.count || 0).toLocaleString() + ' 条弹幕 · ' + localDanmuFileSize(resource.size) + ' · ' + state)
       );
+      const reupload = localDanmuElement('button', 'btn btn-secondary', '重新上传');
+      reupload.type = 'button';
+      reupload.addEventListener('click', () => prepareLocalDanmuReupload(resource));
       const remove = localDanmuElement('button', 'btn btn-danger', resource.episode == null ? '删除文件' : '删除本集');
       remove.type = 'button';
       remove.addEventListener('click', () => deleteLocalDanmu(resource.resourceKey));
-      row.append(info, remove);
+      const actions = localDanmuElement('div', 'local-danmu-episode-actions');
+      actions.append(remove, reupload);
+      row.append(info, actions);
       episodes.append(row);
     }
-    card.append(summary, episodes);
+    card.append(summary, episodes, removeGroup);
     box.append(card);
   }
+}
+function prepareLocalDanmuReupload(resource) {
+  if (!checkLocalDanmuWritePermission('重新上传')) return;
+  document.getElementById('local-danmu-title').value = resource.title || '';
+  document.getElementById('local-danmu-year').value = resource.year == null ? '' : String(resource.year);
+  document.getElementById('local-danmu-type').value = resource.type || 'tv';
+  document.getElementById('local-danmu-season').value = resource.season == null ? '' : String(resource.season);
+  document.getElementById('local-danmu-episode').value = resource.episode == null ? '' : String(resource.episode);
+  updateLocalDanmuTypeFields();
+  const file = document.getElementById('local-danmu-file');
+  file.value = '';
+  document.getElementById('local-danmu-upload-status').textContent = '已填充“' + (resource.title || '') + '”的信息，请选择新文件后上传。';
+  file.click?.();
 }
 function filterLocalDanmuGroups() {
   const box = document.getElementById('local-danmu-list');
@@ -195,6 +220,27 @@ async function deleteLocalDanmu(key) {
     const d = await r.json();
     if (!r.ok || !d.success) { status.textContent = d.errorMessage || '删除失败'; return; }
     status.textContent = '已删除弹幕文件';
+    await loadLocalDanmuList();
+  } catch { status.textContent = '删除失败，请稍后重试'; }
+}
+async function deleteLocalDanmuGroup(group) {
+  if (localDanmuRedisUnavailable()) {
+    showLocalDanmuRedisRequired();
+    return;
+  }
+  if (!checkLocalDanmuWritePermission('删除')) return;
+  const relatedGroups = localDanmuGroups.filter(item => item.title === group.title && item.year === group.year && item.type === group.type);
+  const resources = [...new Map(relatedGroups.flatMap(item => item.episodes).map(resource => [resource.resourceKey, resource])).values()];
+  if (!confirm('确认删除“' + group.title + '”的全部本地弹幕文件？')) return;
+  const status = document.getElementById('local-danmu-upload-status');
+  try {
+    const responses = await Promise.all(resources.map(resource =>
+      fetch(localDanmuUrl('/api/local-danmu/' + encodeURIComponent(resource.resourceKey)), { method: 'DELETE' })
+        .then(async response => ({ response, data: await response.json() }))
+    ));
+    const failed = responses.find(({ response, data }) => !response.ok || !data.success);
+    if (failed) { status.textContent = failed.data.errorMessage || '删除失败'; return; }
+    status.textContent = '已删除剧集“' + group.title + '”的全部弹幕文件';
     await loadLocalDanmuList();
   } catch { status.textContent = '删除失败，请稍后重试'; }
 }

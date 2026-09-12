@@ -776,7 +776,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - cloudflare貌似有单次请求数量限制，会导致后半部分没有弹幕。
 - 如果想更换兜底第三方弹幕服务器，请添加环境变量`OTHER_SERVER`，示例`https://api.danmu.icu`。
 - 如果想使用自定义弹幕源，请添加环境变量`CUSTOM_SOURCE_API_URL`，并在`SOURCE_ORDER`环境变量中添加`custom`源。
-- 本地弹幕上传的标题、年份和类型为必填项。年份从今年向下排列至 `1900` 年，默认值和最大值均为打开页面时的当前年份；类型仅可选 `tv` 或 `movie`。`tv` 的季和集均默认 `1`，`movie` 的季和集可留空。管理列表按标题、年份、类型、季归为一个剧集，展开后缩进显示各集，可单独查看和删除；同一季同一集重新上传会替换原文件，不同季独立保存。旧资源继续兼容，未填写季数的资源沿用第 1 季处理。在 `SOURCE_ORDER` 中添加 `local` 后即可搜索已上传的剧集。
+- 本地弹幕上传的标题、年份和类型为必填项。年份从今年向下排列至 `1900` 年，默认值和最大值均为打开页面时的当前年份；类型仅可选 `tv` 或 `movie`。`tv` 的季和集均默认 `1`，`movie` 的季和集可留空。管理列表按标题、年份、类型、季归为一个剧集，支持按标题关键词搜索，展开后缩进显示各集，可单独删除文件、重新上传文件或一次删除整个剧集；同一季同一集重新上传会替换原文件，不同季独立保存。旧资源继续兼容，未填写季数的资源沿用第 1 季处理。在 `SOURCE_ORDER` 中添加 `local` 后即可搜索已上传的剧集。
 - Node/Docker 部署的本地弹幕文件保存在 `.cache/local-danmu`，使用 Docker 时请挂载 `.cache` 目录以持久化；Vercel、Netlify、Cloudflare、EdgeOne、Hugging Face 等云端部署需要可用的 Redis 才能保存本地弹幕资源。
 - 如果想搜索bilibili港澳台番剧，请开启`Bangumi Data`匹配或添加环境变量`PROXY_URL`并填写`bilibili@`字段的解析/反代服务地址，示例：`bilibili@https://233.233.233`，支持部分[公共解析服务器](https://github.com/yujincheng08/BiliRoaming/wiki/%E5%85%AC%E5%85%B1%E8%A7%A3%E6%9E%90%E6%9C%8D%E5%8A%A1%E5%99%A8)，另外港澳台区域搜索最好在`BILIBILI_COOKIE`环境变量中加入包含`bili_jct`或`access_key`字段的cookie使用App接口，如果没有会使用不稳定的web接口进行搜索。（如果你填写的服务器遇到了App接口报错说明不支持App接口，Web接口报错-500、502正常，风控严重，但只要一直搜索总会成功）
 - 如果想更换vod站点，请添加环境变量`VOD_SERVERS`，示例`金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top`（支持多个服务器并发查询）。

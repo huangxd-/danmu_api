@@ -380,6 +380,10 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     overflow-wrap: anywhere;
 }
 
+.local-danmu-group-remove {
+    margin: 0 16px 8px 34px;
+}
+
 .local-danmu-group > summary::marker {
     color: var(--theme-accent);
 }
@@ -441,6 +445,12 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
 
 .local-danmu-episode > button {
     flex-shrink: 0;
+}
+
+.local-danmu-episode-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
 }
 
 @media (max-width: 960px) {
