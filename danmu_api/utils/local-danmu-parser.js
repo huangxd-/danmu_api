@@ -11,6 +11,11 @@ const timeToSeconds = (value) => {
   return (Number(m[1] || 0) * 3600) + Number(m[2]) * 60 + Number(m[3]) + Number(`0.${m[4] || 0}`);
 };
 const cleanText = (v) => String(v ?? '').replace(/<[^>]+>/g, '').trim();
+// 标准 B 站 XML 为 8/9 段 p（时间,类型,字号,颜色,...），旧的 3/4 段格式颜色仍在第 3 段。
+const pickColorFromP = (p) => {
+    const parts = String(p ?? '').split(',');
+    return parts.length >= 8 ? parts[3] : parts[2];
+};
 const normalize = (rows, format) => {
   const errors = [];
   const comments = [];
@@ -18,7 +23,7 @@ const normalize = (rows, format) => {
     const row = rows[i] || {};
     const pTime = typeof row.p === 'string' ? row.p.split(',')[0] : null;
     const pMode = typeof row.p === 'string' ? row.p.split(',')[1] : null;
-    const pColor = typeof row.p === 'string' ? row.p.split(',')[2] : null;
+    const pColor = typeof row.p === 'string' ? pickColorFromP(row.p) : null;
     const time = timeToSeconds(row.time ?? row.start ?? row.progress ?? row.timepoint ?? row.t ?? pTime);
     const text = cleanText(row.text ?? row.content ?? row.m ?? row.message);
     if (!Number.isFinite(time) || time < 0 || !text) { if (errors.length < 5) errors.push(`${format} 第 ${i + 1} 行时间或文本无效`); continue; }
@@ -42,7 +47,7 @@ function parseXml(text) {
   const nodes = [];
   const walk = (v) => { if (!v || typeof v !== 'object') return; if (v.p && (v['#text'] !== undefined || typeof v.p === 'string')) nodes.push({ p: v.p, text: v['#text'] ?? v.text ?? '' }); for (const x of Object.values(v)) Array.isArray(x) ? x.forEach(walk) : walk(x); };
   walk(data);
-  return normalize(nodes.map(x => { const p = String(x.p).split(','); return { time: p[0], mode: p[1], color: p[2], text: x.text }; }), 'XML');
+  return normalize(nodes.map(x => { const p = String(x.p).split(','); return { time: p[0], mode: p[1], color: pickColorFromP(x.p), text: x.text }; }), 'XML');
 }
 function parseAss(text) {
   const rows = [];

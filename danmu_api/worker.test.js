@@ -3175,6 +3175,19 @@ test('UTF-8 JSON preserves a literal replacement character without changing enco
   assert.deepEqual(parseLocalDanmu(Buffer.from(json, 'utf8'), 'danmu.json'), expected);
 });
 
+test('local XML reads the Bilibili color field instead of the font size', () => {
+  const xml = '<i>'
+    + '<d p="1.00,1,25,16777215,1700000000,0,abc,1001">白色弹幕</d>'
+    + '<d p="2.00,1,25,16711680,1700000001,0,abc,1002">红色弹幕</d>'
+    + '<d p="3.00,1,16711680,0">旧四段格式</d>'
+    + '</i>';
+  assert.deepEqual(parseLocalDanmu(Buffer.from(xml, 'utf8'), 'bili.xml').comments, [
+    { p: '1.00,1,16777215', m: '白色弹幕' },
+    { p: '2.00,1,16711680', m: '红色弹幕' },
+    { p: '3.00,1,16711680', m: '旧四段格式' },
+  ]);
+});
+
 const encodings = [
   ['UTF-8', text => Buffer.from(text, 'utf8')],
   ['UTF-8 with BOM', text => Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(text, 'utf8')])],
