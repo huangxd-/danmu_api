@@ -19,7 +19,6 @@ html {
     overflow-y: scroll;
     scrollbar-gutter: stable;
     background: var(--theme-page-bg);
-    color-scheme: light !important;
 }
 
 html.modal-open {

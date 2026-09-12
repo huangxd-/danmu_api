@@ -117,6 +117,14 @@ body[data-color-scheme="dark"] {
     color-scheme: dark;
 }
 
+/* Keep native select controls and their popup menus in sync with the theme. */
+body[data-color-scheme="dark"] select {
+    color-scheme: dark;
+}
+body:not([data-color-scheme="dark"]) select {
+    color-scheme: light;
+}
+
 /* 暗色模式下各强调色饱和度降低 */
 body[data-color-scheme="dark"][data-theme="shinyo"] {
     --app-primary: #7da67d; --app-primary-hover: #6f966f; --app-primary-soft: rgba(125,166,125,0.12);
