@@ -333,6 +333,10 @@ export const HTML_TEMPLATE = /* html */ `
                     <p class="preview-description">tv 默认第 1 季第 1 集，movie 的季和集可留空。标题、年份、类型和季相同的文件会归为一个剧集，展开后可查看各集。同一季的同一集重新上传会替换原文件。</p>
                     <div id="local-danmu-upload-status" class="preview-status" aria-live="polite"></div>
                 </div>
+                <div class="form-group local-danmu-search">
+                    <label for="local-danmu-search">搜索已上传标题</label>
+                    <input type="search" id="local-danmu-search" placeholder="输入标题关键词" autocomplete="off">
+                </div>
                 <div id="local-danmu-list" class="favorite-list"></div>
             </div>
 

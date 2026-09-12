@@ -2,6 +2,7 @@
 export const localDanmuJsContent = /* javascript */ `
 let localDanmuStorageReady = globals.localDanmuRedisValid;
 let localDanmuIsCloud = globals.localDanmuIsCloud;
+let localDanmuGroups = [];
 function localDanmuUrl(path, admin = false) { return buildApiUrl(path, admin); }
 function localDanmuRedisUnavailable() {
   return localDanmuIsCloud && !localDanmuStorageReady;
@@ -69,6 +70,7 @@ function initializeLocalDanmuForm() {
   }
   year.value = String(currentYear);
   document.getElementById('local-danmu-type').addEventListener('change', updateLocalDanmuTypeFields);
+  document.getElementById('local-danmu-search')?.addEventListener('input', filterLocalDanmuGroups);
   updateLocalDanmuTypeFields();
 }
 function localDanmuElement(tag, className, text) {
@@ -83,15 +85,15 @@ function localDanmuFileSize(size) {
   if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return bytes + ' B';
 }
-function renderLocalDanmuGroups(box, groups) {
+function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
   const openStates = new Map(Array.from(box.querySelectorAll('.local-danmu-group'), element => [element.dataset.groupKey, element.open]));
   box.replaceChildren();
-  if (!groups.length) { box.append(localDanmuElement('p', 'text-gray', '暂无资源')); return; }
+  if (!groups.length) { box.append(localDanmuElement('p', 'text-gray', emptyText)); return; }
   const typeNames = { tv: '电视剧', movie: '电影', ova: 'OVA', special: '特别篇' };
   for (const group of groups) {
     const card = localDanmuElement('details', 'local-danmu-group');
     card.dataset.groupKey = group.groupKey;
-    card.open = openStates.get(group.groupKey) ?? true;
+    card.open = openStates.get(group.groupKey) ?? false;
     const summary = localDanmuElement('summary');
     const seasonText = group.type === 'movie' && group.season === 1 ? '' : ' · 第' + group.season + '季';
     summary.append(
@@ -120,13 +122,24 @@ function renderLocalDanmuGroups(box, groups) {
     box.append(card);
   }
 }
+function filterLocalDanmuGroups() {
+  const box = document.getElementById('local-danmu-list');
+  const search = document.getElementById('local-danmu-search');
+  if (!box || !search) return;
+  const keyword = search.value.trim().toLocaleLowerCase();
+  const groups = keyword
+    ? localDanmuGroups.filter(group => String(group.title || '').toLocaleLowerCase().includes(keyword))
+    : localDanmuGroups;
+  renderLocalDanmuGroups(box, groups, keyword ? '未找到匹配标题' : '暂无资源');
+}
 async function loadLocalDanmuList() {
   const box = document.getElementById('local-danmu-list'); if (!box) return;
   try {
     const r = await fetch(localDanmuUrl('/api/local-danmu/list'));
     if (!r.ok) { box.replaceChildren(localDanmuElement('p', 'text-gray', r.status === 401 || r.status === 403 ? '请使用有效 TOKEN 查看资源列表' : '资源列表加载失败')); return; }
     const d = await r.json();
-    renderLocalDanmuGroups(box, d.groups || []);
+    localDanmuGroups = d.groups || [];
+    filterLocalDanmuGroups();
   } catch { box.replaceChildren(localDanmuElement('p', 'text-gray', '资源列表加载失败，请稍后重试')); }
 }
 async function uploadLocalDanmu() {

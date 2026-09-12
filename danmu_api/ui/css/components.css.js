@@ -360,6 +360,11 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     min-height: 42px;
 }
 
+.local-danmu-search {
+    max-width: 480px;
+    margin: 18px 0 12px;
+}
+
 .local-danmu-group {
     margin-bottom: 12px;
     border: 1px solid var(--theme-border);

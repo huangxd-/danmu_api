@@ -3689,7 +3689,7 @@ class TestElement {
 function makePage(fetch, sandboxGlobals = {}, html) {
   const elements = new Map();
   const documentListeners = new Map();
-  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'permission', 'upload-button', 'upload-status', 'list']) {
+  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'permission', 'upload-button', 'upload-status', 'search', 'list']) {
     elements.set(`local-danmu-${name}`, new TestElement());
   }
   const fileInput = (html || HTML_TEMPLATE).match(/<input\b[^>]*\bid="local-danmu-file"[^>]*>/)[0];
@@ -3915,19 +3915,39 @@ test('group cards preserve collapse state and delete only the selected season ep
   await context.loadLocalDanmuList();
   let cards = box.querySelectorAll('.local-danmu-group');
   assert.equal(cards.length, 2);
+  assert.equal(cards[0].open, false);
+  assert.equal(cards[1].open, false);
   assert.equal(cards[0].querySelectorAll('.local-danmu-episode').length, 2);
   assert.deepEqual(cards[0].querySelectorAll('.local-danmu-episode-title').map(element => element.textContent), ['第5集', '第10集']);
   assert.ok(cards[1].querySelectorAll('summary')[0].textContent.includes('2026 · 电视剧 · 第2季'));
   assert.ok(box.textContent.includes('<img src=x> 分季剧'));
   assert.equal(box.querySelectorAll('img').length, 0);
-  cards[0].open = false;
+  cards[0].open = true;
   await context.loadLocalDanmuList();
   cards = box.querySelectorAll('.local-danmu-group');
-  assert.equal(cards[0].open, false);
+  assert.equal(cards[0].open, true);
   await cards[1].querySelectorAll('button')[0].listeners.get('click')();
   assert.equal(requests.find(request => request.method === 'DELETE').url, '/api/local-danmu/' + encodeURIComponent(rows[2].resourceKey));
   assert.equal(box.querySelectorAll('.local-danmu-group').length, 1);
   assert.equal(box.querySelectorAll('.local-danmu-episode').length, 2);
+});
+
+test('local danmu list filters uploaded groups by title', async () => {
+  const groups = groupLocalDanmuResources([resource(1, 1), { ...resource(1, 2), title: '另一部作品', resourceKey: buildLocalDanmuResourceKey({ ...resource(1, 2), title: '另一部作品' }) }]);
+  const { context, box, elements } = makePage(async () => ({ ok: true, json: async () => ({ success: true, groups }) }));
+  context.initializeLocalDanmuForm();
+  await context.loadLocalDanmuList();
+  assert.equal(box.querySelectorAll('.local-danmu-group').length, 2);
+  elements.get('local-danmu-search').value = '分季';
+  elements.get('local-danmu-search').listeners.get('input')();
+  assert.equal(box.querySelectorAll('.local-danmu-group').length, 1);
+  assert.equal(box.querySelectorAll('.local-danmu-group-title')[0].textContent, '<img src=x> 分季剧');
+  elements.get('local-danmu-search').value = '不存在';
+  elements.get('local-danmu-search').listeners.get('input')();
+  assert.match(box.textContent, /未找到匹配标题/);
+  elements.get('local-danmu-search').value = '';
+  elements.get('local-danmu-search').listeners.get('input')();
+  assert.equal(box.querySelectorAll('.local-danmu-group').length, 2);
 });
 
 test('upload sends the selected season and retains series fields for the next episode', async () => {
