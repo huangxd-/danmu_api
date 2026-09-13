@@ -476,7 +476,6 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | ENABLE_ANIME_EPISODE_FILTER    | 【可选】控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
 | STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
 | TITLE_TO_CHINESE    | 【可选】是否在match自动匹配时将外语标题转换成中文标题，适用于网盘没有刮削的资源，默认值：false（不转换），说明：需配合TMDB_API_KEY使用       |
-| TITLE_MAPPING_TABLE    | 【可选】剧名映射表，用于自动匹配、手动搜索、FongMi、收藏时替换标题进行搜索（对解析出的剧名做全名精确匹配），格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
 | TITLE_MAPPING_TABLE    | 【可选】本机剧名映射表（优先级高于远程表），用于自动匹配、手动搜索、FongMi、收藏时替换标题进行搜索（对解析出的剧名做全名精确匹配），格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
 | TITLE_MAPPING_TABLE_URL | 【可选，默认关闭】远程剧名映射表 TXT 地址。配置后首次启动下载到 `.cache/title-mapping-remote.txt`，匹配时只读取本机映射和本地缓存；每天北京时间 05:30 定时更新，单次最多尝试 5 次，失败保留旧缓存。推荐：`https://cdn.jsdelivr.net/gh/xlmc/danmu-mapping@main/Word/2026.txt`       |
 | TITLE_MAPPING_TABLE_URL_CACHE_MINUTES | 【兼容旧配置】远程表刷新间隔配置已不再用于匹配过程；远程表统一由每日 05:30 定时任务更新。       |
