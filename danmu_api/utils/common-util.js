@@ -100,16 +100,110 @@ export function convertChineseNumber(chineseNumber) {
   return result;
 }
 
-// 解析fileName，提取动漫名称和平台偏好
+// =====================
+// 文件名发布组（字幕组）
+// =====================
+
+// 画质、编码、平台等字段不是发布组，不能触发分组映射规则。
+const RELEASE_GROUP_NOISE = /^(?:\d{3,4}p|4k|8k|hdr|dv|dolby[ ._-]*vision|web|dl|web[- .]?dl|web[- .]?rip|bluray|blu[- .]?ray|bdrip|hdtv|dvdrip|remux|hd|fhd|uhd|x26[45]|h[ .]?26[45]|hevc|avc|av1|10bit|8bit|hi10p|ma10p|aac|ac3|ddp|dts|flac|truehd|atmos|dd|5[.]1|7[.]1|2[.]0|baha|mp4|mkv|avi|mov|wmv|chs|cht|gb|big5|中字|国配|中配|日配|粤语|原声|无修|未删减|完整版|臻彩|真彩|group)$/i;
+
+// parseFileName 可能在 Globals.init() 之前调用，使用静态平台集合避免
+// 平台标记（例如 [Baha]）被误判为字幕组。
+const PLATFORM_MARKERS = new Set([
+  'qq', 'tencent', 'qiyi', 'iqiyi', 'imgo', 'mango', 'youku', 'bilibili',
+  'bilibili1', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua',
+  'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom'
+]);
+
+function isReleaseGroupNoise(value) {
+  const text = String(value || '').trim();
+  if (!text || /^(?:19|20)\d{2}$/.test(text) || /^\d{1,3}$/.test(text) || /^S\d{1,2}E\d{1,3}$/i.test(text)) return true;
+  if (RELEASE_GROUP_NOISE.test(text)) return true;
+  if (/^(?:[\[【].*[\]】])$/.test(text)) return isReleaseGroupNoise(text.slice(1, -1));
+  const compoundParts = text.split(/[\s._-]+/).filter(Boolean);
+  if (compoundParts.length > 1 && compoundParts.every(part =>
+    RELEASE_GROUP_NOISE.test(part) || /^\d{1,3}$/.test(part) || /^S\d{1,2}E\d{1,3}$/i.test(part))) return true;
+  return /^(?:\d{3,4}p|web[- .]?dl|web[- .]?rip|bluray|bdrip|hdtv|x26[45]|h[ .]?26[45]|aac|ac3|ddp|dts|中字|国配|中配|日配|粤语)(?:[\s._-]+|$)/i.test(text)
+    && text.split(/[\s._-]+/).every(part => !part || RELEASE_GROUP_NOISE.test(part));
+}
+
+function addReleaseGroup(groups, value) {
+  // `[A&B]` 表示两个独立发布组；像 `VCB-Studio` 这样的名称保持连字符。
+  for (const part of String(value || '').split(/[&＋+]/)) {
+    const text = part.trim().replace(/^[\[【]|[\]】]$/g, '').trim();
+    if (!text || isReleaseGroupNoise(text)) continue;
+    const normalized = text.toLowerCase();
+    if (PLATFORM_MARKERS.has(normalized)
+      || (Array.isArray(globals.allowedPlatforms)
+        && globals.allowedPlatforms.some(platform => String(platform).toLowerCase() === normalized))) continue;
+    if (text.length > 64 || /[\\/:*?"<>|]/.test(text)) continue;
+    if (!groups.includes(text)) groups.push(text);
+  }
+}
+
+/**
+ * Extract explicit release-group tokens without changing the search title.
+ * Only leading bracket tags and `-Group`/`@Group` suffixes are considered;
+ * ordinary final title words are never guessed as a group.
+ */
+export function extractReleaseGroups(fileName) {
+  const baseName = String(fileName || '').split(/[\\/]/).pop()
+    .replace(/\.(?:mkv|mp4|avi|mov|wmv|flv|ts|m2ts|ass|srt)$/i, '');
+  const groups = [];
+  let rest = baseName.trim();
+
+  while (true) {
+    const match = rest.match(/^\s*(?:\[([^\]]+)\]|【([^】]+)】)\s*/);
+    if (!match) break;
+    addReleaseGroup(groups, match[1] ?? match[2]);
+    rest = rest.slice(match[0].length);
+  }
+
+  // Require an explicit SxxEyy identity for suffix parsing so a title like
+  // `Spider-Man` is never shortened to `Spider`.
+  const suffix = rest.match(/(?:-|@)([A-Za-z][A-Za-z0-9_.+]{1,63})$/);
+  if (suffix && /\bS\d+E\d+\b/i.test(rest)) {
+    let suffixGroup = suffix[1];
+    if (suffix[0].startsWith('-')) {
+      const groupParts = [suffixGroup];
+      let prefix = rest.slice(0, suffix.index);
+      while (true) {
+        const previous = prefix.match(/(?:^|[.\s-])([A-Za-z][A-Za-z0-9_+]{1,63})$/);
+        if (!previous || isReleaseGroupNoise(previous[1])) break;
+        groupParts.unshift(previous[1]);
+        prefix = prefix.slice(0, previous.index);
+      }
+      suffixGroup = groupParts.join('-');
+    }
+    addReleaseGroup(groups, suffixGroup);
+  }
+
+  return groups;
+}
+
+function stripLeadingReleaseGroupTags(value) {
+  let text = String(value || '').trim();
+  while (true) {
+    const match = text.match(/^\s*(?:\[[^\]]+\]|【[^】]+】)\s*/);
+    if (!match) break;
+    text = text.slice(match[0].length);
+  }
+  return text.trim();
+}
+
+// 解析fileName，提取动漫名称、平台偏好和可选字幕组
 export function parseFileName(fileName) {
   if (!fileName || typeof fileName !== 'string') {
-    return { cleanFileName: '', preferredPlatform: '' };
+    return { cleanFileName: '', preferredPlatform: '', releaseGroups: [], releaseGroup: '' };
   }
+
+  const releaseGroups = extractReleaseGroups(fileName);
+  const releaseResult = groups => ({ releaseGroups, releaseGroup: releaseGroups[0] || '', ...groups });
 
   const atIndex = fileName.indexOf('@');
   if (atIndex === -1) {
     // 没有@符号，直接返回原文件名
-    return { cleanFileName: fileName.trim(), preferredPlatform: '' };
+    return releaseResult({ cleanFileName: stripLeadingReleaseGroupTags(fileName), preferredPlatform: '' });
   }
 
   // 找到@符号，需要分离平台标识
@@ -122,10 +216,10 @@ export function parseFileName(fileName) {
     // 格式：动漫名称@平台 S01E01
     const platform = seasonEpisodeMatch[1];
     const seasonEpisode = seasonEpisodeMatch[2];
-    return {
-      cleanFileName: `${beforeAt} ${seasonEpisode}`,
+    return releaseResult({
+      cleanFileName: `${stripLeadingReleaseGroupTags(beforeAt)} ${seasonEpisode}`,
       preferredPlatform: normalizePlatformName(platform)
-    };
+    });
   } else {
     // 检查@符号前面是否有季集信息
     const beforeAtMatch = beforeAt.match(/^(.+?)\s+(S\d+E\d+)$/);
@@ -133,16 +227,16 @@ export function parseFileName(fileName) {
       // 格式：动漫名称 S01E01@平台
       const title = beforeAtMatch[1];
       const seasonEpisode = beforeAtMatch[2];
-      return {
-        cleanFileName: `${title} ${seasonEpisode}`,
+      return releaseResult({
+        cleanFileName: `${stripLeadingReleaseGroupTags(title)} ${seasonEpisode}`,
         preferredPlatform: normalizePlatformName(afterAt)
-      };
+      });
     } else {
       // 格式：动漫名称@平台（没有季集信息）
-      return {
-        cleanFileName: beforeAt,
+      return releaseResult({
+        cleanFileName: stripLeadingReleaseGroupTags(beforeAt),
         preferredPlatform: normalizePlatformName(afterAt)
-      };
+      });
     }
   }
 }
@@ -156,7 +250,7 @@ function normalizePlatformName(inputPlatform) {
   const input = inputPlatform.trim();
 
   // 直接返回输入的平台名称（如果有效）
-  if (globals.allowedPlatforms.includes(input)) {
+  if (Array.isArray(globals.allowedPlatforms) && globals.allowedPlatforms.includes(input)) {
     return input;
   }
 

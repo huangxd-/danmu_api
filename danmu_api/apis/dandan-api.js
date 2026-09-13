@@ -14,7 +14,7 @@ import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.j
 import { resolveOffset, resolveOffsetRule, applyOffset, stripLinkOffset } from "../utils/offset-util.js";
 import { filterMappingQualifierCandidates, filterMappingTargetCandidates, resolveAutoMatchMapping } from "../utils/auto-match-mapping-util.js";
 import { 
-  extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeSpaces, 
+  extractEpisodeTitle, convertChineseNumber, parseFileName, extractReleaseGroups, createDynamicPlatformOrder, normalizeSpaces,
   extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, extractAnimeTitle
 } from "../utils/common-util.js";
 import { getTMDBChineseTitle, getTmdbSeasonBoundaries } from "../utils/tmdb-util.js";
@@ -1663,9 +1663,24 @@ function detectPlatformFromUrl(url) {
   return 'unknown';
 }
 
-export async function extractTitleSeasonEpisode(cleanFileName) {
+export async function extractTitleSeasonEpisode(cleanFileName, suppliedReleaseGroups = null) {
+  const releaseGroups = Array.isArray(suppliedReleaseGroups)
+    ? suppliedReleaseGroups
+    : extractReleaseGroups(cleanFileName);
+  let normalizedFileName = String(cleanFileName || '')
+    .replace(/^(?:\s*(?:\[[^\]]+\]|【[^】]+】)\s*)+/, '')
+    .replace(/\.(?:mkv|mp4|avi|mov|wmv|flv|ts|m2ts|ass|srt)$/i, '');
+
+  // A suffix group is an identity qualifier, not part of the title. Only
+  // strip it from an episode filename so title-only strings remain intact.
+  if (/\bS\d+E\d+\b/i.test(normalizedFileName)) {
+    for (const group of releaseGroups) {
+      const escaped = String(group).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      normalizedFileName = normalizedFileName.replace(new RegExp(`[\\s._-]+${escaped}$`, 'i'), '');
+    }
+  }
   const regex = /^(.+?)[.\s]+S(\d+)E(\d+)/i;
-  const match = cleanFileName.match(regex);
+  const match = normalizedFileName.match(regex);
 
   let title, season, episode, year;
 
@@ -1677,7 +1692,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
 
     // ============ 提取年份 =============
     // 从文件名中提取年份（支持多种格式：.2009、.2024、(2009)、(2024) 等）
-    const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+    const yearMatch = normalizedFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
     if (yearMatch) {
       year = parseInt(yearMatch[1], 10);
     }
@@ -1716,14 +1731,14 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
     // 没有 S##E## 格式，尝试提取第一个片段作为标题
     // 匹配第一个中文/英文标题部分（在年份、分辨率等技术信息之前）
     const titleRegex = /^([^.\s]+(?:[.\s][^.\s]+)*?)(?:[.\s](?:\d{4}|(?:19|20)\d{2}|\d{3,4}p|S\d+|E\d+|WEB|BluRay|Blu-ray|HDTV|DVDRip|BDRip|x264|x265|H\.?264|H\.?265|AAC|AC3|DDP|TrueHD|DTS|10bit|HDR|60FPS))/i;
-    const titleMatch = cleanFileName.match(titleRegex);
+    const titleMatch = normalizedFileName.match(titleRegex);
 
-    title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : cleanFileName;
+    title = titleMatch ? titleMatch[1].replace(/[._]/g, ' ').trim() : normalizedFileName;
     season = null;
     episode = null;
     
     // 从文件名中提取年份
-    const yearMatch = cleanFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
+    const yearMatch = normalizedFileName.match(/(?:\.|\(|（)((?:19|20)\d{2})(?:\)|）|\.|$)/);
     if (yearMatch) {
       year = parseInt(yearMatch[1], 10);
     }
@@ -1736,7 +1751,7 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   }
 
   log("info", "[system] [match] Parsed title, season, episode, year", {title, season, episode, year});
-  return {title, season, episode, year};
+  return {title, season, episode, year, releaseGroups};
 }
 
 export function buildSearchAnimeUrl(baseUrl, keyword, season, episode) {
@@ -1918,24 +1933,34 @@ export async function matchAnime(url, req, clientIp) {
     }
 
     // 解析fileName，提取平台偏好
-    const { cleanFileName, preferredPlatform } = parseFileName(fileName);
+    const { cleanFileName, preferredPlatform, releaseGroups } = parseFileName(fileName);
     log("info", `[system] [match] Processing anime match for query: ${fileName}`);
-    log("info", `[system] [match] Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}`);
+    log("info", `[system] [match] Parsed cleanFileName: ${cleanFileName}, preferredPlatform: ${preferredPlatform}, releaseGroups: ${releaseGroups.join(',') || 'none'}`);
 
-    const parsed = await extractTitleSeasonEpisode(cleanFileName);
+    const parsed = await extractTitleSeasonEpisode(cleanFileName, releaseGroups);
     const originalTitle = normalizeMatchTitle(parsed.title);
     const originalSeason = parsed.season;
     const originalEpisode = parsed.episode;
     const originalYear = parsed.year;
+    const originalReleaseGroups = parsed.releaseGroups || releaseGroups || [];
 
     const preferenceTitles = [...new Set([originalTitle, parsed.title].filter(Boolean))];
     const configuredMapping = resolveAutoMatchMapping(globals.autoMatchMappingTable, {
       title: originalTitle,
       season: originalSeason,
-      episode: originalEpisode
+      episode: originalEpisode,
+      releaseGroups: originalReleaseGroups
     });
+    const genericMapping = originalReleaseGroups.length > 0
+      ? resolveAutoMatchMapping(globals.autoMatchMappingTable, {
+        title: originalTitle,
+        season: originalSeason,
+        episode: originalEpisode,
+        releaseGroups: []
+      })
+      : null;
     const manualPreferenceTitle = findSeasonPreferenceTitle(preferenceTitles, originalSeason);
-    const mapping = manualPreferenceTitle ? null : configuredMapping;
+    let mapping = manualPreferenceTitle ? null : configuredMapping;
     if (configuredMapping && manualPreferenceTitle) {
       log('info', `[system] [auto-match-mapping] Explicit manual preference for "${manualPreferenceTitle}" S${originalSeason} overrides rule "${configuredMapping.raw}"`);
     } else if (configuredMapping) {
@@ -1949,25 +1974,30 @@ export async function matchAnime(url, req, clientIp) {
     let mappingApplied = false;
 
     if (mapping) {
-      const mappedTitle = normalizeMatchTitle(mapping.targetTitle);
-      const mappedPlatform = mapping.targetPlatform || preferredPlatform;
-      log('info', `[system] [auto-match-mapping] ${originalTitle} S${originalSeason}E${originalEpisode} -> ${mappedTitle} S${mapping.targetSeason}E${mapping.targetEpisode}${mapping.targetPlatform ? ` @${mapping.targetPlatform}` : ''}`);
-      attempt = await executeMatchAttempt({
-        req,
-        title: mappedTitle,
-        season: mapping.targetSeason,
-        episode: mapping.targetEpisode,
-        year: mapping.targetYear,
-        preferredPlatform: mappedPlatform,
-        secondaryPreferredPlatform: mapping.targetPlatform ? preferredPlatform : null,
-        preferAnimeId: null,
-        preferSource: null,
-        offsets: null,
-        mapping
-      });
-      mappingApplied = Boolean(attempt.resAnime && attempt.resEpisode);
-      if (!mappingApplied) {
-        log('warn', `[system] [auto-match-mapping] Target failed for "${mapping.raw}", falling back to original match`);
+      const mappingCandidates = [mapping];
+      if (genericMapping && genericMapping.raw !== mapping.raw) mappingCandidates.push(genericMapping);
+      for (const candidate of mappingCandidates) {
+        mapping = candidate;
+        const mappedTitle = normalizeMatchTitle(mapping.targetTitle);
+        const mappedPlatform = mapping.targetPlatform || preferredPlatform;
+        const isGenericFallback = candidate === genericMapping && candidate !== configuredMapping;
+        log('info', `[system] [auto-match-mapping] ${originalTitle} S${originalSeason}E${originalEpisode} -> ${mappedTitle} S${mapping.targetSeason}E${mapping.targetEpisode}${mapping.targetPlatform ? ` @${mapping.targetPlatform}` : ''}${isGenericFallback ? ' (通用回退)' : ''}`);
+        attempt = await executeMatchAttempt({
+          req,
+          title: mappedTitle,
+          season: mapping.targetSeason,
+          episode: mapping.targetEpisode,
+          year: mapping.targetYear,
+          preferredPlatform: mappedPlatform,
+          secondaryPreferredPlatform: mapping.targetPlatform ? preferredPlatform : null,
+          preferAnimeId: null,
+          preferSource: null,
+          offsets: null,
+          mapping
+        });
+        mappingApplied = Boolean(attempt.resAnime && attempt.resEpisode);
+        if (mappingApplied) break;
+        log('warn', `[system] [auto-match-mapping] Target failed for "${mapping.raw}"${genericMapping && !isGenericFallback ? ', trying generic rule before original match' : ', falling back to original match'}`);
       }
     }
 
