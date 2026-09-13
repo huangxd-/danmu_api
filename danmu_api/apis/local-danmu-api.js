@@ -86,10 +86,13 @@ export async function handleLocalDanmuUpdate(req, key) {
     const body = await req.json();
     const all = await listLocalDanmu();
     const scope = body?.scope === 'group' ? 'group' : 'resource';
-    const targets = scope === 'group'
+    const matched = scope === 'group'
       ? all.filter(resource => resource.title === current.title && Number(resource.year) === Number(current.year) && normalizeLocalType(resource.type) === normalizeLocalType(current.type) && normalizeLocalSeason(resource.season) === normalizeLocalSeason(current.season))
       : [current];
-    if (!targets.length) return jsonResponse({ success: false, errorMessage: '资源不存在' }, 404);
+    if (!matched.length) return jsonResponse({ success: false, errorMessage: '资源不存在' }, 404);
+    // 列表只带元数据，这里按 resourceKey 取回完整资源（含弹幕内容）再改，避免写回时丢掉评论。
+    const targets = [];
+    for (const resource of matched) targets.push(await getLocalDanmu(resource.resourceKey) || resource);
     const common = scope === 'group' ? validateEditFields(body, current) : {
       title: current.title,
       year: current.year,

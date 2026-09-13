@@ -51,7 +51,7 @@ import { extractFongmiSeasonNumber, scoreFongmiEpisodeMatch } from "./apis/clien
 import { localDanmuJsContent } from './ui/js/localdanmu.js';
 import { buildLocalDanmuResourceKey, groupLocalDanmuResources, parseLocalDanmu, normalizeLocalSeason } from './utils/local-danmu-parser.js';
 import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuDelete, handleLocalDanmuGet, handleLocalDanmuUpdate } from './apis/local-danmu-api.js';
-import { saveLocalDanmu, getLocalDanmu, findLocalDanmu } from './utils/local-danmu-store.js';
+import { saveLocalDanmu, getLocalDanmu, listLocalDanmu, findLocalDanmu } from './utils/local-danmu-store.js';
 import { handleConfig } from './apis/system-api.js';
 
 async function readRequestBody(req) {
@@ -3614,6 +3614,10 @@ test('local source configuration and search', async t => {
     const groupEdit = await handleLocalDanmuUpdate(new Request('http://localhost/api/local-danmu/' + encodeURIComponent(firstResource.resourceKey), { method: 'PATCH', body: JSON.stringify({ scope: 'group', title: '编辑后的剧集', year: '2025', type: 'tv', season: '3' }), headers: { 'content-type': 'application/json' } }), firstResource.resourceKey);
     assert.equal(groupEdit.status, 200);
     assert.equal((await getLocalDanmu(firstResource.resourceKey)), null);
+    // 整组编辑会重写每条资源，弹幕内容必须原样保留（列表只提供元数据）。
+    const movedEpisode = await getLocalDanmu(buildLocalDanmuResourceKey({ title: '编辑后的剧集', year: 2025, type: 'tv', season: 3, episode: 1 }));
+    assert.equal(movedEpisode.comments.length, 1);
+    assert.equal(movedEpisode.comments[0].m, 'edit first');
     const movedList = await (await handleLocalDanmuList()).json();
     assert.deepEqual(movedList.resources.filter(resource => resource.title === '编辑后的剧集').map(resource => resource.season), [3, 3]);
     const conflictSource = await uploadResource({ title: '冲突剧集', year: 2026, type: 'tv', season: 1, episode: 1 }, 'conflict');
@@ -3622,6 +3626,60 @@ test('local source configuration and search', async t => {
     const conflict = await handleLocalDanmuUpdate(new Request('http://localhost/api/local-danmu/' + encodeURIComponent(conflictResource.resourceKey), { method: 'PATCH', body: JSON.stringify({ scope: 'resource', episode: 2, filename: '冲突文件.txt' }), headers: { 'content-type': 'application/json' } }), conflictResource.resourceKey);
     assert.equal(conflict.status, 409);
     assert.equal((await getLocalDanmu(conflictResource.resourceKey)).filename, 'danmu.json');
+  });
+
+  await t.test('local list uses a metadata-only index and rebuilds it when it is broken', async () => {
+    resetState();
+    const before = (await listLocalDanmu()).length;
+    await uploadResource({ title: '索引剧集', year: 2026, type: 'tv', season: 1, episode: 1 }, 'index one');
+    await uploadResource({ title: '索引剧集', year: 2026, type: 'tv', season: 1, episode: 2 }, 'index two');
+    const indexPath = path.join(process.cwd(), '.cache', 'local-danmu', 'index.meta');
+
+    const listed = await listLocalDanmu();
+    assert.equal(listed.length, before + 2);
+    assert.ok(listed.every(resource => !('comments' in resource)));
+    const onDisk = JSON.parse(await fs.readFile(indexPath, 'utf8'));
+    assert.equal(onDisk.length, before + 2);
+    assert.ok(onDisk.every(resource => !('comments' in resource)));
+
+    // 索引丢了或坏了都要能自愈，不能因为缓存文件异常就看不到已导入的资源。
+    await fs.rm(indexPath);
+    assert.equal((await listLocalDanmu()).length, before + 2);
+    assert.equal(JSON.parse(await fs.readFile(indexPath, 'utf8')).length, before + 2);
+    await fs.writeFile(indexPath, 'not json', 'utf8');
+    assert.equal((await listLocalDanmu()).length, before + 2);
+    assert.equal(JSON.parse(await fs.readFile(indexPath, 'utf8')).length, before + 2);
+    // 索引必须是不可被当成资源的文件名：旧版本按 *.json 扫目录时不能把索引当成一集弹幕。
+    assert.ok(!indexPath.endsWith('.json'));
+  });
+
+  await t.test('a failed index write rolls the data file back', async () => {
+    resetState();
+    // 用同名目录占住索引路径，索引写入必定失败（rename 到目录会报错）。
+    const indexPath = path.join(process.cwd(), '.cache', 'local-danmu', 'index.meta');
+    await fs.rm(indexPath, { recursive: true, force: true });
+    await fs.mkdir(indexPath, { recursive: true });
+    const resourceKey = buildLocalDanmuResourceKey({ title: '回滚剧集', year: 2026, type: 'tv', season: 1, episode: 1 });
+    await assert.rejects(() => saveLocalDanmu({
+      resourceKey, videoId: 'rollback-1', title: '回滚剧集', year: 2026, type: 'tv', season: 1, episode: 1,
+      filename: 'danmu.json', size: 1, format: 'json', status: 'ready', count: 1, matchKeys: [], comments: [],
+      updatedAt: new Date().toISOString(),
+    }));
+    assert.equal(await getLocalDanmu(resourceKey), null);
+    await fs.rm(indexPath, { recursive: true, force: true });
+  });
+
+  await t.test('parallel uploads keep every entry in the index', async () => {
+    resetState();
+    const episodes = [1, 2, 3, 4, 5];
+    await Promise.all(episodes.map(episode => saveLocalDanmu({
+      resourceKey: buildLocalDanmuResourceKey({ title: '并发剧集', year: 2026, type: 'tv', season: 1, episode }),
+      videoId: `parallel-${episode}`, title: '并发剧集', year: 2026, type: 'tv', season: 1, episode,
+      filename: 'danmu.json', size: 1, format: 'json', status: 'ready', count: 1, matchKeys: [], comments: [],
+      updatedAt: new Date().toISOString(),
+    })));
+    const listed = await listLocalDanmu();
+    assert.equal(listed.filter(resource => resource.title === '并发剧集').length, episodes.length);
   });
 
   await t.test('search, details and matching isolate each season', async () => {
