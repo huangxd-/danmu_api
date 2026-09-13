@@ -585,7 +585,7 @@ function showDanmuView(showIds, hideIds) {
 
 // 生成返回按钮HTML
 function backBtnHtml(text, onclick) {
-    return '<button class="btn btn-back" onclick="' + onclick + '">&larr; ' + escapeHtml(text) + '</button>';
+    return '<button class="btn btn-back" onclick="' + onclick + '">' + uiIcon('chevron-left') + ' ' + escapeHtml(text) + '</button>';
 }
 
 function inlineJsString(value) {

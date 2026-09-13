@@ -49,7 +49,7 @@ export const responsiveCssContent = /* css */ `
     }
 
     .header h1 {
-        font-size: 19px;
+        font-size: 21px;
         margin: 0;
     }
 
@@ -214,7 +214,7 @@ export const responsiveCssContent = /* css */ `
 /* ============ 小屏手机 (<= 480px) ============ */
 @media (max-width: 480px) {
     .header h1 {
-        font-size: 18px;
+        font-size: 21px;
     }
 
     .nav-btn {

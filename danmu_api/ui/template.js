@@ -4,6 +4,7 @@ import { componentsCssContent } from "./css/components.css.js";
 import { formsCssContent } from "./css/forms.css.js";
 import { responsiveCssContent } from "./css/responsive.css.js";
 import { themesCssContent } from "./css/themes.css.js";
+import { iconJsContent, iconsSpriteContent, renderIcon } from "./js/icons.js";
 import { mainJsContent } from "./js/main.js";
 import { previewJsContent } from "./js/preview.js";
 import { logviewJsContent } from "./js/logview.js";
@@ -11,6 +12,13 @@ import { apitestJsContent } from "./js/apitest.js";
 import { pushDanmuJsContent } from "./js/pushdanmu.js";
 import { requestRecordsJsContent } from "./js/requestrecords.js";
 import { systemSettingsJsContent } from "./js/systemsettings.js";
+import { localDanmuJsContent } from "./js/localdanmu.js";
+
+const localDanmuLatestYear = new Date().getFullYear();
+const localDanmuYearOptions = Array.from({ length: localDanmuLatestYear - 1900 + 1 }, (_, index) => {
+    const year = localDanmuLatestYear - index;
+    return `<option value="${year}"${index === 0 ? ' selected' : ''}>${year}年</option>`;
+}).join('');
 
 // language=HTML
 export const HTML_TEMPLATE = /* html */ `
@@ -32,6 +40,7 @@ export const HTML_TEMPLATE = /* html */ `
     
 </head>
 <body data-theme="globals.uiTheme">
+    ${iconsSpriteContent}
     <script>
         try {
             var storedTheme = localStorage.getItem('logvar_ui_theme');
@@ -47,7 +56,7 @@ export const HTML_TEMPLATE = /* html */ `
     </script>
     <div class="container">
         <div class="corner-fold"></div>
-        <button class="theme-corner-toggle" id="theme-corner-toggle" onclick="toggleColorScheme()" title="切换明暗模式" aria-label="切换明暗模式">🌙</button>
+        <button class="theme-corner-toggle" id="theme-corner-toggle" onclick="toggleColorScheme()" title="切换明暗模式" aria-label="切换明暗模式">${renderIcon('moon')}</button>
         <!-- 进度条 -->
         <div class="progress-container" id="progress-container">
             <div class="progress-bar" id="progress-bar"></div>
@@ -60,12 +69,12 @@ export const HTML_TEMPLATE = /* html */ `
                     <h1>LogVar弹幕API</h1>
                 </div>
                 <div class="version-info">
-                    <span class="version-badge">当前版本: <span id="current-version">v${globals.version}</span></span>
+                    <span class="version-badge">${renderIcon('tag')} 当前版本: <span id="current-version">v${globals.version}</span></span>
                     <a class="update-badge" id="update-badge" href="https://t.me/s/logvar_danmu_channel" target="_blank" rel="noopener" title="查看更新通知">
-                        🎉 最新版本: <span id="latest-version">加载中...</span>
+                        ${renderIcon('sparkles')} 最新版本: <span id="latest-version">加载中...</span>
                     </a>
                     <span class="api-endpoint-badge" onclick="copyApiEndpoint()" title="点击复制API端点" style="cursor: pointer;">
-                        API端点: <span id="api-endpoint" style="color: #4CAF50; font-weight: bold;">加载中...</span>
+                        ${renderIcon('link')} API端点: <span id="api-endpoint" style="color: #4CAF50; font-weight: bold;">加载中...</span>
                     </span>
                 </div>
             </div>
@@ -74,6 +83,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <button class="nav-btn" onclick="switchSection('logs', event)">日志查看</button>
                 <button class="nav-btn" onclick="switchSection('api', event)">接口调试</button>
                 <button class="nav-btn" onclick="switchSection('push', event)">推送弹幕</button>
+                <button class="nav-btn" onclick="switchSection('local-danmu', event)">本地弹幕</button>
                 <button class="nav-btn" onclick="switchSection('request-records', event)">请求记录</button>
                 <button class="nav-btn" onclick="switchSection('env', event)" id="env-nav-btn">系统配置</button>
             </div>
@@ -85,7 +95,7 @@ export const HTML_TEMPLATE = /* html */ `
                 <h2>配置预览</h2>
                 
                 <div id="proxy-config-container" class="error-config-banner" style="display: none;">
-                    <h3 class="error-config-title">⚠️ 获取配置失败</h3>
+                    <h3 class="error-config-title ui-icon-label">${renderIcon('alert-triangle')} 获取配置失败</h3>
                     <p class="error-config-text">
                         检测到无法获取配置。如果您使用了复杂的反向代理：例如将 <code>http://{ip}:9321/</code> 代理到了 <code>http://{ip}:9321/danmu_api/</code>，请在此处手动输入完整的反代后链接（不包含TOKEN和ADMIN_TOKEN的）
                     </p>
@@ -130,8 +140,8 @@ export const HTML_TEMPLATE = /* html */ `
                 <h2>日志查看</h2>
                 <div class="log-controls">
                     <div>
-                        <button class="btn btn-primary" onclick="refreshLogs()">🔄 刷新日志</button>
-                        <button class="btn btn-danger" onclick="clearLogs()">🗑️ 清空日志</button>
+                        <button class="btn btn-primary" onclick="refreshLogs()">${renderIcon('refresh-cw')} 刷新日志</button>
+                        <button class="btn btn-danger" onclick="clearLogs()">${renderIcon('trash-2')} 清空日志</button>
                     </div>
                     <span style="color: #666;">实时日志监控</span>
                 </div>
@@ -282,13 +292,56 @@ export const HTML_TEMPLATE = /* html */ `
             <div class="section" id="request-records-section">
                 <h2>请求记录</h2>
                 <div class="log-controls">
-                    <div>
-                        <button class="btn btn-primary" id="refresh-request-records">🔄 刷新记录</button>
-                        <span id="total-requests-today" style="color: #ff5722; margin-left: 15px; vertical-align: middle; font-size: 1.2em; font-weight: bold;"></span>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <button class="btn btn-primary" id="refresh-request-records">${renderIcon('refresh-cw')} 刷新记录</button>
+                        <span id="total-requests-today" style="color: #ff5722; font-size: 1.2em; font-weight: bold;"></span>
                     </div>
                     <span style="color: #666;">云服务部署需要配置redis</span>
                 </div>
                 <div class="request-records-container" id="request-records-list"></div>
+            </div>
+
+            <div class="section" id="local-danmu-section">
+                <h2>本地弹幕</h2>
+                <p id="local-danmu-permission" class="preview-description"></p>
+                <div id="local-danmu-upload-panel">
+                    <div class="form-group local-danmu-file-field">
+                        <label for="local-danmu-file">弹幕文件</label>
+                        <input type="file" id="local-danmu-file" accept=".xml,.json,.ass,.ssa,.csv,.txt" multiple aria-describedby="local-danmu-file-hint" data-can-upload="globals.localDanmuCanUpload" onclick="return checkLocalDanmuWritePermission('上传', event)">
+                        <p id="local-danmu-file-hint" class="local-danmu-file-hint">支持 XML、JSON、ASS、SSA、CSV、TXT，可多选同一部剧的弹幕文件，每个文件不超过 10 MB</p>
+                    </div>
+                    <div class="local-danmu-fields" id="local-danmu-fields">
+                        <div class="form-group local-danmu-name-field"><label for="local-danmu-title">标题（必填）</label><input id="local-danmu-title" placeholder="电视剧或影片标题"></div>
+                        <div class="form-group">
+                            <label id="local-danmu-year-label" for="local-danmu-year">年份（必填）</label>
+                            <select id="local-danmu-year" required>
+                                ${localDanmuYearOptions}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="local-danmu-type">类型（必填）</label>
+                            <select id="local-danmu-type" required>
+                                <option value="" disabled selected>请选择</option>
+                                <option value="tv">tv</option>
+                                <option value="movie">movie</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label id="local-danmu-season-label" for="local-danmu-season">季</label><input id="local-danmu-season" type="number" min="1" step="1" value="1"></div>
+                        <div class="form-group" id="local-danmu-episode-field"><label id="local-danmu-episode-label" for="local-danmu-episode">集</label><input id="local-danmu-episode" type="number" min="1" step="1" value="1"></div>
+                        <button id="local-danmu-upload-button" type="button" class="btn btn-success" onclick="uploadLocalDanmu()">上传并解析</button>
+                    </div>
+                    <p class="preview-description">tv 默认第 1 季第 1 集，movie 的季和集可留空。标题、年份、类型和季相同的文件会归为一个剧集，展开后可查看各集。同一季的同一集重新上传会替换原文件。</p>
+                    <div id="local-danmu-batch-preview" class="local-danmu-batch-preview" hidden>
+                        <p class="local-danmu-file-hint">批量导入用于同一部电视剧（tv），标题、年份和季沿用上方设置。集数从文件名识别，可逐个修改；未识别的请手动填写，同一批次不能重复。</p>
+                        <div id="local-danmu-batch-list"></div>
+                    </div>
+                    <div id="local-danmu-upload-status" class="preview-status" aria-live="polite"></div>
+                </div>
+                <div class="form-group local-danmu-search">
+                    <label for="local-danmu-search">搜索已上传标题</label>
+                    <input type="search" id="local-danmu-search" placeholder="输入标题关键词" autocomplete="off">
+                </div>
+                <div id="local-danmu-list" class="favorite-list"></div>
             </div>
 
             <!-- 系统配置 -->
@@ -300,17 +353,17 @@ export const HTML_TEMPLATE = /* html */ `
                 </div>
                 <div class="env-toolbar-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary config-transfer-btn" onclick="exportSystemConfig()" title="下载当前环境变量配置文件">
-                        <span class="config-transfer-icon" aria-hidden="true">📤</span> 导出配置
+                        ${renderIcon('upload')} 导出配置
                     </button>
                     <button class="btn btn-primary config-transfer-btn" onclick="triggerConfigImport()" title="上传 JSON 文件并导入环境变量配置">
-                        <span class="config-transfer-icon" aria-hidden="true">📥</span> 导入配置
+                        ${renderIcon('download')} 导入配置
                     </button>
                     <input type="file" id="config-import-file" accept=".json,application/json" style="display: none;" onchange="importSystemConfigFile(this.files[0])">
                     <button class="btn btn-danger" onclick="showClearCacheModal()" title="清理系统缓存">
-                        🗑️ 清理缓存
+                        ${renderIcon('trash-2')} 清理缓存
                     </button>
                     <button class="btn btn-success" onclick="showDeploySystemModal()" title="重新部署系统">
-                        🚀 重新部署
+                        ${renderIcon('cloud-up')} 重新部署
                     </button>
                 </div>
 
@@ -447,6 +500,27 @@ export const HTML_TEMPLATE = /* html */ `
         </div>
     </div>
 
+    <!-- 本地弹幕编辑弹窗放在页面顶层，避免命中 section 子元素的错峰动画延迟 -->
+    <div class="modal" id="local-danmu-edit-modal" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header"><h3 id="local-danmu-edit-title">编辑本地弹幕</h3><button type="button" class="close-btn" onclick="closeLocalDanmuEdit()">&times;</button></div>
+            <div class="modal-body">
+                <div id="local-danmu-edit-group-fields">
+                    <div class="form-group"><label for="local-danmu-edit-name">标题</label><input id="local-danmu-edit-name"></div>
+                    <div class="form-group"><label for="local-danmu-edit-year">年份</label><input id="local-danmu-edit-year" type="number" min="1900" step="1"></div>
+                    <div class="form-group"><label for="local-danmu-edit-type">类型</label><select id="local-danmu-edit-type"><option value="tv">tv</option><option value="movie">movie</option></select></div>
+                    <div class="form-group"><label for="local-danmu-edit-season">季</label><input id="local-danmu-edit-season" type="number" min="1" step="1"></div>
+                </div>
+                <div id="local-danmu-edit-resource-fields">
+                    <div class="form-group"><label for="local-danmu-edit-episode">集</label><input id="local-danmu-edit-episode" type="number" min="1" step="1"></div>
+                    <div class="form-group"><label for="local-danmu-edit-filename">显示文件名</label><input id="local-danmu-edit-filename"></div>
+                </div>
+                <p id="local-danmu-edit-status" class="preview-status" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeLocalDanmuEdit()">取消</button><button type="button" class="btn btn-primary" onclick="submitLocalDanmuEdit()">保存</button></div>
+        </div>
+    </div>
+
     <!-- 编辑模态框 -->
     <div class="modal" id="env-modal">
         <div class="modal-content">
@@ -504,6 +578,7 @@ export const HTML_TEMPLATE = /* html */ `
     </nav>
 
     <script>
+        ${iconJsContent}
         ${mainJsContent}
         ${previewJsContent}
         ${logviewJsContent}
@@ -511,6 +586,7 @@ export const HTML_TEMPLATE = /* html */ `
         ${pushDanmuJsContent}
         ${requestRecordsJsContent}
         ${systemSettingsJsContent}
+        ${localDanmuJsContent}
     </script>
 </body>
 </html>

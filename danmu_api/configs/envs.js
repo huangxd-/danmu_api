@@ -22,7 +22,7 @@ export class Envs {
 
   static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan']; // vod允许的播放平台
   static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 全部源允许的播放平台
-  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 允许的源
+  static ALLOWED_SOURCES = ['360', 'vod', 'tmdb', 'douban', 'tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom', 'local']; // 允许的源
   static MERGE_ALLOWED_SOURCES = ['tencent', 'youku', 'iqiyi', 'imgo', 'bilibili', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko']; // 允许的源合并
   static DEFAULT_AI_MATCH_PROMPT = `你是一个专业的影视匹配专家，你的的任务是根据用户提供的 JSON 数据，从候选动漫列表中匹配最符合条件的动漫及集数。
 
@@ -264,8 +264,8 @@ export class Envs {
    * 支持使用分号或逗号分隔多组配置
    * 支持一主多从配置，第一个为主源，后续为副源
    * 允许单源配置（用于保留特定源的原始结果，不被合并消耗）
-   * 格式示例: bilibili&animeko, dandan&animeko&bahamut,dandan
-   * @returns {Array} 合并配置数组 [{primary: 'dandan', secondaries: ['animeko', 'bahamut']}, {primary: 'renren', secondaries: []}]
+   * 格式示例: dandan&bahamut&animeko,renren&hanjutv,renren
+   * @returns {Array} 合并配置数组 [{primary: 'dandan', secondaries: ['bahamut', 'animeko']}, {primary: 'renren', secondaries: ['hanjutv']}, {primary: 'renren', secondaries: []}]
    */
   static resolveMergeSourcePairs() {
     const config = this.get('MERGE_SOURCE_PAIRS', '', 'string');
@@ -611,7 +611,7 @@ export class Envs {
    * @returns {RegExp|null} 全局正则，显式设为空时返回 null（禁用）
    */
   static resolveTitleNoiseFilter() {
-    const defaultPattern = '[（(\\[](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）]';
+    const defaultPattern = String.raw`[（(\[［](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\])）］]`;
     const raw = this.get('TITLE_NOISE_FILTER', '', 'string').trim();
     const hasKey = (this.env && 'TITLE_NOISE_FILTER' in this.env)
                 || (typeof process !== 'undefined' && 'TITLE_NOISE_FILTER' in process.env);
@@ -691,11 +691,12 @@ export class Envs {
       'TOKEN': { category: 'api', type: 'text', description: 'API访问令牌' },
       'ADMIN_TOKEN': { category: 'api', type: 'text', description: '系统管理访问令牌' },
       'FAVORITE_REQUIRE_ADMIN': { category: 'api', type: 'boolean', description: '收藏写入和管理接口是否必须使用 ADMIN_TOKEN，默认关闭；收藏列表始终可公开读取' },
+      'LOCAL_DANMU_NOT_REQUIRE_ADMIN': { category: 'api', type: 'boolean', description: '本地弹幕上传和删除是否无需 ADMIN 权限，默认 false；开启后允许普通 TOKEN 用户上传和删除，ADMIN_TOKEN 始终允许；普通 TOKEN 用户可查看已导入列表' },
       'RATE_LIMIT_MAX_REQUESTS': { category: 'api', type: 'number', description: '限流配置：1分钟内最大请求次数，0表示不限流，默认3', min: 0, max: 50 },
 
       // 源配置
-      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置，默认douban,360,renren,hanjutv' },
-      'MERGE_SOURCE_PAIRS': { category: 'source', type: 'multi-select', options: this.MERGE_ALLOWED_SOURCES, description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，允许多组，允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源。\n格式：源1&源2&源3 ，多组用逗号分隔。\n示例：dandan&animeko&bahamut,bilibili&animeko,dandan' },
+      'SOURCE_ORDER': { category: 'source', type: 'multi-select', options: this.ALLOWED_SOURCES, description: '源排序配置，默认douban,360,renren,hanjutv；添加 local 可搜索已上传的本地弹幕，按配置顺序排列搜索结果' },
+      'MERGE_SOURCE_PAIRS': { category: 'source', type: 'multi-select', options: this.MERGE_ALLOWED_SOURCES, description: '源合并配置，配置后将对应源合并同时一起获取弹幕返回，允许多组，允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源。\n格式：源1&源2&源3 ，多组用逗号分隔。\n示例：dandan&bahamut&animeko,renren&hanjutv,renren' },
       'CUSTOM_MERGE_RULES': { category: 'source', type: 'text', sources: this.MERGE_ALLOWED_SOURCES, description: '合并映射表，用于自定义源合并行为。\n格式1(合并)：副源剧名/S季数@来源 -> 主源剧名/S季数@来源 | E副源集数>E主源集数\n格式2(阻断)：副源剧名/S季数@来源 × 主源剧名/S季数@来源\n说明：[/S季数] 与 [|路由规则] 为可选项，留空则交由程序判断。多个规则用分号隔开，多段路由用逗号分隔。\n示例：\n1. 常规合并：天气之子@bilibili -> 天气之子@dandan\n2. 多集路由：我推的孩子/S01@bahamut -> 我推的孩子/S03@dandan | E25~E35>E25~E35\n3. 阻断合并：辉夜大小姐想让我告白？～天才们的恋爱头脑战～(2020)@bilibili × 辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA(2021)【OVA】@dandan' },
       'OTHER_SERVER': { category: 'source', type: 'text', description: '第三方弹幕服务器，默认https://api.danmu.icu' },
       'CUSTOM_SOURCE_API_URL': { category: 'source', type: 'text', description: '自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源' },
@@ -717,7 +718,7 @@ export class Envs {
       'ANIME_TITLE_SIMPLIFIED': { category: 'match', type: 'boolean', description: '搜索的剧名标题自动繁转简' },
       'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '剧名映射表，用于自动匹配时替换标题进行搜索，格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
       'AUTO_MATCH_MAPPING_TABLE': { category: 'match', type: 'map', description: '自动匹配映射表，仅作用于 POST /api/v2/match。多个规则使用分号或换行分隔，支持以 #、// 开头的整行注释。源条件可用 {[group=字幕组]} 限定发布组（文件名中的发布组优先命中精确规则，无精确规则时回退通用规则）。\n开放映射：永生 S05E02 -> 永生 S01E58\n有限范围：永生 S05E02~03 -> 永生 S01E58~59\n指定结果：海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62\n指定平台：航海王 S01E01 -> 航海王 S01E01 @qiyi\n指定发布组：我推的孩子 {[group=ADWeb]} S01E01 -> 我推的孩子 S01E01' },
-      'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。默认值：[（(\\[](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）]，中英文圆方括号均匹配。设为空值可禁用' },
+      'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。\n默认值：[（(\\[［](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）］]，中英文圆方括号均匹配。\n设为空值可禁用' },
       'AI_BASE_URL': { category: 'match', type: 'text', description: 'AI服务基础URL，不填默认为https://api.openai.com/v1' },
       'AI_MODEL': { category: 'match', type: 'text', description: 'AI模型名称，不填默认为gpt-4o' },
       'AI_API_KEY': { category: 'match', type: 'text', description: 'AI服务API密钥，默认为空，需手动填写' },
@@ -770,6 +771,7 @@ export class Envs {
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       adminToken: this.get('ADMIN_TOKEN', '', 'string', true), // admin token，用于系统管理访问控制
       favoriteRequireAdmin: this.get('FAVORITE_REQUIRE_ADMIN', false, 'boolean'), // 收藏写入和管理接口是否必须使用 admin token；列表始终公开
+      localDanmuNotRequireAdmin: this.get('LOCAL_DANMU_NOT_REQUIRE_ADMIN', false, 'boolean'),
       sourceOrderArr: this.resolveSourceOrder(), // 源排序
       mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
       customMergeRules: this.resolveCustomMergeRules(), // 合并映射表，用于自定义源合并行为。
