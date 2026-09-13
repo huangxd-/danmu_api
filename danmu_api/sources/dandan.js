@@ -556,6 +556,8 @@ export default class DandanSource extends BaseSource {
                 isMatch = (titleSeason || 1) === resolvedQuerySeason;
               } else if (resolvedQuerySeason === 1) {
                 isMatch = titleSeason === null || titleSeason === 1;
+              } else if (resolvedQuerySeason === 0) {
+                isMatch = titleSeason === 0;
               }
             } else {
               isMatch = true; // 搜索词无指定季度，相关作品直接放行

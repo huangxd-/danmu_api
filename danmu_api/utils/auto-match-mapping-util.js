@@ -33,7 +33,8 @@ function parseEpisodeSide(value, { allowPlatform = false } = {}) {
   const season = Number(match[2]);
   const startEpisode = Number(match[3]);
   const endEpisode = match[4] === undefined ? null : Number(match[4]);
-  if (!title || season < 1 || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
+  // Season 00 是 Emby/Jellyfin 对特别篇的标准季号，必须作为有效规则接受。
+  if (!title || season < 0 || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
 
   return { title, season, startEpisode, endEpisode, platform };
 }
