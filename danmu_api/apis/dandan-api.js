@@ -2475,7 +2475,8 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   if (url?.startsWith('local:')) {
     return getCommentByUrl(url, queryFormat, segmentFlag, includeDuration);
   }
-  const localResource = await (async () => {
+  // 分段请求不会用到本地兜底结果，直接跳过这次全量扫描（本地资源多时它是白跑的开销）。
+  const localResource = segmentFlag ? null : await (async () => {
     try {
       const { findLocalDanmu } = await import('../utils/local-danmu-store.js');
       const [localAnimeId] = findAnimeIdByCommentId(commentId);
