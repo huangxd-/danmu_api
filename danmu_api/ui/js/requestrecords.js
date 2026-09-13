@@ -57,7 +57,7 @@ async function renderRequestRecords() {
                     <div class="record-interface">\${interfaceName}</div>
                     <div class="record-ip">\${clientIp}</div>
                 </div>
-                <div class="\${timestampClass}">\${timestamp}</div>
+                <div class="\${timestampClass}">\${uiIcon('clock')} \${timestamp}</div>
                 \${paramsHtml}
             </div>\`;
         }).join('');
