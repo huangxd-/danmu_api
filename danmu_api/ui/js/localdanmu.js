@@ -101,13 +101,12 @@ function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
       localDanmuElement('span', 'local-danmu-group-meta', (group.year || '年份未填写') + ' · ' + (typeNames[group.type] || group.type || '类型未填写') + seasonText),
       localDanmuElement('span', 'local-danmu-group-count', '已上传 ' + group.episodeCount + (group.type === 'movie' ? ' 个文件 · ' : ' 集 · ') + Number(group.count || 0).toLocaleString() + ' 条弹幕')
     );
-    const removeGroup = localDanmuElement('button', 'btn btn-danger local-danmu-group-remove', '删除整个剧集');
+    const editGroup = localDanmuElement('button', 'btn btn-secondary', '编辑剧集');
+    editGroup.type = 'button';
+    editGroup.addEventListener('click', () => openLocalDanmuEdit('group', group));
+    const removeGroup = localDanmuElement('button', 'btn btn-danger', '删除整个剧集');
     removeGroup.type = 'button';
-    removeGroup.addEventListener('click', async event => {
-      event.preventDefault();
-      event.stopPropagation();
-      await deleteLocalDanmuGroup(group);
-    });
+    removeGroup.addEventListener('click', () => deleteLocalDanmuGroup(group));
     const episodes = localDanmuElement('div', 'local-danmu-episodes');
     for (const resource of group.episodes) {
       const row = localDanmuElement('div', 'local-danmu-episode');
@@ -126,13 +125,56 @@ function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
       remove.type = 'button';
       remove.addEventListener('click', () => deleteLocalDanmu(resource.resourceKey));
       const actions = localDanmuElement('div', 'local-danmu-episode-actions');
-      actions.append(remove, reupload);
+      const edit = localDanmuElement('button', 'btn btn-secondary', '编辑');
+      edit.type = 'button';
+      edit.addEventListener('click', () => openLocalDanmuEdit('resource', resource));
+      actions.append(remove, reupload, edit);
       row.append(info, actions);
       episodes.append(row);
     }
-    card.append(summary, episodes, removeGroup);
+    const groupActions = localDanmuElement('div', 'local-danmu-group-actions');
+    groupActions.append(editGroup, removeGroup);
+    card.append(summary, episodes, groupActions);
     box.append(card);
   }
+}
+let localDanmuEditTarget = null;
+function openLocalDanmuEdit(scope, target) {
+  if (!checkLocalDanmuWritePermission('编辑')) return;
+  localDanmuEditTarget = { scope, target };
+  const modal = document.getElementById('local-danmu-edit-modal');
+  document.getElementById('local-danmu-edit-group-fields').style.display = scope === 'group' ? '' : 'none';
+  document.getElementById('local-danmu-edit-resource-fields').style.display = scope === 'resource' ? '' : 'none';
+  document.getElementById('local-danmu-edit-name').value = target.title || '';
+  document.getElementById('local-danmu-edit-year').value = target.year == null ? '' : String(target.year);
+  document.getElementById('local-danmu-edit-type').value = target.type || 'tv';
+  document.getElementById('local-danmu-edit-season').value = target.season == null ? '' : String(target.season);
+  document.getElementById('local-danmu-edit-episode').value = target.episode == null ? '' : String(target.episode);
+  document.getElementById('local-danmu-edit-filename').value = target.filename || '';
+  document.getElementById('local-danmu-edit-status').textContent = '';
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+}
+function closeLocalDanmuEdit() {
+  const modal = document.getElementById('local-danmu-edit-modal');
+  if (modal) { modal.classList.remove('active'); modal.setAttribute('aria-hidden', 'true'); }
+  localDanmuEditTarget = null;
+}
+async function submitLocalDanmuEdit() {
+  if (!localDanmuEditTarget || !checkLocalDanmuWritePermission('编辑')) return;
+  const { scope, target } = localDanmuEditTarget;
+  const resourceKey = target.resourceKey || target.episodes?.[0]?.resourceKey;
+  const status = document.getElementById('local-danmu-edit-status');
+  const body = { scope };
+  if (scope === 'group') Object.assign(body, { title: document.getElementById('local-danmu-edit-name').value.trim(), year: document.getElementById('local-danmu-edit-year').value.trim(), type: document.getElementById('local-danmu-edit-type').value, season: document.getElementById('local-danmu-edit-season').value.trim() });
+  else Object.assign(body, { episode: document.getElementById('local-danmu-edit-episode').value.trim(), filename: document.getElementById('local-danmu-edit-filename').value.trim() });
+  try {
+    const response = await fetch(localDanmuUrl('/api/local-danmu/' + encodeURIComponent(resourceKey)), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await response.json();
+    if (!response.ok || !data.success) { status.textContent = data.errorMessage || '更新失败'; return; }
+    closeLocalDanmuEdit();
+    await loadLocalDanmuList();
+  } catch { status.textContent = '更新失败，请稍后重试'; }
 }
 function prepareLocalDanmuReupload(resource) {
   if (!checkLocalDanmuWritePermission('重新上传')) return;
@@ -208,6 +250,7 @@ async function uploadLocalDanmu() {
   finally { button.disabled = false; }
 }
 async function deleteLocalDanmu(key) {
+  if (localDanmuEditTarget) return;
   if (localDanmuRedisUnavailable()) {
     showLocalDanmuRedisRequired();
     return;
@@ -224,6 +267,7 @@ async function deleteLocalDanmu(key) {
   } catch { status.textContent = '删除失败，请稍后重试'; }
 }
 async function deleteLocalDanmuGroup(group) {
+  if (localDanmuEditTarget) return;
   if (localDanmuRedisUnavailable()) {
     showLocalDanmuRedisRequired();
     return;

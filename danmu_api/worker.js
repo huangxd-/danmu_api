@@ -11,7 +11,7 @@ import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
-import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete } from "./apis/local-danmu-api.js";
+import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete, handleLocalDanmuUpdate } from "./apis/local-danmu-api.js";
 import { extendBangumiDownloadLifecycle } from "./utils/bangumi-data-util.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -278,17 +278,19 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   const isLocalDanmuUpload = (path === '/api/local-danmu/upload' || path === '/api/v2/local-danmu/upload') && method === 'POST';
   const isLocalDanmuList = (path === '/api/local-danmu/list' || path === '/api/v2/local-danmu/list') && method === 'GET';
   const localResourceMatch = path.match(/^\/api(?:\/v2)?\/local-danmu\/([^/]+)$/);
-  if (isLocalDanmuUpload || isLocalDanmuList || (localResourceMatch && (method === 'GET' || method === 'DELETE'))) {
+  if (isLocalDanmuUpload || isLocalDanmuList || (localResourceMatch && (method === 'GET' || method === 'DELETE' || method === 'PATCH'))) {
     const isAdmin = !!globals.adminToken && globals.currentToken === globals.adminToken;
     const isUser = !!globals.token && globals.currentToken === globals.token;
     if (!isAdmin && !isUser) return jsonResponse({ errorCode: 401, success: false, errorMessage: 'Unauthorized' }, 401);
-    if ((isLocalDanmuUpload || method === 'DELETE') && !isAdmin && !globals.localDanmuNotRequireAdmin) {
+    if ((isLocalDanmuUpload || method === 'DELETE' || method === 'PATCH') && !isAdmin && !globals.localDanmuNotRequireAdmin) {
       return jsonResponse({ errorCode: 403, success: false, errorMessage: 'Local danmu upload and deletion require ADMIN_TOKEN or LOCAL_DANMU_NOT_REQUIRE_ADMIN=true' }, 403);
     }
     if (isLocalDanmuUpload) return handleLocalDanmuUpload(req);
     if (isLocalDanmuList) return handleLocalDanmuList();
     const key = decodeURIComponent(localResourceMatch[1]);
-    return method === 'GET' ? handleLocalDanmuGet(key) : handleLocalDanmuDelete(key);
+    if (method === 'GET') return handleLocalDanmuGet(key);
+    if (method === 'PATCH') return handleLocalDanmuUpdate(req, key);
+    return handleLocalDanmuDelete(key);
   }
 
   // GET /api/reqrecords - 获取请求记录 (需要 token)

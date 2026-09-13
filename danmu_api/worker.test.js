@@ -48,7 +48,7 @@ import { generateNipaplaySignature, parseNipaplayRelatedLinks, resolveNipaplayLi
 import { extractFongmiSeasonNumber, scoreFongmiEpisodeMatch } from "./apis/clients/fongmi-api.js";
 import { localDanmuJsContent } from './ui/js/localdanmu.js';
 import { buildLocalDanmuResourceKey, groupLocalDanmuResources, parseLocalDanmu, normalizeLocalSeason } from './utils/local-danmu-parser.js';
-import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuDelete, handleLocalDanmuGet } from './apis/local-danmu-api.js';
+import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuDelete, handleLocalDanmuGet, handleLocalDanmuUpdate } from './apis/local-danmu-api.js';
 import { saveLocalDanmu, getLocalDanmu, findLocalDanmu } from './utils/local-danmu-store.js';
 import { handleConfig } from './apis/system-api.js';
 
@@ -3550,6 +3550,24 @@ test('local source configuration and search', async t => {
     assert.ok(groups.every(group => group.episodes.every(resource => !('comments' in resource))));
   });
 
+  await t.test('local metadata edits migrate resource keys and reject conflicts', async () => {
+    resetState();
+    const first = await uploadResource({ title: '编辑剧集', year: 2026, type: 'tv', season: 1, episode: 1 }, 'edit first');
+    await uploadResource({ title: '编辑剧集', year: 2026, type: 'tv', season: 1, episode: 2 }, 'edit second');
+    const firstResource = (await first.json()).resource;
+    const groupEdit = await handleLocalDanmuUpdate(new Request('http://localhost/api/local-danmu/' + encodeURIComponent(firstResource.resourceKey), { method: 'PATCH', body: JSON.stringify({ scope: 'group', title: '编辑后的剧集', year: '2025', type: 'tv', season: '3' }), headers: { 'content-type': 'application/json' } }), firstResource.resourceKey);
+    assert.equal(groupEdit.status, 200);
+    assert.equal((await getLocalDanmu(firstResource.resourceKey)), null);
+    const movedList = await (await handleLocalDanmuList()).json();
+    assert.deepEqual(movedList.resources.filter(resource => resource.title === '编辑后的剧集').map(resource => resource.season), [3, 3]);
+    const conflictSource = await uploadResource({ title: '冲突剧集', year: 2026, type: 'tv', season: 1, episode: 1 }, 'conflict');
+    const conflictResource = (await conflictSource.json()).resource;
+    await uploadResource({ title: '冲突剧集', year: 2026, type: 'tv', season: 1, episode: 2 }, 'conflict target');
+    const conflict = await handleLocalDanmuUpdate(new Request('http://localhost/api/local-danmu/' + encodeURIComponent(conflictResource.resourceKey), { method: 'PATCH', body: JSON.stringify({ scope: 'resource', episode: 2, filename: '冲突文件.txt' }), headers: { 'content-type': 'application/json' } }), conflictResource.resourceKey);
+    assert.equal(conflict.status, 409);
+    assert.equal((await getLocalDanmu(conflictResource.resourceKey)).filename, 'danmu.json');
+  });
+
   await t.test('search, details and matching isolate each season', async () => {
     resetState();
     const all = await (await searchAnime(searchUrl(seasonFields.title))).json();
@@ -3671,6 +3689,14 @@ class TestElement {
     this.value = '';
     this.required = false;
     this.validity = { badInput: false };
+    this.style = {};
+    this.attributes = {};
+    const classes = () => this.className.split(/\s+/).filter(Boolean);
+    this.classList = {
+      add: (...tokens) => { this.className = [...new Set([...classes(), ...tokens])].join(' '); },
+      remove: (...tokens) => { this.className = classes().filter(token => !tokens.includes(token)).join(' '); },
+      contains: token => classes().includes(token),
+    };
     this._text = '';
   }
   set textContent(value) { this._text = String(value); this.children = []; }
@@ -3679,6 +3705,8 @@ class TestElement {
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this._text = ''; this.children = children; }
   addEventListener(type, callback) { this.listeners.set(type, callback); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  click() { this.clicked = true; }
   querySelectorAll(selector) {
     const matches = element => selector.startsWith('.')
       ? element.className.split(' ').includes(selector.slice(1)) : element.tagName === selector;
@@ -3689,7 +3717,7 @@ class TestElement {
 function makePage(fetch, sandboxGlobals = {}, html) {
   const elements = new Map();
   const documentListeners = new Map();
-  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'permission', 'upload-button', 'upload-status', 'search', 'list']) {
+  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'permission', 'upload-button', 'upload-status', 'search', 'list', 'edit-modal', 'edit-group-fields', 'edit-resource-fields', 'edit-name', 'edit-year', 'edit-type', 'edit-season', 'edit-episode', 'edit-filename', 'edit-status']) {
     elements.set(`local-danmu-${name}`, new TestElement());
   }
   const fileInput = (html || HTML_TEMPLATE).match(/<input\b[^>]*\bid="local-danmu-file"[^>]*>/)[0];
@@ -3984,6 +4012,103 @@ test('local danmu re-upload fills the original resource metadata', async () => {
   assert.equal(elements.get('local-danmu-season').value, String(row.season));
   assert.equal(elements.get('local-danmu-episode').value, String(row.episode));
   assert.match(elements.get('local-danmu-upload-status').textContent, /请选择新文件/);
+});
+
+test('local danmu edit dialogs save metadata, close and refresh the list', async () => {
+  const row = resource(2, 7);
+  const groups = groupLocalDanmuResources([row]);
+  const requests = [];
+  const { context, elements, box } = makePage(async (url, options = {}) => {
+    requests.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
+    return Response.json({ success: true, groups });
+  });
+  context.renderLocalDanmuGroups(box, groups);
+  const modal = elements.get('local-danmu-edit-modal');
+  const scenarios = [
+    {
+      button: '编辑剧集', fields: { name: '修改标题', year: '2025', type: 'tv', season: '3' },
+      body: { scope: 'group', title: '修改标题', year: '2025', type: 'tv', season: '3' },
+    },
+    {
+      button: '编辑', fields: { episode: '8', filename: '新文件名.xml' },
+      body: { scope: 'resource', episode: '8', filename: '新文件名.xml' },
+    },
+  ];
+  for (const scenario of scenarios) {
+    requests.length = 0;
+    const edit = box.querySelectorAll('button').find(button => button.textContent === scenario.button);
+    edit.listeners.get('click')();
+    assert.equal(modal.classList.contains('active'), true);
+    assert.equal(modal.attributes['aria-hidden'], 'false');
+    for (const [field, value] of Object.entries(scenario.fields)) elements.get('local-danmu-edit-' + field).value = value;
+    await context.submitLocalDanmuEdit();
+    assert.deepEqual(requests, [
+      { url: '/api/local-danmu/' + encodeURIComponent(row.resourceKey), method: 'PATCH', body: scenario.body },
+      { url: '/api/local-danmu/list', method: 'GET', body: undefined },
+    ]);
+    assert.equal(modal.classList.contains('active'), false);
+    assert.equal(modal.attributes['aria-hidden'], 'true');
+    assert.equal(elements.get('local-danmu-edit-status').textContent, '');
+  }
+});
+
+test('local danmu edit failures keep the dialog and input without refreshing', async t => {
+  const conflict = '目标资源已存在，无法覆盖';
+  const genericError = '更新失败，请稍后重试';
+  for (const scenario of [
+    { name: 'conflict', respond: () => Response.json({ success: false, errorMessage: conflict }, { status: 409 }), message: conflict },
+    { name: 'unsuccessful result', respond: () => Response.json({ success: false }), message: '更新失败' },
+    { name: 'non-JSON response', respond: () => new Response('<html>Bad gateway</html>', { status: 502 }), message: genericError },
+    { name: 'network failure', respond: () => { throw new Error('offline'); }, message: genericError },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const requests = [];
+      const { context, elements } = makePage(async (url, options = {}) => {
+        requests.push({ url, method: options.method || 'GET' });
+        return scenario.respond();
+      });
+      const row = resource(2, 7);
+      context.openLocalDanmuEdit('resource', row);
+      elements.get('local-danmu-edit-filename').value = '未保存.xml';
+      await context.submitLocalDanmuEdit();
+      assert.deepEqual(requests, [{ url: '/api/local-danmu/' + encodeURIComponent(row.resourceKey), method: 'PATCH' }]);
+      assert.equal(elements.get('local-danmu-edit-modal').classList.contains('active'), true);
+      assert.equal(elements.get('local-danmu-edit-modal').attributes['aria-hidden'], 'false');
+      assert.equal(elements.get('local-danmu-edit-filename').value, '未保存.xml');
+      assert.equal(elements.get('local-danmu-edit-status').textContent, scenario.message);
+    });
+  }
+});
+
+test('local danmu edits block episode and group deletion until cancelled', async () => {
+  const row = resource(2, 7);
+  const groups = groupLocalDanmuResources([row]);
+  const requests = [];
+  let confirmations = 0;
+  const { context, elements } = makePage(async (url, options = {}) => {
+    requests.push({ url, method: options.method || 'GET' });
+    return Response.json({ success: true, groups });
+  }, { confirm: () => { confirmations++; return true; } });
+  await context.loadLocalDanmuList();
+  for (const scope of ['resource', 'group']) {
+    requests.length = 0;
+    confirmations = 0;
+    context.openLocalDanmuEdit(scope, scope === 'group' ? groups[0] : row);
+    await context.deleteLocalDanmu(row.resourceKey);
+    await context.deleteLocalDanmuGroup(groups[0]);
+    assert.equal(confirmations, 0);
+    assert.deepEqual(requests, []);
+    context.closeLocalDanmuEdit();
+    assert.equal(elements.get('local-danmu-edit-modal').classList.contains('active'), false);
+    assert.equal(elements.get('local-danmu-edit-modal').attributes['aria-hidden'], 'true');
+    if (scope === 'group') await context.deleteLocalDanmuGroup(groups[0]);
+    else await context.deleteLocalDanmu(row.resourceKey);
+    assert.equal(confirmations, 1);
+    assert.deepEqual(requests, [
+      { url: '/api/local-danmu/' + encodeURIComponent(row.resourceKey), method: 'DELETE' },
+      { url: '/api/local-danmu/list', method: 'GET' },
+    ]);
+  }
 });
 
 test('upload sends the selected season and retains series fields for the next episode', async () => {

@@ -496,6 +496,27 @@ export const HTML_TEMPLATE = /* html */ `
         </div>
     </div>
 
+    <!-- 本地弹幕编辑弹窗放在页面顶层，避免命中 section 子元素的错峰动画延迟 -->
+    <div class="modal" id="local-danmu-edit-modal" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header"><h3 id="local-danmu-edit-title">编辑本地弹幕</h3><button type="button" class="close-btn" onclick="closeLocalDanmuEdit()">&times;</button></div>
+            <div class="modal-body">
+                <div id="local-danmu-edit-group-fields">
+                    <div class="form-group"><label for="local-danmu-edit-name">标题</label><input id="local-danmu-edit-name"></div>
+                    <div class="form-group"><label for="local-danmu-edit-year">年份</label><input id="local-danmu-edit-year" type="number" min="1900" step="1"></div>
+                    <div class="form-group"><label for="local-danmu-edit-type">类型</label><select id="local-danmu-edit-type"><option value="tv">tv</option><option value="movie">movie</option></select></div>
+                    <div class="form-group"><label for="local-danmu-edit-season">季</label><input id="local-danmu-edit-season" type="number" min="1" step="1"></div>
+                </div>
+                <div id="local-danmu-edit-resource-fields">
+                    <div class="form-group"><label for="local-danmu-edit-episode">集</label><input id="local-danmu-edit-episode" type="number" min="1" step="1"></div>
+                    <div class="form-group"><label for="local-danmu-edit-filename">显示文件名</label><input id="local-danmu-edit-filename"></div>
+                </div>
+                <p id="local-danmu-edit-status" class="preview-status" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeLocalDanmuEdit()">取消</button><button type="button" class="btn btn-primary" onclick="submitLocalDanmuEdit()">保存</button></div>
+        </div>
+    </div>
+
     <!-- 编辑模态框 -->
     <div class="modal" id="env-modal">
         <div class="modal-content">

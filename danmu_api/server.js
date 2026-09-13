@@ -346,7 +346,7 @@ function createServer() {
 
       // 异步读取 POST/PUT 请求的请求体
       let body;
-      if (req.method === 'POST' || req.method === 'PUT') {
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
         body = await readRequestBody(req);
       }
 

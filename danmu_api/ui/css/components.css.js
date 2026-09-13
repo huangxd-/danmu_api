@@ -380,7 +380,9 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     overflow-wrap: anywhere;
 }
 
-.local-danmu-group-remove {
+.local-danmu-group-actions {
+    display: flex;
+    gap: 8px;
     margin: 0 16px 8px 34px;
 }
 
@@ -441,10 +443,6 @@ body[data-theme] .favorite-schedule-btn:disabled:hover {
     font-size: 12px;
     color: var(--theme-muted);
     overflow-wrap: anywhere;
-}
-
-.local-danmu-episode > button {
-    flex-shrink: 0;
 }
 
 .local-danmu-episode-actions {
