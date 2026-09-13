@@ -179,6 +179,7 @@ function loadEnvVariables() {
         .then(config => {
             // 从配置中获取admin token
             currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+            updateLocalDanmuPermission(config);
 
             originalToken = config.originalEnvVars?.TOKEN || '';
             
@@ -393,7 +394,7 @@ function switchSection(section, event = null) {
     }
 
     // 检查是否尝试访问受token保护的section（日志查看、接口调试、推送弹幕、请求记录、系统配置需要token访问）
-    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push' || section === 'request-records') {
+    if (section === 'logs' || section === 'api' || section === 'env' || section === 'push' || section === 'request-records' || section === 'local-danmu') {
         let _reverseProxy = customBaseUrl; // 使用全局配置
 
         // 获取URL路径并提取token
@@ -691,7 +692,7 @@ function updateColorSchemeToggle() {
     const btn = document.getElementById('theme-corner-toggle');
     if (!btn) return;
     const scheme = document.body.dataset.colorScheme || 'light';
-    btn.textContent = scheme === 'dark' ? '☀' : '🌙';
+    btn.innerHTML = uiIcon(scheme === 'dark' ? 'sun' : 'moon');
     btn.title = scheme === 'dark' ? '切换浅色模式' : '切换暗色模式';
 }
 
@@ -718,6 +719,7 @@ const DANMAKU_DICT = [
     '@Celestials316', '@dyphire', '@piaoyizy', '@xiaoQQya', '@liixing',
     '@goodcommunication', '@Mr-Quin', '@chason-zhao', '@DemoJameson',
     '@rinnein', '@Lampon', '@zcw199604', 'Mashiro', '@wade6716',
+    '@xlmc', '@mz289', '@sugarbliss',
     '请合理使用', '公益服务请适当调高缓存避免滥用',
     '有弹幕才有氛围~', '弹幕陪你看', 'LogVar可能会倒闭但绝对不会变质',
 ];

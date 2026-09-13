@@ -54,6 +54,7 @@ const aiyifanSource = getSourceByKey('aiyifan');
 const hongguoSource = getSourceByKey('hongguo');
 const animekoSource = getSourceByKey('animeko');
 const otherSource = getSourceByKey('other');
+const localSource = getSourceByKey('local');
 const doubanSource = getSourceByKey('douban');
 const tmdbSource = getSourceByKey('tmdb');
 
@@ -243,6 +244,8 @@ function getMatchEpisodeCount(anime, bangumiData) {
 }
 
 function isSingleEpisodeMatchCandidate(anime, bangumiData) {
+  // 只上传一集的本地电视剧仍按剧集参与源优先级匹配。
+  if (anime?.source === 'local' && !isMovieMatchCandidate(anime)) return false;
   return getMatchEpisodeCount(anime, bangumiData) <= 1;
 }
 
@@ -252,7 +255,11 @@ export function matchSeason(anime, queryTitle, season) {
     .replace(/【[^】]+】/g, ' ')
     .replace(/\s+from\s+.+$/i, '')
     .trim();
-  const normalizedQueryTitle = normalizeSpaces(queryTitle).toLowerCase();
+  // 本地上传的年份单独匹配，文件名中的年份不属于剧名或季号。
+  const seasonQueryTitle = anime?.source === 'local'
+    ? queryTitle.replace(/[（(]\s*(?:19|20)\d{2}\s*[）)]/g, '').trim()
+    : queryTitle;
+  const normalizedQueryTitle = normalizeSpaces(seasonQueryTitle).toLowerCase();
   if (!originalTitle || !normalizedQueryTitle) return false;
 
   // 真实源常见“熊家餐馆第二季（The Bear Season 2）”：中文主标题和括号内
@@ -1047,7 +1054,9 @@ function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform 
   // 策略3：最后才使用数组索引，避免缺集或特别篇导致错位
   if (targetEpisode > 0 && platformEpisodes.length >= targetEpisode) {
     const fallbackEp = platformEpisodes[targetEpisode - 1];
-    if (fallbackEp) {
+    // 本地上传可能只有第 5、10 集，已标明集数的资源不能按列表位置补成第 1、2 集。
+    const numberedLocalEpisode = fallbackEp?.url?.startsWith('local:') && extractEpisodeNumberFromTitle(fallbackEp.episodeTitle) !== null;
+    if (fallbackEp && !numberedLocalEpisode) {
       log("info", `Using fallback array index for episode ${targetEpisode}: ${fallbackEp.episodeTitle}`);
       return fallbackEp;
     }
@@ -1248,7 +1257,8 @@ function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, pla
   for (const anime of searchData.animes) {
     const yearRank = getYearMatchRank(anime, year);
     if (isMovieMatchCandidate(anime)) continue;
-
+    // 本地列表仅代表已上传的集数，不能用它推算整季长度并跨季顺延。
+    if (anime.source === 'local') continue;
     const candidateTitles = [anime.animeTitle];
     if (anime.aliases && Array.isArray(anime.aliases)) candidateTitles.push(...anime.aliases);
 
@@ -1404,6 +1414,10 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
       log("info", `Year mismatch: anime year ${getCandidateYear(anime)} vs query year ${year}`);
       continue;
     }
+    // 本地上传的年份单独匹配，文件名中的年份不属于剧名或季号。
+    const candidateQueryTitle = anime.source === 'local'
+      ? title.replace(/[（(]\s*(?:19|20)\d{2}\s*[）)]/g, '').trim() || title
+      : title;
 
     let isMatch = false;
 
@@ -1419,7 +1433,7 @@ async function matchAniAndEp(season, episode, year, searchData, title, req, plat
 
         if (hasSeasonEpisode(season, episode)) {
             // 剧集模式
-            if (titleMatches(candTitle, title, season)) {
+            if (titleMatches(candTitle, candidateQueryTitle, season)) {
                 const animeIsPrefer = 
                   globals.rememberLastSelect && 
                   preferAnimeId && 
@@ -2299,6 +2313,7 @@ export async function getBangumi(path, detailStore = null, source = null) {
 
 function buildBangumiData(anime, idParam = "") {
   log("info", `[system] [bangumi] Fetched details for anime ID: ${idParam || anime.bangumiId}`);
+  const localSeason = anime.source === 'local' ? (extractSeasonNumberFromAnimeTitle(anime.animeTitle).season ?? 1) : 1;
 
   // 构建 episodes 列表
   let episodesList = [];
@@ -2308,7 +2323,7 @@ function buildBangumiData(anime, idParam = "") {
       seasonId: `season-${anime.animeId}`,
       episodeId: link.id,
       episodeTitle: `${link.title}`,
-      episodeNumber: `${i+1}`,
+      episodeNumber: `${anime.source === 'local' ? (extractEpisodeNumberFromTitle(link.title) ?? i + 1) : i + 1}`,
       airDate: anime.startDate,
       url: link.url || ""
     });
@@ -2335,7 +2350,7 @@ function buildBangumiData(anime, idParam = "") {
     // 重新排序episodeNumber
     episodesList = episodesList.map((episode, index) => ({
       ...episode,
-      episodeNumber: `${index+1}`
+      episodeNumber: anime.source === 'local' ? episode.episodeNumber : `${index+1}`
     }));
   }
 
@@ -2354,7 +2369,7 @@ function buildBangumiData(anime, idParam = "") {
       {
         id: `season-${anime.animeId}`,
         airDate: anime.startDate,
-        name: "Season 1",
+        name: `Season ${localSeason}`,
         episodeCount: anime.episodeCount,
       },
     ],
@@ -2584,6 +2599,31 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   let url = findUrlById(commentId);
   let title = findTitleById(commentId);
   let plat = title ? extractEpisodeTitle(title) : null;
+  if (url?.startsWith('local:')) {
+    return getCommentByUrl(url, queryFormat, segmentFlag, includeDuration);
+  }
+  const localResource = await (async () => {
+    try {
+      const { findLocalDanmu } = await import('../utils/local-danmu-store.js');
+      const [localAnimeId] = findAnimeIdByCommentId(commentId);
+      const localAnime = globals.animes.find(a => String(a.animeId) === String(localAnimeId));
+      const matchTitle = extractAnimeTitle(animeTitle || '').split('【')[0].trim();
+      const seasonSuffix = matchTitle.match(/\s*(?:第\s*[0-9一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+\s*[季期部]|(?:S(?:eason)?|Part)\s*\d+)\s*$/i);
+      const season = seasonSuffix ? (extractSeasonNumberFromAnimeTitle(matchTitle).season ?? 1) : 1;
+      return findLocalDanmu({
+        videoId: String(commentId),
+        title: seasonSuffix ? matchTitle.slice(0, seasonSuffix.index).trim() : matchTitle,
+        year: extractYear(animeTitle || ''),
+        type: localAnime?.typeDescription || localAnime?.type || '',
+        season,
+        episode: extractEpisodeNumberFromTitle(title || '')
+      });
+    } catch { return null; }
+  })();
+  if (localResource && !segmentFlag) {
+    const localComments = await localSource.getComments(localResource.resourceKey, 'local');
+    return formatDanmuResponse(buildDanmuResponse({ count: localComments.length, comments: localComments }, null), queryFormat);
+  }
   const shouldAttachDuration = shouldIncludeVideoDuration(queryFormat, includeDuration);
   log("info", "[system] [LogVar-API] comment url...", url);
   log("info", "[system] [LogVar-API] comment title...", title);
@@ -2801,6 +2841,13 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     }
 
     videoUrl = videoUrl.trim();
+    if (videoUrl.startsWith('local:')) {
+      const key = videoUrl.slice(6);
+      if (segmentFlag) return jsonResponse(await localSource.getComments(key, 'local', true));
+      const localComments = await localSource.getComments(key, 'local');
+      if (!localComments.length) return jsonResponse({ success: false, count: 0, comments: [] }, 404);
+      return formatDanmuResponse(buildDanmuResponse({ count: localComments.length, comments: localComments }, null), queryFormat);
+    }
 
     // 验证URL格式
     if (!videoUrl.startsWith('http')) {
@@ -2990,6 +3037,8 @@ export async function getSegmentComment(segment, queryFormat) {
       danmus = await sourceLogContext.run('animeko', () => animekoSource.getSegmentComments(segment));
     } else if (platform === "custom") {
       danmus = await sourceLogContext.run('custom', () => customSource.getSegmentComments(segment));
+    } else if (platform === "local") {
+      danmus = await sourceLogContext.run('local', () => localSource.getSegmentComments(segment));
     } else if (platform === "other_server") {
       danmus = await sourceLogContext.run('other', () => otherSource.getSegmentComments(segment));
     }

@@ -15,9 +15,14 @@ function resolveUiTheme(theme) {
 }
 
 export function handleUI() {
+  const localDanmuCanUpload = globals.localDanmuNotRequireAdmin
+    || (!!globals.adminToken && globals.currentToken === globals.adminToken);
   const html = HTML_TEMPLATE
     .replace("globals.currentToken", () => globals.currentToken)
-    .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme));
+    .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme))
+    .replace("globals.localDanmuCanUpload", String(localDanmuCanUpload))
+    .replace("globals.localDanmuRedisValid", String(globals.redisValid === true))
+    .replace("globals.localDanmuIsCloud", String(Boolean(globals.deployPlatform && globals.deployPlatform.toLowerCase() !== 'node')));
 
   return new Response(html, {
     headers: {

@@ -11,6 +11,7 @@ import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
+import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete, handleLocalDanmuUpdate } from "./apis/local-danmu-api.js";
 import { extendBangumiDownloadLifecycle } from "./utils/bangumi-data-util.js";
 import { Segment } from "./models/dandan-model.js"
 import {
@@ -71,7 +72,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // --- 校验 token ---
   const parts = path.split("/").filter(Boolean); // 去掉空段
 
-  const knownApiPaths = ["api", "v1", "v2", "search", "match", "favorite", "bangumi", "comment", "danmaku"];
+  const knownApiPaths = ["api", "v1", "v2", "search", "match", "favorite", "bangumi", "comment", "danmaku", "local-danmu"];
 
   const firstPart = parts[0] || "";
   const isDefaultToken = globals.token === "87654321";
@@ -274,6 +275,24 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleConfig(true); // 有权限
   }
 
+  const isLocalDanmuUpload = (path === '/api/local-danmu/upload' || path === '/api/v2/local-danmu/upload') && method === 'POST';
+  const isLocalDanmuList = (path === '/api/local-danmu/list' || path === '/api/v2/local-danmu/list') && method === 'GET';
+  const localResourceMatch = path.match(/^\/api(?:\/v2)?\/local-danmu\/([^/]+)$/);
+  if (isLocalDanmuUpload || isLocalDanmuList || (localResourceMatch && (method === 'GET' || method === 'DELETE' || method === 'PATCH'))) {
+    const isAdmin = !!globals.adminToken && globals.currentToken === globals.adminToken;
+    const isUser = !!globals.token && globals.currentToken === globals.token;
+    if (!isAdmin && !isUser) return jsonResponse({ errorCode: 401, success: false, errorMessage: 'Unauthorized' }, 401);
+    if ((isLocalDanmuUpload || method === 'DELETE' || method === 'PATCH') && !isAdmin && !globals.localDanmuNotRequireAdmin) {
+      return jsonResponse({ errorCode: 403, success: false, errorMessage: 'Local danmu upload and deletion require ADMIN_TOKEN or LOCAL_DANMU_NOT_REQUIRE_ADMIN=true' }, 403);
+    }
+    if (isLocalDanmuUpload) return handleLocalDanmuUpload(req);
+    if (isLocalDanmuList) return handleLocalDanmuList();
+    const key = decodeURIComponent(localResourceMatch[1]);
+    if (method === 'GET') return handleLocalDanmuGet(key);
+    if (method === 'PATCH') return handleLocalDanmuUpdate(req, key);
+    return handleLocalDanmuDelete(key);
+  }
+
   // GET /api/reqrecords - 获取请求记录 (需要 token)
   if (path === "/api/reqrecords" && method === "GET") {
     return handleReqRecords();
@@ -286,7 +305,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/favorite')
-    && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')) {
+    && !path.startsWith('/api/ai') && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
       log("info", `[system] [path check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
 
@@ -311,7 +330,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
         && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
         && !path.startsWith('/api/favorite')
-        && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')) {
+        && !path.startsWith('/api/ai') && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
           if (path.startsWith('/v2/') || path === '/v2') {
               log("info", `[system] [path check] Path is missing /api prefix. Adding /api...`);
               path = '/api' + path;

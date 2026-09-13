@@ -29,6 +29,15 @@ export const formsCssContent = /* css */ `
     transition: border-color 0.22s var(--app-ease-smooth), box-shadow 0.22s var(--app-ease-smooth);
 }
 
+/* Native select popups use these colors as well as the closed control. */
+.form-group select option,
+.form-group select optgroup,
+select option,
+select optgroup {
+    background-color: var(--theme-container-bg);
+    color: var(--theme-text);
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
