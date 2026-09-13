@@ -307,10 +307,10 @@ export const HTML_TEMPLATE = /* html */ `
                 <div id="local-danmu-upload-panel">
                     <div class="form-group local-danmu-file-field">
                         <label for="local-danmu-file">弹幕文件</label>
-                        <input type="file" id="local-danmu-file" accept=".xml,.json,.ass,.ssa,.csv,.txt" aria-describedby="local-danmu-file-hint" data-can-upload="globals.localDanmuCanUpload" onclick="return checkLocalDanmuWritePermission('上传', event)">
-                        <p id="local-danmu-file-hint" class="local-danmu-file-hint">支持 XML、JSON、ASS、SSA、CSV、TXT，单个文件不超过 10 MB</p>
+                        <input type="file" id="local-danmu-file" accept=".xml,.json,.ass,.ssa,.csv,.txt" multiple aria-describedby="local-danmu-file-hint" data-can-upload="globals.localDanmuCanUpload" onclick="return checkLocalDanmuWritePermission('上传', event)">
+                        <p id="local-danmu-file-hint" class="local-danmu-file-hint">支持 XML、JSON、ASS、SSA、CSV、TXT，可多选同一部剧的弹幕文件，每个文件不超过 10 MB</p>
                     </div>
-                    <div class="local-danmu-fields">
+                    <div class="local-danmu-fields" id="local-danmu-fields">
                         <div class="form-group local-danmu-name-field"><label for="local-danmu-title">标题（必填）</label><input id="local-danmu-title" placeholder="电视剧或影片标题"></div>
                         <div class="form-group">
                             <label id="local-danmu-year-label" for="local-danmu-year">年份（必填）</label>
@@ -327,10 +327,14 @@ export const HTML_TEMPLATE = /* html */ `
                             </select>
                         </div>
                         <div class="form-group"><label id="local-danmu-season-label" for="local-danmu-season">季</label><input id="local-danmu-season" type="number" min="1" step="1" value="1"></div>
-                        <div class="form-group"><label id="local-danmu-episode-label" for="local-danmu-episode">集</label><input id="local-danmu-episode" type="number" min="1" step="1" value="1"></div>
+                        <div class="form-group" id="local-danmu-episode-field"><label id="local-danmu-episode-label" for="local-danmu-episode">集</label><input id="local-danmu-episode" type="number" min="1" step="1" value="1"></div>
                         <button id="local-danmu-upload-button" type="button" class="btn btn-success" onclick="uploadLocalDanmu()">上传并解析</button>
                     </div>
                     <p class="preview-description">tv 默认第 1 季第 1 集，movie 的季和集可留空。标题、年份、类型和季相同的文件会归为一个剧集，展开后可查看各集。同一季的同一集重新上传会替换原文件。</p>
+                    <div id="local-danmu-batch-preview" class="local-danmu-batch-preview" hidden>
+                        <p class="local-danmu-file-hint">批量导入用于同一部电视剧（tv），标题、年份和季沿用上方设置。集数从文件名识别，可逐个修改；未识别的请手动填写，同一批次不能重复。</p>
+                        <div id="local-danmu-batch-list"></div>
+                    </div>
                     <div id="local-danmu-upload-status" class="preview-status" aria-live="polite"></div>
                 </div>
                 <div class="form-group local-danmu-search">

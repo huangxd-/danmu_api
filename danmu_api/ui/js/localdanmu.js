@@ -3,6 +3,8 @@ export const localDanmuJsContent = /* javascript */ `
 let localDanmuStorageReady = globals.localDanmuRedisValid;
 let localDanmuIsCloud = globals.localDanmuIsCloud;
 let localDanmuGroups = [];
+let localDanmuUploadItems = [];
+let localDanmuUploading = false;
 function localDanmuUrl(path, admin = false) { return buildApiUrl(path, admin); }
 function localDanmuRedisUnavailable() {
   return localDanmuIsCloud && !localDanmuStorageReady;
@@ -69,9 +71,11 @@ function initializeLocalDanmuForm() {
     year.append(option);
   }
   year.value = String(currentYear);
+  document.getElementById('local-danmu-file').addEventListener('change', updateLocalDanmuUploadFiles);
   document.getElementById('local-danmu-type').addEventListener('change', updateLocalDanmuTypeFields);
   document.getElementById('local-danmu-search')?.addEventListener('input', filterLocalDanmuGroups);
   updateLocalDanmuTypeFields();
+  updateLocalDanmuUploadFiles();
 }
 function localDanmuElement(tag, className, text) {
   const element = document.createElement(tag);
@@ -84,6 +88,58 @@ function localDanmuFileSize(size) {
   if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return bytes + ' B';
+}
+function localDanmuEpisodeFromFilename(filename) {
+  const name = String(filename || '').normalize('NFKC').replace(/\\.(xml|json|ass|ssa|csv|txt)$/i, '').trim();
+  const match = name.match(/S[0-9]+[ ._-]*EP?([0-9]+)/i)
+    || name.match(/第\\s*([0-9]+)\\s*[集话話回]/)
+    || name.match(/(?:^|[^A-Za-z0-9])(?:EP?|Episode)[ ._-]*([0-9]+)/i)
+    || name.match(/^([0-9]+)$/)
+    || name.match(/(?:^|[\\s._-])([0-9]{1,3})(?=$|[\\s._-]*[[(【])/);
+  const episode = match ? Number(match[1]) : null;
+  return Number.isSafeInteger(episode) && episode > 0 ? episode : null;
+}
+function localDanmuSelectedFiles() {
+  return Array.from(document.getElementById('local-danmu-file').files || [])
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' }));
+}
+function updateLocalDanmuUploadFiles() {
+  if (localDanmuUploading) return;
+  const files = localDanmuSelectedFiles();
+  const isBatch = files.length > 1;
+  const list = document.getElementById('local-danmu-batch-list');
+  localDanmuUploadItems = [];
+  list.replaceChildren();
+  document.getElementById('local-danmu-batch-preview').hidden = !isBatch;
+  document.getElementById('local-danmu-episode-field').hidden = isBatch;
+  document.getElementById('local-danmu-fields').dataset.batch = String(isBatch);
+  document.getElementById('local-danmu-upload-button').textContent = isBatch ? '批量上传并解析' : '上传并解析';
+  document.getElementById('local-danmu-upload-status').textContent = '';
+  if (!isBatch) return;
+  for (const [index, file] of files.entries()) {
+    const row = localDanmuElement('div', 'local-danmu-batch-row');
+    const info = localDanmuElement('div', 'local-danmu-batch-file');
+    info.append(localDanmuElement('div', 'local-danmu-filename', file.name), localDanmuElement('div', 'local-danmu-file-hint', localDanmuFileSize(file.size)));
+    const field = localDanmuElement('div', 'form-group local-danmu-batch-episode');
+    const input = localDanmuElement('input');
+    input.id = 'local-danmu-batch-episode-' + index;
+    input.type = 'number';
+    input.min = '1';
+    input.step = '1';
+    input.required = true;
+    const episode = localDanmuEpisodeFromFilename(file.name);
+    input.value = episode === null ? '' : String(episode);
+    input.placeholder = '请填写';
+    input.setAttribute('aria-label', file.name + ' 的集数');
+    const label = localDanmuElement('label', '', '集数');
+    label.htmlFor = input.id;
+    field.append(label, input);
+    const status = localDanmuElement('div', 'local-danmu-batch-status', episode === null ? '未识别，请填写集数' : '待上传');
+    input.addEventListener('input', () => { status.textContent = input.value ? '待上传' : '请填写集数'; });
+    row.append(info, field, status);
+    list.append(row);
+    localDanmuUploadItems.push({ file, input, status });
+  }
 }
 function renderLocalDanmuGroups(box, groups, emptyText = '暂无资源') {
   const openStates = new Map(Array.from(box.querySelectorAll('.local-danmu-group'), element => [element.dataset.groupKey, element.open]));
@@ -177,6 +233,7 @@ async function submitLocalDanmuEdit() {
   } catch { status.textContent = '更新失败，请稍后重试'; }
 }
 function prepareLocalDanmuReupload(resource) {
+  if (localDanmuUploading) return;
   if (!checkLocalDanmuWritePermission('重新上传')) return;
   document.getElementById('local-danmu-title').value = resource.title || '';
   document.getElementById('local-danmu-year').value = resource.year == null ? '' : String(resource.year);
@@ -186,6 +243,7 @@ function prepareLocalDanmuReupload(resource) {
   updateLocalDanmuTypeFields();
   const file = document.getElementById('local-danmu-file');
   file.value = '';
+  updateLocalDanmuUploadFiles();
   document.getElementById('local-danmu-upload-status').textContent = '已填充“' + (resource.title || '') + '”的信息，请选择新文件后上传。';
   file.click?.();
 }
@@ -210,13 +268,19 @@ async function loadLocalDanmuList() {
   } catch { box.replaceChildren(localDanmuElement('p', 'text-gray', '资源列表加载失败，请稍后重试')); }
 }
 async function uploadLocalDanmu() {
+  if (localDanmuUploading) return;
   if (localDanmuRedisUnavailable()) {
     showLocalDanmuRedisRequired();
     return;
   }
   if (!checkLocalDanmuWritePermission('上传')) return;
-  const f = document.getElementById('local-danmu-file').files[0]; const s = document.getElementById('local-danmu-upload-status');
-  if (!f) { s.textContent = '请选择文件'; return; }
+  const files = localDanmuSelectedFiles();
+  const s = document.getElementById('local-danmu-upload-status');
+  if (!files.length) { s.textContent = '请选择文件'; return; }
+  const isBatch = files.length > 1;
+  if (isBatch ? files.length !== localDanmuUploadItems.length || files.some((file, index) => file !== localDanmuUploadItems[index].file) : localDanmuUploadItems.length > 0) {
+    updateLocalDanmuUploadFiles();
+  }
   const title = document.getElementById('local-danmu-title').value.trim();
   if (!title) { s.textContent = '请填写标题'; return; }
   const year = document.getElementById('local-danmu-year').value.trim();
@@ -225,29 +289,75 @@ async function uploadLocalDanmu() {
   if (!/^[0-9]{4}$/.test(year) || Number(year) < 1900 || Number(year) > currentYear) { s.textContent = '年份必须在 1900–' + currentYear + ' 年之间'; return; }
   const type = document.getElementById('local-danmu-type').value;
   if (type !== 'tv' && type !== 'movie') { s.textContent = '请选择类型（tv 或 movie）'; return; }
+  if (isBatch && type !== 'tv') { s.textContent = '批量导入用于同一部电视剧，请选择 tv 类型；电影请逐个上传。'; return; }
   const seasonInput = document.getElementById('local-danmu-season');
   const episodeInput = document.getElementById('local-danmu-episode');
   const seasonValue = seasonInput.value.trim();
   const episodeValue = episodeInput.value.trim();
   const season = seasonValue ? Number(seasonValue) : (type === 'tv' ? 1 : null);
-  const episode = episodeValue ? Number(episodeValue) : (type === 'tv' ? 1 : null);
+  const episode = isBatch ? null : episodeValue ? Number(episodeValue) : (type === 'tv' ? 1 : null);
   if (seasonInput.validity?.badInput || (season !== null && (!Number.isSafeInteger(season) || season < 1))) { s.textContent = '季数必须是大于 0 的整数'; return; }
-  if (episodeInput.validity?.badInput || (episode !== null && (!Number.isSafeInteger(episode) || episode < 1))) { s.textContent = '集数必须是大于 0 的整数'; return; }
+  if (!isBatch && (episodeInput.validity?.badInput || (episode !== null && (!Number.isSafeInteger(episode) || episode < 1)))) { s.textContent = '集数必须是大于 0 的整数'; return; }
   if (type === 'tv' && !seasonValue) seasonInput.value = '1';
-  if (type === 'tv' && !episodeValue) episodeInput.value = '1';
-  const fd = new FormData(); fd.append('file', f); fd.append('title', title); fd.append('year', year); fd.append('type', type);
-  if (season !== null) fd.append('season', String(season));
-  if (episode !== null) fd.append('episode', String(episode));
-  const button = document.getElementById('local-danmu-upload-button');
-  button.disabled = true;
-  s.textContent = '正在上传并解析…';
+  if (!isBatch && type === 'tv' && !episodeValue) episodeInput.value = '1';
+  const uploads = isBatch
+    ? localDanmuUploadItems.map(item => ({ ...item, episode: Number(item.input.value.trim()) }))
+    : [{ file: files[0], episode }];
+  if (isBatch) {
+    const episodes = new Map();
+    let invalid = false;
+    for (const item of uploads) {
+      item.status.textContent = '待上传';
+      if (item.input.validity?.badInput || !Number.isSafeInteger(item.episode) || item.episode < 1) {
+        item.status.textContent = '请填写有效集数';
+        invalid = true;
+      } else if (episodes.has(item.episode)) {
+        item.status.textContent = '集数重复，请修改';
+        episodes.get(item.episode).status.textContent = '集数重复，请修改';
+        invalid = true;
+      } else episodes.set(item.episode, item);
+    }
+    if (invalid) { s.textContent = '请先填写有效且不重复的集数，再批量上传。'; return; }
+  }
+  const controls = ['file', 'title', 'year', 'type', 'season', 'episode', 'upload-button']
+    .map(name => document.getElementById('local-danmu-' + name)).concat(isBatch ? uploads.map(item => item.input) : []);
+  const disabledStates = controls.map(control => control.disabled === true);
+  localDanmuUploading = true;
+  controls.forEach(control => { control.disabled = true; });
+  let succeeded = 0;
+  let failed = 0;
+  let totalComments = 0;
   try {
-    const r = await fetch(localDanmuUrl('/api/local-danmu/upload'), { method: 'POST', body: fd });
-    const d = await r.json();
-    s.textContent = d.success ? (type === 'movie' ? '电影上传成功' : '第' + d.resource.season + '季上传成功') + '，共 ' + d.resource.count + ' 条弹幕' : (d.errorMessage || '上传失败');
-    if (d.success) await loadLocalDanmuList();
-  } catch { s.textContent = '上传失败，请稍后重试'; }
-  finally { button.disabled = false; }
+    // 逐个上传，避免并发写入 Redis 索引时相互覆盖。
+    for (const [index, item] of uploads.entries()) {
+      s.textContent = isBatch ? '正在上传 ' + (index + 1) + ' / ' + uploads.length + '：' + item.file.name : '正在上传并解析…';
+      if (item.status) item.status.textContent = '正在上传…';
+      let errorMessage = item.file.size > 10 * 1024 * 1024 ? '文件大小不能超过 10 MB' : '';
+      let resource;
+      if (!errorMessage) {
+        try {
+          const fd = new FormData();
+          fd.append('file', item.file); fd.append('title', title); fd.append('year', year); fd.append('type', type);
+          if (season !== null) fd.append('season', String(season));
+          if (item.episode !== null) fd.append('episode', String(item.episode));
+          const response = await fetch(localDanmuUrl('/api/local-danmu/upload'), { method: 'POST', body: fd });
+          const data = await response.json();
+          if (!response.ok || !data.success) errorMessage = data.errorMessage || '上传失败';
+          else resource = data.resource;
+        } catch { errorMessage = '上传失败，请稍后重试'; }
+      }
+      const count = Number(resource?.count) || 0;
+      if (errorMessage) failed++;
+      else { succeeded++; totalComments += count; }
+      if (item.status) item.status.textContent = errorMessage ? '失败：' + errorMessage : '成功 · ' + count + ' 条弹幕';
+      if (!isBatch) s.textContent = errorMessage || (type === 'movie' ? '电影上传成功' : '第' + (resource?.season || season || 1) + '季上传成功') + '，共 ' + count + ' 条弹幕';
+    }
+    if (isBatch) s.textContent = '批量导入完成：成功 ' + succeeded + ' 个，失败 ' + failed + ' 个，共 ' + totalComments + ' 条弹幕';
+    if (succeeded) await loadLocalDanmuList();
+  } finally {
+    controls.forEach((control, index) => { control.disabled = disabledStates[index]; });
+    localDanmuUploading = false;
+  }
 }
 async function deleteLocalDanmu(key) {
   if (localDanmuEditTarget) return;

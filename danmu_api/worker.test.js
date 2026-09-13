@@ -3717,7 +3717,7 @@ class TestElement {
 function makePage(fetch, sandboxGlobals = {}, html) {
   const elements = new Map();
   const documentListeners = new Map();
-  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'permission', 'upload-button', 'upload-status', 'search', 'list', 'edit-modal', 'edit-group-fields', 'edit-resource-fields', 'edit-name', 'edit-year', 'edit-type', 'edit-season', 'edit-episode', 'edit-filename', 'edit-status']) {
+  for (const name of ['file', 'title', 'year', 'type', 'season', 'episode', 'season-label', 'episode-label', 'fields', 'episode-field', 'batch-preview', 'batch-list', 'permission', 'upload-button', 'upload-status', 'search', 'list', 'edit-modal', 'edit-group-fields', 'edit-resource-fields', 'edit-name', 'edit-year', 'edit-type', 'edit-season', 'edit-episode', 'edit-filename', 'edit-status']) {
     elements.set(`local-danmu-${name}`, new TestElement());
   }
   const fileInput = (html || HTML_TEMPLATE).match(/<input\b[^>]*\bid="local-danmu-file"[^>]*>/)[0];
@@ -4109,6 +4109,165 @@ test('local danmu edits block episode and group deletion until cancelled', async
       { url: '/api/local-danmu/list', method: 'GET' },
     ]);
   }
+});
+
+test('batch local danmu recognizes explicit and numbered filenames without guessing release years', () => {
+  const { context } = makePage(async () => { throw new Error('Unexpected request'); });
+  for (const [filename, episode] of [
+    ['Show.S02E08.1080p.xml', 8], ['Show.S02EP09.json', 9], ['Show.EP010.ass', 10],
+    ['Show.E11.ssa', 11], ['剧名 第 12 集.csv', 12], ['剧名第13話.txt', 13],
+    ['014.xml', 14], ['剧名 - 15 (1080p).xml', 15], ['剧名_16.json', 16],
+    ['剧名.ＥＰ１７.xml', 17], ['Show.Episode 18.xml', 18],
+    ['Show.2026.1080p.xml', null], ['Show.2026.xml', null], ['unknown.xml', null],
+    ['Show.E00.xml', null], ['Show.E9007199254740992.xml', null],
+  ]) assert.equal(context.localDanmuEpisodeFromFilename(filename), episode, filename);
+  assert.match(HTML_TEMPLATE, /<input\b[^>]*id="local-danmu-file"[^>]*\bmultiple\b/);
+});
+
+test('batch local danmu previews editable episodes and uploads serially with shared metadata', async () => {
+  const posts = [];
+  let active = 0;
+  let maxActive = 0;
+  let listLoads = 0;
+  let releaseFirst;
+  const firstResponse = new Promise(resolve => { releaseFirst = resolve; });
+  const { context, elements } = makePage(async (url, options = {}) => {
+    if (options.method !== 'POST') {
+      assert.equal(url, '/api/local-danmu/list');
+      listLoads++;
+      return Response.json({ success: true, groups: [] });
+    }
+    assert.equal(url, '/api/local-danmu/upload');
+    posts.push(options.body);
+    maxActive = Math.max(maxActive, ++active);
+    if (posts.length === 1) await firstResponse;
+    active--;
+    return Response.json({ success: true, resource: { season: 2, count: 2 } });
+  });
+  context.initializeLocalDanmuForm();
+  fillUploadForm(elements, { title: '批量剧集', season: '2' });
+  const file = elements.get('local-danmu-file');
+  file.files = ['Series.S02E10.xml', 'Series.S02E02.xml', 'Series.unknown.xml'].map(name => new File(['<i/>'], name));
+  file.listeners.get('change')();
+  const inputs = elements.get('local-danmu-batch-list').querySelectorAll('input');
+  assert.deepEqual(inputs.map(input => input.value), ['2', '10', '']);
+  assert.equal(elements.get('local-danmu-batch-preview').hidden, false);
+  assert.equal(elements.get('local-danmu-episode-field').hidden, true);
+  await context.uploadLocalDanmu();
+  assert.equal(posts.length, 0);
+  assert.match(elements.get('local-danmu-upload-status').textContent, /有效且不重复/);
+  inputs[2].value = '12';
+  inputs[2].listeners.get('input')();
+  const pending = context.uploadLocalDanmu();
+  try {
+    assert.equal(posts.length, 1);
+    assert.equal(file.disabled, true);
+    assert.equal(elements.get('local-danmu-title').disabled, true);
+    assert.equal(elements.get('local-danmu-upload-button').disabled, true);
+    assert.ok(inputs.every(input => input.disabled));
+    await context.uploadLocalDanmu();
+    context.prepareLocalDanmuReupload(resource(3, 4));
+    assert.equal(posts.length, 1);
+    assert.equal(elements.get('local-danmu-title').value, '批量剧集');
+  } finally { releaseFirst(); }
+  await pending;
+  assert.equal(maxActive, 1);
+  assert.equal(listLoads, 1);
+  assert.deepEqual(posts.map(body => body.get('episode')), ['2', '10', '12']);
+  for (const body of posts) {
+    assert.equal(body.get('title'), '批量剧集');
+    assert.equal(body.get('year'), '2026');
+    assert.equal(body.get('type'), 'tv');
+    assert.equal(body.get('season'), '2');
+    assert.equal(body.getAll('file').length, 1);
+  }
+  assert.equal(file.disabled, false);
+  assert.equal(elements.get('local-danmu-upload-button').disabled, false);
+  assert.ok(inputs.every(input => !input.disabled));
+  assert.match(elements.get('local-danmu-upload-status').textContent, /成功 3 个，失败 0 个，共 6 条弹幕/);
+});
+
+test('batch local danmu rejects invalid or duplicate episodes before uploading any files', async t => {
+  for (const scenario of [
+    { name: 'duplicate filenames', names: ['A.E01.xml', 'B.E01.json'] },
+    { name: 'duplicate manual episode', value: '1' },
+    { name: 'empty episode', value: '' },
+    { name: 'zero episode', value: '0' },
+    { name: 'fractional episode', value: '1.5' },
+    { name: 'invalid numeric input', badInput: true },
+    { name: 'movie batch', type: 'movie' },
+  ]) {
+    await t.test(scenario.name, async () => {
+      let requests = 0;
+      const { context, elements } = makePage(async () => { requests++; throw new Error('Unexpected request'); });
+      fillUploadForm(elements, { type: scenario.type || 'tv' });
+      elements.get('local-danmu-file').files = (scenario.names || ['E01.xml', 'E02.xml']).map(name => new File(['<i/>'], name));
+      context.updateLocalDanmuUploadFiles();
+      const input = elements.get('local-danmu-batch-list').querySelectorAll('input')[1];
+      if (scenario.value !== undefined) input.value = scenario.value;
+      if (scenario.badInput) input.validity.badInput = true;
+      await context.uploadLocalDanmu();
+      assert.equal(requests, 0);
+      assert.match(elements.get('local-danmu-upload-status').textContent, scenario.type ? /tv/ : /有效且不重复/);
+      assert.notEqual(elements.get('local-danmu-upload-button').disabled, true);
+    });
+  }
+});
+
+test('batch local danmu continues after failed or oversized files and reports each result', async () => {
+  const uploads = [];
+  let listLoads = 0;
+  const { context, elements } = makePage(async (_url, options = {}) => {
+    if (options.method !== 'POST') {
+      listLoads++;
+      return Response.json({ success: true, groups: [] });
+    }
+    const episode = Number(options.body.get('episode'));
+    uploads.push(episode);
+    if (episode === 2) return Response.json({ success: false, errorMessage: '文件中没有有效弹幕' }, { status: 400 });
+    if (episode === 3) return new Response('<html>Bad gateway</html>', { status: 502 });
+    if (episode === 4) throw new Error('offline');
+    return Response.json({ success: true, resource: { count: 3 } });
+  });
+  fillUploadForm(elements);
+  elements.get('local-danmu-file').files = [
+    ...[1, 2, 3, 4].map(episode => new File(['<i/>'], 'E0' + episode + '.xml')),
+    { name: 'E05.xml', size: 10 * 1024 * 1024 + 1 },
+    new File(['<i/>'], 'E06.xml'),
+  ];
+  await context.uploadLocalDanmu();
+  assert.deepEqual(uploads, [1, 2, 3, 4, 6]);
+  assert.equal(listLoads, 1);
+  const statuses = elements.get('local-danmu-batch-list').querySelectorAll('.local-danmu-batch-status').map(element => element.textContent);
+  assert.match(statuses[0], /成功/);
+  assert.match(statuses[1], /文件中没有有效弹幕/);
+  assert.match(statuses[2], /失败/);
+  assert.match(statuses[3], /失败/);
+  assert.match(statuses[4], /10 MB/);
+  assert.match(statuses[5], /成功/);
+  assert.match(elements.get('local-danmu-upload-status').textContent, /成功 2 个，失败 4 个，共 6 条弹幕/);
+  assert.equal(elements.get('local-danmu-file').disabled, false);
+});
+
+test('switching back to one local danmu file restores the manual episode field', async () => {
+  let uploaded;
+  const { context, elements } = makePage(async (_url, options = {}) => {
+    if (options.method === 'POST') uploaded = options.body;
+    return Response.json({ success: true, resource: { season: 1, count: 1 }, groups: [] });
+  });
+  context.initializeLocalDanmuForm();
+  fillUploadForm(elements, { episode: '9' });
+  const file = elements.get('local-danmu-file');
+  file.files = ['E01.xml', 'E02.xml'].map(name => new File(['<i/>'], name));
+  file.listeners.get('change')();
+  file.files = [file.files[0]];
+  file.listeners.get('change')();
+  assert.equal(elements.get('local-danmu-batch-preview').hidden, true);
+  assert.equal(elements.get('local-danmu-episode-field').hidden, false);
+  assert.equal(elements.get('local-danmu-batch-list').children.length, 0);
+  assert.equal(elements.get('local-danmu-upload-button').textContent, '上传并解析');
+  await context.uploadLocalDanmu();
+  assert.equal(uploaded.get('episode'), '9');
 });
 
 test('upload sends the selected season and retains series fields for the next episode', async () => {
