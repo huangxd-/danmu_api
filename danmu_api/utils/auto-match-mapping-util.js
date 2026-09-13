@@ -140,6 +140,8 @@ export function resolveAutoMatchMapping(rules, { title, season, episode }) {
   // episode is the most specific transition point. Keep declaration order
   // only as the tie-breaker for rules with the same specificity.
   matches.sort((left, right) => {
+    const originOrder = Number(right.originPriority || 0) - Number(left.originPriority || 0);
+    if (originOrder !== 0) return originOrder;
     const boundedOrder = Number(right.bounded) - Number(left.bounded);
     if (boundedOrder !== 0) return boundedOrder;
     if (!left.bounded && left.sourceStartEpisode !== right.sourceStartEpisode) {
@@ -154,6 +156,21 @@ export function resolveAutoMatchMapping(rules, { title, season, episode }) {
     ...rule,
     targetEpisode: rule.targetStartEpisode + episodeNumber - rule.sourceStartEpisode
   };
+}
+
+/** 合并本机与远程规则；同一输入同时命中时始终优先本机规则。 */
+export function mergeAutoMatchMappingRules(localRules, remoteRules) {
+  const local = (Array.isArray(localRules) ? localRules : []).map(rule => ({
+    ...rule,
+    origin: 'local',
+    originPriority: 2
+  }));
+  const remote = (Array.isArray(remoteRules) ? remoteRules : []).map(rule => ({
+    ...rule,
+    origin: 'remote',
+    originPriority: 1
+  }));
+  return [...local, ...remote];
 }
 
 function normalizeMediaType(value) {
