@@ -16,7 +16,7 @@ const pickColorFromP = (p) => {
     const parts = String(p ?? '').split(',');
     return parts.length >= 8 ? parts[3] : parts[2];
 };
-const normalize = (rows, format) => {
+const normalize = (rows, format, textCleaner = cleanText) => {
   const errors = [];
   const comments = [];
   for (let i = 0; i < rows.length && i < MAX_LINES; i++) {
@@ -25,10 +25,11 @@ const normalize = (rows, format) => {
     const pMode = typeof row.p === 'string' ? row.p.split(',')[1] : null;
     const pColor = typeof row.p === 'string' ? pickColorFromP(row.p) : null;
     const time = timeToSeconds(row.time ?? row.start ?? row.progress ?? row.timepoint ?? row.t ?? pTime);
-    const text = cleanText(row.text ?? row.content ?? row.m ?? row.message);
+    const text = textCleaner(row.text ?? row.content ?? row.m ?? row.message);
     if (!Number.isFinite(time) || time < 0 || !text) { if (errors.length < 5) errors.push(`${format} 第 ${i + 1} 行时间或文本无效`); continue; }
     const mode = Number(row.mode ?? row.type ?? row.ct ?? pMode ?? 1) || 1;
-    const color = Number(row.color ?? pColor ?? 16777215) || 16777215;
+    const colorValue = Number(row.color ?? pColor ?? 16777215);
+    const color = colorValue === 0 && format === 'ASS' ? 0 : colorValue || 16777215;
     comments.push({ p: `${time.toFixed(2)},${mode},${color}`, m: text });
   }
   if (!comments.length) throw new Error(errors[0] || '文件中没有有效弹幕');
@@ -49,10 +50,134 @@ function parseXml(text) {
   walk(data);
   return normalize(nodes.map(x => { const p = String(x.p).split(','); return { time: p[0], mode: p[1], color: pickColorFromP(x.p), text: x.text }; }), 'XML');
 }
+// ASS 的颜色为 AABBGGRR/BBGGRR，普通弹幕只保留 RGB。
+function assColor(value) {
+  const raw = String(value ?? '').trim();
+  if (!/^(?:&H[\da-f]{1,8}&?|-?\d+)$/i.test(raw)) return undefined;
+  const bgr = /^&H/i.test(raw) ? parseInt(raw.slice(2), 16) : Number(raw);
+  return ((bgr & 255) << 16) | (bgr & 0xFF00) | ((bgr >>> 16) & 255);
+}
+
+// 按顶层反斜杠切分，避免把 \t(...) 内的动画目标当成立即生效的标签。
+function assOverrideTags(block) {
+  const tags = [];
+  let start = -1;
+  let depth = 0;
+  for (let i = 0; i < block.length; i++) {
+    if (block[i] === '(') depth++;
+    else if (block[i] === ')') depth = Math.max(0, depth - 1);
+    else if (block[i] === '\\' && depth === 0) {
+      if (start >= 0) tags.push(block.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  if (start >= 0) tags.push(block.slice(start).trim());
+  return tags;
+}
+
+// 顺序扫描控制块；转义花括号属于正文，未闭合的花括号不反复扫描后缀。
+function* assTextParts(text) {
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && (text[i + 1] === '{' || text[i + 1] === '}')) { i++; continue; }
+    if (text[i] !== '{') continue;
+    const end = text.indexOf('}', i + 1);
+    if (end === -1) break;
+    if (i > start) yield { text: text.slice(start, i) };
+    yield { block: text.slice(i + 1, end) };
+    start = end + 1;
+    i = end;
+  }
+  if (start < text.length) yield { text: text.slice(start) };
+}
+
+// 只记录需要的字段位置，避免异常 Format 的列数与事件数相乘放大内存。
+function assFormat(value) {
+  const columns = new Map();
+  const needed = new Set(['start', 'style', 'text', 'name', 'primarycolour', 'alignment']);
+  value.split(',').forEach((name, index) => {
+    const key = name.trim().toLowerCase();
+    if (needed.has(key)) columns.set(key, index);
+  });
+  return columns;
+}
+
 function parseAss(text) {
   const rows = [];
-  for (const line of text.split(/\r?\n/)) { if (!/^Dialogue\s*:/i.test(line)) continue; const p = line.replace(/^Dialogue\s*:\s*/i, '').split(','); rows.push({ start: p[1], text: p.slice(9).join(',').replace(/\\N/g, '\n') }); }
-  return normalize(rows, 'ASS');
+  const styles = new Map();
+  const events = [];
+  let section = '';
+  let styleFormat = new Map();
+  let eventFormat = assFormat('Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text');
+  let wrapStyle = 0;
+  const fields = (value, format) => {
+    const parts = value.split(',');
+    return Object.fromEntries([...format].map(([name, i]) => [name, name === 'text' ? parts.slice(i).join(',') : (parts[i] || '').trim()]));
+  };
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith('[')) { section = line.toLowerCase(); continue; }
+    const entry = line.match(/^(\w+)\s*:\s*(.*)$/);
+    if (!entry) continue;
+    const [, key, value] = entry;
+    if (section === '[script info]' && key.toLowerCase() === 'wrapstyle') wrapStyle = Number(value);
+    if (section === '[v4+ styles]' || section === '[v4 styles]') {
+      if (key.toLowerCase() === 'format') styleFormat = assFormat(value);
+      if (key.toLowerCase() === 'style' && styleFormat.size) {
+        const style = fields(value, styleFormat);
+        let alignment = Number(style.alignment);
+        // SSA v4 的顶部/中部对齐编号与 ASS 不同。
+        if (section === '[v4 styles]') alignment = ({ 1: 1, 2: 2, 3: 3, 5: 7, 6: 8, 7: 9, 9: 4, 10: 5, 11: 6 })[alignment];
+        styles.set(style.name, { color: assColor(style.primarycolour) ?? 16777215, alignment });
+      }
+    }
+    if (section === '[events]' || !section) {
+      if (key.toLowerCase() === 'format') eventFormat = assFormat(value);
+      if (key.toLowerCase() === 'dialogue') events.push(fields(value, eventFormat));
+    }
+  }
+  for (const event of events) {
+    const base = styles.get(event.style) || { color: 16777215, alignment: 0 };
+    let currentStyle = base;
+    let color = base.color;
+    let alignment = base.alignment;
+    let alignmentSet = false;
+    let drawing = false;
+    let moving = false;
+    let wrap = wrapStyle;
+    let visibleColor;
+    let content = '';
+    for (const part of assTextParts(event.text || '')) {
+      if (part.block !== undefined) {
+        for (const value of assOverrideTags(part.block)) {
+          if (/^move\(/i.test(value)) moving = true;
+          else if (/^an[1-9]$/i.test(value) && !alignmentSet) { alignment = Number(value.slice(2)); alignmentSet = true; }
+          else if (/^a(?:[1235679]|10|11)$/i.test(value) && !alignmentSet) {
+            alignment = ({ 1: 1, 2: 2, 3: 3, 5: 7, 6: 8, 7: 9, 9: 4, 10: 5, 11: 6 })[Number(value.slice(1))];
+            alignmentSet = true;
+          }
+          else if (/^1?c(?:&H[\da-f]{1,8}&?)?$/i.test(value)) color = assColor(value.replace(/^1?c/i, '')) ?? currentStyle.color;
+          else if (/^p\d+$/i.test(value)) drawing = Number(value.slice(1)) > 0;
+          else if (/^q[0-3]$/i.test(value)) wrap = Number(value.slice(1));
+          else if (/^r/i.test(value)) {
+            // \r 重置文字样式，不重置整行对齐、换行策略或绘图模式。
+            currentStyle = styles.get(value.slice(1).trim()) || base;
+            color = currentStyle.color;
+          }
+        }
+      } else if (!drawing) {
+        const visible = part.text.replace(/\\([Nnh{}])/g, (_, char) => ({ N: '\n', n: wrap === 2 ? '\n' : ' ', h: '\u00a0', '{': '{', '}': '}' })[char]);
+        // 一条普通弹幕只能表达一种颜色，取首段可见正文的颜色。
+        if (visible.trim() && visibleColor === undefined) visibleColor = color;
+        content += visible;
+      }
+    }
+    // 中部固定和精确坐标无法表达，回退为滚动；移动优先于对齐。
+    const mode = moving ? 1 : alignment >= 7 && alignment <= 9 ? 5 : alignment >= 1 && alignment <= 3 ? 4 : 1;
+    if (content.trim()) rows.push({ start: event.start, text: content, mode, color: visibleColor ?? color });
+  }
+  // ASS 正文不是 HTML，尖括号和颜文字必须保留。
+  return normalize(rows, 'ASS', value => String(value ?? '').trim());
 }
 function parseDelimited(text, format) {
   const rows = [];
