@@ -2,7 +2,7 @@ import { globals } from "../../configs/globals.js";
 import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
-import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, normalizeSpaces } from "../../utils/common-util.js";
+import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripNonTitleChars } from "../../utils/common-util.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 
 // =====================
@@ -63,7 +63,7 @@ function normalizeFongmiText(value) {
       // 保底忽略简繁转换异常，继续使用原始文本
     }
   }
-  return normalizeSpaces(text.toLowerCase());
+  return stripNonTitleChars(text.toLowerCase());
 }
 
 /**
@@ -189,19 +189,19 @@ function buildFongmiSearchKeywords(name) {
 
   const keywords = [];
   const pushKeyword = (value) => {
-    const keyword = normalizeSpaces(String(value || "").trim());
+    const keyword = stripNonTitleChars(String(value || "").trim());
     if (!keyword || keywords.includes(keyword)) return;
     keywords.push(keyword);
   };
 
   pushKeyword(rawName);
 
-  const cleanedName = normalizeSpaces(normalizeFongmiTitleByRegex(rawName)).trim();
+  const cleanedName = stripNonTitleChars(normalizeFongmiTitleByRegex(rawName)).trim();
   if (cleanedName && cleanedName !== rawName) {
     pushKeyword(cleanedName);
   }
 
-  const plainBracketName = normalizeSpaces(rawName.replace(/[\(\[（【].*$/, "")).trim();
+  const plainBracketName = stripNonTitleChars(rawName.replace(/[\(\[（【].*$/, "")).trim();
   if (plainBracketName && plainBracketName !== rawName) {
     pushKeyword(plainBracketName);
   }

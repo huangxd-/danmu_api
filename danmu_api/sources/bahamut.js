@@ -6,7 +6,7 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
-import { strictTitleMatch, normalizeSpaces, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { strictTitleMatch, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
@@ -299,51 +299,24 @@ export default class BahamutSource extends BaseSource {
 
       // 如果启用严格匹配模式
       if (globals.strictTitleMatch) {
-        // 检查原始查询词
         if (strictTitleMatch(tItem, q)) return true;
         if (used && strictTitleMatch(tItem, used)) return true;
-
-        // 尝试繁体/简体互转后的严格匹配
-        try {
-          if (strictTitleMatch(tItem, traditionalized(q))) return true;
-          if (strictTitleMatch(tItem, simplized(q))) return true;
-          if (used) {
-            if (strictTitleMatch(tItem, traditionalized(used))) return true;
-            if (strictTitleMatch(tItem, simplized(used))) return true;
-          }
-        } catch (e) {
-          // 转换过程中可能会因为异常输入而抛错；忽略继续
-        }
 
         return false;
       }
 
       // 宽松模糊匹配模式（默认）
-      // 规范化空格后进行直接包含检查
-      const normalizedItem = normalizeSpaces(tItem);
-      const normalizedQ = normalizeSpaces(q);
-      const normalizedUsed = used ? normalizeSpaces(used) : '';
+      // 统一繁简并剔除非文字字符后进行直接包含检查
+      const normalizedItem = normalizeTitleForMatch(tItem);
+      const normalizedQ = normalizeTitleForMatch(q);
+      const normalizedUsed = used ? normalizeTitleForMatch(used) : '';
 
       if (normalizedItem.includes(normalizedQ)) return true;
       if (normalizedUsed && normalizedItem.includes(normalizedUsed)) return true;
 
-      // 尝试繁体/简体互转（双向匹配）
-      try {
-        if (normalizedItem.includes(normalizeSpaces(traditionalized(q)))) return true;
-        if (normalizedItem.includes(normalizeSpaces(simplized(q)))) return true;
-        if (normalizedUsed) {
-          if (normalizedItem.includes(normalizeSpaces(traditionalized(used)))) return true;
-          if (normalizedItem.includes(normalizeSpaces(simplized(used)))) return true;
-        }
-      } catch (e) {
-        // 转换过程中可能会因为异常输入而抛错；忽略继续
-      }
-
       // 尝试不区分大小写的拉丁字母匹配
-      try {
-        if (normalizedItem.toLowerCase().includes(normalizedQ.toLowerCase())) return true;
-        if (normalizedUsed && normalizedItem.toLowerCase().includes(normalizedUsed.toLowerCase())) return true;
-      } catch (e) { }
+      if (normalizedItem.toLowerCase().includes(normalizedQ.toLowerCase())) return true;
+      if (normalizedUsed && normalizedItem.toLowerCase().includes(normalizedUsed.toLowerCase())) return true;
 
       return false;
     }

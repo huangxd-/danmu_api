@@ -1,6 +1,6 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
-import { simplized, traditionalized } from './zh-util.js';
+import { simplized } from './zh-util.js';
 
 // =====================
 // 通用工具方法
@@ -204,14 +204,24 @@ export function sanitizeSearchKeyword(str) {
 }
 
 /**
- * 规范化结果标题（移除空格并清理修饰性符号）
+ * 剔除标题中的非文字字符（空格、标点、符号），仅保留文字与数字
  * @param {string} str - 输入字符串
- * @returns {string} 规范化后的字符串
+ * @returns {string} 剔除后的字符串
  */
-export function normalizeSpaces(str) {
+export function stripNonTitleChars(str) {
   if (!str) return '';
   // 白名单模式：非白名单中的字符全部清理
   return String(str).replace(/[^\u4e00-\u9fa5\u3400-\u4DBF\u{20000}-\u{2EE5F}\u{30000}-\u{323AF}\u3040-\u30ff\uFF65-\uFF9F\uAC00-\uD7AFa-zA-Z0-9\uFF10-\uFF19\uFF21-\uFF3A\uFF41-\uFF5A\u2160-\u217F\u0400-\u04FF\u00C0-\u024F\u0370-\u03FF]/gu, '');
+}
+
+/**
+ * 标题比对归一化：繁转简后再剔除非文字字符，使同一标题的繁简与格式差异不参与比对
+ * @param {string} str - 输入字符串
+ * @returns {string} 归一化后的字符串
+ */
+export function normalizeTitleForMatch(str) {
+  if (!str) return '';
+  return stripNonTitleChars(simplized(String(str)));
 }
 
 /**
@@ -228,8 +238,8 @@ export function strictTitleMatch(title, query) {
   const cleanTitle = tagFilter ? title.replace(tagFilter, '').trim() : title;
   const cleanQuery = tagFilter ? query.replace(tagFilter, '').trim() : query;
 
-  const t = normalizeSpaces(cleanTitle);
-  const q = normalizeSpaces(cleanQuery);
+  const t = normalizeTitleForMatch(cleanTitle);
+  const q = normalizeTitleForMatch(cleanQuery);
 
   // 完全匹配
   if (t === q) return true;
@@ -283,16 +293,10 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
   const tagFilter = globals.titleNoiseFilter || null;
   const cleanTitle = tagFilter ? titleText.replace(tagFilter, '').trim() : titleText;
 
-  // 预处理：移除干扰字符并转小写，消除格式与大小写差异
-  const t = normalizeSpaces(cleanTitle).toLowerCase();
-  const q = normalizeSpaces(queryText).toLowerCase();
-
-  // 预处理：构建搜索词变种池 (原词、简体、繁体)，利用 Set 去重
+  // 预处理：统一繁简、移除干扰字符并转小写，消除书写变体与格式差异
+  const t = normalizeTitleForMatch(cleanTitle).toLowerCase();
+  const q = normalizeTitleForMatch(queryText).toLowerCase();
   let qList = [q];
-  try {
-    qList = [...new Set([queryText, simplized(queryText), traditionalized(queryText)])]
-      .map(kw => normalizeSpaces(kw).toLowerCase()).filter(Boolean);
-  } catch (e) {}
 
   // 季度特征提取：提前提取季数以支撑策略2的去季包含匹配
   const querySeason = parsedSeason !== null ? parsedSeason : getExplicitSeasonNumber(queryText);
@@ -302,7 +306,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
   if (querySeason !== null && parsedSeason === null) {
     const seasonStripped = queryText.replace(/(?:season|s|第)\s*[0-9一二三四五六七八九十]+\s*(?:季|期|部(?!分))?/gi, '').trim();
     if (seasonStripped && seasonStripped !== queryText) {
-      qList = [...new Set([...qList, normalizeSpaces(seasonStripped).toLowerCase()])];
+      qList = [...new Set([...qList, normalizeTitleForMatch(seasonStripped).toLowerCase()])];
     }
   }
 
@@ -311,7 +315,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
   if (tagFilter) {
     const tagStripped = queryText.replace(tagFilter, '').trim();
     if (tagStripped && tagStripped !== queryText) {
-      qList = [...new Set([...qList, normalizeSpaces(tagStripped).toLowerCase()])];
+      qList = [...new Set([...qList, normalizeTitleForMatch(tagStripped).toLowerCase()])];
     }
   }
 
@@ -361,7 +365,7 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
     if (yearStripped && yearStripped !== queryText) {
       // 去年份后可能残留杂音词，继续用配置的正则去除
       const cleanYear = tagFilter ? yearStripped.replace(tagFilter, '').trim() : yearStripped;
-      const yearQ = normalizeSpaces(cleanYear).toLowerCase();
+      const yearQ = normalizeTitleForMatch(cleanYear).toLowerCase();
       // 仅当标题不含年份时才接受兜底，保留用户刻意用年份过滤的语义
       const titleHasYear = /[\(\（]\s*(?:19|20)\d{2}\s*[\)\）]|\b(?:19|20)\d{2}\b/.test(titleText);
       if (yearQ && t.includes(yearQ) && !titleHasYear) return true;
@@ -399,7 +403,7 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
   // 先在原始标题上做拆分切除年份后缀，再去除非法字符
   const match = animeTitle.match(/^(.*?)\(\d{4}\)/);
   const rawTitleWithoutYear = match ? match[1].trim() : animeTitle.split("(")[0].trim();
-  const titleWithoutYear = normalizeSpaces(rawTitleWithoutYear);
+  const titleWithoutYear = stripNonTitleChars(rawTitleWithoutYear);
 
   // 1) 明确季数标识：第X季/期/部
   const explicitSeasonMatch = titleWithoutYear.match(/第\s*([0-9一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+)\s*[季期部]/);
@@ -448,6 +452,15 @@ export function extractSeasonNumberFromAnimeTitle(animeTitle) {
     return {
       season: convertChineseNumber(trailingChinese[1]),
       baseTitle: titleWithoutYear.replace(trailingChinese[0], "").trim(),
+    };
+  }
+
+  // 6) 罗马数字季号（如"某某Ⅲ"、"某某 Ⅳ"），仅识别 Unicode 罗马数字字符（Ⅰ-Ⅻ）
+  const romanMatch = titleWithoutYear.match(/[\u2160-\u216B]/);
+  if (romanMatch) {
+    return {
+      season: romanMatch[0].codePointAt(0) - 0x2160 + 1,
+      baseTitle: titleWithoutYear.replace(romanMatch[0], "").trim(),
     };
   }
 

@@ -4,8 +4,8 @@ import { pipeline } from 'stream/promises';
 import fetch from 'node-fetch';
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
-import { titleMatches, normalizeSpaces, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from './common-util.js';
-import { simplized, traditionalized } from './zh-util.js';
+import { titleMatches, stripNonTitleChars, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from './common-util.js';
+import { simplized } from './zh-util.js';
 
 // =====================
 // Bangumi Data 管理工具（https://github.com/bangumi-data/bangumi-data）
@@ -405,8 +405,7 @@ function pruneBangumiData(rawData) {
             }
         }
 
-        const normalizedStr = simplized(str);
-        prunedItem._flatText = normalizeSpaces(normalizedStr).toLowerCase().replace(SUFFIX_CLEAN_REGEX, '');
+        prunedItem._flatText = normalizeTitleForMatch(str).toLowerCase().replace(SUFFIX_CLEAN_REGEX, '');
         prunedItems.push(prunedItem);
     }
 
@@ -540,19 +539,15 @@ export async function searchBangumiData(keyword, siteKeys) {
         searchPromise = (async () => {
             const matched = [];
 
-            // 保留完整的繁简变体数组用于最终的精准校验阶段
-            let searchTerms = [keyword];
-            try {
-                searchTerms = [...new Set([keyword, simplized(keyword), traditionalized(keyword)])];
-            } catch (e) {}
+            const searchTerms = [keyword];
 
             // 提取核心检索词：基于底层指纹的简体单向收束特性，仅提取简体核心词用于极速初筛
             const unifiedKeyword = simplized(keyword);
             const coreKws = [unifiedKeyword].map(kw => {
                 let core = kw.replace(SUFFIX_CLEAN_REGEX, '');
-                core = normalizeSpaces(core).toLowerCase();
+                core = stripNonTitleChars(core).toLowerCase();
                 // 当规范化后字符过短时，降级使用仅规范化的原始词作为初筛条件
-                return core.length >= 2 ? core : normalizeSpaces(kw).toLowerCase();
+                return core.length >= 2 ? core : stripNonTitleChars(kw).toLowerCase();
             }).filter(k => k.length > 0);
 
             let candidateIndices = null; 
@@ -779,13 +774,10 @@ export async function searchBangumiData(keyword, siteKeys) {
 
 // 对搜索结果精确匹配优先排序并按源去重，同源多条目保留标题精确命中检索词的一条、其余标题并入别名；tmdb 不分季且按标题消费，不参与去重
 export function dedupeBangumiSearchResults(results, keyword) {
-    let exactTerms = [keyword];
-    try {
-        exactTerms = [...new Set([keyword, simplized(keyword), traditionalized(keyword)])];
-    } catch (e) {}
+    const exactKeyword = normalizeTitleForMatch(keyword);
     results.sort((a, b) => {
-        const aExact = a.titles.some(t => t && exactTerms.includes(t));
-        const bExact = b.titles.some(t => t && exactTerms.includes(t));
+        const aExact = a.titles.some(t => t && normalizeTitleForMatch(t) === exactKeyword);
+        const bExact = b.titles.some(t => t && normalizeTitleForMatch(t) === exactKeyword);
         if (aExact && !bExact) return -1;
         if (!aExact && bExact) return 1;
         return 0;
