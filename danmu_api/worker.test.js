@@ -35,11 +35,12 @@ import { CloudflareHandler } from "./configs/handlers/cloudflare-handler.js";
 import { EdgeoneHandler } from "./configs/handlers/edgeone-handler.js";
 import { HuggingfaceHandler } from "./configs/handlers/huggingface-handler.js";
 import { HandlerFactory } from "./configs/handlers/handler-factory.js";
-import { Globals } from "./configs/globals.js";
+import { Globals, globals } from "./configs/globals.js";
 import { Envs } from "./configs/envs.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
+import { applyRemoteTitleMappingText, ensureRemoteTitleMapping, millisecondsUntilNextShanghaiRefresh, normalizeMappingSourceUrl, parseRemoteTitleMappings, refreshRemoteTitleMappingNow } from './utils/remote-title-mapping-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { logviewJsContent } from './ui/js/logview.js';
@@ -2943,6 +2944,212 @@ test('worker.js API endpoints', async (t) => {
   //     config.sourceOrderArr = originalSourceOrderArr;
   //   }
   // });
+
+  await t.test('remote title mapping table', async (t) => {
+    Globals.deployPlatform = 'node';
+    await t.test('normalizes supported source URLs', () => {
+      assert.equal(
+        normalizeMappingSourceUrl('https://github.com/alice/danmu-maps/blob/main/mappings.txt'),
+        'https://raw.githubusercontent.com/alice/danmu-maps/main/mappings.txt'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://gist.github.com/alice/abc123def'),
+        'https://gist.githubusercontent.com/alice/abc123def/raw'
+      );
+      assert.equal(
+        normalizeMappingSourceUrl('https://cdn.jsdelivr.net/gh/a/b@main/m.txt'),
+        'https://cdn.jsdelivr.net/gh/a/b@main/m.txt'
+      );
+      assert.throws(() => normalizeMappingSourceUrl('file:///tmp/mappings.txt'), /HTTP\/HTTPS/);
+      assert.throws(() => normalizeMappingSourceUrl('not-a-url'), /有效的 HTTP\/HTTPS/);
+    });
+
+    await t.test('parses relaxed and single-line mapping formats', () => {
+      const parsed = parseRemoteTitleMappings([
+        '# 共享剧名映射表',
+        '// 由用户维护',
+        '唐朝诡事录->唐朝诡事录之西行',
+        '"国色芳华" -> 锦绣芳华，',
+        '永生－>永生动画',
+        '庆余年 -> 庆余年(剧集版) # 备注',
+        '无效行没有箭头',
+      ].join('\n'));
+
+      assert.equal(parsed.size, 4);
+      assert.equal(parsed.get('唐朝诡事录'), '唐朝诡事录之西行');
+      assert.equal(parsed.get('国色芳华'), '锦绣芳华');
+      assert.equal(parsed.get('永生'), '永生动画');
+      assert.equal(parsed.get('庆余年'), '庆余年(剧集版)');
+
+      const singleLine = parseRemoteTitleMappings('A->B;C->D');
+      assert.equal(singleLine.size, 2);
+      assert.equal(singleLine.get('A'), 'B');
+      assert.equal(singleLine.get('C'), 'D');
+    });
+
+    await t.test('schedules the next Shanghai 05:30 refresh strictly in the future', () => {
+      const cases = [
+        ['2026-09-19T21:29:00.000Z', 60 * 1000],
+        ['2026-09-19T21:30:00.000Z', 24 * 60 * 60 * 1000],
+        ['2026-09-19T22:00:00.000Z', 23.5 * 60 * 60 * 1000],
+        ['2026-09-20T00:00:00.000Z', 21.5 * 60 * 60 * 1000],
+      ];
+      for (const [now, expected] of cases) {
+        assert.equal(millisecondsUntilNextShanghaiRefresh(new Date(now)), expected);
+      }
+    });
+
+    await t.test('prefers local mappings and preserves state after invalid remote content', async () => {
+      Globals.init({
+        TITLE_MAPPING_TABLE: '本地剧A->本地映射A;本地剧B->本地映射B',
+        TITLE_MAPPING_TABLE_URL: 'https://github.com/user/repo/blob/main/mappings.txt'
+      });
+      applyRemoteTitleMappingText(
+        'https://raw.githubusercontent.com/user/repo/main/mappings.txt',
+        '本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y'
+      );
+
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.equal(globals.titleMappingTable.get('远程剧Y'), '远程映射Y');
+      assert.equal(globals.titleMappingTable.get('本地剧A'), '本地映射A');
+      assert.equal(globals.titleMappingTable.get('本地剧B'), '本地映射B');
+
+      await ensureRemoteTitleMapping();
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+      assert.throws(() => applyRemoteTitleMappingText(
+        'https://raw.githubusercontent.com/user/repo/main/mappings.txt',
+        '# 只有注释'
+      ));
+      assert.equal(globals.titleMappingTable.get('远程剧X'), '远程映射X');
+    });
+
+    await t.test('manual refresh downloads, parses, merges, and caches the configured table', async () => {
+      const cacheRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-api-title-mapping-'));
+      const originalCwd = process.cwd();
+      const sourceUrl = 'https://maps.example.test/title-mapping.txt';
+      let requestedUrl = '';
+      try {
+        process.chdir(cacheRoot);
+        Globals.init({
+          TITLE_MAPPING_TABLE: '本地剧->本地优先',
+          TITLE_MAPPING_TABLE_URL: sourceUrl,
+        });
+        const result = await withMockFetch(async url => {
+          requestedUrl = String(url);
+          return new Response('本地剧->远程值\n下载剧->下载映射', {
+            status: 200,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          });
+        }, () => refreshRemoteTitleMappingNow());
+
+        assert.deepEqual(result, { success: true, count: 2, status: 200 });
+        assert.equal(requestedUrl, sourceUrl);
+        assert.equal(globals.titleMappingTable.get('本地剧'), '本地优先');
+        assert.equal(globals.titleMappingTable.get('下载剧'), '下载映射');
+        assert.match(await fs.readFile(path.join(cacheRoot, '.cache', 'title-mapping-remote.txt'), 'utf8'), /下载剧->下载映射/);
+      } finally {
+        process.chdir(originalCwd);
+        await fs.rm(cacheRoot, { recursive: true, force: true });
+      }
+    });
+
+    await t.test('manual search does not apply title mapping', async () => {
+      const sourceUrl = 'https://maps.example.test/manual-search.txt';
+      Globals.init({ TITLE_MAPPING_TABLE_URL: sourceUrl });
+      Globals.deployPlatform = 'vercel';
+      applyRemoteTitleMappingText(sourceUrl, '原始标题->映射标题\n映射标题->二次映射');
+
+      const anime = createFavoriteAnime('原始标题', 1, 919001);
+      Globals.searchCache = new Map();
+      setSearchCache('原始标题', [favoriteSearchResult(anime)], new Map([[anime.animeId, anime]]));
+
+      try {
+        const response = await handleRequest(
+          new Request('http://localhost/api/v2/search/anime?keyword=' + encodeURIComponent('原始标题')),
+          { TITLE_MAPPING_TABLE_URL: sourceUrl },
+          'vercel',
+          '127.0.0.1'
+        );
+        const body = await response.json();
+        // 手动搜索不套用映射表：命中原始标题缓存，而非映射后的“映射标题”
+        assert.equal(body.animes[0].animeId, anime.animeId);
+        assert.equal(globals.searchCache.has('映射标题'), false);
+      } finally {
+        Globals.deployPlatform = 'node';
+      }
+    });
+
+    await t.test('clears stale remote rules when the URL is disabled or changed', async () => {
+      const firstUrl = 'https://maps.example.test/first.txt';
+      Globals.init({ TITLE_MAPPING_TABLE_URL: firstUrl });
+      applyRemoteTitleMappingText(firstUrl, '旧剧->旧映射');
+      assert.equal(globals.titleMappingTable.get('旧剧'), '旧映射');
+
+      Globals.envs.titleMappingTableUrl = '';
+      await ensureRemoteTitleMapping();
+      assert.equal(globals.titleMappingTable.has('旧剧'), false);
+      assert.equal(globals.titleMappingTable.get('旧剧'), undefined);
+
+      Globals.envs.titleMappingTableUrl = 'https://maps.example.test/second.txt';
+      let requests = 0;
+      await withMockFetch(async () => {
+        requests++;
+        return new Response('unavailable', { status: 503 });
+      }, () => ensureRemoteTitleMapping());
+      assert.equal(requests, 1);
+      assert.equal(globals.titleMappingTable.get('旧剧'), undefined);
+    });
+
+    await t.test('deduplicates initial downloads and backs off after one failed attempt', async () => {
+      Globals.init({ TITLE_MAPPING_TABLE_URL: 'https://maps.example.test/unavailable.txt' });
+      let requests = 0;
+      await withMockFetch(async () => {
+        requests++;
+        return new Response('unavailable', { status: 503 });
+      }, async () => {
+        await Promise.all([ensureRemoteTitleMapping(), ensureRemoteTitleMapping()]);
+        await ensureRemoteTitleMapping();
+      });
+      assert.equal(requests, 1);
+    });
+
+    await t.test('downloads once during serverless cold start and reuses the warm instance mapping', async () => {
+      Globals.init({ TITLE_MAPPING_TABLE_URL: 'https://maps.example.test/serverless.txt' });
+      Globals.deployPlatform = 'vercel';
+      let requests = 0;
+      try {
+        await withMockFetch(async () => {
+          requests++;
+          return new Response('冷启动剧->远程映射剧', { status: 200 });
+        }, async () => {
+          await Promise.all([ensureRemoteTitleMapping(), ensureRemoteTitleMapping()]);
+          await ensureRemoteTitleMapping();
+        });
+        assert.equal(requests, 1);
+        assert.equal(globals.titleMappingTable.get('冷启动剧'), '远程映射剧');
+      } finally {
+        Globals.deployPlatform = 'node';
+      }
+    });
+
+    await t.test('manual refresh reports configuration errors without downloading', async () => {
+      Globals.init({});
+      assert.deepEqual(await refreshRemoteTitleMappingNow(), {
+        success: false,
+        count: 0,
+        errorMessage: '未配置 TITLE_MAPPING_TABLE_URL',
+        status: 400,
+      });
+
+      Globals.init({ TITLE_MAPPING_TABLE_URL: 'file:///tmp/mappings.txt' });
+      const invalid = await refreshRemoteTitleMappingNow();
+      assert.equal(invalid.success, false);
+      assert.equal(invalid.status, 400);
+    });
+
+    Globals.init({});
+    await ensureRemoteTitleMapping();
+  });
 
 });
 

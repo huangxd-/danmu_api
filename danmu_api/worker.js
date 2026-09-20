@@ -8,7 +8,7 @@ import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes, handleRemoteMappingRefresh } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify } from "./apis/env-api.js";
 import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete, handleLocalDanmuUpdate } from "./apis/local-danmu-api.js";
@@ -21,6 +21,7 @@ import {
     handleQRCheck,
     handleCookieSave
 } from "./utils/cookie-util.js";
+import { ensureRemoteTitleMapping } from './utils/remote-title-mapping-util.js';
 
 let globals;
 
@@ -305,7 +306,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     && !path.startsWith('/api/deploy') && !path.startsWith('/api/cache')
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/favorite')
-    && !path.startsWith('/api/ai') && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
+    && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')
+    && !path.startsWith('/api/title-mapping') && !path.startsWith('/api/local-danmu')) {
       log("info", `[system] [path check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
 
@@ -330,7 +332,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
         && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
         && !path.startsWith('/api/favorite')
-        && !path.startsWith('/api/ai') && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
+        && !path.startsWith('/api/ai') && !path.startsWith('/api/debug')
+        && !path.startsWith('/api/title-mapping') && !path.startsWith('/api/local-danmu')) {
           if (path.startsWith('/v2/') || path === '/v2') {
               log("info", `[system] [path check] Path is missing /api prefix. Adding /api...`);
               path = '/api' + path;
@@ -355,6 +358,17 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (path === "/" && method === "GET") {
     return handleUI();
   }
+
+  const needsTitleMapping = path === "/api/v2/fongmi/danmaku"
+    || path === "/danmaku"
+    || path === "/api/v2/match"
+    || path === "/api/v2/favorite/add"
+    || path === "/api/favorite/add"
+    || path === "/api/v2/favorite/refresh"
+    || path === "/api/favorite/refresh"
+    || path === "/api/v2/favorite/remove"
+    || path === "/api/favorite/remove";
+  if (needsTitleMapping) await ensureRemoteTitleMapping();
 
   // GET /api/v2/search/anime
   if (path === "/api/v2/search/anime" && method === "GET") {
@@ -561,6 +575,14 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // GET /api/logs
   if (path === "/api/logs" && method === "GET") {
     return handleLogs();
+  }
+
+  // POST /api/title-mapping/refresh - 管理员手动刷新远程映射表
+  if (path === "/api/title-mapping/refresh" && method === "POST") {
+    if (!explicitToken || explicitToken !== globals.adminToken) {
+      return jsonResponse({ success: false, errorMessage: "需要 ADMIN_TOKEN 权限" }, 403);
+    }
+    return handleRemoteMappingRefresh();
   }
 
   if (path === '/api/debug/forward-trace') {

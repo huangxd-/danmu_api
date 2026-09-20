@@ -17,6 +17,7 @@ import { getRedisCaches, judgeRedisValid } from './utils/redis-util.js';
 import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.js';
 import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
 import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
+import { ensureRemoteTitleMapping } from './utils/remote-title-mapping-util.js';
 
 // 读取 Node HTTP 请求体的原始字节，避免多字节字符和上传文件在分块读取时被破坏。
 async function readRequestBody(req) {
@@ -547,6 +548,8 @@ async function startServer() {
 }
 
 async function initializeFavoriteScheduler(mainPort) {
+  Globals.deployPlatform = 'node';
+  await ensureRemoteTitleMapping();
   await judgeLocalCacheValid('/api/v2/favorite/list', 'node');
   if (Globals.localCacheValid) await getLocalCaches();
 

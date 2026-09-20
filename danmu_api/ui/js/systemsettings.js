@@ -927,6 +927,7 @@ function renderValueInput(item) {
         const isColorPool = currentKey === 'COLOR_POOL';
         const isDanmuOffset = currentKey === 'DANMU_OFFSET';
 		const isCustomMergeRules = currentKey === 'CUSTOM_MERGE_RULES';
+        const isRemoteMappingUrl = currentKey === 'TITLE_MAPPING_TABLE_URL';
         const offsetSources = item && item.sources ? item.sources : [];
         const isTitleFilter = currentKey === 'ANIME_TITLE_FILTER' || currentKey === 'EPISODE_TITLE_FILTER' || currentKey === 'TITLE_NOISE_FILTER';
         const recentDataBlock = isTitleFilter ? \`<div style="margin-top: 8px; display: flex; justify-content: flex-end;">\${renderRecentDataButton()}</div>\${renderRecentDataPanel()}\` : '';
@@ -1130,6 +1131,16 @@ function renderValueInput(item) {
                         <button type="button" class="btn btn-sm" onclick="toggleMergeRulePanel()">取消</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick="appendMergeRule()">确认添加</button>
                     </div>
+                </div>
+            \`;
+        } else if (isRemoteMappingUrl) {
+            container.innerHTML = \`
+                <label>变量值</label>
+                <input type="url" id="text-value" placeholder="https://example.com/title-mapping.txt" value="\${escapeHtml(value || '')}">
+                <div class="form-help">修改地址后请先保存；再次打开本页面即可手动下载并立即应用，失败时保留旧缓存。</div>
+                <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="refreshRemoteMapping(this)">立即更新</button>
+                    <span class="remote-refresh-status text-gray font-size-12" aria-live="polite"></span>
                 </div>
             \`;
         } else if (value && value.length > 50) {
@@ -2481,6 +2492,43 @@ function renderEnvList() {
     if (themeSettings) themeSettings.hidden = !themeMatched;
     if (status) status.textContent = '搜索结果 · ' + total + ' 项';
     list.innerHTML = html || (themeMatched ? '' : '<div class="preview-empty"><strong>未找到匹配配置</strong><span>请尝试其他关键词</span></div>');
+}
+
+// 手动更新远程剧名映射表
+async function refreshRemoteMapping(button) {
+    if (!button || button.disabled) return;
+    const status = button.parentElement && button.parentElement.querySelector('.remote-refresh-status');
+    const setStatus = (text, isError = false) => {
+        if (status) {
+            status.textContent = text;
+            status.className = 'remote-refresh-status font-size-12 ' + (isError ? 'text-red' : 'text-gray');
+        }
+    };
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '更新中...';
+    setStatus('正在连接远程表…');
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        let response;
+        try {
+            response = await fetch(buildApiUrl('/api/title-mapping/refresh', true), { method: 'POST', signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.errorMessage || '远程映射表更新失败');
+        }
+        button.textContent = '更新成功';
+        setStatus('成功更新' + (result.count || 0) + '条规则');
+        setTimeout(() => { button.textContent = originalText; button.disabled = false; }, 1500);
+    } catch (error) {
+        button.textContent = originalText;
+        button.disabled = false;
+        setStatus(error.message || '失败', true);
+    }
 }
 
 // 编辑环境变量

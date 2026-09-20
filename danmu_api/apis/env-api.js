@@ -3,6 +3,7 @@ import { log } from '../utils/log-util.js';
 import { HandlerFactory } from '../configs/handlers/handler-factory.js';
 import { globals } from '../configs/globals.js';
 import { syncBangumiDataLifecycleOnConfigChange } from '../utils/bangumi-data-util.js';
+import { syncRemoteTitleMappingConfig } from '../utils/remote-title-mapping-util.js';
 import AIClient from '../utils/ai-util.js';
 
 /**
@@ -28,6 +29,7 @@ export async function handleSetEnv(request) {
     if (result && key === 'USE_BANGUMI_DATA') {
       syncBangumiDataLifecycleOnConfigChange(deployPlatform);
     }
+    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 设置成功` });
@@ -63,6 +65,7 @@ export async function handleAddEnv(request) {
     if (result && key === 'USE_BANGUMI_DATA') {
       syncBangumiDataLifecycleOnConfigChange(deployPlatform);
     }
+    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 添加成功` });
@@ -98,6 +101,7 @@ export async function handleDelEnv(request) {
     if (result && key === 'USE_BANGUMI_DATA') {
       syncBangumiDataLifecycleOnConfigChange(deployPlatform);
     }
+    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 删除成功` });
