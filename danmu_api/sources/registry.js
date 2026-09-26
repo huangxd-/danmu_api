@@ -70,7 +70,8 @@ const SOURCE_REGISTRY = [
   { key: 'bahamut',   logName: '',        factory: () => new BahamutSource(), deps: [] },
   { key: 'dandan',    logName: '',        factory: () => new DandanSource(), deps: [] },
   { key: 'custom',    logName: '',        factory: () => new CustomSource(), deps: [],
-    handleAdapter: (instance, searchResult, queryTitle, isolatedAnimes) => instance.handleAnimes(searchResult, queryTitle, isolatedAnimes) },
+    handleAdapter: (instance, searchResult, queryTitle, isolatedAnimes, isolatedDetailStore) =>
+      instance.handleAnimes(searchResult, queryTitle, isolatedAnimes, isolatedDetailStore) },
   { key: 'tencent',   logName: '',        factory: () => new TencentSource(), deps: [] },
   { key: 'iqiyi',     logName: '',        factory: () => new IqiyiSource(), deps: [] },
   { key: 'imgo',      logName: 'mango',   factory: () => new MangoSource(), deps: [] },
