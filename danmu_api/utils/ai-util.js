@@ -62,7 +62,7 @@ function isUnsupportedTemperature(data) {
     /unsupported|not supported|invalid|unknown|only the default/.test(text);
 }
 
-function buildChatBody({ model, messages, tokenParam, maxTokens, temperature, includeTemperature }) {
+function buildChatBody({ model, messages, tokenParam, maxTokens, temperature, includeTemperature, thinking }) {
   const body = {
     model,
     messages,
@@ -71,6 +71,11 @@ function buildChatBody({ model, messages, tokenParam, maxTokens, temperature, in
   body[tokenParam] = maxTokens;
   if (includeTemperature) {
     body.temperature = temperature;
+  }
+  // DeepSeek defaults to thinking mode. Selection/verification can explicitly
+  // request final text without spending the output budget on reasoning.
+  if (thinking !== undefined && /deepseek/i.test(model)) {
+    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
   }
   return body;
 }
@@ -87,6 +92,7 @@ export default class AIClient {
     const model = options.model || this.model;
     const maxTokens = options.maxTokens ?? 8192;
     const temperature = options.temperature ?? 0.0;
+    const thinking = options.thinking;
     const cacheKey = buildCacheKey(this.baseURL, model);
     const cachedParams = modelParamCache.get(cacheKey);
 
@@ -103,6 +109,7 @@ export default class AIClient {
         maxTokens,
         temperature,
         includeTemperature,
+        thinking,
       });
 
       const res = await httpPost(`${this.baseURL}/chat/completions`, JSON.stringify(body), {
@@ -139,14 +146,23 @@ export default class AIClient {
         throw new Error(`AI API error ${res.status}: ${message}`);
       }
 
-      const content = data.choices[0].message.content;
+      const choice = data?.choices?.[0];
+      const content = choice?.message?.content;
+      if (typeof content !== 'string' || !content.trim()) {
+        const finishReason = choice?.finish_reason || 'unknown';
+        const completionTokens = data?.usage?.completion_tokens ?? 'unknown';
+        const reasoningTokens = data?.usage?.completion_tokens_details?.reasoning_tokens ?? 'unknown';
+        // Report only response metadata; reasoning_content is not a final answer.
+        const error = new Error(`AI returned empty final content (finish_reason=${finishReason}, completion_tokens=${completionTokens}, reasoning_tokens=${reasoningTokens})`);
+        error.code = 'AI_EMPTY_RESPONSE';
+        throw error;
+      }
       modelParamCache.set(cacheKey, {
         tokenParam,
         omitTemperature: !includeTemperature,
       });
       return content;
     }
-
     throw new Error(`AI API error: failed after ${MAX_CHAT_ATTEMPTS} attempts`);
   }
 
@@ -191,7 +207,7 @@ export default class AIClient {
 
   async verify() {
     try {
-        const result = await this.ask('hi', { maxTokens: 1 })
+        const result = await this.ask('Reply with OK only.', { maxTokens: 128, thinking: false })
         return { ok: true, reply: result }
     } catch (err) {
         return { ok: false, error: err.message }

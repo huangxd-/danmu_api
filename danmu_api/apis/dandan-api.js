@@ -1138,7 +1138,7 @@ async function matchAniAndEpByAi(season, episode, year, searchData, title, req, 
     // userPrompt 只传入结构化数据
     const userPrompt = JSON.stringify(matchData, null, 2);
 
-    const aiResponse = await aiClient.ask(userPrompt);
+    const aiResponse = await aiClient.ask(userPrompt, { thinking: false });
     // const aiResponse = '{ "animeIndex": 0 }';
     log("info", `[system] [match] AI match response: ${aiResponse}`);
 
