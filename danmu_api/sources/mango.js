@@ -354,7 +354,9 @@ export default class MangoSource extends BaseSource {
         } else if (qiPureMatch && !hasUpMidDown) {
           // 无上/中/下后缀的纯"第N期"为正片, 直接收录; 主黑名单已在综艺处理前过滤了加更版/合伙人手记等特殊条目
           const qiNum = qiPureMatch[1];
-          qiInfoMap.set(ep, [parseInt(qiNum), '']);
+          // "第N期：标题（上/中/下）"的分部标记在末尾括号中（全/半角可混用），提取仅用于同期内排序
+          const trailingPartMatch = fullTitle.match(/[（(]([上中下])[）)]\s*$/);
+          qiInfoMap.set(ep, [parseInt(qiNum), trailingPartMatch ? trailingPartMatch[1] : '']);
           episodeInfos.push(ep);
           log("info", `[mango] 综艺保留标准期数: ${fullTitle}`);
         }
