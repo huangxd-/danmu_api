@@ -1,3 +1,4 @@
+import { findAiMatch } from '../utils/ai-match-util.js';
 import { globals } from '../configs/globals.js';
 import { getPageTitle, jsonResponse, httpGet, sourceLogContext, runWithHttpCache, httpCacheContext } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js'
@@ -17,7 +18,7 @@ import {
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeTitleForMatch,
   extractYear, titleMatches, extractAnimeInfo, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, extractAnimeTitle
 } from "../utils/common-util.js";
-import { getTMDBChineseTitle, getTmdbSeasonBoundaries } from "../utils/tmdb-util.js";
+import { getTMDBChineseTitle, getTMDBEpisodeContext, getTmdbSeasonBoundaries } from "../utils/tmdb-util.js";
 import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimelines, sanitizeUrl } from "../utils/merge-util.js";
 import { getHanjutvSourceLabel } from "../utils/hanjutv-util.js";
 import AIClient from '../utils/ai-util.js';
@@ -429,15 +430,15 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
 }
 
 // Extracted function for GET /api/v2/search/anime
-export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null, forceRefresh = false) {
+export async function searchAnime(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null, forceRefresh = false, { allowDirectUrls = true } = {}) {
   // 单次搜索请求内启用 HTTP 响应复用缓存: 作为各源通用的请求级复用安全网, 借助 AsyncLocalStorage 做请求级隔离
   if (httpCacheContext.getStore()) {
-    return searchAnimeBody(url, preferAnimeId, preferSource, detailStore, targetPlatform, forceRefresh);
+    return searchAnimeBody(url, preferAnimeId, preferSource, detailStore, targetPlatform, forceRefresh, allowDirectUrls);
   }
-  return runWithHttpCache(() => searchAnimeBody(url, preferAnimeId, preferSource, detailStore, targetPlatform, forceRefresh));
+  return runWithHttpCache(() => searchAnimeBody(url, preferAnimeId, preferSource, detailStore, targetPlatform, forceRefresh, allowDirectUrls));
 }
 
-async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null, forceRefresh = false) {
+async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, detailStore = null, targetPlatform = null, forceRefresh = false, allowDirectUrls = true) {
   let queryTitle = url.searchParams.get("keyword");
 
   // 搜索词杂音清理：移除画质/配音/版本等杂音词后再提交源站搜索
@@ -543,7 +544,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
     const cleanUrl = stripLinkOffset(u).cleanUrl;
     return urlRegex.test(cleanUrl);
   });
-  if (spaceSeparatedUrls.length >= 2) {
+  if (allowDirectUrls && spaceSeparatedUrls.length >= 2) {
     const mergeParts = spaceSeparatedUrls.map((singleUrl) => {
       const { source, realId } = resolveSourceAndRealId(singleUrl);
       return source ? `${source}:${realId}` : '';
@@ -603,7 +604,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
   }
 
   // 单链接弹幕解析
-  if (urlRegex.test(queryTitle)) {
+  if (allowDirectUrls && urlRegex.test(queryTitle)) {
     const tmpAnime = Anime.fromJson({
       "animeId": 0,
       "bangumiId": "0",
@@ -982,7 +983,7 @@ function extractPlatformFromTitle(title) {
 }
 
 // 根据集数匹配episode（优先使用集标题中的集数，其次使用episodeNumber，最后使用数组索引）
-function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform = null) {
+function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform = null, exactNumber = false) {
   if (!filteredEpisodes || filteredEpisodes.length === 0) {
     return null;
   }
@@ -1010,6 +1011,8 @@ function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform 
     }
   }
 
+  if (exactNumber) return null;
+
   // 策略2：使用数组索引
   if (targetEpisode > 0 && platformEpisodes.length >= targetEpisode) {
     const fallbackEp = platformEpisodes[targetEpisode - 1];
@@ -1030,120 +1033,6 @@ function findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform 
   }
   
   return null;
-}
-
-async function matchAniAndEpByAi(season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, detailStore = null) {
-  const aiBaseUrl = globals.aiBaseUrl;
-  const aiModel = globals.aiModel;
-  const aiApiKey = globals.aiApiKey;
-  const aiMatchPrompt = globals.aiMatchPrompt;
-
-  if (!globals.aiValid || !aiMatchPrompt) {
-    log("warn", "AI configuration is incomplete, falling back to normal matching");
-    return { resEpisode: null, resAnime: null };
-  }
-
-  const aiClient = new AIClient({
-    apiKey: aiApiKey,
-    baseURL: aiBaseUrl,
-    model: aiModel,
-    systemPrompt: aiMatchPrompt
-  });
-
-  const matchData = {
-    title,
-    season,
-    episode,
-    year,
-    dynamicPlatformOrder,
-    preferAnimeId,
-    animes: searchData.animes.map(anime => {
-      const normalizedAnimeTitle = anime.animeTitle || '';
-      const match = normalizedAnimeTitle.match(/^(.*?)\(\d{4}\)/);
-      const title = match ? match[1].trim() : normalizedAnimeTitle.split("(")[0].trim();
-      return {
-        animeId: anime.animeId,
-        animeTitle: title,
-        aliases: anime.aliases || [],
-        type: anime.type,
-        year: anime.startDate ? anime.startDate.slice(0, 4) : null,
-        episodeCount: anime.episodeCount,
-        source: anime.source
-      };
-    })
-  };
-
-  try {
-    // userPrompt 只传入结构化数据
-    const userPrompt = JSON.stringify(matchData, null, 2);
-
-    const aiResponse = await aiClient.ask(userPrompt);
-    // const aiResponse = '{ "animeIndex": 0 }';
-    log("info", `AI match response: ${aiResponse}`);
-
-    let parsedResponse;
-    try {
-      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```|```([\s\S]*?)\s*```|({[\s\S]*})/);
-      const jsonString = jsonMatch ? (jsonMatch[1] || jsonMatch[2] || jsonMatch[3]) : aiResponse;
-      parsedResponse = JSON.parse(jsonString.trim());
-    } catch (parseError) {
-      log("error", `Failed to parse AI response: ${parseError.message}`);
-      return { resEpisode: null, resAnime: null };
-    }
-
-    const animeIndex = parsedResponse.animeIndex;
-
-    if (animeIndex === null || animeIndex === undefined) {
-      return { resEpisode: null, resAnime: null };
-    }
-
-    const selectedAnime = searchData.animes[animeIndex];
-    if (!selectedAnime) {
-      log("error", `AI returned invalid anime index: ${animeIndex}`);
-      return { resEpisode: null, resAnime: null };
-    }
-
-    // AI 有时会把同名电影选为首个候选；存在季集参数时交给常规匹配，
-    // 让多集电视剧候选按季集和集数优先级决策，避免单集电影抢占 S01E01。
-    const bangumiData = getBangumiDataForMatch(selectedAnime, detailStore);
-    if (!bangumiData?.success || !bangumiData?.bangumi?.episodes) {
-      return { resEpisode: null, resAnime: null };
-    }
-
-    const hasSeriesCandidate = searchData.animes.some(candidate => {
-      const candidateData = getBangumiDataForMatch(candidate, detailStore);
-      return !isMovieMatchCandidate(candidate) && getMatchEpisodeCount(candidate, candidateData) > 1;
-    });
-    if (season && episode && isSingleEpisodeMatchCandidate(selectedAnime, bangumiData) && hasSeriesCandidate) {
-      log('info', '[system] [match] AI selected a single-episode candidate while series candidates exist; falling back to season/episode matching');
-      return { resEpisode: null, resAnime: null };
-    }
-
-    let filteredEpisode = null;
-    
-    if (season && episode) {
-        // 剧集模式逻辑
-        const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-          return !globals.episodeTitleFilter.test(episode.episodeTitle);
-        });
-        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
-        
-        log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
-
-        // 匹配集数 (注意：findEpisodeByNumber 已增强支持模糊平台匹配)
-        filteredEpisode = findEpisodeByNumber(filteredEpisodes, episode, episode);
-    } else {
-        // 电影模式逻辑
-        if (bangumiData.bangumi.episodes.length > 0) {
-          filteredEpisode = bangumiData.bangumi.episodes[0];
-        }
-    }
-
-    return { resEpisode: filteredEpisode, resAnime: selectedAnime };
-  } catch (error) {
-    log("error", `AI matching failed: ${error.message}`);
-    return { resEpisode: null, resAnime: null };
-  }
 }
 
 export function getBangumiDataForMatch(anime, detailStore = null) {
@@ -1202,7 +1091,7 @@ function resolveCandidateSeason(anime) {
  */
 function findCrossSeasonEpisodeMap(searchData, title, year, season, episode, platform, detailStore) {
   // 仅在当前季集三种匹配策略均未命中时才启动相对顺延溢出机制
-  if (!season || !episode) return { resEpisode: null, resAnime: null };
+  if (!season || !episode || searchData.requireSameSeason) return { resEpisode: null, resAnime: null };
 
   log("info", `[system] [spillover] 当前季集匹配策略失败 (S${season}E${episode})，正在进行跨季集数映射匹配...`);
   const normalizedTitle = normalizeTitleForMatch(title);
@@ -1457,20 +1346,20 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
         }
 
         // 匹配集数
-        matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform);
+        matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, platform, searchData.requireSameSeason);
 
         // 当指定平台与候选动画源不匹配导致过滤后无匹配时，回退到不区分平台提取集数
         if (!matchedEpisode && platform) {
             const actualAnimePlatform = extractPlatformFromTitle(anime.animeTitle) || anime.source;
             if (getPlatformMatchScore(actualAnimePlatform, platform) === 0) {
-                matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null);
+                matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null, searchData.requireSameSeason);
             }
         }
 
         // 如果当前是用户的优选偏好，但由于平台配置限制导致未命中目标平台，则放宽条件无视平台限制提取集数
         if (!matchedEpisode && isPreferredAnime) {
             log("info", `[system] [match] 优选剧集未命中目标平台 ${platform}，放宽条件提取集数`);
-            matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null);
+            matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null, searchData.requireSameSeason);
         }
     } else {
         // 电影模式逻辑
@@ -1579,7 +1468,7 @@ export async function fallbackMatchAniAndEp(searchData, req, season, episode, ye
     }
   }
 
-  for (const anime of [...sameSeasonAnimes, ...restAnimes]) {
+  for (const anime of searchData.requireSameSeason ? sameSeasonAnimes : [...sameSeasonAnimes, ...restAnimes]) {
     // 年份匹配优先（如果提供了年份）
     if (year && !matchYear(anime, year)) {
       log("info", `Fallback: Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
@@ -1608,7 +1497,7 @@ export async function fallbackMatchAniAndEp(searchData, req, season, episode, ye
       }
 
       // 使用新的集数匹配策略
-      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null);
+      const matchedEpisode = findEpisodeByNumber(filteredEpisodes, episode, targetEpisode, null, searchData.requireSameSeason);
       if (matchedEpisode) {
         resEpisode = matchedEpisode;
         resAnime = anime;
@@ -1777,13 +1666,6 @@ async function selectAnimeMatch({ season, episode, year, searchData, title, req,
   let resEpisode = null;
   let spilloverMatched = false;
 
-  const aiMatchResult = await matchAniAndEpByAi(
-    season, episode, year, searchData, title, req, dynamicPlatformOrder, preferAnimeId, detailStore
-  );
-  if (aiMatchResult.resAnime && aiMatchResult.resEpisode) {
-    return { resAnime: aiMatchResult.resAnime, resEpisode: aiMatchResult.resEpisode, spilloverMatched: false };
-  }
-
   for (const platform of dynamicPlatformOrder) {
     const matched = await matchAniAndEp(
       season, episode, year, searchData, title, req, platform, preferAnimeId, offsets, detailStore
@@ -1820,13 +1702,14 @@ function createMatchPlatformOrder(preferredPlatform, secondaryPreferredPlatform 
   return withoutSecondary;
 }
 
-async function executeMatchAttempt({ req, title, season, episode, year, preferredPlatform, secondaryPreferredPlatform, preferAnimeId, preferSource, offsets, mapping }) {
+async function executeMatchAttempt({ req, title, season, episode, year, preferredPlatform, secondaryPreferredPlatform, preferAnimeId, preferSource, offsets, mapping, requireSameSeason = false }) {
   const dynamicPlatformOrder = createMatchPlatformOrder(preferredPlatform, secondaryPreferredPlatform);
   const targetPlatform = dynamicPlatformOrder.length > 0 ? dynamicPlatformOrder[0] : null;
   const detailStore = new Map();
   const searchUrl = buildSearchAnimeUrl(req.url, title, season, episode);
   const searchRes = await searchAnime(searchUrl, preferAnimeId, preferSource, detailStore, targetPlatform);
   const searchData = await searchRes.json();
+  searchData.requireSameSeason = requireSameSeason;
   log("info", `[system] [match] searchData: ${searchData.animes}`);
   log("info", `[system] [match] Dynamic platformOrder: ${dynamicPlatformOrder}`);
   log("info", `[system] [match] Preferred platform: ${preferredPlatform || 'none'}`);
@@ -2007,10 +1890,44 @@ export async function matchAnime(url, req, clientIp) {
         preferAnimeId,
         preferSource,
         offsets,
-        mapping: null
+        mapping: null,
+        requireSameSeason: Boolean(globals.aiValid && originalSeason && originalEpisode && !manualPreferenceTitle && !globals.titleMappingTable?.get(parsed.title))
       });
     }
 
+    let aiMappingApplied = false;
+    if ((!attempt?.resAnime || !attempt?.resEpisode) && globals.aiValid) {
+      log('info', '[system] [ai-match] Normal matching failed; starting source search');
+      const detailStore = new Map();
+      const client = new AIClient({ apiKey: globals.aiApiKey, baseURL: globals.aiBaseUrl, model: globals.aiModel });
+      const selected = await findAiMatch({ title: originalTitle, season: originalSeason, episode: originalEpisode, year: originalYear, fileName, preferredPlatform }, {
+        chat: (messages, options) => client.chat(messages, options),
+        preferences: globals.aiMatchPrompt,
+        search: async (query, season) => {
+          const response = await searchAnime(buildSearchAnimeUrl(req.url, query, season), null, null, detailStore, null, false, { allowDirectUrls: false });
+          const data = await response.json();
+          return data.success && Array.isArray(data.animes) ? data.animes : [];
+        },
+        lookup: query => getTMDBEpisodeContext(query, originalSeason, originalEpisode, originalYear),
+        getEpisodes: anime => (getBangumiDataForMatch(anime, detailStore)?.bangumi?.episodes || []).filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle)),
+        hasComments: async episode => {
+          try {
+            const response = await getComment(`/api/v2/comment/${episode.episodeId}`, 'json', false, null);
+            const data = await response.json();
+            log('info', `[system] [ai-match] Comment probe: ${episode.episodeTitle}; status=${response.status}; count=${data.comments?.length || 0}`);
+            return response.ok && data.comments?.length > 0;
+          } catch (error) {
+            log('info', `[system] [ai-match] Comment probe failed (${error.name}): ${episode.episodeTitle}`);
+            return false;
+          }
+        },
+        log: message => log('info', `[system] [ai-match] ${message}`)
+      });
+      if (selected) {
+        aiMappingApplied = true;
+        attempt = { ...selected, spilloverMatched: false, title: originalTitle, season: originalSeason, episode: originalEpisode };
+      }
+    }
     const { resAnime, resEpisode, spilloverMatched } = attempt;
 
     let resData = {
@@ -2025,13 +1942,13 @@ export async function matchAnime(url, req, clientIp) {
 
     if (resEpisode) {
       if (clientIp && !spilloverMatched) {
-        setLastSearch(clientIp, mappingApplied ? {
+        setLastSearch(clientIp, (mappingApplied || aiMappingApplied) ? {
           title: originalTitle,
           season: originalSeason,
           episode: originalEpisode,
           episodeId: resEpisode.episodeId,
           autoMatchMappingApplied: true,
-          mappingTargetTitle: mapping.targetTitle
+          mappingTargetTitle: mappingApplied ? mapping.targetTitle : resAnime.animeTitle
         } : {
           title: attempt.title,
           season: attempt.season,

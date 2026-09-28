@@ -408,7 +408,7 @@ test('worker.js API endpoints', async (t) => {
       const originalSearch = TencentSource.prototype.search;
       const originalHandleAnimes = TencentSource.prototype.handleAnimes;
       const originalGetComments = TencentSource.prototype.getComments;
-      const originalAiAsk = AIClient.prototype.ask;
+      const originalAiChat = AIClient.prototype.chat;
       const originalOrder = Globals.envs.sourceOrderArr;
       const originalAiValid = Globals.aiValid;
       let searchKeywords = [];
@@ -497,17 +497,14 @@ test('worker.js API endpoints', async (t) => {
         body = await parseResponse(await matchAnime(new URL(defaultPreferenceRequest.url), defaultPreferenceRequest, '127.0.0.1'));
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
 
-        AIClient.prototype.ask = async prompt => {
-          aiMatchInput = JSON.parse(prompt);
+        AIClient.prototype.chat = async messages => {
+          aiMatchInput = messages;
           return JSON.stringify({ animeIndex: 0 });
         };
         body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S05E03', true);
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
-        assert.deepEqual(
-          { title: aiMatchInput.title, season: aiMatchInput.season, episode: aiMatchInput.episode },
-          { title: '永生', season: 1, episode: 59 }
-        );
-        AIClient.prototype.ask = originalAiAsk;
+        assert.equal(aiMatchInput, null, 'successful explicit mapping must not invoke AI');
+        AIClient.prototype.chat = originalAiChat;
         Globals.aiValid = false;
 
         scenario = 'qualified';
@@ -590,7 +587,7 @@ test('worker.js API endpoints', async (t) => {
         TencentSource.prototype.search = originalSearch;
         TencentSource.prototype.handleAnimes = originalHandleAnimes;
         TencentSource.prototype.getComments = originalGetComments;
-        AIClient.prototype.ask = originalAiAsk;
+        AIClient.prototype.chat = originalAiChat;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
       }
