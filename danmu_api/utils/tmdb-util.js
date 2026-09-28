@@ -11,6 +11,14 @@ import { searchBangumiData } from './bangumi-data-util.js';
 // 全局任务队列，用于管理并发请求的合并与中断
 // Key: title, Value: { promise, controller, refCount }
 const TMDB_PENDING = new Map();
+const TMDB_EPISODE_TITLE_CACHE = new Map();
+
+function parseTmdbData(response) {
+  if (!response?.data) return null;
+  return typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+}
+
+
 
 // TMDB API 请求基础函数
 async function tmdbApiGet(url, options = {}) {
@@ -110,6 +118,232 @@ export async function getTmdbJpDetail(mediaType, tmdbId, options = {}) {
 export async function getTmdbExternalIds(mediaType, tmdbId, options = {}) {
   const url = `${mediaType}/${tmdbId}/external_ids?api_key=${globals.tmdbApiKey}`;
   return await tmdbApiGet(url, options);
+}
+
+function normalizeTmdbMatchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[.·・:：,，。!！?？;；'"“”‘’()[\]（）【】《》<>_-]/g, '')
+    .trim();
+}
+
+function getTmdbTitleSearchCandidates(title) {
+  const rawTitle = String(title || '').trim();
+  if (!rawTitle) return [];
+
+  const titleWithoutYear = rawTitle.replace(/\(\d{4}\)\s*$/, '').trim();
+  const baseTitle = titleWithoutYear
+    .replace(/第\s*[0-9一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾]+\s*[季期部]\s*$/u, '')
+    .replace(/(?:S(?:eason)?|Season)\s*\d+\s*$/iu, '')
+    .trim();
+
+  return [...new Set([baseTitle, titleWithoutYear, rawTitle].filter(Boolean))];
+}
+
+function extractTmdbYear(value) {
+  const match = String(value || '').match(/^(19|20)\d{2}/);
+  return match ? Number(match[0]) : null;
+}
+
+function extractTmdbSeasonYear(seasonData) {
+  const seasonYear = extractTmdbYear(seasonData?.air_date);
+  if (seasonYear) return seasonYear;
+
+  const episodes = Array.isArray(seasonData?.episodes) ? seasonData.episodes : [];
+  for (const episodeData of episodes) {
+    const episodeYear = extractTmdbYear(episodeData?.air_date);
+    if (episodeYear) return episodeYear;
+  }
+
+  return null;
+}
+
+function numberToChinese(value) {
+  const num = Number(value);
+  const digits = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (!Number.isInteger(num) || num <= 0 || num > 99) return String(value);
+  if (num < 10) return digits[num];
+  if (num === 10) return '十';
+  if (num < 20) return `十${digits[num % 10]}`;
+  const tens = Math.floor(num / 10);
+  const ones = num % 10;
+  return `${digits[tens]}十${ones ? digits[ones] : ''}`;
+}
+
+function getTmdbAlternativeTitleItems(altData) {
+  const titles = altData?.results || altData?.titles || [];
+  return titles
+    .map(item => ({
+      title: String(item?.title || item?.name || '').trim(),
+      type: String(item?.type || '').trim(),
+      region: item?.iso_3166_1 || item?.iso_639_1 || ''
+    }))
+    .filter(item => item.title)
+    .sort((a, b) => {
+      const aRename = /改名|rename/i.test(a.type) ? 1 : 0;
+      const bRename = /改名|rename/i.test(b.type) ? 1 : 0;
+      if (aRename !== bRename) return bRename - aRename;
+      const aCn = ['CN', 'TW', 'HK', 'SG'].includes(a.region) ? 1 : 0;
+      const bCn = ['CN', 'TW', 'HK', 'SG'].includes(b.region) ? 1 : 0;
+      return bCn - aCn;
+    });
+}
+
+async function buildTmdbSourceSearchTitles(selected, season, seasonName) {
+  const altResponse = await getTmdbAlternativeTitles('tv', selected.id, { silent404: true });
+  const altData = parseTmdbData(altResponse);
+  const altItems = getTmdbAlternativeTitleItems(altData);
+  const renamedItems = altItems.filter(item => /改名|rename/i.test(item.type));
+  if (renamedItems.length === 0) {
+    return [];
+  }
+
+  const baseTitles = renamedItems.map(item => item.title).filter(Boolean);
+  const seasonSuffixes = [
+    seasonName,
+    `第${numberToChinese(season)}季`,
+    `S${String(season).padStart(2, '0')}`,
+    `S${season}`,
+  ]
+    .map(value => String(value || '').replace(/\s+/g, '').trim())
+    .filter(Boolean);
+
+  const titles = [];
+  for (const baseTitle of baseTitles) {
+    const cleanBaseTitle = String(baseTitle).replace(/\s+/g, '').trim();
+    if (!cleanBaseTitle) continue;
+    for (const suffix of seasonSuffixes) {
+      if (cleanBaseTitle.endsWith(suffix)) {
+        titles.push(cleanBaseTitle);
+      } else {
+        titles.push(`${cleanBaseTitle}${suffix}`);
+        titles.push(`${cleanBaseTitle} ${suffix}`);
+      }
+    }
+  }
+
+  return [...new Set(titles)].slice(0, 12);
+}
+
+function scoreTmdbTvResult(result, queryTitle, year = null) {
+  const query = normalizeTmdbMatchText(queryTitle);
+  const names = [result?.name, result?.original_name].map(normalizeTmdbMatchText).filter(Boolean);
+  let score = 0;
+
+  if (names.some(name => name === query)) {
+    score += 100;
+  } else if (names.some(name => name.includes(query) || query.includes(name))) {
+    score += 70;
+  } else {
+    const bestCharHit = names.reduce((best, name) => {
+      if (!query || !name) return best;
+      let hit = 0;
+      for (const ch of query) {
+        if (name.includes(ch)) hit++;
+      }
+      return Math.max(best, hit / query.length);
+    }, 0);
+    score += bestCharHit * 50;
+  }
+
+  if (year && result?.first_air_date?.startsWith(String(year))) {
+    score += 10;
+  }
+
+  return score;
+}
+
+/**
+ * 查询 TMDB 获取指定剧集标题。
+ * @param {string} title 剧名
+ * @param {number} season 季数
+ * @param {number} episode 集数
+ * @param {number|null} year 年份
+ * @returns {Promise<{title:string, tvId:number, tvTitle:string, season:number, episode:number}|null>}
+ */
+export async function getTMDBEpisodeTitle(title, season, episode, year = null) {
+  if (!globals.tmdbApiKey || !title || !season || !episode) {
+    return null;
+  }
+
+  const cacheKey = `${title}|${season}|${episode}|${year || ''}`;
+  if (TMDB_EPISODE_TITLE_CACHE.has(cacheKey)) {
+    return TMDB_EPISODE_TITLE_CACHE.get(cacheKey);
+  }
+
+  try {
+    const searchTitles = getTmdbTitleSearchCandidates(title);
+    const candidateMap = new Map();
+
+    for (const searchTitle of searchTitles) {
+      const searchResponse = await searchTmdbTitles(searchTitle, 'tv', { maxPages: 1 });
+      const searchData = parseTmdbData(searchResponse);
+      const results = Array.isArray(searchData?.results) ? searchData.results : [];
+
+      for (const item of results) {
+        if (!item?.id || candidateMap.has(item.id)) continue;
+        candidateMap.set(item.id, item);
+      }
+    }
+
+    const candidates = [...candidateMap.values()];
+
+    if (candidates.length === 0) {
+      log("info", `[Utils] [TMDB] 未找到剧集标题候选: ${title}`);
+      TMDB_EPISODE_TITLE_CACHE.set(cacheKey, null);
+      return null;
+    }
+
+    const ranked = candidates
+      .map(item => ({
+        item,
+        score: Math.max(...searchTitles.map(searchTitle => scoreTmdbTvResult(item, searchTitle, year)))
+      }))
+      .filter(({ score }) => score >= 70)
+      .sort((a, b) => b.score - a.score);
+
+    const rankedCandidates = ranked.slice(0, 3).map(({ item }) => item);
+
+    for (const selected of rankedCandidates) {
+      const seasonResponse = await tmdbApiGet(
+        `tv/${selected.id}/season/${season}?api_key=${globals.tmdbApiKey}&language=zh-CN`,
+        { silent404: true }
+      );
+      const seasonData = parseTmdbData(seasonResponse);
+      const episodeData = Array.isArray(seasonData?.episodes)
+        ? seasonData.episodes.find(item => Number(item?.episode_number) === Number(episode))
+        : null;
+      const episodeTitle = String(episodeData?.name || '').trim();
+
+      if (!episodeTitle) {
+        continue;
+      }
+
+      const sourceSearchTitles = await buildTmdbSourceSearchTitles(selected, season, seasonData?.name);
+      const result = {
+        title: episodeTitle,
+        tvId: selected.id,
+        tvTitle: selected.name || selected.original_name || title,
+        seasonName: seasonData?.name || null,
+        seasonYear: extractTmdbSeasonYear(seasonData),
+        sourceSearchTitles,
+        season,
+        episode
+      };
+      TMDB_EPISODE_TITLE_CACHE.set(cacheKey, result);
+      log("info", `[Utils] [TMDB] 命中剧集标题: ${title} S${season}E${episode} -> ${episodeTitle}`);
+      return result;
+    }
+
+    log("info", `[Utils] [TMDB] 未找到剧集标题: ${title} S${season}E${episode}`);
+    TMDB_EPISODE_TITLE_CACHE.set(cacheKey, null);
+    return null;
+  } catch (error) {
+    log("error", `[Utils] [TMDB] 查询剧集标题失败: ${error.message}`);
+    TMDB_EPISODE_TITLE_CACHE.set(cacheKey, null);
+    return null;
+  }
 }
 
 // 使用 TMDB API 获取别名
