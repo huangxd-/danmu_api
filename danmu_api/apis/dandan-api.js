@@ -1,7 +1,8 @@
+import { getBangumiChineseTitle } from '../utils/bangumi-util.js';
 import { globals } from '../configs/globals.js';
 import { getPageTitle, jsonResponse, httpGet, sourceLogContext, runWithHttpCache, httpCacheContext } from '../utils/http-util.js';
 import { log } from '../utils/log-util.js'
-import { simplized } from '../utils/zh-util.js';
+import { simplized, isNonChinese } from '../utils/zh-util.js';
 import { setRedisKey, updateRedisCaches } from "../utils/redis-util.js";
 import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-util.js";
 import {
@@ -1750,7 +1751,11 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   // 如果外语标题转换中文开关已开启，则尝试获取中文标题
   if (globals.titleToChinese) {
     // 如果title中包含.，则用空格替换
-    title = await getTMDBChineseTitle(title.replace('.', ' '), season, episode);
+    const lookupTitle = title.replace(/\./g, ' ');
+    const bangumiTitle = await getBangumiChineseTitle(lookupTitle, season, episode, year);
+    title = bangumiTitle && !isNonChinese(bangumiTitle)
+      ? bangumiTitle
+      : await getTMDBChineseTitle(lookupTitle, season, episode);
   }
 
   log("info", "[system] [match] Parsed title, season, episode, year", {title, season, episode, year});
