@@ -1752,10 +1752,13 @@ export async function extractTitleSeasonEpisode(cleanFileName) {
   if (globals.titleToChinese) {
     // 如果title中包含.，则用空格替换
     const lookupTitle = title.replace(/\./g, ' ');
-    const bangumiTitle = await getBangumiChineseTitle(lookupTitle, season, episode, year);
-    title = bangumiTitle && !isNonChinese(bangumiTitle)
-      ? bangumiTitle
-      : await getTMDBChineseTitle(lookupTitle, season, episode);
+    const tmdbTitle = await getTMDBChineseTitle(lookupTitle, season, episode);
+    if (tmdbTitle && !isNonChinese(tmdbTitle)) {
+      title = tmdbTitle;
+    } else {
+      const bangumiTitle = await getBangumiChineseTitle(lookupTitle, season, episode, year);
+      title = bangumiTitle && !isNonChinese(bangumiTitle) ? bangumiTitle : tmdbTitle;
+    }
   }
 
   log("info", "[system] [match] Parsed title, season, episode, year", {title, season, episode, year});
