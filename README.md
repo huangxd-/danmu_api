@@ -503,7 +503,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | BANGUMI_DATA_CACHE_DAYS    | 【可选】指定 Bangumi Data 数据有效期(天)，默认为：`7`，超过有效期后会下载更新，设置0则每次请求时强制异步更新（需开启`USE_BANGUMI_DATA`）'       |
 | UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
 | UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| LOCAL_REDIS_URL    | 【可选】本地Redis连接URL，用于本地缓存存储，适用于docker和本地部署环境，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地Redis）       |
+| LOCAL_CACHE_ENABLED    | 【可选】Node/Docker 通用文件缓存开关，默认为 `true`，需已有 `.cache` 目录；设置 `false` 后不读取或写入通用文件缓存，包括收藏与定时计划；已配置 Upstash 时仍可持久化。不影响本地弹幕文件、Bangumi Data、内存缓存或 Redis。运行中开启时保存当前内存，不自动导入旧文件。       |
+| LOCAL_REDIS_URL    | 【可选】本地 Redis 连接 URL，用于查询数据持久化，适用于 Docker 和本地部署，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地 Redis）。       |
 | DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
 | DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
@@ -789,7 +790,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 - TMDB源请求逻辑：search tmdb -> tmdbId -> imdbId -> doubanId -> playUrl；优点：emby通过tmdb刮削，标题通过tmdb搜索，返回的信息可能更加匹配；缺点：链条过长，请求时长5-10s左右，中间一环数据有缺失，就没有返回结果。
 - TMDB源在SOURCE_ORDER添加tmdb的同时，需要添加TMDB_API_KEY环境变量
 - 弹幕分片下载请求已加入重试机制，重试次数为1次
-- 如果同时配置了本地缓存和upstash redis缓存和本地redis缓存，优先级为本地redis > upstash redis缓存 > 本地缓存
+- 查询数据启动时按 Local Redis > Upstash > 文件缓存恢复，空或不可用的后端会继续尝试下一级；剧集详情与 ID 索引成组恢复，完整快照优先于残缺快照，其他查询数据按键回退，剧集计数器取各后端已知的有效最大值。均无可用数据时使用内存。成功读取的后端独立写入，启动读取失败的后端在本进程内暂停查询数据写入，重启后重新恢复。运行中不重新导入旧快照；覆盖已有查询缓存文件前保留 `.bak-*` 备份，每个文件最多两份。
+- 设置界面清理缓存时，单独重置剧集编号会保留现存剧集 ID 的上界。损坏缓存被保护后，可显式清理全部查询项并在保存成功后恢复写入；仅清理部分项则需重启重读剩余数据，界面会提示。查询缓存与收藏独立加载，收藏读取失败时暂停对应后端的收藏写入，避免覆盖原快照。
 - 有任何问题，如部署/环境变量配置等，可通过deepwiki对本项目进行提问，链接入口：https://deepwiki.com/huangxd-/danmu_api ，其中项目内容一般每周刷新一次
 
 ### 部署完成后在播放器填写后弹幕未生效自主排查步骤
@@ -829,4 +831,3 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 ### 📈项目 Star 数增长趋势
 #### Star History
 [![Star History Chart](https://api.star-history.com/svg?repos=huangxd-/danmu_api&type=Date)](https://www.star-history.com/#huangxd-/danmu_api&Date)
-

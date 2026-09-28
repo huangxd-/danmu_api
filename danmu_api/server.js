@@ -12,8 +12,7 @@ import { handleRequest } from './worker.js';
 import { Globals, globals } from './configs/globals.js';
 import { Envs } from './configs/envs.js';
 import { clearBangumiDataCache, initBangumiData, syncBangumiDataLifecycleOnConfigChange } from './utils/bangumi-data-util.js';
-import { getLocalCaches, judgeLocalCacheValid } from './utils/cache-util.js';
-import { getRedisCaches, judgeRedisValid } from './utils/redis-util.js';
+import { judgeRedisValid, initializePersistentCaches } from './utils/redis-util.js';
 import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.js';
 import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
 import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
@@ -547,11 +546,8 @@ async function startServer() {
 }
 
 async function initializeFavoriteScheduler(mainPort) {
-  await judgeLocalCacheValid('/api/v2/favorite/list', 'node');
-  if (Globals.localCacheValid) await getLocalCaches();
-
   await judgeRedisValid('/api/v2/favorite/list');
-  if (Globals.redisValid) await getRedisCaches();
+  await initializePersistentCaches('node');
 
   const refreshUrl = new URL(`http://127.0.0.1:${mainPort}/api/v2/favorite/refresh`);
   await startFavoriteScheduler({

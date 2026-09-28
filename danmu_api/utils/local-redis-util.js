@@ -1,79 +1,81 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
 import { simpleHash, serializeValue } from "./codec-util.js";
+import { queryCacheKeys, canPersistCacheKey, restoreQueryCache } from "./cache-util.js";
 
 // =====================
 // 本地 Redis 读写请求
 // =====================
 
-// 本地 Redis 客户端实例
+// 并发请求共享连接；失败实例不能阻止同进程的后续重连。
 let localRedisClient = null;
+let connecting = null;
+let initializing = null;
+let retryAfter = 0;
+let connectionUrl = null;
 
-// 创建本地 Redis 客户端
 async function createLocalRedisClient() {
-  // 如果已经存在客户端实例，直接返回
-  if (localRedisClient) {
-    return localRedisClient;
+  if (connectionUrl !== globals.localRedisUrl) {
+    if (localRedisClient?.isOpen) localRedisClient.destroy();
+    localRedisClient = null;
+    if (connectionUrl !== null) {
+      delete globals.queryCacheWritable.localRedis;
+      globals.localRedisHashes = {};
+      globals.localRedisCacheInitialized = false;
+    }
+    connectionUrl = globals.localRedisUrl;
+    retryAfter = 0;
   }
-
-  // 从环境变量获取本地 Redis 配置，默认使用本地连接
-  const localRedisUrl = globals.localRedisUrl;
-
-  try {
-    log("info", `[system] [Local-Redis] 正在连接本地 Redis`);
-
-    const { createClient } = await import('redis');
-    
-    localRedisClient = createClient({
-      url: localRedisUrl,
-      socket: {
-        reconnectStrategy: (retries) => {
-          if (retries >= 0) {
-            return new Error('已达到最大重试次数，停止重连');
-          }
-          return 1000; // 重试间隔 ms
-        }
-      }
-    });
-
-    // 连接错误处理
-    localRedisClient.on('error', (err) => {
-      log("error", `[system] [Local-Redis] 连接错误`);
+  if (localRedisClient?.isReady) return localRedisClient;
+  if (connecting) return connecting;
+  if (Date.now() < retryAfter) return null;
+  connecting = (async () => {
+    let client;
+    let timeout;
+    try {
+      if (localRedisClient?.isOpen) localRedisClient.destroy();
+      localRedisClient = null;
+      const { createClient } = await import('redis');
+      client = createClient({
+        url: globals.localRedisUrl,
+        socket: { connectTimeout: 5000, reconnectStrategy: false },
+        disableOfflineQueue: true,
+        commandOptions: { timeout: 5000 }
+      });
+      client.on('error', error => {
+        if (localRedisClient === client) globals.localRedisValid = false;
+        log('error', `[system] [Local-Redis] 连接错误: ${error.message}`);
+      });
+      // connectTimeout 只覆盖 TCP 建连；握手不响应也必须在同一预算内退出。
+      await Promise.race([
+        client.connect(),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('本地 Redis 连接或握手超时')), 5000);
+        })
+      ]);
+      localRedisClient = client;
+      globals.localRedisValid = true;
+      retryAfter = 0;
+      return client;
+    } catch (error) {
+      if (client?.isOpen) client.destroy();
       globals.localRedisValid = false;
-    });
-
-    // 连接成功处理
-    localRedisClient.on('connect', () => {
-      log("info", `[system] [Local-Redis] 连接成功`);
-    });
-
-    await localRedisClient.connect();
-    globals.localRedisValid = true;
-    log("info", `[system] [Local-Redis] Redis 客户端初始化完成`);
-    
-    return localRedisClient;
-  } catch (error) {
-    log("error", `[system] [Local-Redis] 初始化失败:`, error.message);
-    globals.localRedisValid = false;
-    return null;
+      retryAfter = Date.now() + 30000;
+      log('error', `[system] [Local-Redis] 初始化失败: ${error.message}`);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  try {
+    return await connecting;
+  } finally {
+    connecting = null;
   }
 }
 
-// 检查本地 Redis 是否已连接且可用
 async function checkLocalRedisConnection() {
-  if (!localRedisClient) {
-    return false;
-  }
-
-  try {
-    // 发送 PING 命令检查连接状态
-    const result = await localRedisClient.ping();
-    return result === 'PONG';
-  } catch (error) {
-    log("error", `[system] [Local-Redis] 连接检查失败:`, error.message);
-    globals.localRedisValid = false;
-    return false;
-  }
+  return localRedisClient?.isReady === true;
 }
 
 // 获取本地 Redis 键值
@@ -91,17 +93,18 @@ export async function getLocalRedisKey(key) {
     return result;
   } catch (error) {
     log("error", `[system] [Local-Redis] GET 请求失败:`, error.message);
-    return null;
+    throw error;
   }
 }
 
 // 设置本地 Redis 键值
-export async function setLocalRedisKey(key, value) {
+export async function setLocalRedisKey(key, value, { force = false } = {}) {
+  if (!force && !canPersistCacheKey(key, 'localRedis')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
 
   // 检查值是否变化
-  if (globals.lastHashes[key] === currentHash) {
+  if (!force && globals.localRedisHashes[key] === currentHash) {
     log("info", `[system] [Local-Redis] 键 ${key} 无变化，跳过 SET 请求`);
     return { result: "OK" }; // 模拟成功响应
   }
@@ -116,7 +119,8 @@ export async function setLocalRedisKey(key, value) {
     }
 
     const result = await localRedisClient.set(key, serializedValue);
-    globals.lastHashes[key] = currentHash; // 更新哈希值
+    if (result !== 'OK') throw new Error(`SET 未成功: ${result}`);
+    globals.localRedisHashes[key] = currentHash; // 更新哈希值
     log("info", `[system] [Local-Redis] 键 ${key} 更新成功`);
     return { result };
   } catch (error) {
@@ -127,11 +131,12 @@ export async function setLocalRedisKey(key, value) {
 
 // 设置带过期时间的本地 Redis 键值
 export async function setLocalRedisKeyWithExpiry(key, value, expirySeconds) {
+  if (!canPersistCacheKey(key, 'localRedis')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
 
   // 检查值是否变化
-  if (globals.lastHashes[key] === currentHash) {
+  if (globals.localRedisHashes[key] === currentHash) {
     log("info", `[system] [Local-Redis] 键 ${key} 无变化，跳过 SETEX 请求`);
     return { result: "OK" }; // 模拟成功响应
   }
@@ -146,7 +151,8 @@ export async function setLocalRedisKeyWithExpiry(key, value, expirySeconds) {
     }
 
     const result = await localRedisClient.setEx(key, expirySeconds, serializedValue);
-    globals.lastHashes[key] = currentHash; // 更新哈希值
+    if (result !== 'OK') throw new Error(`SETEX 未成功: ${result}`);
+    globals.localRedisHashes[key] = currentHash; // 更新哈希值
     log("info", `[system] [Local-Redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
     return { result };
   } catch (error) {
@@ -156,55 +162,34 @@ export async function setLocalRedisKeyWithExpiry(key, value, expirySeconds) {
 }
 
 // 优化后的 getLocalRedisCaches，批量获取所有键
-export async function getLocalRedisCaches() {
-  if (!globals.localCacheInitialized) {
+export async function getLocalRedisCaches(restored = {}) {
+  if (globals.localRedisCacheInitialized) return true;
+  if (initializing) return initializing;
+  initializing = (async () => {
     try {
-      log("info", '[system] [Local-Redis] getLocalRedisCaches start.');
-      
-      if (!(await checkLocalRedisConnection())) {
-        await createLocalRedisClient();
-      }
-
-      if (!localRedisClient) {
-        throw new Error('本地 Redis 客户端未初始化');
-      }
-
-      const keys = ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'];
-      const results = await Promise.all(keys.map(key => getLocalRedisKey(key)));
-
-      // 解析结果，按顺序赋值
-      globals.animes = results[0] ? JSON.parse(results[0]) : globals.animes;
-      globals.episodeIds = results[1] ? JSON.parse(results[1]) : globals.episodeIds;
-      globals.episodeNum = results[2] ? JSON.parse(results[2]) : globals.episodeNum;
-      globals.reqRecords = results[3] ? JSON.parse(results[3]) : globals.reqRecords;
-
-      // 恢复 lastSelectMap 并转换为 Map 对象
-      const lastSelectMapData = results[4] ? JSON.parse(results[4]) : null;
-      if (lastSelectMapData && typeof lastSelectMapData === 'object') {
-        globals.lastSelectMap = new Map(Object.entries(lastSelectMapData));
-        log("info", `[system] [Local-Redis] Restored lastSelectMap from Local Redis with ${globals.lastSelectMap.size} entries`);
-      }
-      globals.todayReqNum = results[5] ? parseInt(results[5], 10) : globals.todayReqNum;
-
-      // 更新哈希值
-      globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
-      globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
-      globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
-      globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
-      globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
-      globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
-
-      globals.localCacheInitialized = true;
-      log("info", '[system] [Local-Redis] getLocalRedisCaches completed successfully.');
+      await restoreQueryCache('localRedis', async keys => {
+        const client = await createLocalRedisClient();
+        if (!client) throw new Error('本地 Redis 客户端未就绪');
+        // GET 异常不能当成键不存在，也不能更新任何恢复状态。
+        return Promise.all(keys.map(key => client.get(key)));
+      }, globals.localRedisHashes, restored);
+      globals.localRedisCacheInitialized = true;
+      return true;
     } catch (error) {
-      log("error", `[system] [Local-Redis] getLocalRedisCaches failed: ${error.message}`, error.stack);
-      globals.localCacheInitialized = true; // 标记为已初始化，避免重复尝试
+      log('error', `[system] [Local-Redis] 恢复失败，保留远端查询数据至下次启动: ${error.message}`);
+      return false;
     }
+  })();
+  try {
+    return await initializing;
+  } finally {
+    initializing = null;
   }
 }
 
 // 优化后的 updateLocalRedisCaches，仅更新有变化的变量
-export async function updateLocalRedisCaches() {
+export async function updateLocalRedisCaches({ keys, force = false } = {}) {
+  if (!force && !canPersistCacheKey('animes', 'localRedis')) return false;
   try {
     log("info", '[system] [Local-Redis] updateLocalRedisCaches start.');
     
@@ -219,21 +204,14 @@ export async function updateLocalRedisCaches() {
     const updates = [];
 
     // 检查每个变量的哈希值
-    const variables = [
-      { key: 'animes', value: globals.animes },
-      { key: 'episodeIds', value: globals.episodeIds },
-      { key: 'episodeNum', value: globals.episodeNum },
-      { key: 'reqRecords', value: globals.reqRecords },
-      { key: 'lastSelectMap', value: globals.lastSelectMap },
-      { key: 'todayReqNum', value: globals.todayReqNum }
-    ];
+    const variables = queryCacheKeys.filter(key => !keys || keys.includes(key)).map(key => ({ key, value: globals[key] }));
 
     for (const { key, value } of variables) {
       // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
-      const serializedValue = key === 'lastSelectMap' ? JSON.stringify(Object.fromEntries(value)) : JSON.stringify(value);
+      const serializedValue = serializeValue(key, value);
       const currentHash = simpleHash(serializedValue);
-      if (currentHash !== globals.lastHashes[key]) {
-        updates.push({ key, value, hash: currentHash });
+      if (force || currentHash !== globals.localRedisHashes[key]) {
+        updates.push({ key, value });
       }
     }
 
@@ -242,7 +220,7 @@ export async function updateLocalRedisCaches() {
       log("info", `[system] [Local-Redis] Updating ${updates.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
 
       const promises = updates.map(async ({ key, value }) => {
-        return setLocalRedisKey(key, value);
+        return setLocalRedisKey(key, value, { force });
       });
 
       const results = await Promise.all(promises);
@@ -260,55 +238,37 @@ export async function updateLocalRedisCaches() {
         }
       });
 
-      // 只有在所有操作都成功时才更新哈希值
+      // 每个成功键的哈希已由 setLocalRedisKey 更新，失败键保留原状态以便重试。
       if (failureCount === 0) {
-        updates.forEach(({ key, hash }) => {
-          globals.lastHashes[key] = hash;
-        });
         log("info", `[system] [Local-Redis] Local Redis update completed successfully: ${successCount} keys updated`);
       } else {
         log("warn", `[system] [Local-Redis] Local Redis update partially failed: ${successCount} succeeded, ${failureCount} failed`);
       }
+      return failureCount === 0;
     } else {
       log("info", '[system] [Local-Redis] No changes detected, skipping Local Redis update.');
+      return true;
     }
   } catch (error) {
     log("error", `[system] [Local-Redis] updateLocalRedisCaches failed: ${error.message}`, error.stack);
     log("error", `[system] [Local-Redis] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
+    return false;
   }
 }
 
 // 判断本地 Redis 是否可用
 export async function judgeLocalRedisValid(path) {
-  if (!globals.localRedisValid && globals.localRedisUrl && path !== "/favicon.ico" && path !== "/robots.txt") {
-    try {
-      if (!(await checkLocalRedisConnection())) {
-        await createLocalRedisClient();
-      }
-      
-      if (localRedisClient) {
-        const result = await localRedisClient.ping();
-        if (result === 'PONG') {
-          globals.localRedisValid = true;
-        }
-      }
-    } catch (error) {
-      log("error", `[system] [Local-Redis] 连接检查失败:`, error.message);
-      globals.localRedisValid = false;
-    }
+  if (globals.localRedisUrl && path !== '/favicon.ico' && path !== '/robots.txt') {
+    globals.localRedisValid = Boolean(await createLocalRedisClient());
   }
 }
 
-// 关闭本地 Redis 连接
+// 关闭连接不清空已恢复标记，临时断线后不能用旧快照覆盖当前内存。
 export async function closeLocalRedisConnection() {
-  if (localRedisClient) {
-    try {
-      await localRedisClient.quit();
-      localRedisClient = null;
-      globals.localRedisValid = false;
-      log("info", '[system] [Local-Redis] 连接已关闭');
-    } catch (error) {
-      log("error", `[system] [Local-Redis] 关闭连接失败:`, error.message);
-    }
-  }
+  const client = localRedisClient;
+  localRedisClient = null;
+  globals.localRedisValid = false;
+  retryAfter = 0;
+  if (client?.isReady) await client.quit();
+  else if (client?.isOpen) client.destroy();
 }

@@ -55,6 +55,7 @@ const previewGroupDefinitions = {
         { name: '时间与来源适配', keys: ['DANMU_OFFSET', 'HONGGUO_MERGE_ALL_EPISODES'] }
     ],
     cache: [
+        { name: '文件缓存', keys: ['LOCAL_CACHE_ENABLED'] },
         { name: '缓存时效', keys: ['SEARCH_CACHE_MINUTES', 'COMMENT_CACHE_MINUTES', 'COMMENT_CACHE_MIN_COUNT', 'BANGUMI_DATA_CACHE_DAYS'] },
         { name: '容量与历史', keys: ['REMEMBER_LAST_SELECT', 'MAX_LAST_SELECT_MAP', 'MAX_ANIMES'] },
         { name: 'Redis 服务', keys: ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'LOCAL_REDIS_URL'] }

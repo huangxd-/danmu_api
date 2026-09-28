@@ -89,6 +89,8 @@ async function rebuildIndex() {
 // 列表是只读路径：索引写不进去（只读挂载、磁盘临时故障）时退化为本次扫描结果，不能整个列表报错。
 async function rebuildIndexForRead() {
   const { resources, names } = await scanResources();
+  // 目录不存在或无法扫描时，读取不能为了空索引创建目录或覆盖索引。
+  if (names === null) return sortByUpdatedAt(resources);
   try {
     const sorted = await writeIndex(resources);
     // 把目录快照绑到新索引上：目录里解析不了的遗留文件不会导致每次列表都全量重建。
@@ -139,12 +141,15 @@ export async function saveLocalDanmu(resource) {
     const payload = JSON.stringify(resource);
     const max = Number(globals.localDanmuRedisMaxBytes || 8 * 1024 * 1024);
     if (Buffer.byteLength(payload) > max) throw new Error(`解析结果超过 Redis 单资源限制 (${max} bytes)`);
-    await setRedisKey(`localDanmu:data:${resource.resourceKey}`, resource);
+    const saved = await setRedisKey(`localDanmu:data:${resource.resourceKey}`, resource);
+    if (saved?.result !== 'OK') throw new Error('弹幕数据保存失败，请重试');
     await withIndexLock(async () => {
-      const index = unwrap(await getRedisKey('localDanmu:index')) || [];
-      const next = Array.isArray(index) ? index.filter(x => x.resourceKey !== resource.resourceKey).map(metadataOnly) : [];
+      const index = unwrap(await getRedisKey('localDanmu:index'));
+      if (index !== null && !Array.isArray(index)) throw new Error('弹幕索引读取失败，请重试');
+      const next = (index || []).filter(x => x.resourceKey !== resource.resourceKey).map(metadataOnly);
       next.push(metadataOnly(resource));
-      await setRedisKey('localDanmu:index', next);
+      const indexed = await setRedisKey('localDanmu:index', next);
+      if (indexed?.result !== 'OK') throw new Error('弹幕索引保存失败，请重试');
     });
     return resource;
   }

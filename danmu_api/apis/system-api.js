@@ -1,4 +1,5 @@
 import { globals } from "../configs/globals.js";
+import { getEpisodeIdFloor, queryCacheKeys } from "../utils/cache-util.js";
 import { jsonResponse } from "../utils/http-util.js";
 import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
@@ -182,7 +183,7 @@ export async function handleClearCache(req) {
   const clearActions = {
     animes: () => { globals.animes = []; },
     episodeIds: () => { globals.episodeIds = []; },
-    episodeNum: () => { globals.episodeNum = 10001; }, // 重置为初始值
+    episodeNum: () => {}, // 在所有选中项清理完毕后，按剩余引用重置
     lastSelectMap: () => { globals.lastSelectMap = new Map(); }, // 重新创建 Map 对象
     // 清理搜索和弹幕缓存
     searchCache: () => { globals.searchCache = new Map(); },
@@ -228,40 +229,32 @@ export async function handleClearCache(req) {
       clearActions[key]();
     }
 
+    if (effectiveItems.includes('episodeNum')) globals.episodeNum = getEpisodeIdFloor();
     log("info", `[system] [server] Memory cache cleared successfully`);
 
-    // 同步清理本地缓存和Redis缓存
-    try {
-      // 如果本地缓存有效，更新本地缓存
-      if (globals.localCacheValid) {
-        const { updateLocalCaches } = await import("../utils/cache-util.js");
-        await updateLocalCaches();
-        log("info", `[system] [server] Local cache cleared successfully`);
+    // 显式清理仅写选中键，不携带默认收藏或未读取的其他查询数据。
+    const keys = queryCacheKeys.filter(key => effectiveItems.includes(key)
+      || (effectiveItems.includes('requestHistory') && ['reqRecords', 'todayReqNum'].includes(key)));
+    const failedBackends = [];
+    const restartBackends = [];
+    if (keys.length) {
+      const targets = [
+        ['file', globals.localCacheValid && globals.localCacheEnabled !== false, async () => (await import('../utils/cache-util.js')).updateLocalCaches({ keys, force: true })],
+        ['upstash', globals.redisUrl && globals.redisToken, async () => (await import('../utils/redis-util.js')).updateRedisCaches({ keys, force: true })],
+        ['localRedis', globals.deployPlatform === 'node' && globals.localRedisUrl, async () => (await import('../utils/local-redis-util.js')).updateLocalRedisCaches({ keys, force: true })]
+      ];
+      for (const [backend, enabled, update] of targets) {
+        if (!enabled) continue;
+        try {
+          if (!await update()) throw new Error('保存未成功');
+          // 只有完整清除查询快照才可直接解除保护；部分清除后需重启重读剩余键。
+          if (keys.length === queryCacheKeys.length) globals.queryCacheWritable[backend] = true;
+          else if (globals.queryCacheWritable[backend] === false) restartBackends.push(backend);
+        } catch (error) {
+          failedBackends.push(backend);
+          log('warn', `[system] ${backend} 缓存清理保存失败: ${error.message}`);
+        }
       }
-    } catch (localError) {
-      log("warn", `[system] [server] Local cache may not be available: ${localError.message}`);
-    }
-
-    try {
-      // 如果Redis有效，更新Redis缓存
-      if (globals.redisValid) {
-        const { updateRedisCaches } = await import("../utils/redis-util.js");
-        await updateRedisCaches();
-        log("info", `[system] [server] Redis cache cleared successfully`);
-      }
-    } catch (redisError) {
-      log("warn", `[system] [server] Redis may not be available: ${redisError.message}`);
-    }
-
-    try {
-      // 如果本地Redis有效，更新本地Redis缓存
-      if (globals.localRedisValid) {
-        const { updateLocalRedisCaches } = await import("../utils/local-redis-util.js");
-        await updateLocalRedisCaches();
-        log("info", `[system] [server] LocalRedis cache cleared successfully`);
-      }
-    } catch (redisError) {
-      log("warn", `[system] [server] LocalRedis may not be available: ${redisError.message}`);
     }
 
     const clearedItems = {};
@@ -271,14 +264,20 @@ export async function handleClearCache(req) {
         clearedItems.reqRecords = 0;
         clearedItems.todayReqNum = 0;
       } else if (key === "episodeNum") {
-        clearedItems.episodeNum = 10001;
+        clearedItems.episodeNum = globals.episodeNum;
       } else {
         clearedItems[key] = 0;
       }
     }
 
-    log("info", `[system] [server] Selected caches cleared successfully`);
-    return jsonResponse({ success: true, message: "Cache cleared successfully", clearedItems }, 200);
+    if (failedBackends.length) {
+      return jsonResponse({ success: false, message: `内存已清理，但 ${failedBackends.join(', ')} 保存失败，请重试`, clearedItems, failedBackends }, 500);
+    }
+    const message = restartBackends.length
+      ? `选中项已清理；${restartBackends.join(', ')} 仍保护未恢复的其他缓存，重启后重新读取，或清理全部查询缓存解除保护`
+      : 'Cache cleared successfully';
+    log('info', `[system] ${message}`);
+    return jsonResponse({ success: true, message, clearedItems, restartRequired: restartBackends.length > 0 }, 200);
   } catch (error) {
     log("error", `[system] [server] Cache clear failed: ${error.message}`);
     return jsonResponse({ success: false, message: `Cache clear failed: ${error.message}` }, 500);

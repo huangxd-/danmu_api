@@ -374,6 +374,10 @@ async function confirmClearCache() {
             updateLoadingText('清理完成', '缓存已成功清除');
             addLog('缓存清理完成', 'success');
             addLog('✅ 缓存清理成功！已清理: ' + JSON.stringify(result.clearedItems), 'success');
+            if (result.restartRequired) {
+                addLog(result.message, 'warn');
+                customAlert(result.message);
+            }
         } else {
             updateLoadingText('清理失败', '请查看日志了解详情');
             addLog('缓存清理失败: ' + result.message, 'error');

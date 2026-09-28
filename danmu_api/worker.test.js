@@ -146,6 +146,8 @@ function resetFavoriteState(env = {}) {
   Globals.requestHistory = new Map();
   Globals.localCacheValid = false;
   Globals.localCacheInitialized = false;
+  Globals.queryCacheInitialized = false;
+  Globals.queryCacheWritable = {}; Globals.favoriteCacheWritable = {};
 }
 
 function createFavoriteAnime(title = '收藏测试', episodeCount = 2, id = 910001) {
@@ -176,6 +178,855 @@ function favoriteSearchResult(anime) {
 
 const urlPrefix = "http://localhost:9321";
 const token = "87654321";
+
+// 放在独立子进程中 mock redis，避免影响既有 API 测试；仍使用 node --test worker.test.js 入口。
+test('persistent cache regression: Local Redis priority and independent backends', () => {
+  const base = new URL('./', import.meta.url).href;
+  const script = `
+    import { test, mock } from 'node:test';
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs/promises';
+    import os from 'node:os';
+    import path from 'node:path';
+    const base = ${JSON.stringify(base)};
+    const { Globals } = await import(base + 'configs/globals.js');
+    let backend, remote, reads, writes, remoteCommands, unavailable, failedRead, failedWrite, upstashOffline, clients;
+    mock.module(${JSON.stringify(import.meta.resolve('redis'))}, { namedExports: { createClient: () => {
+      const client = {
+        isReady: false, isOpen: false, on() {},
+        async connect() {
+          if (unavailable) throw new Error('offline');
+          this.isOpen = this.isReady = true;
+        },
+        destroy() { this.isOpen = this.isReady = false; },
+        async quit() { this.destroy(); },
+        async get(key) {
+          reads.push(key);
+          if (key === failedRead) throw new Error('read failed');
+          return backend.get(key) ?? null;
+        },
+        async set(key, value) {
+          writes.push(key);
+          if (key === failedWrite) throw new Error('write failed');
+          backend.set(key, value); return 'OK';
+        },
+        async setEx(key, seconds, value) { return this.set(key, value); }
+      };
+      clients.push(client); return client;
+    } } });
+    mock.method(globalThis, 'fetch', async (url, opts) => {
+      if (upstashOffline) throw new Error('Upstash offline');
+      if (String(url).endsWith('/ping')) return Response.json({ result: 'PONG' });
+      const commands = JSON.parse(opts.body);
+      remoteCommands.push(...commands);
+      return Response.json(commands.map(([op, key, value]) => {
+        if (op === 'GET') return { result: remote.get(key) ?? null };
+        remote.set(key, value); return { result: 'OK' };
+      }));
+    });
+    const local = await import(base + 'utils/local-redis-util.js');
+    const redis = await import(base + 'utils/redis-util.js');
+    const cache = await import(base + 'utils/cache-util.js');
+    const store = await import(base + 'utils/local-danmu-store.js');
+    const { initializePersistentCaches } = redis;
+    const { handleRequest } = await import(base + 'worker.js');
+    const { getComment } = await import(base + 'apis/dandan-api.js');
+    const { persistFavorites, handleFavoriteRemove } = await import(base + 'apis/favorite-api.js');
+    const { handleClearCache } = await import(base + 'apis/system-api.js');
+    const settings = { LOCAL_REDIS_URL: 'redis://mock', LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0', SOURCE_ORDER: 'tencent' };
+    const upstash = { UPSTASH_REDIS_REST_URL: 'https://mock.invalid', UPSTASH_REDIS_REST_TOKEN: 'mock' };
+    const favorite = () => ({ results: [], details: [], timestamp: 1, refreshSchedule: null });
+    async function isolated(name, overrides, run) {
+      await test(name, async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-persistence-'));
+        const cwd = process.cwd(); process.chdir(dir);
+        const env = { ...settings, ...overrides };
+        Globals.init(env);
+        Object.assign(Globals, {
+          deployPlatform: 'node', localCacheValid: false, localCacheInitialized: false,
+          localRedisValid: false, redisValid: Boolean(env.UPSTASH_REDIS_REST_URL), localRedisCacheInitialized: false, redisCacheInitialized: false,
+          queryCacheInitialized: false, queryCacheWritable: {}, favoriteCacheWritable: {},
+          localFileHashes: {}, upstashHashes: {}, localRedisHashes: {}, animes: [], episodeIds: [], episodeNum: 10001,
+          reqRecords: [], todayReqNum: 0, lastSelectMap: new Map(), favoriteCache: new Map(),
+          searchCache: new Map(), commentCache: new Map(), requestHistory: new Map()
+        });
+        backend = new Map(); remote = new Map(); clients = []; reads = []; writes = []; remoteCommands = [];
+        unavailable = upstashOffline = false; failedRead = failedWrite = null;
+        try { await run(env); }
+        finally {
+          await local.closeLocalRedisConnection();
+          process.chdir(cwd); await fs.rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
+    async function file(key, value) {
+      await fs.mkdir('.cache', { recursive: true });
+      await fs.writeFile('.cache/' + key, JSON.stringify(JSON.stringify(value)));
+    }
+    const storedFile = async key => JSON.parse(JSON.parse(await fs.readFile('.cache/' + key, 'utf8')));
+    const request = (env, route) => handleRequest(new Request('http://localhost' + route), env, 'node', '127.0.0.1');
+
+    await isolated('comment and empty local reads do not create directories', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      assert.equal((await getComment('/api/v2/comment/999', 'json', false)).status, 404);
+      assert.deepEqual(await store.listLocalDanmu(), []);
+      await assert.rejects(fs.stat('.cache'), { code: 'ENOENT' });
+    });
+    await isolated('disabled files are neither read nor written, including direct writes', {}, async () => {
+      await file('animes', [{ animeId: 'file' }]);
+      const before = await fs.readFile('.cache/animes', 'utf8');
+      await initializePersistentCaches('node');
+      Globals.animes = [{ animeId: 'memory' }];
+      await cache.getLocalCaches(); await cache.updateLocalCaches();
+      cache.writeCacheToFile('animes', '[]');
+      assert.equal(Globals.animes[0].animeId, 'memory');
+      assert.equal(await fs.readFile('.cache/animes', 'utf8'), before);
+    });
+    await isolated('file writes do not suppress Local Redis; only successful keys update hashes', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await fs.mkdir('.cache');
+      await initializePersistentCaches('node');
+      Globals.animes = [{ animeId: 1 }];
+      await cache.updateLocalCaches();
+      failedWrite = 'animes';
+      assert.equal(await local.updateLocalRedisCaches(), false);
+      assert.equal(Globals.localRedisHashes.animes, undefined);
+      assert.equal(writes.length, 6);
+      failedWrite = null;
+      assert.equal(await local.updateLocalRedisCaches(), true);
+      assert.equal(writes.length, 7);
+      assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 1);
+      await local.updateLocalRedisCaches(); assert.equal(writes.length, 7);
+      assert.equal(backend.has('favoriteCache'), false);
+    });
+    await isolated('Local Redis restores first; other backends independently receive current data', { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'file' }]);
+      remote.set('animes', '[{"animeId":"upstash"}]');
+      remote.set('favoriteCache', JSON.stringify({ saved: favorite() }));
+      backend.set('animes', '[{"animeId":"local"}]');
+      await initializePersistentCaches('node');
+      assert.equal(Globals.animes[0].animeId, 'local');
+      assert.deepEqual(reads, ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum']);
+      assert.ok(Globals.favoriteCache.has('saved'));
+      assert.deepEqual(remoteCommands, ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum', 'favoriteCache'].map(key => ['GET', key]));
+      Globals.animes.push({ animeId: 'new' });
+      await cache.updateLocalCaches(); await redis.updateRedisCaches(); await local.updateLocalRedisCaches();
+      assert.deepEqual(await storedFile('animes'), Globals.animes);
+      assert.deepEqual(JSON.parse(remote.get('animes')), Globals.animes);
+      assert.deepEqual(JSON.parse(backend.get('animes')), Globals.animes);
+    });
+    await isolated('hot enabling files cannot restore stale queries, counters or favorites', {}, async env => {
+      await file('animes', [{ animeId: 'stale-file' }]); await file('episodeNum', 9);
+      await file('favoritesCache', { old: favorite() });
+      backend.set('animes', '[{"animeId":"current-redis"}]'); backend.set('episodeNum', '12000');
+      await initializePersistentCaches('node');
+      Globals.favoriteCache.set('current', favorite());
+      await request({ ...env, LOCAL_CACHE_ENABLED: 'true' }, '/api/config');
+      assert.equal(Globals.animes[0].animeId, 'current-redis'); assert.equal(Globals.episodeNum, 12000);
+      assert.deepEqual([...Globals.favoriteCache.keys()], ['current']);
+      await cache.updateLocalCaches(); await local.updateLocalRedisCaches();
+      assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'current-redis');
+      assert.equal((await storedFile('animes'))[0].animeId, 'current-redis');
+      assert.deepEqual(Object.keys(await storedFile('favoritesCache')), ['current']);
+    });
+    await isolated('broken query files do not prevent Redis queries or legacy file favorites', { LOCAL_CACHE_ENABLED: 'true' }, async env => {
+      await file('favoritesCache', { saved: favorite() });
+      await fs.writeFile('.cache/reqRecords', 'invalid json');
+      backend.set('animes', '[{"animeId":"redis"}]');
+      assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+      assert.deepEqual(reads, ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum']); assert.equal(Globals.animes[0].animeId, 'redis');
+      assert.ok(Globals.favoriteCache.has('saved'));
+      const remove = await handleFavoriteRemove(new Request('http://localhost', { method: 'POST', body: JSON.stringify({ keyword: 'saved' }) }));
+      assert.equal(remove.status, 200);
+      assert.deepEqual(await storedFile('favoritesCache'), {});
+      assert.equal(backend.has('favoriteCache'), false);
+    });
+    for (const unreadable of ['animes', 'favoritesCache']) {
+      await isolated('unreadable ' + unreadable + ' never erases file favorites during later saves', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+        await file('animes', [{ animeId: 1 }]); await file('favoritesCache', { saved: favorite() });
+        const before = await fs.readFile('.cache/favoritesCache', 'utf8');
+        const syncFs = (await import('node:fs')).default;
+        const { syncBuiltinESMExports } = await import('node:module');
+        const read = syncFs.readFileSync; const copy = syncFs.copyFileSync;
+        const denied = () => Object.assign(new Error('permission denied'), { code: 'EACCES' });
+        const readMock = mock.method(syncFs, 'readFileSync', (name, ...args) => {
+          if (String(name).endsWith('/' + unreadable)) throw denied();
+          return read(name, ...args);
+        });
+        const copyMock = mock.method(syncFs, 'copyFileSync', (name, ...args) => {
+          if (String(name).endsWith('/' + unreadable)) throw denied();
+          return copy(name, ...args);
+        });
+        syncBuiltinESMExports();
+        try { await initializePersistentCaches('node'); }
+        finally { readMock.mock.restore(); copyMock.mock.restore(); syncBuiltinESMExports(); }
+        if (unreadable === 'animes') {
+          assert.ok(Globals.favoriteCache.has('saved'));
+          assert.equal(Globals.queryCacheWritable.file, false);
+          Globals.favoriteCache.set('new', favorite()); await persistFavorites();
+          assert.deepEqual(Object.keys(await storedFile('favoritesCache')), ['saved', 'new']);
+        } else {
+          assert.equal(Globals.favoriteCacheWritable.file, false);
+          Globals.favoriteCache.set('new', favorite()); Globals.animes = [{ animeId: 2 }];
+          await persistFavorites(); await cache.getLocalCaches(); await persistFavorites();
+          assert.equal(await fs.readFile('.cache/favoritesCache', 'utf8'), before);
+          assert.deepEqual(await storedFile('animes'), [{ animeId: 2 }]);
+        }
+      });
+    }
+    for (const failedKey of ['animes', 'favoriteCache']) {
+      await isolated('Upstash ' + failedKey + ' read failure has an independent favorite write guard', { LOCAL_REDIS_URL: '', ...upstash }, async () => {
+        remote.set('animes', '[{"animeId":1}]'); remote.set('favoriteCache', JSON.stringify({ saved: favorite() }));
+        const original = globalThis.fetch;
+        const fetch = mock.method(globalThis, 'fetch', async (url, opts) => {
+          const commands = JSON.parse(opts.body);
+          if (commands.some(([op, key]) => op === 'GET' && key === failedKey)) return Response.json(commands.map(() => ({ error: 'unreadable' })));
+          return original(url, opts);
+        });
+        try { await initializePersistentCaches('node'); } finally { fetch.mock.restore(); }
+        if (failedKey === 'animes') {
+          assert.ok(Globals.favoriteCache.has('saved')); assert.equal(Globals.queryCacheWritable.upstash, false);
+          Globals.favoriteCache.set('new', favorite()); await persistFavorites();
+          assert.deepEqual(Object.keys(JSON.parse(remote.get('favoriteCache'))), ['saved', 'new']);
+        } else {
+          assert.equal(Globals.favoriteCacheWritable.upstash, false);
+          Globals.favoriteCache.set('new', favorite()); await persistFavorites();
+          assert.deepEqual(Object.keys(JSON.parse(remote.get('favoriteCache'))), ['saved']);
+          assert.equal(await redis.getFavoriteCachesFromRedis(), true);
+          assert.equal(Globals.favoriteCacheWritable.upstash, true);
+          assert.deepEqual([...Globals.favoriteCache.keys()], ['saved']);
+        }
+      });
+    }
+    for (const invalidCounter of [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1]) {
+      await isolated('unusable secondary counter ' + invalidCounter + ' cannot poison episode allocation', upstash, async () => {
+        const links = [{ id: 12000, url: 'https://example.com/primary', title: 'primary' }];
+        backend.set('animes', JSON.stringify([{ animeId: 1, links }])); backend.set('episodeIds', JSON.stringify(links)); backend.set('episodeNum', '12000');
+        remote.set('episodeNum', String(invalidCounter));
+        await initializePersistentCaches('node');
+        assert.equal(Globals.episodeNum, 12000); assert.equal(Globals.queryCacheWritable.upstash, false);
+        const a = cache.addEpisode('https://example.com/a', 'a'); const b = cache.addEpisode('https://example.com/b', 'b');
+        assert.deepEqual([a.id, b.id], [12001, 12002]);
+        assert.equal(cache.findUrlById(a.id), a.url); assert.equal(cache.findUrlById(b.id), b.url);
+      });
+    }
+    await isolated('invalid secondary mappings cannot raise a healthy primary counter', upstash, async () => {
+      backend.set('animes', '[{"animeId":1}]'); backend.set('episodeNum', '12000');
+      remote.set('episodeNum', '800000000');
+      remote.set('episodeIds', '[{"id":50000,"url":"a"},{"id":50000,"url":"b"}]');
+      await initializePersistentCaches('node');
+      assert.equal(Globals.episodeNum, 12000); assert.equal(Globals.queryCacheWritable.upstash, false);
+    });
+    await isolated('allocator refuses overflow without adding duplicate IDs', { LOCAL_REDIS_URL: '' }, async () => {
+      await initializePersistentCaches('node'); Globals.episodeNum = Number.MAX_SAFE_INTEGER - 2;
+      const a = cache.addEpisode('https://example.com/a', 'a');
+      assert.equal(a.id, Number.MAX_SAFE_INTEGER - 1); assert.ok(Number.isSafeInteger(a.id));
+      assert.throws(() => cache.addEpisode('https://example.com/b', 'b'), /安全范围/);
+      assert.deepEqual(Globals.episodeIds, [a]); assert.equal(cache.findUrlById(a.id), a.url);
+    });
+    await isolated('counter-only clear and later allocation preserve existing episode URLs', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      const links = [{ id: 12000, url: 'https://example.com/old', title: 'old' }];
+      backend.set('animes', JSON.stringify([{ animeId: 1, links }])); backend.set('episodeIds', JSON.stringify(links)); backend.set('episodeNum', '50000');
+      await fs.mkdir('.cache'); await initializePersistentCaches('node');
+      const res = await handleClearCache({ json: async () => ({ items: ['episodeNum'] }) });
+      assert.equal(res.status, 200); assert.equal((await res.json()).clearedItems.episodeNum, 12000);
+      const next = cache.addEpisode('https://example.com/new', 'new');
+      assert.equal(next.id, 12001); assert.equal(cache.findUrlById(12000), links[0].url);
+      await cache.updateLocalCaches(); await local.updateLocalRedisCaches();
+      assert.deepEqual((await storedFile('episodeIds')).map(x => x.id), [12000, 12001]);
+      Globals.episodeIds = []; Globals.episodeNum = 10001;
+      assert.equal(cache.addEpisode('https://example.com/another', 'another').id, 12001, 'remaining anime links reserve their IDs');
+    });
+    await isolated('partial clear protects unread keys; failed full clear reports failure and can retry', upstash, async () => {
+      backend.set('episodeIds', '[{"id":12000,"url":"a"},{"id":12000,"url":"b"}]');
+      backend.set('lastSelectMap', '{"saved":{"prefer":1}}');
+      remote.set('favoriteCache', JSON.stringify({ saved: favorite() }));
+      await initializePersistentCaches('node');
+      const partial = await handleClearCache({ json: async () => ({ items: ['animes', 'episodeIds', 'episodeNum'] }) });
+      assert.equal(partial.status, 200); assert.match((await partial.json()).message, /重启/);
+      assert.equal(backend.get('episodeIds'), '[]'); assert.equal(backend.get('lastSelectMap'), '{"saved":{"prefer":1}}');
+      assert.equal(Globals.queryCacheWritable.localRedis, false);
+      failedWrite = 'animes';
+      const clear = () => handleClearCache({ json: async () => ({ items: ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap', 'requestHistory'] }) });
+      const failed = await clear(); assert.equal(failed.status, 500);
+      assert.deepEqual((await failed.json()).failedBackends, ['localRedis']);
+      assert.equal(Globals.queryCacheWritable.localRedis, false);
+      failedWrite = null; assert.equal((await clear()).status, 200);
+      assert.equal(Globals.queryCacheWritable.localRedis, true);
+      assert.deepEqual(Object.keys(JSON.parse(remote.get('favoriteCache'))), ['saved']);
+      Globals.animes = [{ animeId: 2 }]; assert.equal(await local.updateLocalRedisCaches(), true);
+      assert.deepEqual(JSON.parse(backend.get('animes')), Globals.animes);
+    });
+    await isolated('unavailable Upstash does not block healthy Local Redis or later replace queries', upstash, async env => {
+      upstashOffline = true; backend.set('animes', '[{"animeId":"redis"}]');
+      assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+      assert.deepEqual(reads, ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum']);
+      assert.equal((await request(env, '/api/v2/favorite/list')).status, 200);
+      upstashOffline = false; remote.set('animes', '[{"animeId":"stale"}]');
+      remote.set('favoriteCache', JSON.stringify({ saved: favorite() }));
+      assert.equal((await request(env, '/api/v2/favorite/list')).status, 200);
+      assert.equal(Globals.animes[0].animeId, 'redis');
+    });
+    await isolated('failed primary GET falls back to files without overwriting the failed backend', { LOCAL_CACHE_ENABLED: 'true' }, async env => {
+      await file('animes', [{ animeId: 'saved-file' }]);
+      backend.set('animes', '[{"animeId":"redis"}]'); failedRead = 'episodeIds';
+      assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+      assert.equal(Globals.animes[0].animeId, 'saved-file'); assert.deepEqual(Globals.localRedisHashes, {});
+      assert.equal((await local.setLocalRedisKey('animes', [])).result, 'ERROR');
+      assert.equal((await local.setLocalRedisKeyWithExpiry('animes', [], 30)).result, 'ERROR');
+      Globals.animes = [{ animeId: 'current' }];
+      await local.updateLocalRedisCaches(); await cache.updateLocalCaches();
+      assert.equal(writes.length, 0); assert.equal((await storedFile('animes'))[0].animeId, 'current');
+      failedRead = null;
+      assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+      assert.equal(Globals.animes[0].animeId, 'current');
+      assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'redis');
+    });
+    await isolated('initial connection failure uses memory and retries connections after cooldown only', {}, async env => {
+      const realNow = Date.now; let now = realNow();
+      const clock = mock.method(Date, 'now', () => now);
+      try {
+        unavailable = true;
+        assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+        assert.equal(clients.length, 1, 'validity check and recovery share the failed connection attempt');
+        assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+        assert.equal(clients.length, 1, 'requests during cooldown do not connect');
+        assert.ok(Globals.episodeNum >= now, 'degraded IDs do not start again at 10001');
+        Globals.animes = [{ animeId: 'current' }];
+        unavailable = false; backend.set('animes', '[{"animeId":"redis"}]'); now += 30001;
+        assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+        assert.equal(clients.length, 2);
+        await local.updateLocalRedisCaches();
+        assert.equal(Globals.animes[0].animeId, 'current');
+        assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'redis');
+        assert.equal(writes.length, 0);
+      } finally { clock.mock.restore(); }
+    });
+    await isolated('reconnect after successful restoration keeps current memory and resumes writes', {}, async () => {
+      backend.set('animes', '[{"animeId":"redis"}]');
+      await initializePersistentCaches('node');
+      Globals.animes = [{ animeId: 'current' }]; clients.at(-1).destroy();
+      const count = reads.length;
+      await initializePersistentCaches('node'); await local.updateLocalRedisCaches();
+      assert.equal(reads.length, count); assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'current');
+    });
+    await isolated('empty primary restores the next populated backend before allowing writes', { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'file' }]);
+      remote.set('animes', '[{"animeId":"upstash"}]'); remote.set('episodeNum', '12000');
+      await initializePersistentCaches('node');
+      assert.equal(Globals.animes[0].animeId, 'upstash'); assert.equal(Globals.episodeNum, 12000);
+      await local.updateLocalRedisCaches();
+      assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'upstash');
+    });
+    await isolated('empty Redis retains the entire file snapshot including manual selection', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'file', links: [{ id: 12000, url: 'https://example.com/ep1' }] }]);
+      await file('episodeIds', [{ id: 12000, url: 'https://example.com/ep1' }]);
+      await file('episodeNum', 12000);
+      const preference = { saved: { preferBySeason: { 1: 99 }, offsets: { 1: '2:第10集' }, explicitBySeason: { 1: true } } };
+      await file('lastSelectMap', preference);
+      await initializePersistentCaches('node');
+      await persistFavorites(); await local.updateLocalRedisCaches();
+      assert.equal((await storedFile('animes'))[0].animeId, 'file');
+      assert.equal(await storedFile('episodeNum'), 12000);
+      assert.deepEqual(await storedFile('lastSelectMap'), preference);
+      assert.deepEqual(JSON.parse(backend.get('lastSelectMap')), preference);
+    });
+    for (const primary of ['localRedis', 'upstash']) {
+      await isolated(primary + ' counter-only snapshot falls back without erasing files or manual preferences', { ...upstash, LOCAL_REDIS_URL: primary === 'localRedis' ? 'redis://mock' : '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+        const target = primary === 'localRedis' ? backend : remote;
+        target.set('animes', '[]'); target.set('episodeIds', '[]'); target.set('episodeNum', '12000');
+        const episodes = [{ id: 55000, url: 'https://example.com/saved', title: '第1集' }];
+        const animes = [{ animeId: 1, links: episodes }];
+        const preference = { saved: { preferBySeason: { 1: 1 }, explicitBySeason: { 1: true } } };
+        await file('animes', animes); await file('episodeIds', episodes); await file('episodeNum', 55000); await file('lastSelectMap', preference);
+        await initializePersistentCaches('node');
+        assert.deepEqual(Globals.animes, animes); assert.deepEqual(Globals.episodeIds, episodes);
+        assert.equal(Globals.episodeNum, 55000); assert.deepEqual(Object.fromEntries(Globals.lastSelectMap), preference);
+        await cache.updateLocalCaches(); await redis.updateRedisCaches();
+        if (primary === 'localRedis') await local.updateLocalRedisCaches();
+        assert.deepEqual(await storedFile('animes'), animes); assert.equal(await storedFile('episodeNum'), 55000);
+        assert.deepEqual(JSON.parse(target.get('animes')), animes);
+      });
+    }
+    await isolated('complete primary retains episode mapping but respects larger secondary counters', { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      const localEpisodes = [{ id: 12000, url: 'https://example.com/local', title: '第1集' }];
+      backend.set('animes', JSON.stringify([{ animeId: 1, links: localEpisodes }]));
+      backend.set('episodeIds', JSON.stringify(localEpisodes)); backend.set('episodeNum', '12000');
+      remote.set('episodeNum', '40000'); await file('episodeNum', 55000);
+      await file('animes', [{ animeId: 2, links: [{ id: 12000, url: 'https://example.com/file' }] }]);
+      await initializePersistentCaches('node');
+      assert.equal(cache.findUrlById(12000), 'https://example.com/local');
+      assert.equal(Globals.episodeNum, 55000);
+      const next = cache.addEpisode('https://example.com/new', '第2集'); assert.equal(next.id, 55001);
+      await cache.updateLocalCaches(); await redis.updateRedisCaches(); await local.updateLocalRedisCaches();
+      assert.equal(await storedFile('episodeNum'), 55001);
+      assert.equal(remote.get('episodeNum'), '55001'); assert.equal(backend.get('episodeNum'), '55001');
+    });
+    await isolated('independent query keys fall back without replacing primary episode mappings', { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      const links = [{ id: 12000, url: 'https://example.com/local', title: '第1集' }];
+      const animes = [{ animeId: 1, links }];
+      const preference = { saved: { preferBySeason: { 1: 1 }, explicitBySeason: { 1: true } } };
+      const records = [{ path: '/api/v2/search/anime', time: 123 }];
+      backend.set('animes', JSON.stringify(animes)); backend.set('episodeIds', JSON.stringify(links));
+      backend.set('lastSelectMap', '{}'); backend.set('reqRecords', '[]'); backend.set('todayReqNum', '0');
+      remote.set('lastSelectMap', JSON.stringify(preference));
+      await file('animes', [{ animeId: 2, links: [{ id: 12000, url: 'https://example.com/file' }] }]);
+      await file('lastSelectMap', { stale: { prefer: 2 } }); await file('reqRecords', records); await file('todayReqNum', 7);
+      await initializePersistentCaches('node');
+      assert.deepEqual(Globals.animes, animes); assert.deepEqual(Globals.episodeIds, links);
+      assert.deepEqual(Object.fromEntries(Globals.lastSelectMap), preference);
+      assert.deepEqual(Globals.reqRecords, records); assert.equal(Globals.todayReqNum, 7);
+      await local.updateLocalRedisCaches();
+      assert.deepEqual(JSON.parse(backend.get('lastSelectMap')), preference);
+      assert.deepEqual(JSON.parse(backend.get('reqRecords')), records); assert.equal(backend.get('todayReqNum'), '7');
+    });
+    await isolated('index-only primary does not mix IDs with a complete file snapshot', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      backend.set('episodeIds', '[{"id":12000,"url":"https://example.com/old-primary"}]');
+      backend.set('episodeNum', '60000');
+      const links = [{ id: 12000, url: 'https://example.com/file', title: '第1集' }];
+      await file('animes', [{ animeId: 1, links }]); await file('episodeIds', links); await file('episodeNum', 55000);
+      await initializePersistentCaches('node');
+      assert.equal(cache.findUrlById(12000), links[0].url); assert.equal(Globals.episodeNum, 60000);
+    });
+    await isolated('conflicting IDs within one snapshot are preserved without writeback', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      backend.set('animes', '[{"animeId":1,"links":[{"id":12000,"url":"https://example.com/a"}]}]');
+      backend.set('episodeIds', '[{"id":12000,"url":"https://example.com/b"}]');
+      await file('animes', [{ animeId: 2, links: [{ id: 55000, url: 'https://example.com/file' }] }]);
+      await initializePersistentCaches('node');
+      assert.equal(Globals.queryCacheWritable.localRedis, false);
+      assert.equal(Globals.animes[0].animeId, 2);
+      assert.equal(cache.findUrlById(55000), 'https://example.com/file');
+      assert.equal(await local.updateLocalRedisCaches(), false); assert.equal(writes.length, 0);
+    });
+    await isolated('without Local Redis, files or Upstash restore their own queries and favorites', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'file' }]); await file('favoritesCache', { saved: favorite() });
+      await initializePersistentCaches('node');
+      assert.equal(Globals.animes[0].animeId, 'file'); assert.ok(Globals.favoriteCache.has('saved'));
+      Globals.favoriteCache.delete('saved'); await persistFavorites();
+      assert.deepEqual(await storedFile('favoritesCache'), {});
+      Globals.queryCacheInitialized = false; Globals.queryCacheWritable = {}; Globals.favoriteCacheWritable = {};
+      Globals.envs.redisUrl = upstash.UPSTASH_REDIS_REST_URL; Globals.envs.redisToken = 'mock'; Globals.redisValid = true;
+      remote.set('animes', '[{"animeId":"upstash"}]');
+      await initializePersistentCaches('node');
+      assert.equal(Globals.animes[0].animeId, 'upstash');
+    });
+    await isolated('Upstash partial read uses memory but protects the unread snapshot', { LOCAL_REDIS_URL: '', ...upstash }, async () => {
+      const partial = mock.method(globalThis, 'fetch', async () => Response.json([{ result: '[]' }]));
+      try {
+        assert.equal(await initializePersistentCaches('node'), true);
+        assert.equal(Globals.queryCacheWritable.upstash, false);
+        assert.equal((await redis.setRedisKey('animes', [])).result, 'ERROR');
+      } finally { partial.mock.restore(); }
+      await initializePersistentCaches('node');
+      assert.equal((await redis.setRedisKeyWithExpiry('animes', [], 30)).result, 'ERROR');
+    });
+    await isolated('Upstash partial writes retry failed keys', { LOCAL_REDIS_URL: '', ...upstash }, async () => {
+      await initializePersistentCaches('node');
+      Globals.animes = [{ animeId: 'new' }];
+      const failure = mock.method(globalThis, 'fetch', async (_url, opts) => Response.json(JSON.parse(opts.body).map((_, i) => i ? { result: 'OK' } : { error: 'failed' })));
+      try { assert.equal(await redis.updateRedisCaches(), false); assert.equal(Globals.upstashHashes.animes, undefined); }
+      finally { failure.mock.restore(); }
+      remoteCommands = []; await redis.updateRedisCaches();
+      assert.deepEqual(remoteCommands.map(command => command[1]), ['animes']);
+      const error = mock.method(globalThis, 'fetch', async () => Response.json({ error: 'failed' }, { status: 503 }));
+      try {
+        assert.equal((await redis.setRedisKey('animes', [])).result, 'ERROR');
+        assert.equal((await redis.setRedisKeyWithExpiry('animes', [], 30)).result, 'ERROR');
+      } finally { error.mock.restore(); }
+    });
+    await isolated('memory-only startup cannot import files when they are enabled later', { LOCAL_REDIS_URL: '' }, async () => {
+      await file('animes', [{ animeId: 'stale' }]);
+      await initializePersistentCaches('node'); Globals.animes = [{ animeId: 'current' }];
+      Globals.envs.localCacheEnabled = true;
+      await initializePersistentCaches('node');
+      assert.equal(Globals.animes[0].animeId, 'current');
+    });
+    await isolated('disabling files during an update does not mark unwritten values as saved', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'old' }]);
+      await initializePersistentCaches('node');
+      Globals.animes = [{ animeId: 'current' }];
+      const pending = cache.updateLocalCaches();
+      Globals.envs.localCacheEnabled = false;
+      await pending;
+      assert.notEqual(Globals.localFileHashes.animes, undefined);
+      assert.equal((await storedFile('animes'))[0].animeId, 'old');
+      Globals.envs.localCacheEnabled = true;
+      await cache.updateLocalCaches();
+      assert.equal((await storedFile('animes'))[0].animeId, 'current');
+    });
+    await isolated('all query routes remain usable with an unavailable primary and an existing cache directory', { LOCAL_CACHE_ENABLED: 'true' }, async env => {
+      await fs.mkdir('.cache'); unavailable = true;
+      const { default: TencentSource } = await import(base + 'sources/tencent.js');
+      const search = mock.method(TencentSource.prototype, 'search', async () => []);
+      try {
+        assert.equal((await request(env, '/api/v2/search/anime?keyword=test')).status, 200);
+        const match = await handleRequest(new Request('http://localhost/api/v2/match', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: 'test S01E01' })
+        }), env, 'node', '127.0.0.1');
+        assert.equal(match.status, 200);
+        assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+        assert.notEqual((await request(env, '/danmaku?name=test&episode=1')).status, 503);
+        assert.equal(clients.length, 1);
+      } finally { search.mock.restore(); }
+    });
+    await isolated('corrupt auxiliary file is backed up without blocking healthy query data', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async env => {
+      await file('animes', [{ animeId: 'saved' }]);
+      await fs.writeFile('.cache/reqRecords', 'broken json');
+      assert.equal((await request(env, '/api/v2/comment/999')).status, 404);
+      assert.equal(Globals.animes[0].animeId, 'saved');
+      assert.equal(Globals.queryCacheWritable.file, true);
+      await cache.updateLocalCaches();
+      assert.ok(Array.isArray(await storedFile('reqRecords')));
+      const backups = (await fs.readdir('.cache')).filter(name => name.startsWith('reqRecords.bak-'));
+      assert.equal(backups.length, 1);
+      assert.equal(await fs.readFile('.cache/' + backups[0], 'utf8'), 'broken json');
+    });
+    await isolated('corrupt core file preserves its backup and healthy ID mappings', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('episodeIds', [{ id: 12000, url: 'https://example.com/old', title: '第1集' }]);
+      await fs.writeFile('.cache/animes', 'broken json');
+      await initializePersistentCaches('node');
+      const next = cache.addEpisode('https://example.com/new', '第2集');
+      assert.ok(next.id > 12000);
+      assert.equal(cache.findUrlById(12000), 'https://example.com/old');
+      await cache.updateLocalCaches();
+      const backup = (await fs.readdir('.cache')).find(name => name.startsWith('animes.bak-'));
+      assert.equal(await fs.readFile('.cache/' + backup, 'utf8'), 'broken json');
+    });
+    for (const counter of [null, 10001]) {
+      await isolated('restored episode counter is repaired when ' + (counter === null ? 'missing' : 'behind'), {}, async () => {
+        backend.set('episodeIds', '[{"id":12000,"url":"https://example.com/old","title":"第1集"}]');
+        backend.set('animes', '[{"animeId":1,"links":[{"id":13000,"url":"https://example.com/detail"}]}]');
+        if (counter !== null) backend.set('episodeNum', String(counter));
+        await initializePersistentCaches('node');
+        assert.equal(Globals.episodeNum, 13000);
+        const next = cache.addEpisode('https://example.com/new', '第2集');
+        assert.equal(next.id, 13001);
+        assert.equal(cache.findUrlById(next.id), 'https://example.com/new');
+        assert.equal(cache.findUrlById(12000), 'https://example.com/old');
+        await local.updateLocalRedisCaches();
+        assert.equal(backend.get('episodeNum'), '13001');
+      });
+    }
+    await isolated('atomic replacement failure leaves the old file and hash intact', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'old' }]);
+      await initializePersistentCaches('node');
+      const before = await fs.readFile('.cache/animes', 'utf8');
+      assert.equal(cache.writeCacheToFile('animes', JSON.stringify(Globals.animes)), true);
+      const hash = Globals.localFileHashes.animes;
+      Globals.animes = [{ animeId: 'new' }];
+      const syncFs = (await import('node:fs')).default;
+      const { syncBuiltinESMExports } = await import('node:module');
+      const fail = mock.method(syncFs, 'renameSync', () => { throw new Error('rename failed'); });
+      syncBuiltinESMExports();
+      try { assert.equal(await cache.updateLocalCaches(), false); }
+      finally { fail.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal(await fs.readFile('.cache/animes', 'utf8'), before);
+      assert.equal(Globals.localFileHashes.animes, hash);
+      assert.equal((await fs.readdir('.cache')).some(name => name.includes('.tmp-')), false);
+      await cache.updateLocalCaches();
+      assert.equal((await storedFile('animes'))[0].animeId, 'new');
+      const backup = (await fs.readdir('.cache')).find(name => name.startsWith('animes.bak-'));
+      assert.equal(await fs.readFile('.cache/' + backup, 'utf8'), before);
+    });
+    await isolated('backup failure prevents overwriting an existing file snapshot', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('animes', [{ animeId: 'file' }]);
+      backend.set('animes', '[{"animeId":"redis"}]');
+      await initializePersistentCaches('node');
+      const syncFs = (await import('node:fs')).default;
+      const { syncBuiltinESMExports } = await import('node:module');
+      const fail = mock.method(syncFs, 'copyFileSync', () => { throw new Error('disk full'); });
+      syncBuiltinESMExports();
+      try {
+        assert.equal(await cache.updateLocalCaches(), false);
+        assert.equal(await cache.updateLocalCaches(), false);
+        assert.equal(fail.mock.callCount(), 1, 'backup failures are cooled down');
+      } finally { fail.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal((await storedFile('animes'))[0].animeId, 'file');
+      const now = Date.now(); const clock = mock.method(Date, 'now', () => now + 30001);
+      try { await cache.updateLocalCaches(); } finally { clock.mock.restore(); }
+      assert.equal((await storedFile('animes'))[0].animeId, 'redis');
+    });
+    await isolated('changing Redis URLs keeps current memory and rechecks each destination', upstash, async env => {
+      backend.set('animes', '[{"animeId":"initial"}]');
+      await request(env, '/api/config');
+      Globals.animes = [{ animeId: 'current' }];
+      backend = new Map([['animes', '[{"animeId":"new-local-old-data"}]']]);
+      remote = new Map([['animes', '[{"animeId":"new-upstash-old-data"}]']]);
+      await request({ ...env, LOCAL_REDIS_URL: 'redis://second', UPSTASH_REDIS_REST_URL: 'https://second.invalid' }, '/api/config');
+      assert.equal(Globals.animes[0].animeId, 'current');
+      await local.updateLocalRedisCaches(); await redis.updateRedisCaches();
+      assert.equal(JSON.parse(backend.get('animes'))[0].animeId, 'current');
+      assert.equal(JSON.parse(remote.get('animes'))[0].animeId, 'current');
+    });
+    for (const failure of ['data', 'read-index', 'write-index']) {
+      await isolated('cloud upload reports ' + failure + ' failure and retries without a false success', { LOCAL_REDIS_URL: '', ...upstash }, async () => {
+        Globals.deployPlatform = 'vercel';
+        const calls = []; let fail = true;
+        const fetch = mock.method(globalThis, 'fetch', async url => {
+          const command = new URL(url).pathname; calls.push(command);
+          if (fail && (failure === 'data' && command.startsWith('/set/localDanmu:data:')
+            || failure === 'read-index' && command === '/get/localDanmu:index'
+            || failure === 'write-index' && command === '/set/localDanmu:index')) return Response.json({ error: 'failed' }, { status: 500 });
+          return Response.json({ result: command.startsWith('/get/') ? null : 'OK' });
+        });
+        try {
+          const resource = { resourceKey: 'test-upload', title: 'test', comments: [] };
+          await assert.rejects(store.saveLocalDanmu(resource), /失败/);
+          if (failure === 'data') assert.deepEqual(calls, ['/set/localDanmu:data:test-upload']);
+          if (failure === 'read-index') assert.equal(calls.includes('/set/localDanmu:index'), false);
+          fail = false;
+          assert.deepEqual(await store.saveLocalDanmu(resource), resource);
+          assert.equal(calls.at(-1), '/set/localDanmu:index');
+        } finally { fetch.mock.restore(); }
+      });
+    }
+    await isolated('file favorites remain available when Upstash has no favorite key', { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await file('favoritesCache', { saved: favorite() });
+      await initializePersistentCaches('node');
+      assert.ok(Globals.favoriteCache.has('saved'));
+      assert.equal(await redis.getFavoriteCachesFromRedis(), true);
+      assert.ok(Globals.favoriteCache.has('saved'), 'missing Upstash key retains the existing favorite snapshot');
+      const req = () => new Request('http://localhost', { method: 'POST', body: JSON.stringify({ keyword: 'saved' }) });
+      assert.equal((await handleFavoriteRemove(req())).status, 200);
+      assert.equal((await handleFavoriteRemove(req())).status, 404, 'legacy missing favorite response is preserved');
+      assert.equal(backend.has('favoriteCache'), false);
+    });
+  `;
+  const result = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--input-type=module', '-e', script], {
+    encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, NODE_TEST_CONTEXT: '' },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('Local Redis handshake timeout is bounded and subsequent requests observe cooldown', async () => {
+  const base = new URL('./', import.meta.url).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    import net from 'node:net';
+    const { handleRequest } = await import(${JSON.stringify(base + 'worker.js')});
+    const { closeLocalRedisConnection } = await import(${JSON.stringify(base + 'utils/local-redis-util.js')});
+    const sockets = new Set(); let connections = 0;
+    const server = net.createServer(socket => {
+      connections++; sockets.add(socket);
+      socket.on('error', () => {});
+      socket.on('close', () => sockets.delete(socket));
+      socket.on('data', () => {}); // 接受 TCP，但永远不回应 Redis 握手。
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const env = { LOCAL_REDIS_URL: 'redis://127.0.0.1:' + server.address().port,
+      LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0' };
+    const request = () => handleRequest(new Request('http://localhost/api/config'), env, 'node', '127.0.0.1');
+    try {
+      const start = performance.now();
+      assert.equal((await request()).status, 200);
+      const first = performance.now() - start;
+      assert.ok(first >= 4500 && first < 9500, 'first request: ' + first + 'ms');
+      const next = performance.now();
+      assert.equal((await request()).status, 200);
+      const second = performance.now() - next;
+      assert.ok(second < 1500, 'cooldown request: ' + second + 'ms');
+      assert.equal(connections, 1);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(sockets.size, 0, 'timed-out connection closes before test cleanup');
+      console.log(JSON.stringify({ firstMs: Math.round(first), secondMs: Math.round(second), connections }));
+    } finally {
+      await closeLocalRedisConnection();
+      for (const socket of sockets) socket.destroy();
+      await new Promise(resolve => server.close(resolve));
+    }
+  `;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-redis-timeout-'));
+  try {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: dir, encoding: 'utf8', timeout: 14000, maxBuffer: 1024 * 1024
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const timing = result.stdout.split('\n').find(line => line.startsWith('{"firstMs"'));
+    if (timing) console.log('Redis handshake timing: ' + timing);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('query file backups stay bounded across process restarts', async () => {
+  const base = new URL('./', import.meta.url).href;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-backup-rotation-'));
+  const cacheDir = path.join(dir, '.cache');
+  const script = `
+    const { Globals } = await import(${JSON.stringify(base + 'configs/globals.js')});
+    const { initializePersistentCaches } = await import(${JSON.stringify(base + 'utils/redis-util.js')});
+    const { updateLocalCaches } = await import(${JSON.stringify(base + 'utils/cache-util.js')});
+    Globals.init({ LOCAL_CACHE_ENABLED: 'true', LOG_LEVEL: 'error' });
+    await initializePersistentCaches('node');
+    Globals.animes[0].revision++;
+    Globals.reqRecords.push({ revision: Globals.animes[0].revision });
+    if (!await updateLocalCaches()) process.exitCode = 1;
+  `;
+  try {
+    await fs.mkdir(cacheDir);
+    const original = JSON.stringify(JSON.stringify([{ animeId: 1, revision: 0, payload: 'x'.repeat(96 * 1024) }]));
+    await fs.writeFile(path.join(cacheDir, 'animes'), original);
+    // 覆盖旧版本已累积的备份迁移，同时保留不属于本程序格式的文件。
+    for (const name of ['animes.bak-1-1', 'animes.bak-2-2', 'animes.bak-3-3']) await fs.writeFile(path.join(cacheDir, name), original);
+    await fs.writeFile(path.join(cacheDir, 'animes.bak-user'), 'user backup');
+    for (let i = 0; i < 5; i++) {
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8', timeout: 10000 });
+      assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+      const names = await fs.readdir(cacheDir);
+      for (const key of ['animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum']) {
+        const backups = names.filter(name => name.startsWith(key + '.bak-') && /^\d+-\d+(?:-\d+)?$/.test(name.slice((key + '.bak-').length)));
+        assert.ok(backups.length <= 2, key + ': ' + backups.length);
+        for (const name of backups) JSON.parse(JSON.parse(await fs.readFile(path.join(cacheDir, name), 'utf8')));
+      }
+      assert.equal(names.some(name => name.includes('.tmp')), false);
+    }
+    assert.equal(await fs.readFile(path.join(cacheDir, 'animes.bak-user'), 'utf8'), 'user backup');
+    const current = JSON.parse(JSON.parse(await fs.readFile(path.join(cacheDir, 'animes'), 'utf8')));
+    assert.equal(current[0].revision, 5);
+    const names = await fs.readdir(cacheDir);
+    const bytes = (await Promise.all(names.map(async name => (await fs.stat(path.join(cacheDir, name))).size))).reduce((a, b) => a + b, 0);
+    assert.ok(bytes < 4 * Buffer.byteLength(original), 'backups must not grow with restart count');
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('cloud danmu upload can complete after five seconds and confirms data before indexing', async () => {
+  const base = new URL('./', import.meta.url).href;
+  const script = `
+    import http from 'node:http';
+    import assert from 'node:assert/strict';
+    const { Globals } = await import(${JSON.stringify(base + 'configs/globals.js')});
+    const { saveLocalDanmu } = await import(${JSON.stringify(base + 'utils/local-danmu-store.js')});
+    const commands = []; const timers = new Set(); let dataWritten = false;
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        commands.push(req.url);
+        res.setHeader('content-type', 'application/json');
+        if (req.url.startsWith('/set/localDanmu:data:')) {
+          const timer = setTimeout(() => { timers.delete(timer); dataWritten = true; res.end(JSON.stringify({ result: 'OK' })); }, 5500);
+          timers.add(timer);
+        } else if (req.url.startsWith('/get/')) res.end(JSON.stringify({ result: null }));
+        else { assert.equal(dataWritten, true); res.end(JSON.stringify({ result: 'OK' })); }
+      });
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    Globals.init({ UPSTASH_REDIS_REST_URL: 'http://127.0.0.1:' + server.address().port, UPSTASH_REDIS_REST_TOKEN: 'test', LOG_LEVEL: 'error' });
+    Globals.deployPlatform = 'vercel'; Globals.redisValid = true;
+    try {
+      const resource = { resourceKey: 'slow', title: 'slow', comments: [{ m: 'x'.repeat(1024 * 1024) }] };
+      const start = performance.now();
+      assert.deepEqual(await saveLocalDanmu(resource), resource);
+      assert.equal(dataWritten, true);
+      assert.deepEqual(commands, ['/set/localDanmu:data:slow', '/get/localDanmu:index', '/set/localDanmu:index']);
+      console.log('Slow upload completed in ' + Math.round(performance.now() - start) + 'ms');
+    } finally {
+      for (const timer of timers) clearTimeout(timer);
+      server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    }
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 14000, maxBuffer: 1024 * 1024 });
+  assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('explicit file cache clearing repairs persisted conflicts across real process restarts', async () => {
+  const base = new URL('./', import.meta.url).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs/promises';
+    const { Globals: g } = await import(${JSON.stringify(base + 'configs/globals.js')});
+    const { initializePersistentCaches } = await import(${JSON.stringify(base + 'utils/redis-util.js')});
+    const c = await import(${JSON.stringify(base + 'utils/cache-util.js')});
+    const { handleClearCache } = await import(${JSON.stringify(base + 'apis/system-api.js')});
+    g.init({ LOCAL_CACHE_ENABLED: 'true', LOG_LEVEL: 'error' });
+    const read = async key => JSON.parse(JSON.parse(await fs.readFile('.cache/' + key, 'utf8')));
+    await initializePersistentCaches('node');
+    if (process.argv[1] === 'clear') {
+      assert.equal(g.queryCacheWritable.file, false);
+      const res = await handleClearCache({ json: async () => ({ items: ['animes', 'episodeIds', 'episodeNum'] }) });
+      assert.equal(res.status, 200); assert.match((await res.json()).message, /重启/);
+      assert.deepEqual(await read('episodeIds'), []);
+      assert.deepEqual(await read('lastSelectMap'), { saved: { prefer: 1 } });
+    } else {
+      assert.equal(g.queryCacheWritable.file, true);
+      assert.deepEqual(Object.fromEntries(g.lastSelectMap), { saved: { prefer: 1 } });
+      assert.ok(g.favoriteCache.has('saved'));
+      const episode = c.addEpisode('https://example.com/new', 'new');
+      g.animes = [{ animeId: 2, links: [episode] }];
+      assert.equal(await c.updateLocalCaches(), true);
+      assert.equal(c.findUrlById(episode.id), episode.url);
+      assert.deepEqual(await read('episodeIds'), [episode]);
+    }
+  `;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-clear-restart-'));
+  try {
+    const folder = path.join(dir, '.cache'); await fs.mkdir(folder);
+    const file = (key, data) => fs.writeFile(path.join(folder, key), JSON.stringify(JSON.stringify(data)));
+    await file('animes', [{ animeId: 1, links: [{ id: 10002, url: 'old' }] }]);
+    await file('episodeIds', [{ id: 10002, url: 'old' }, { id: 10002, url: 'conflict' }]);
+    await file('episodeNum', 10002); await file('lastSelectMap', { saved: { prefer: 1 } });
+    await file('favoritesCache', { saved: { results: [], details: [], timestamp: 1 } });
+    for (const step of ['clear', 'restart', 'restart']) {
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, step], { cwd: dir, encoding: 'utf8', timeout: 10000 });
+      assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('Upstash business deadlines abort stalled responses without marking writes as saved', async () => {
+  const base = new URL('./', import.meta.url).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    import http from 'node:http';
+    import { mock } from 'node:test';
+    const { Globals: g } = await import(${JSON.stringify(base + 'configs/globals.js')});
+    const r = await import(${JSON.stringify(base + 'utils/redis-util.js')});
+    const server = http.createServer((req, res) => {
+      req.resume(); req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{"result":'); });
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    g.init({ UPSTASH_REDIS_REST_URL: 'http://127.0.0.1:' + server.address().port, UPSTASH_REDIS_REST_TOKEN: 'test', LOG_LEVEL: 'error' });
+    const budgets = []; const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timer = mock.method(AbortSignal, 'timeout', ms => { budgets.push(ms); return realTimeout(100); });
+    try {
+      assert.equal(await r.getRedisKey('business'), undefined);
+      assert.equal((await r.setRedisKey('business', { data: 1 })).result, 'ERROR');
+      assert.equal((await r.setRedisKeyWithExpiry('expires', { data: 2 }, 60)).result, 'ERROR');
+      assert.equal((await r.setRedisKey('localDanmu:data:test', { comments: [] })).result, 'ERROR');
+      assert.equal(await r.runPipeline([['SET', 'business', 'value']]), undefined);
+      assert.equal(await r.runPipeline([['GET', 'localDanmu:index']]), undefined);
+      assert.equal(await r.runPipeline([['GET', 'episodeNum']], { timeoutMs: 5000 }), undefined);
+      assert.deepEqual(budgets, [30000, 30000, 30000, 60000, 30000, 60000, 5000]);
+      assert.deepEqual(g.upstashHashes, {});
+    } finally {
+      timer.mock.restore(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    }
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error); assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('cache clear UI displays recovery instructions and persistence failures', async () => {
+  const start = systemSettingsJsContent.indexOf('async function confirmClearCache()');
+  const end = systemSettingsJsContent.indexOf('// 显示重新部署确认模态框', start);
+  for (const result of [
+    { success: true, restartRequired: true, message: '选中项已清理，请重启恢复其他缓存', clearedItems: { episodeIds: 0 } },
+    { success: false, message: '内存已清理，但 file 保存失败，请重试' }
+  ]) {
+    const alerts = []; const logs = [];
+    const context = vm.createContext({
+      document: { querySelectorAll: () => [{ value: 'episodeIds' }] },
+      checkDeployPlatformConfig: async () => ({ success: true }),
+      customAlert: message => alerts.push(message),
+      addLog: (message, level) => logs.push({ message, level }),
+      hideClearCacheModal() {}, showLoading() {}, updateLoadingText() {}, hideLoading() {}, setTimeout() {},
+      buildApiUrl: () => 'http://localhost/api/cache/clear',
+      fetch: async () => ({ json: async () => result })
+    });
+    vm.runInContext(systemSettingsJsContent.slice(start, end), context);
+    await context.confirmClearCache();
+    if (result.success) assert.deepEqual(alerts, [result.message]);
+    else assert.ok(logs.some(entry => entry.level === 'error' && entry.message.includes(result.message)));
+  }
+});
 
 test('worker.js API endpoints', async (t) => {
   const renrenSource = getSourceByKey('renren');
@@ -694,7 +1545,7 @@ test('worker.js API endpoints', async (t) => {
     });
     Globals.redisValid = true;
     Globals.redisCacheInitialized = false;
-    Globals.lastHashes = {
+    Globals.upstashHashes = {
       animes: null,
       episodeIds: null,
       episodeNum: null,
@@ -729,6 +1580,7 @@ test('worker.js API endpoints', async (t) => {
       const commands = JSON.parse(options.body);
       redisCommands.push(...commands);
       return {
+        ok: true,
         json: async () => commands.map(command => {
           if (command[0] === 'SET') {
             redisData.set(command[1], command[2]);
@@ -738,6 +1590,8 @@ test('worker.js API endpoints', async (t) => {
         })
       };
     }, async () => {
+      assert.equal(await getRedisCaches(), true);
+      Globals.queryCacheInitialized = true;
       await updateRedisCaches();
       assert.ok(redisData.has('favoriteCache'));
       assert.equal(redisData.has('searchCache'), false);
@@ -747,6 +1601,8 @@ test('worker.js API endpoints', async (t) => {
       Globals.commentCache = new Map();
       Globals.favoriteCache = new Map();
       Globals.redisCacheInitialized = false;
+      Globals.queryCacheInitialized = false;
+      Globals.queryCacheWritable = {}; Globals.favoriteCacheWritable = {};
       await getRedisCaches();
     });
 
@@ -1148,7 +2004,7 @@ test('worker.js API endpoints', async (t) => {
     // 各清理项对应的全局状态种子；favorites 不在清理范围内，用于验证不被误清
     const seed = () => {
       Globals.animes = [{ id: 1 }];
-      Globals.episodeIds = ['ep1'];
+      Globals.episodeIds = [{ id: 12000, url: 'https://example.com/retained', title: 'retained' }];
       Globals.episodeNum = 50000;
       Globals.lastSelectMap = new Map([['k', {}]]);
       Globals.searchCache = new Map([['k', {}]]);
@@ -1198,13 +2054,13 @@ test('worker.js API endpoints', async (t) => {
       assert.equal(Globals.animes.length, 1);
     });
 
-    await t.test('episodeNum resets to the initial value 10001', async () => {
+    await t.test('episodeNum reset respects retained episode references', async () => {
       seed();
       const res = await handleClearCache({ json: async () => ({ items: ['episodeNum'] }) });
       const body = await parseResponse(res);
       assert.equal(body.success, true);
-      assert.equal(body.clearedItems.episodeNum, 10001);
-      assert.equal(Globals.episodeNum, 10001);
+      assert.equal(body.clearedItems.episodeNum, 12000);
+      assert.equal(Globals.episodeNum, 12000);
       assert.equal(Globals.animes.length, 1);
     });
 

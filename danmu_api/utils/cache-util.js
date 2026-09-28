@@ -4,6 +4,14 @@ import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
 import { loadFavorites, resolveFavoriteForSearchKeyword, saveFavorites } from "./favorite-util.js";
 let fs, path;
+let nodeModulesPromise;
+async function loadFileCacheModules() {
+  nodeModulesPromise ||= Promise.all([import('fs'), import('path')]).catch(error => {
+    nodeModulesPromise = null;
+    throw error;
+  });
+  [fs, path] = await nodeModulesPromise;
+}
 
 // =====================
 // cache数据结构处理函数
@@ -416,18 +424,36 @@ export function setCommentCache(videoUrl, comments) {
     log("info", `[cache] Cached comments for "${videoUrl}" (${comments.length} comments)`);
 }
 
+// 清理计数器时也要保留仍被索引或详情引用的 ID 上界。
+export function getEpisodeIdFloor() {
+    let maxId = 10001;
+    const include = episode => {
+        if (Number.isSafeInteger(episode?.id) && episode.id >= 0) maxId = Math.max(maxId, episode.id);
+    };
+    globals.episodeIds.forEach(include);
+    for (const anime of globals.animes) {
+        if (Array.isArray(anime?.links)) anime.links.forEach(include);
+    }
+    return maxId;
+}
+
 // 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
 export function addEpisode(url, title) {
     // 检查是否已存在相同的 url 和 title
     const existingEpisode = globals.episodeIds.find(episode => episode.url === url && episode.title === title);
     if (existingEpisode) {
+        if (!Number.isSafeInteger(existingEpisode.id) || existingEpisode.id < 0
+          || globals.episodeIds.some(episode => episode.id === existingEpisode.id && episode.url !== url)) {
+            throw new Error('剧集 ID 映射无效，请清理剧集缓存后重试');
+        }
         log("info", `[cache] Episode with URL ${url} and title ${title} already exists in episodeIds, returning existing episode.`);
         return existingEpisode; // 返回已存在的 episode
     }
 
-    // 自增 episodeNum 并使用作为 id
-    globals.episodeNum++;
-    const newEpisode = { id: globals.episodeNum, url: url, title: title };
+    const nextId = Math.max(globals.episodeNum, getEpisodeIdFloor()) + 1;
+    if (!Number.isSafeInteger(nextId) || nextId >= Number.MAX_SAFE_INTEGER) throw new Error('剧集 ID 超出安全范围，请清理剧集缓存后重试');
+    globals.episodeNum = nextId;
+    const newEpisode = { id: nextId, url: url, title: title };
 
     // 添加新对象
     globals.episodeIds.push(newEpisode);
@@ -779,6 +805,127 @@ export function cleanupExpiredIPs(currentTime) {
   }
 }
 
+export const queryCacheKeys = [
+  'animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'
+];
+
+// 业务可以降级到内存；未成功读取的后端在本进程内保持只读，避免覆盖未知快照。
+export function canPersistCacheKey(key, backend) {
+  if (key === 'favoriteCache' || key === 'favoritesCache') return globals.favoriteCacheWritable[backend] !== false;
+  return !queryCacheKeys.includes(key)
+    || (globals.queryCacheInitialized && globals.queryCacheWritable[backend] === true);
+}
+
+// 只在启动时选择一次内存快照；各后端仍独立确认自身数据与写入资格。
+export async function restoreQueryCache(backend, read, hashes, restored = {}) {
+  if (globals.queryCacheWritable[backend] !== undefined) return;
+  globals.queryCacheWritable[backend] = false;
+  const values = await read(queryCacheKeys);
+  if (!Array.isArray(values) || values.length !== queryCacheKeys.length) {
+    throw new Error('查询缓存响应不完整');
+  }
+  let damaged = false;
+  const snapshot = values.map((raw, index) => {
+    const key = queryCacheKeys[index];
+    try {
+      if (raw instanceof Error) throw raw;
+      if (raw === null) return { key };
+      if (typeof raw !== 'string') throw new Error('响应无效');
+      const value = JSON.parse(raw);
+      const valid = ['animes', 'episodeIds', 'reqRecords'].includes(key)
+        ? Array.isArray(value)
+        : ['episodeNum', 'todayReqNum'].includes(key)
+          ? Number.isSafeInteger(value) && value >= 0 && (key !== 'episodeNum' || value < Number.MAX_SAFE_INTEGER)
+          : value !== null && typeof value === 'object' && !Array.isArray(value);
+      if (!valid) throw new Error('数据类型无效');
+      return { key, value, hash: simpleHash(raw) };
+    } catch (error) {
+      if (backend !== 'file') throw error;
+      // 先保留原文件，备份失败则不允许写回这个后端。
+      if (!backupQueryCacheFile(key)) throw new Error(`无法备份损坏缓存 ${key}`);
+      damaged ||= ['animes', 'episodeIds', 'episodeNum'].includes(key);
+      log('warn', `[cache] ${key} 损坏，已保留备份并跳过: ${error.message}`);
+      return { key };
+    }
+  });
+  const data = Object.fromEntries(snapshot.filter(item => item.value !== undefined).map(item => [item.key, item.value]));
+  // 已知计数器和 ID 上界跨后端取最大值，不能随快照优先级回退。
+  let maxId = Math.max(10001, globals.episodeNum, data.episodeNum || 0);
+  const links = (data.animes || []).flatMap(anime => Array.isArray(anime?.links) ? anime.links : []);
+  for (const episode of [...(data.episodeIds || []), ...links]) {
+    if (Number.isSafeInteger(episode?.id)) maxId = Math.max(maxId, episode.id);
+  }
+  // 同一快照内也可能有部分写入；冲突映射不能拼接，更不能写回其他后端。
+  const episodes = new Map();
+  for (const episode of [...(data.episodeIds || []), ...links]) {
+    if (!Number.isSafeInteger(episode?.id) || episode.id < 0 || episode.id >= Number.MAX_SAFE_INTEGER || typeof episode.url !== 'string'
+      || (episodes.has(episode.id) && episodes.get(episode.id).url !== episode.url)) {
+      log('warn', `[cache] ${backend} 剧集 ID 映射无效或冲突，已保留该后端，尝试其他快照`);
+      return;
+    }
+    episodes.set(episode.id, episode);
+  }
+  // 校验整个后端后才提交计数器和 hash；无效快照不能先污染全局状态。
+  globals.episodeNum = damaged ? Math.max(maxId, Date.now()) : maxId;
+  for (const { key, hash } of snapshot) {
+    delete hashes[key];
+    if (hash !== undefined) hashes[key] = hash;
+  }
+  globals.queryCacheWritable[backend] = true;
+  if (globals.queryCacheInitialized) return;
+  // 有详情和链接的快照优先于只有索引/残缺详情的快照；不跨后端拼接这两个关联键。
+  const rank = data.animes?.length && links.length ? 2 : data.animes?.length || episodes.size ? 1 : 0;
+  if (rank > (restored.episodes || 0)) {
+    globals.animes = data.animes || [];
+    globals.episodeIds = [...episodes.values()];
+    restored.episodes = rank;
+  }
+  // 偏好和辅助记录可分别回退；空数组/对象和计数器本身不抢占整组恢复。
+  for (const key of ['lastSelectMap', 'reqRecords', 'todayReqNum']) {
+    const value = data[key];
+    const hasData = key === 'lastSelectMap' ? value && Object.keys(value).length > 0
+      : key === 'reqRecords' ? value?.length > 0 : value > 0;
+    if (!restored[key] && hasData) {
+      globals[key] = key === 'lastSelectMap' ? new Map(Object.entries(value)) : value;
+      restored[key] = true;
+    }
+  }
+}
+
+const backedUpCacheFiles = new Set();
+const backupRetryAfter = new Map();
+let cacheFileSequence = 0;
+function backupQueryCacheFile(key) {
+  const cacheFilePath = path.join(getDirname(), '..', '..', '.cache', key);
+  if (backedUpCacheFiles.has(cacheFilePath) || !fs.existsSync(cacheFilePath)) return true;
+  if (Date.now() < (backupRetryAfter.get(cacheFilePath) || 0)) return false;
+  const backup = `${cacheFilePath}.bak-${Date.now()}-${process.pid}-${++cacheFileSequence}`;
+  const temporary = `${backup}.tmp`;
+  try {
+    fs.copyFileSync(cacheFilePath, temporary, fs.constants.COPYFILE_EXCL);
+    fs.renameSync(temporary, backup);
+    // 只轮换程序生成的备份；新备份确认成功后才删除旧文件，跨重启最多保留两份。
+    const directory = path.dirname(cacheFilePath);
+    const backups = fs.readdirSync(directory)
+      .filter(name => name.startsWith(`${key}.bak-`) && /^\d+-\d+(?:-\d+)?$/.test(name.slice(`${key}.bak-`.length)))
+      .map(name => ({ name, mtime: fs.statSync(path.join(directory, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime || b.name.localeCompare(a.name));
+    for (const old of backups.slice(2)) fs.unlinkSync(path.join(directory, old.name));
+    backedUpCacheFiles.add(cacheFilePath);
+    backupRetryAfter.delete(cacheFilePath);
+    log('warn', `[cache] 已保留覆盖前的查询缓存: ${backup}`);
+    return true;
+  } catch (error) {
+    // 不放行覆盖；短暂磁盘故障冷却后可重试，不随每次请求重复打印堆栈。
+    for (const target of [temporary, backup]) {
+      try { fs.unlinkSync(target); } catch {}
+    }
+    backupRetryAfter.set(cacheFilePath, Date.now() + 30000);
+    log('warn', `[cache] ${key} 备份失败，30 秒后重试，原文件保持不变: ${error.message}`);
+    return false;
+  }
+}
+
 // 获取当前文件目录的兼容方式
 export function getDirname() {
   if (typeof __dirname !== 'undefined') {
@@ -793,66 +940,78 @@ export function getDirname() {
 // 从本地缓存目录读取缓存数据
 export function readCacheFromFile(key) {
   const cacheFilePath = path.join(getDirname(), '..', '..', '.cache', `${key}`);
-  if (fs.existsSync(cacheFilePath)) {
+  try {
     const fileContent = fs.readFileSync(cacheFilePath, 'utf8');
     return JSON.parse(fileContent);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
   }
-  return null;
 }
 
 // 将缓存数据写入本地缓存文件
-export function writeCacheToFile(key, value) {
+export function writeCacheToFile(key, value, { force = false } = {}) {
+  if (globals.localCacheEnabled === false || (!force && !canPersistCacheKey(key, 'file'))) return false;
   const cacheFilePath = path.join(getDirname(), '..', '..', '.cache', `${key}`);
-  fs.writeFileSync(cacheFilePath, JSON.stringify(value), 'utf8');
+  if (queryCacheKeys.includes(key) && !backupQueryCacheFile(key)) return false;
+  const temporaryPath = `${cacheFilePath}.tmp-${process.pid}-${++cacheFileSequence}`;
+  try {
+    fs.writeFileSync(temporaryPath, JSON.stringify(value), { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporaryPath, cacheFilePath);
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+  }
+  return true;
 }
 
 // 从本地获取缓存
-export async function getLocalCaches() {
+export async function getLocalCaches(restored = {}) {
+  if (globals.localCacheEnabled === false) return true;
+  let success = true;
+  try {
+    await loadFileCacheModules();
+    await restoreQueryCache('file', keys => keys.map(key => {
+      try {
+        const raw = readCacheFromFile(key);
+        return raw == null ? null : typeof raw === 'string' ? raw : JSON.stringify(raw);
+      } catch (error) {
+        return error;
+      }
+    }), globals.localFileHashes, restored);
+  } catch (error) {
+    log('error', `[cache] 查询缓存恢复失败: ${error.message}`);
+    success = false;
+  }
   if (!globals.localCacheInitialized) {
+    globals.favoriteCacheWritable.file = false;
     try {
-      log("info", '[cache] getLocalCaches start.');
-      // 从本地缓存文件读取数据并恢复到 globals 中
-      globals.animes = JSON.parse(readCacheFromFile('animes')) || globals.animes;
-      globals.episodeIds = JSON.parse(readCacheFromFile('episodeIds')) || globals.episodeIds;
-      globals.episodeNum = JSON.parse(readCacheFromFile('episodeNum')) || globals.episodeNum;
-      globals.reqRecords = JSON.parse(readCacheFromFile('reqRecords')) || globals.reqRecords;
-      globals.todayReqNum = JSON.parse(readCacheFromFile('todayReqNum')) || globals.todayReqNum;
-
-      const favoriteCacheData = readCacheFromFile('favoritesCache');
-      if (favoriteCacheData) {
-        loadFavorites(typeof favoriteCacheData === 'string' ? JSON.parse(favoriteCacheData) : favoriteCacheData);
+      await loadFileCacheModules();
+      const raw = readCacheFromFile('favoritesCache');
+      if (raw !== null) {
+        const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏缓存数据类型无效');
+        loadFavorites(value);
+        globals.localFileHashes.favoriteCache = simpleHash(JSON.stringify(saveFavorites()));
       }
-
-      // 恢复 lastSelectMap 并转换为 Map 对象
-      const lastSelectMapData = readCacheFromFile('lastSelectMap');
-      if (lastSelectMapData) {
-        globals.lastSelectMap = new Map(Object.entries(JSON.parse(lastSelectMapData)));
-        log("info", `[cache] Restored lastSelectMap from local cache with ${globals.lastSelectMap.size} entries`);
-      }
-
-      // 更新哈希值
-      globals.lastHashes.animes = simpleHash(JSON.stringify(globals.animes));
-      globals.lastHashes.episodeIds = simpleHash(JSON.stringify(globals.episodeIds));
-      globals.lastHashes.episodeNum = simpleHash(JSON.stringify(globals.episodeNum));
-      globals.lastHashes.reqRecords = simpleHash(JSON.stringify(globals.reqRecords));
-      globals.lastHashes.todayReqNum = simpleHash(JSON.stringify(globals.todayReqNum));
-      globals.lastHashes.lastSelectMap = simpleHash(JSON.stringify(Object.fromEntries(globals.lastSelectMap)));
-      globals.lastHashes.favoriteCache = simpleHash(JSON.stringify(saveFavorites()));
-
-      globals.localCacheInitialized = true;
-      log("info", '[cache] getLocalCaches completed successfully.');
+      globals.favoriteCacheWritable.file = true;
     } catch (error) {
-      log("error", `[cache] getLocalCaches failed: ${error.message}`, error.stack);
-      globals.localCacheInitialized = true; // 标记为已初始化，避免重复尝试
+      log('error', `[cache] 收藏缓存恢复失败，暂停文件收藏写入至重启: ${error.message}`);
+      success = false;
+    } finally {
+      globals.localCacheInitialized = true;
     }
   }
+  return success;
 }
 
 // 更新本地缓存
-export async function updateLocalCaches() {
+export async function updateLocalCaches({ keys, force = false } = {}) {
+  if (globals.localCacheEnabled === false) return true;
   try {
+    await loadFileCacheModules();
     log("info", '[cache] updateLocalCaches start.');
     const updates = [];
+    let saved = true;
 
     // 检查每个变量的哈希值
     const variables = [
@@ -866,6 +1025,8 @@ export async function updateLocalCaches() {
     ];
 
     for (const { key, value } of variables) {
+      if (keys && !keys.includes(key)) continue;
+      if (!force && !canPersistCacheKey(key, 'file')) { saved = false; continue; }
       // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化
       const serializedValue = key === 'lastSelectMap'
         ? JSON.stringify(Object.fromEntries(value))
@@ -874,34 +1035,37 @@ export async function updateLocalCaches() {
           : JSON.stringify(value);
       const currentHash = simpleHash(serializedValue);
       const hashKey = key === 'favoritesCache' ? 'favoriteCache' : key;
-      if (currentHash !== globals.lastHashes[hashKey]) {
-        writeCacheToFile(key, serializedValue);
-        updates.push({ key, hashKey, hash: currentHash });
+      if (force || currentHash !== globals.localFileHashes[hashKey]) {
+        if (!writeCacheToFile(key, serializedValue, { force })) { saved = false; continue; }
+        globals.localFileHashes[hashKey] = currentHash;
+        updates.push({ key });
       }
     }
 
     // 输出更新日志
     if (updates.length > 0) {
       log("info", `[cache] Updated local caches for keys: ${updates.map(u => u.key).join(', ')}`);
-      updates.forEach(({ hashKey, hash }) => {
-        globals.lastHashes[hashKey] = hash; // 更新本地哈希
-      });
     } else {
       log("info", '[cache] No changes detected, skipping local cache update.');
     }
 
+    return saved;
   } catch (error) {
     log("error", `[cache] updateLocalCaches failed: ${error.message}`, error.stack);
     log("error", `[cache] Error details - Name: ${error.name}, Cause: ${error.cause ? error.cause.message : 'N/A'}`);
+    return false;
   }
 }
 
 // 判断是否有效的本地缓存目录
 export async function judgeLocalCacheValid(urlPath, deployPlatform) {
+  if (globals.localCacheEnabled === false) {
+    globals.localCacheValid = false;
+    return;
+  }
   if (deployPlatform === 'node') {
     try {
-      fs = await import('fs');
-      path = await import('path');
+      await loadFileCacheModules();
 
       if (!globals.localCacheValid && urlPath !== "/favicon.ico" && urlPath !== "/robots.txt") {
         const cacheDirPath = path.join(getDirname(), '..', '..', '.cache');
