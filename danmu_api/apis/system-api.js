@@ -271,7 +271,7 @@ export async function handleClearCache(req) {
     }
 
     if (failedBackends.length) {
-      return jsonResponse({ success: false, message: `内存已清理，但 ${failedBackends.join(', ')} 保存失败，请重试`, clearedItems, failedBackends }, 500);
+      return jsonResponse({ success: false, message: `内存已清理，但 ${failedBackends.join(', ')} 保存失败；未保存的后端仍保留清理前数据，重启后会重新加载，请重试`, clearedItems, failedBackends }, 500);
     }
     const message = restartBackends.length
       ? `选中项已清理；${restartBackends.join(', ')} 仍保护未恢复的其他缓存，重启后重新读取，或清理全部查询缓存解除保护`

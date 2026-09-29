@@ -541,6 +541,11 @@ export function findAnimeTitleById(id) {
     return null;
 }
 
+// addAnime 失败时除日志外，把可操作原因保留在请求级 detailStore 上，供响应层提示用户。
+export function getAddAnimeError(detailStore) {
+    return detailStore instanceof Map ? (detailStore.__addAnimeError || '') : '';
+}
+
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
 export function addAnime(anime, detailStore = null) {
     anime = Anime.fromJson(anime);
@@ -604,6 +609,7 @@ export function addAnime(anime, detailStore = null) {
         return true;
     } catch (error) {
         log("error", `[cache] addAnime failed: ${error.message}`);
+        if (detailStore instanceof Map) detailStore.__addAnimeError = error.message;
         return false;
     }
 }

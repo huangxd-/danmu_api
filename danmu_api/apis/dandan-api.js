@@ -7,7 +7,7 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, resolveAnimeById, resolveAnimeByIdFromDetailStore, setPreferByAnimeId, setPreferForTitle, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById, hasSeasonSpecificPreference, hasLegacySeasonPreference
+    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById, hasSeasonSpecificPreference, hasLegacySeasonPreference, getAddAnimeError
 } from "../utils/cache-util.js";
 import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
@@ -425,6 +425,10 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
         requestAnimeDetailsMap.set(key, value);
       }
     }
+    // 逐源隔离的详情存储也会暂存 addAnime 失败原因，合并后由响应统一提示。
+    if (isolatedDetailStore.__addAnimeError && !requestAnimeDetailsMap.__addAnimeError) {
+      requestAnimeDetailsMap.__addAnimeError = isolatedDetailStore.__addAnimeError;
+    }
   }
 }
 
@@ -596,7 +600,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
       return jsonResponse({
         errorCode: 0,
         success: true,
-        errorMessage: "",
+        errorMessage: getAddAnimeError(requestAnimeDetailsMap),
         animes: responseAnimes
       });
     }
@@ -693,7 +697,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
     return jsonResponse({
       errorCode: 0,
       success: true,
-      errorMessage: "",
+      errorMessage: getAddAnimeError(requestAnimeDetailsMap),
       animes: responseAnimes,
     });
   }
@@ -757,6 +761,10 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
         if (!requestAnimeDetailsMap.has(key)) {
           requestAnimeDetailsMap.set(key, value);
         }
+      }
+      // 逐源隔离的详情存储也会暂存 addAnime 失败原因，合并后由响应统一提示。
+      if (isolatedDetailStore.__addAnimeError && !requestAnimeDetailsMap.__addAnimeError) {
+        requestAnimeDetailsMap.__addAnimeError = isolatedDetailStore.__addAnimeError;
       }
     }
 
@@ -912,7 +920,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
     return jsonResponse({
       errorCode: 0,
       success: true,
-      errorMessage: "",
+      errorMessage: getAddAnimeError(requestAnimeDetailsMap),
       animes: responseAnimes,
       tmdbSeasonBoundaries,
     });

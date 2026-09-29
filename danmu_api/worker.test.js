@@ -422,6 +422,26 @@ test('persistent cache regression: Local Redis priority and independent backends
       assert.throws(() => cache.addEpisode('https://example.com/b', 'b'), /安全范围/);
       assert.deepEqual(Globals.episodeIds, [a]); assert.equal(cache.findUrlById(a.id), a.url);
     });
+    await isolated('addAnime overflow is reported to search callers instead of only the server log', {}, async env => {
+      const { default: TencentSource } = await import(base + 'sources/tencent.js');
+      const search = mock.method(TencentSource.prototype, 'search', async () => [{}]);
+      const handle = mock.method(TencentSource.prototype, 'handleAnimes', async (_results, query, animes, details) => {
+        const anime = {
+          animeId: 900001, bangumiId: '900001', animeTitle: query + '(2026)【TV】from tencent',
+          type: 'tvseries', typeDescription: 'TV', imageUrl: '', startDate: '2026-01-01',
+          episodeCount: 1, rating: 0, isFavorited: true, source: 'tencent'
+        };
+        cache.addAnime({ ...anime, links: [{ name: '第1集', title: '【qq】 第1集', url: 'https://v.qq.com/overflow-1' }] }, details);
+        animes.push(anime);
+      });
+      try {
+        Globals.episodeNum = Number.MAX_SAFE_INTEGER - 1;
+        const response = await request(env, '/api/v2/search/anime?keyword=overflow');
+        assert.equal(response.status, 200);
+        const body = await response.json();
+        assert.equal(body.success, true); assert.match(body.errorMessage, /安全范围/);
+      } finally { search.mock.restore(); handle.mock.restore(); }
+    });
     await isolated('counter-only clear and later allocation preserve existing episode URLs', { LOCAL_CACHE_ENABLED: 'true' }, async () => {
       const links = [{ id: 12000, url: 'https://example.com/old', title: 'old' }];
       backend.set('animes', JSON.stringify([{ animeId: 1, links }])); backend.set('episodeIds', JSON.stringify(links)); backend.set('episodeNum', '50000');
@@ -447,7 +467,9 @@ test('persistent cache regression: Local Redis priority and independent backends
       failedWrite = 'animes';
       const clear = () => handleClearCache({ json: async () => ({ items: ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap', 'requestHistory'] }) });
       const failed = await clear(); assert.equal(failed.status, 500);
-      assert.deepEqual((await failed.json()).failedBackends, ['localRedis']);
+      const failedBody = await failed.json();
+      assert.deepEqual(failedBody.failedBackends, ['localRedis']);
+      assert.match(failedBody.message, /重启后会重新加载/);
       assert.equal(Globals.queryCacheWritable.localRedis, false);
       failedWrite = null; assert.equal((await clear()).status, 200);
       assert.equal(Globals.queryCacheWritable.localRedis, true);
@@ -1009,7 +1031,7 @@ test('cache clear UI displays recovery instructions and persistence failures', a
   const end = systemSettingsJsContent.indexOf('// 显示重新部署确认模态框', start);
   for (const result of [
     { success: true, restartRequired: true, message: '选中项已清理，请重启恢复其他缓存', clearedItems: { episodeIds: 0 } },
-    { success: false, message: '内存已清理，但 file 保存失败，请重试' }
+    { success: false, message: '内存已清理，但 file 保存失败；未保存的后端仍保留清理前数据，重启后会重新加载，请重试' }
   ]) {
     const alerts = []; const logs = [];
     const context = vm.createContext({
