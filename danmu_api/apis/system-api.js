@@ -240,13 +240,17 @@ export async function handleClearCache(req) {
     if (keys.length) {
       const targets = [
         ['file', globals.localCacheValid && globals.localCacheEnabled !== false, async () => (await import('../utils/cache-util.js')).updateLocalCaches({ keys, force: true })],
-        ['upstash', globals.redisUrl && globals.redisToken, async () => (await import('../utils/redis-util.js')).updateRedisCaches({ keys, force: true })],
-        ['localRedis', globals.deployPlatform === 'node' && globals.localRedisUrl, async () => (await import('../utils/local-redis-util.js')).updateLocalRedisCaches({ keys, force: true })]
+        ['upstash', globals.redisUrl && globals.redisToken, async () => (await import('../utils/redis-util.js')).updateRedisCaches({ keys, force: true, timeoutMs: 5000 })],
+        ['localRedis', globals.deployPlatform === 'node' && globals.localRedisUrl, async () => (await import('../utils/local-redis-util.js')).updateLocalRedisCaches({ keys, force: true, timeoutMs: 5000 })]
       ];
-      for (const [backend, enabled, update] of targets) {
+      // 各后端独立清理，网络等待不串行累加；按固定顺序汇总部分失败。
+      const results = await Promise.allSettled(targets.map(([, enabled, update]) => enabled ? update() : true));
+      for (const [index, [backend, enabled]] of targets.entries()) {
         if (!enabled) continue;
         try {
-          if (!await update()) throw new Error('保存未成功');
+          const result = results[index];
+          if (result.status === 'rejected') throw result.reason;
+          if (!result.value) throw new Error('保存未成功');
           // 只有完整清除查询快照才可直接解除保护；部分清除后需重启重读剩余键。
           if (keys.length === queryCacheKeys.length) globals.queryCacheWritable[backend] = true;
           else if (globals.queryCacheWritable[backend] === false) restartBackends.push(backend);

@@ -188,8 +188,8 @@ export async function initializePersistentCaches(deployPlatform) {
     }
     if (!globals.queryCacheInitialized) {
       globals.queryCacheInitialized = true;
-      if (!restored.episodes && Object.values(globals.queryCacheWritable).includes(false)) {
-        // 未知旧快照中的 ID 不能从默认的 10001 重新分配，且不回写失败后端。
+      if (!restored.idFloorKnown && (restored.damagedIds || Object.values(globals.queryCacheWritable).includes(false))) {
+        // 所有后端均未提供有效计数器或 ID 时才兜底，避免损坏副本抬高健康快照的编号。
         globals.episodeNum = Math.max(globals.episodeNum, Date.now());
         log('warn', '[cache] 持久化恢复不完整，使用进程内存；失败后端的查询数据写入暂停至重启');
       }
@@ -283,7 +283,7 @@ export async function getFavoriteCachesFromRedis() {
 }
 
 // 优化后的 updateRedisCaches，仅更新有变化的变量
-export async function updateRedisCaches({ keys, force = false } = {}) {
+export async function updateRedisCaches({ keys, force = false, timeoutMs } = {}) {
   try {
     log("info", '[system] [redis] updateCaches start.');
     const commands = [];
@@ -304,7 +304,7 @@ export async function updateRedisCaches({ keys, force = false } = {}) {
     // 如果有需要更新的键，执行 pipeline
     if (commands.length > 0) {
       log("info", `[system] [redis] Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
-      const results = await runPipeline(commands);
+      const results = await runPipeline(commands, { timeoutMs });
 
       // 检查每个操作的结果
       let successCount = 0;

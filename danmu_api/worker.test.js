@@ -415,6 +415,57 @@ test('persistent cache regression: Local Redis priority and independent backends
       await initializePersistentCaches('node');
       assert.equal(Globals.episodeNum, 12000); assert.equal(Globals.queryCacheWritable.upstash, false);
     });
+    for (const primary of ['localRedis', 'upstash']) {
+      for (const snapshot of ['complete', 'counter-only']) {
+        for (const damagedKey of ['animes', 'episodeIds', 'episodeNum']) {
+          await isolated(primary + ' ' + snapshot + ' counter survives damaged file ' + damagedKey, { ...upstash, LOCAL_CACHE_ENABLED: 'true' }, async () => {
+            const target = primary === 'localRedis' ? backend : remote;
+            const links = [{ id: 10500, url: 'https://example.com/saved', title: 'saved' }];
+            target.set('episodeNum', '10500');
+            if (snapshot === 'complete') {
+              target.set('animes', JSON.stringify([{ animeId: 1, links }])); target.set('episodeIds', JSON.stringify(links));
+            }
+            await fs.mkdir('.cache'); await fs.writeFile('.cache/' + damagedKey, 'broken json');
+            await initializePersistentCaches('node');
+            assert.equal(Globals.episodeNum, 10500);
+            assert.equal(cache.addEpisode('https://example.com/new', 'new').id, 10501);
+            await cache.updateLocalCaches(); await redis.updateRedisCaches(); await local.updateLocalRedisCaches();
+            assert.equal(await storedFile('episodeNum'), 10501);
+            assert.equal(remote.get('episodeNum'), '10501'); assert.equal(backend.get('episodeNum'), '10501');
+          });
+        }
+      }
+    }
+    await isolated('healthy counter-only fallback survives an unreadable primary', upstash, async () => {
+      unavailable = true; remote.set('episodeNum', '10500');
+      await initializePersistentCaches('node');
+      assert.equal(cache.addEpisode('https://example.com/new', 'new').id, 10501);
+      assert.equal(Globals.queryCacheWritable.localRedis, false);
+    });
+    await isolated('damaged files without any known ID floor retain collision protection', { LOCAL_REDIS_URL: '', LOCAL_CACHE_ENABLED: 'true' }, async () => {
+      await fs.mkdir('.cache'); await fs.writeFile('.cache/animes', 'broken json');
+      const before = Date.now(); await initializePersistentCaches('node');
+      assert.ok(Globals.episodeNum >= before);
+      assert.equal(Globals.queryCacheWritable.file, true);
+    });
+    for (const failure of ['overflow', 'conflict']) {
+      await isolated('failed anime allocation rolls back new IDs after ' + failure, {}, async () => {
+        await initializePersistentCaches('node');
+        const saved = { id: 12000, url: 'https://example.com/saved', title: 'saved' };
+        const oldAnime = { animeId: 1, links: [saved] };
+        Globals.animes = [oldAnime]; Globals.episodeIds = [saved];
+        if (failure === 'conflict') Globals.episodeIds.push({ id: 12000, url: 'https://example.com/conflict', title: 'conflict' });
+        Globals.episodeNum = failure === 'overflow' ? Number.MAX_SAFE_INTEGER - 2 : 12000;
+        const before = { ids: [...Globals.episodeIds], counter: Globals.episodeNum }; const details = new Map();
+        const second = failure === 'overflow' ? { url: 'https://example.com/second', title: 'second' } : saved;
+        assert.equal(cache.addAnime({ animeId: 1, links: [{ url: 'https://example.com/new', title: 'new' }, second] }, details), false);
+        assert.deepEqual(Globals.episodeIds, before.ids); assert.equal(Globals.episodeNum, before.counter);
+        assert.equal(Globals.animes[0], oldAnime); assert.equal(details.size, 0);
+        assert.ok(cache.getAddAnimeError(details));
+        await local.updateLocalRedisCaches();
+        assert.deepEqual(JSON.parse(backend.get('episodeIds')), before.ids);
+      });
+    }
     await isolated('allocator refuses overflow without adding duplicate IDs', { LOCAL_REDIS_URL: '' }, async () => {
       await initializePersistentCaches('node'); Globals.episodeNum = Number.MAX_SAFE_INTEGER - 2;
       const a = cache.addEpisode('https://example.com/a', 'a');
@@ -863,18 +914,22 @@ async function checkLocalRedisTimeout(scenario) {
   const script = `
     import assert from 'node:assert/strict';
     import net from 'node:net';
+    import http from 'node:http';
     import fs from 'node:fs/promises';
     import { mock } from 'node:test';
     const { handleRequest } = await import(${JSON.stringify(base + 'worker.js')});
     const { Globals } = await import(${JSON.stringify(base + 'configs/globals.js')});
     const local = await import(${JSON.stringify(base + 'utils/local-redis-util.js')});
+    const { handleClearCache } = await import(${JSON.stringify(base + 'apis/system-api.js')});
     const scenario = ${JSON.stringify(scenario)};
+    const clearing = scenario.startsWith('clear-');
+    const writing = scenario === 'write';
     // 业务命令保留 30 秒预算；仅在测试中缩短，避免每个故障场景等待半分钟。
     const budgets = []; const realTimeout = globalThis.setTimeout;
     mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
       budgets.push(ms); return realTimeout(fn, ms === 30000 ? 5000 : ms, ...args);
     });
-    let stalled = scenario !== 'write'; let recovered = false;
+    let stalled = !writing; let recovered = false;
     const sockets = new Set(); let connections = 0;
     const server = net.createServer(socket => {
       connections++; sockets.add(socket);
@@ -888,8 +943,9 @@ async function checkLocalRedisTimeout(scenario) {
           const fields = pending.split('\\r\\n'); const count = Number(fields[0].slice(1));
           if (fields.length < count * 2 + 2) break;
           const command = fields[2]; pending = fields.slice(count * 2 + 1).join('\\r\\n');
-          if (!recovered && scenario === 'handshake') continue;
-          if (command === 'CLIENT' || command === 'QUIT') socket.write('+OK\\r\\n');
+          if (!recovered && scenario.endsWith('handshake')) continue;
+          if (command === 'CLIENT' && scenario === 'clear-write') setTimeout(() => socket.write('+OK\\r\\n'), 3000);
+          else if (command === 'CLIENT' || command === 'QUIT') socket.write('+OK\\r\\n');
           else if (command === 'PING') socket.write('+PONG\\r\\n');
           else if (!stalled) socket.write(command === 'GET' ? '$-1\\r\\n' : '+OK\\r\\n');
         }
@@ -899,14 +955,34 @@ async function checkLocalRedisTimeout(scenario) {
     const env = { LOCAL_REDIS_URL: 'redis://127.0.0.1:' + server.address().port,
       LOCAL_CACHE_ENABLED: String(scenario === 'read'), LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0' };
     const request = () => handleRequest(new Request('http://localhost/api/config'), env, 'node', '127.0.0.1');
+    let upstashServer;
+    await (async () => {
     try {
       if (scenario === 'read') {
         await fs.mkdir('.cache');
         await fs.writeFile('.cache/animes', JSON.stringify(JSON.stringify([{ animeId: 7001 }])));
       }
-      if (scenario === 'write') {
+      if (writing) {
         assert.equal((await request()).status, 200);
         Globals.animes = [{ animeId: 7001 }]; stalled = true;
+      }
+      if (clearing) {
+        upstashServer = http.createServer(req => req.resume()); // 接收请求，但不回应 HTTP。
+        await new Promise(resolve => upstashServer.listen(0, '127.0.0.1', resolve));
+        Globals.init({ ...env, UPSTASH_REDIS_REST_URL: 'http://127.0.0.1:' + upstashServer.address().port, UPSTASH_REDIS_REST_TOKEN: 'test' });
+        Globals.deployPlatform = 'node'; Globals.animes = [{ animeId: 7001 }];
+        Globals.queryCacheWritable = { upstash: false, localRedis: false };
+        const hashes = { ...Globals.localRedisHashes }; const start = performance.now();
+        const response = await handleClearCache({ json: async () => ({ items: ['animes', 'episodeIds', 'episodeNum', 'lastSelectMap', 'requestHistory'] }) });
+        const elapsedMs = performance.now() - start; const body = await response.json();
+        assert.equal(response.status, 500); assert.equal(body.success, false);
+        assert.deepEqual(body.failedBackends, ['upstash', 'localRedis']);
+        assert.deepEqual(Globals.animes, []); assert.match(body.message, /内存已清理/);
+        assert.deepEqual(Globals.localRedisHashes, hashes); assert.deepEqual(Globals.upstashHashes, {});
+        assert.deepEqual(Globals.queryCacheWritable, { upstash: false, localRedis: false });
+        assert.ok(elapsedMs >= 4500 && elapsedMs < 7500, 'clear includes connection time: ' + elapsedMs + 'ms');
+        console.log(JSON.stringify({ clearMs: Math.round(elapsedMs), scenario }));
+        return;
       }
       const hashes = { ...Globals.localRedisHashes };
       const start = performance.now();
@@ -944,10 +1020,12 @@ async function checkLocalRedisTimeout(scenario) {
       }
       console.log(JSON.stringify({ firstMs: Math.round(first), secondMs: Math.round(second), connections }));
     } finally {
+      if (upstashServer) { upstashServer.closeAllConnections(); await new Promise(resolve => upstashServer.close(resolve)); }
       await local.closeLocalRedisConnection();
       for (const socket of sockets) socket.destroy();
       await new Promise(resolve => server.close(resolve));
     }
+    })();
   `;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-redis-timeout-'));
   try {
@@ -956,11 +1034,11 @@ async function checkLocalRedisTimeout(scenario) {
     });
     assert.ifError(result.error);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    const timing = result.stdout.split('\n').find(line => line.startsWith('{"firstMs"'));
+    const timing = result.stdout.split('\n').find(line => line.startsWith('{"firstMs"') || line.startsWith('{"clearMs"'));
     if (timing) console.log('Redis ' + scenario + ' timing: ' + timing);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 }
-for (const scenario of ['handshake', 'read', 'write']) {
+for (const scenario of ['handshake', 'read', 'write', 'clear-handshake', 'clear-write']) {
   test(`Local Redis ${scenario} timeout is bounded and subsequent requests observe cooldown`, () => checkLocalRedisTimeout(scenario));
 }
 

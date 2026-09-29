@@ -121,7 +121,7 @@ export async function getLocalRedisKey(key) {
 }
 
 // 设置本地 Redis 键值
-export async function setLocalRedisKey(key, value, { force = false } = {}) {
+export async function setLocalRedisKey(key, value, { force = false, timeoutMs } = {}) {
   if (!force && !canPersistCacheKey(key, 'localRedis')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
@@ -141,7 +141,7 @@ export async function setLocalRedisKey(key, value, { force = false } = {}) {
       throw new Error('本地 Redis 客户端未初始化');
     }
 
-    const result = await withLocalRedisTimeout(localRedisClient, localRedisClient.set(key, serializedValue));
+    const result = await withLocalRedisTimeout(localRedisClient, localRedisClient.set(key, serializedValue), timeoutMs);
     if (result !== 'OK') throw new Error(`SET 未成功: ${result}`);
     globals.localRedisHashes[key] = currentHash; // 更新哈希值
     log("info", `[system] [Local-Redis] 键 ${key} 更新成功`);
@@ -211,8 +211,9 @@ export async function getLocalRedisCaches(restored = {}) {
 }
 
 // 优化后的 updateLocalRedisCaches，仅更新有变化的变量
-export async function updateLocalRedisCaches({ keys, force = false } = {}) {
+export async function updateLocalRedisCaches({ keys, force = false, timeoutMs } = {}) {
   if (!force && !canPersistCacheKey('animes', 'localRedis')) return false;
+  const started = performance.now();
   try {
     log("info", '[system] [Local-Redis] updateLocalRedisCaches start.');
     
@@ -243,7 +244,10 @@ export async function updateLocalRedisCaches({ keys, force = false } = {}) {
       log("info", `[system] [Local-Redis] Updating ${updates.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
 
       const promises = updates.map(async ({ key, value }) => {
-        return setLocalRedisKey(key, value, { force });
+        // 清理路径的短预算包含已消耗的连接时间；正常业务仍沿用默认命令超时。
+        const remaining = timeoutMs === undefined ? undefined : timeoutMs - (performance.now() - started);
+        if (remaining <= 0) return { result: 'ERROR' };
+        return setLocalRedisKey(key, value, { force, timeoutMs: remaining });
       });
 
       const results = await Promise.all(promises);

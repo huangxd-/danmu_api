@@ -559,6 +559,9 @@ export function mergeAddAnimeError(target, source) {
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
 export function addAnime(anime, detailStore = null) {
     anime = Anime.fromJson(anime);
+    const previousEpisodeCount = globals.episodeIds.length;
+    const previousEpisodeNum = globals.episodeNum;
+    let allocationComplete = false;
     try {
         // 确保 anime 有 links 属性且是数组
         if (!anime.links || !Array.isArray(anime.links)) {
@@ -581,6 +584,7 @@ export function addAnime(anime, detailStore = null) {
 
         // 创建新的 anime 副本
         const animeCopy = Anime.fromJson({ ...anime, links: newLinks });
+        allocationComplete = true;
 
         // 当前请求内额外保留一份详情，避免被全局数量上限裁剪后丢失
         storeAnimeDetail(detailStore, animeCopy);
@@ -608,6 +612,11 @@ export function addAnime(anime, detailStore = null) {
 
         return true;
     } catch (error) {
+        if (!allocationComplete) {
+            // 分配过程同步执行，尚未发布详情；只回滚本次追加的 ID，保留既有映射。
+            globals.episodeIds.length = previousEpisodeCount;
+            globals.episodeNum = previousEpisodeNum;
+        }
         log("error", `[cache] addAnime failed: ${error.message}`);
         if (detailStore instanceof Map) detailStore.__addAnimeError = error.message;
         return false;
@@ -888,7 +897,9 @@ export async function restoreQueryCache(backend, read, hashes, restored = {}) {
     episodes.set(episode.id, episode);
   }
   // 校验整个后端后才提交计数器和 hash；无效快照不能先污染全局状态。
-  globals.episodeNum = damaged ? Math.max(maxId, Date.now()) : maxId;
+  globals.episodeNum = maxId;
+  restored.idFloorKnown ||= data.episodeNum !== undefined || episodes.size > 0;
+  restored.damagedIds ||= damaged;
   for (const { key, hash } of snapshot) {
     delete hashes[key];
     if (hash !== undefined) hashes[key] = hash;
