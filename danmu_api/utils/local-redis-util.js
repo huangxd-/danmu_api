@@ -78,6 +78,29 @@ async function checkLocalRedisConnection() {
   return localRedisClient?.isReady === true;
 }
 
+// commandOptions.timeout 不覆盖命令发出后等待响应；超时要关闭原连接，释放全部在途命令。
+async function withLocalRedisTimeout(client, command, timeoutMs = 30000) {
+  let timeout;
+  try {
+    return await Promise.race([
+      command,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          if (localRedisClient === client) {
+            localRedisClient = null;
+            globals.localRedisValid = false;
+            retryAfter = Date.now() + 30000;
+          }
+          reject(new Error('本地 Redis 命令响应超时'));
+          if (client.isOpen) client.destroy();
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // 获取本地 Redis 键值
 export async function getLocalRedisKey(key) {
   try {
@@ -89,7 +112,7 @@ export async function getLocalRedisKey(key) {
       throw new Error('本地 Redis 客户端未初始化');
     }
 
-    const result = await localRedisClient.get(key);
+    const result = await withLocalRedisTimeout(localRedisClient, localRedisClient.get(key));
     return result;
   } catch (error) {
     log("error", `[system] [Local-Redis] GET 请求失败:`, error.message);
@@ -118,7 +141,7 @@ export async function setLocalRedisKey(key, value, { force = false } = {}) {
       throw new Error('本地 Redis 客户端未初始化');
     }
 
-    const result = await localRedisClient.set(key, serializedValue);
+    const result = await withLocalRedisTimeout(localRedisClient, localRedisClient.set(key, serializedValue));
     if (result !== 'OK') throw new Error(`SET 未成功: ${result}`);
     globals.localRedisHashes[key] = currentHash; // 更新哈希值
     log("info", `[system] [Local-Redis] 键 ${key} 更新成功`);
@@ -150,7 +173,7 @@ export async function setLocalRedisKeyWithExpiry(key, value, expirySeconds) {
       throw new Error('本地 Redis 客户端未初始化');
     }
 
-    const result = await localRedisClient.setEx(key, expirySeconds, serializedValue);
+    const result = await withLocalRedisTimeout(localRedisClient, localRedisClient.setEx(key, expirySeconds, serializedValue));
     if (result !== 'OK') throw new Error(`SETEX 未成功: ${result}`);
     globals.localRedisHashes[key] = currentHash; // 更新哈希值
     log("info", `[system] [Local-Redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
@@ -171,7 +194,7 @@ export async function getLocalRedisCaches(restored = {}) {
         const client = await createLocalRedisClient();
         if (!client) throw new Error('本地 Redis 客户端未就绪');
         // GET 异常不能当成键不存在，也不能更新任何恢复状态。
-        return Promise.all(keys.map(key => client.get(key)));
+        return withLocalRedisTimeout(client, Promise.all(keys.map(key => client.get(key))), 5000);
       }, globals.localRedisHashes, restored);
       globals.localRedisCacheInitialized = true;
       return true;

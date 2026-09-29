@@ -858,39 +858,93 @@ test('persistent cache regression: Local Redis priority and independent backends
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-test('Local Redis handshake timeout is bounded and subsequent requests observe cooldown', async () => {
+async function checkLocalRedisTimeout(scenario) {
   const base = new URL('./', import.meta.url).href;
   const script = `
     import assert from 'node:assert/strict';
     import net from 'node:net';
+    import fs from 'node:fs/promises';
+    import { mock } from 'node:test';
     const { handleRequest } = await import(${JSON.stringify(base + 'worker.js')});
-    const { closeLocalRedisConnection } = await import(${JSON.stringify(base + 'utils/local-redis-util.js')});
+    const { Globals } = await import(${JSON.stringify(base + 'configs/globals.js')});
+    const local = await import(${JSON.stringify(base + 'utils/local-redis-util.js')});
+    const scenario = ${JSON.stringify(scenario)};
+    // 业务命令保留 30 秒预算；仅在测试中缩短，避免每个故障场景等待半分钟。
+    const budgets = []; const realTimeout = globalThis.setTimeout;
+    mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
+      budgets.push(ms); return realTimeout(fn, ms === 30000 ? 5000 : ms, ...args);
+    });
+    let stalled = scenario !== 'write'; let recovered = false;
     const sockets = new Set(); let connections = 0;
     const server = net.createServer(socket => {
       connections++; sockets.add(socket);
       socket.on('error', () => {});
       socket.on('close', () => sockets.delete(socket));
-      socket.on('data', () => {}); // 接受 TCP，但永远不回应 Redis 握手。
+      let pending = '';
+      socket.on('data', chunk => {
+        pending += chunk.toString();
+        // 测试命令参数不含原始 CR/LF；按 RESP 数组长度处理分片和合并的 TCP 数据。
+        while (pending) {
+          const fields = pending.split('\\r\\n'); const count = Number(fields[0].slice(1));
+          if (fields.length < count * 2 + 2) break;
+          const command = fields[2]; pending = fields.slice(count * 2 + 1).join('\\r\\n');
+          if (!recovered && scenario === 'handshake') continue;
+          if (command === 'CLIENT' || command === 'QUIT') socket.write('+OK\\r\\n');
+          else if (command === 'PING') socket.write('+PONG\\r\\n');
+          else if (!stalled) socket.write(command === 'GET' ? '$-1\\r\\n' : '+OK\\r\\n');
+        }
+      });
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const env = { LOCAL_REDIS_URL: 'redis://127.0.0.1:' + server.address().port,
-      LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0' };
+      LOCAL_CACHE_ENABLED: String(scenario === 'read'), LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0' };
     const request = () => handleRequest(new Request('http://localhost/api/config'), env, 'node', '127.0.0.1');
     try {
+      if (scenario === 'read') {
+        await fs.mkdir('.cache');
+        await fs.writeFile('.cache/animes', JSON.stringify(JSON.stringify([{ animeId: 7001 }])));
+      }
+      if (scenario === 'write') {
+        assert.equal((await request()).status, 200);
+        Globals.animes = [{ animeId: 7001 }]; stalled = true;
+      }
+      const hashes = { ...Globals.localRedisHashes };
       const start = performance.now();
-      assert.equal((await request()).status, 200);
+      if (scenario === 'write') {
+        const results = await Promise.all([
+          local.updateLocalRedisCaches(), local.setLocalRedisKeyWithExpiry('timeoutProbe', 1, 60),
+          local.getLocalRedisKey('timeoutProbe').then(() => false, () => true)
+        ]);
+        assert.deepEqual(results, [false, { result: 'ERROR' }, true]);
+        assert.ok(budgets.includes(30000));
+      } else {
+        const responses = await Promise.all([request(), request()]);
+        assert.ok(responses.every(response => response.status === 200));
+      }
       const first = performance.now() - start;
       assert.ok(first >= 4500 && first < 9500, 'first request: ' + first + 'ms');
+      assert.deepEqual(Globals.localRedisHashes, hashes, 'failed commands never advance hashes');
+      assert.equal(Globals.localRedisValid, false);
+      if (scenario === 'read') assert.equal(Globals.animes[0].animeId, 7001, 'healthy files restore after GET timeout');
       const next = performance.now();
       assert.equal((await request()).status, 200);
+      if (scenario === 'write') assert.equal(await local.updateLocalRedisCaches(), false);
       const second = performance.now() - next;
       assert.ok(second < 1500, 'cooldown request: ' + second + 'ms');
       assert.equal(connections, 1);
       await new Promise(resolve => setTimeout(resolve, 100));
       assert.equal(sockets.size, 0, 'timed-out connection closes before test cleanup');
+      recovered = true; stalled = false;
+      const realNow = Date.now; mock.method(Date, 'now', () => realNow() + 30001);
+      assert.equal((await request()).status, 200); assert.equal(connections, 2);
+      if (scenario !== 'handshake') assert.equal(Globals.animes[0].animeId, 7001, 'reconnection keeps current memory');
+      if (scenario === 'write') {
+        assert.equal(await local.updateLocalRedisCaches(), true);
+        assert.notEqual(Globals.localRedisHashes.animes, hashes.animes);
+      }
       console.log(JSON.stringify({ firstMs: Math.round(first), secondMs: Math.round(second), connections }));
     } finally {
-      await closeLocalRedisConnection();
+      await local.closeLocalRedisConnection();
       for (const socket of sockets) socket.destroy();
       await new Promise(resolve => server.close(resolve));
     }
@@ -903,9 +957,12 @@ test('Local Redis handshake timeout is bounded and subsequent requests observe c
     assert.ifError(result.error);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const timing = result.stdout.split('\n').find(line => line.startsWith('{"firstMs"'));
-    if (timing) console.log('Redis handshake timing: ' + timing);
+    if (timing) console.log('Redis ' + scenario + ' timing: ' + timing);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
-});
+}
+for (const scenario of ['handshake', 'read', 'write']) {
+  test(`Local Redis ${scenario} timeout is bounded and subsequent requests observe cooldown`, () => checkLocalRedisTimeout(scenario));
+}
 
 test('query file backups stay bounded across process restarts', async () => {
   const base = new URL('./', import.meta.url).href;
