@@ -425,21 +425,59 @@ test('persistent cache regression: Local Redis priority and independent backends
     await isolated('addAnime overflow is reported to search callers instead of only the server log', {}, async env => {
       const { default: TencentSource } = await import(base + 'sources/tencent.js');
       const search = mock.method(TencentSource.prototype, 'search', async () => [{}]);
-      const handle = mock.method(TencentSource.prototype, 'handleAnimes', async (_results, query, animes, details) => {
-        const anime = {
-          animeId: 900001, bangumiId: '900001', animeTitle: query + '(2026)【TV】from tencent',
-          type: 'tvseries', typeDescription: 'TV', imageUrl: '', startDate: '2026-01-01',
-          episodeCount: 1, rating: 0, isFavorited: true, source: 'tencent'
-        };
-        cache.addAnime({ ...anime, links: [{ name: '第1集', title: '【qq】 第1集', url: 'https://v.qq.com/overflow-1' }] }, details);
-        animes.push(anime);
+      const build = (id, url) => ({
+        animeId: id, bangumiId: String(id), animeTitle: 'overflow(2026)【TV】from tencent',
+        type: 'tvseries', typeDescription: 'TV', imageUrl: '', startDate: '2026-01-01',
+        episodeCount: 1, rating: 0, isFavorited: true, source: 'tencent',
+        links: [{ name: '第1集', title: '【qq】 第1集', url }]
+      });
+      // 1) 写入失败且该条目没有进入结果列表：errorMessage 承载可操作原因
+      const failOnly = mock.method(TencentSource.prototype, 'handleAnimes', async (_results, _query, animes, details) => {
+        if (cache.addAnime(build(900001, 'https://v.qq.com/overflow-1'), details)) animes.push(build(900001, 'https://v.qq.com/overflow-1'));
       });
       try {
         Globals.episodeNum = Number.MAX_SAFE_INTEGER - 1;
-        const response = await request(env, '/api/v2/search/anime?keyword=overflow');
-        assert.equal(response.status, 200);
-        const body = await response.json();
-        assert.equal(body.success, true); assert.match(body.errorMessage, /安全范围/);
+        const failed = await (await request(env, '/api/v2/search/anime?keyword=overflow')).json();
+        assert.equal(failed.success, true);
+        assert.equal(failed.animes.length, 0);
+        assert.match(failed.errorMessage, /安全范围/);
+      } finally { failOnly.mock.restore(); }
+
+      // 2) 写入失败但同一请求里另有可用结果：错误信息属于提示，不能占用 errorMessage
+      const mixed = mock.method(TencentSource.prototype, 'handleAnimes', async (_results, _query, animes, details) => {
+        if (cache.addAnime(build(900003, 'https://v.qq.com/ok-3'), details)) animes.push(build(900003, 'https://v.qq.com/ok-3'));
+        cache.addAnime(build(900002, 'https://v.qq.com/overflow-2'), details);
+      });
+      try {
+        // 留出一个可用编号：先成功写入一条，随后越界
+        Globals.episodeNum = Number.MAX_SAFE_INTEGER - 2;
+        const partial = await (await request(env, '/api/v2/search/anime?keyword=overflow')).json();
+        assert.equal(partial.success, true);
+        assert.equal(partial.animes.length, 1);
+        assert.equal(partial.errorMessage, '');
+      } finally { search.mock.restore(); mixed.mock.restore(); }
+    });
+    await isolated('restored animes entries with null links do not fail later cache writes', {}, async env => {
+      // 历史快照里 links 为 null 时，写入诊断的序列化不得反过来把成功的写入判成失败
+      const { default: TencentSource } = await import(base + 'sources/tencent.js');
+      const search = mock.method(TencentSource.prototype, 'search', async () => [{}]);
+      const handle = mock.method(TencentSource.prototype, 'handleAnimes', async (_results, _query, animes, details) => {
+        Globals.animes.push({ animeId: 970001, animeTitle: '历史条目', links: null });
+        const anime = {
+          animeId: 970002, bangumiId: '970002', animeTitle: 'null-links(2026)【TV】from tencent',
+          type: 'tvseries', typeDescription: 'TV', imageUrl: '', startDate: '2026-01-01',
+          episodeCount: 1, rating: 0, isFavorited: true, source: 'tencent',
+          links: [{ name: '第1集', title: '【qq】 第1集', url: 'https://v.qq.com/null-links-1' }]
+        };
+        assert.equal(cache.addAnime(anime, details), true);
+        animes.push(anime);
+      });
+      try {
+        const body = await (await request(env, '/api/v2/search/anime?keyword=null-links')).json();
+        assert.equal(body.success, true);
+        assert.equal(body.animes.length, 1);
+        assert.equal(body.errorMessage, '');
+        assert.equal(Globals.animes.length, 2);
       } finally { search.mock.restore(); handle.mock.restore(); }
     });
     await isolated('counter-only clear and later allocation preserve existing episode URLs', { LOCAL_CACHE_ENABLED: 'true' }, async () => {

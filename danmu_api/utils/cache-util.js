@@ -541,9 +541,19 @@ export function findAnimeTitleById(id) {
     return null;
 }
 
-// addAnime 失败时除日志外，把可操作原因保留在请求级 detailStore 上，供响应层提示用户。
+// addAnime 失败时除日志外，把可操作原因记录在请求级 detailStore 上（Map 对象上的自有属性，
+// 不是 Map 条目，因此不会被 collectUniqueAnimeDetails 收进全局搜索缓存），供响应层提示用户。
 export function getAddAnimeError(detailStore) {
     return detailStore instanceof Map ? (detailStore.__addAnimeError || '') : '';
+}
+
+// 逐源隔离的详情存储也要把失败原因合并到请求级存储；先到先得，只保留第一条。
+export function mergeAddAnimeError(target, source) {
+    if (source instanceof Map && target instanceof Map && !getAddAnimeError(target)) {
+        const message = getAddAnimeError(source);
+        if (message) target.__addAnimeError = message;
+    }
+    return target;
 }
 
 // 添加 anime 对象到 animes，并将其 links 添加到 episodeIds
@@ -596,21 +606,27 @@ export function addAnime(anime, detailStore = null) {
             }
         }
 
-        log("info", `[cache] animes: ${JSON.stringify(
-          globals.animes.map(anime => ({
-            links: anime.links,
-            animeId: anime.animeId,
-            bangumiId: anime.bangumiId,
-            animeTitle: anime.animeTitle
-          })),
-          (key, value) => key === "links" ? value.length : value
-        )}`);
-
         return true;
     } catch (error) {
         log("error", `[cache] addAnime failed: ${error.message}`);
         if (detailStore instanceof Map) detailStore.__addAnimeError = error.message;
         return false;
+    } finally {
+        // 诊断日志只用于排查，不能反过来把已经写入成功的 anime 判成失败：
+        // 外部恢复的历史快照里可能残留 links 为 null 的条目，序列化会抛错。
+        try {
+            log("info", `[cache] animes: ${JSON.stringify(
+              globals.animes.map(anime => ({
+                links: anime.links,
+                animeId: anime.animeId,
+                bangumiId: anime.bangumiId,
+                animeTitle: anime.animeTitle
+              })),
+              (key, value) => key === "links" ? (Array.isArray(value) ? value.length : 0) : value
+            )}`);
+        } catch (error) {
+            log("warn", `[cache] animes 诊断序列化失败: ${error.message}`);
+        }
     }
 }
 // 删除最早添加的 anime，并从 episodeIds 删除其 links 中的 url

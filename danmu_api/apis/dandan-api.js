@@ -7,7 +7,7 @@ import { setLocalRedisKey, updateLocalRedisCaches } from "../utils/local-redis-u
 import {
     setCommentCache, addAnime, findAnimeIdByCommentId, findTitleById, findUrlById, getCommentCache, getPreferAnimeId,
     getSearchCache, removeEarliestAnime, resolveAnimeById, resolveAnimeByIdFromDetailStore, setPreferByAnimeId, setPreferForTitle, setSearchCache, storeAnimeIdsToMap, writeCacheToFile,
-    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById, hasSeasonSpecificPreference, hasLegacySeasonPreference, getAddAnimeError
+    updateLocalCaches, setLastSearch, getLastSearch, findAnimeTitleById, findIndexById, hasSeasonSpecificPreference, hasLegacySeasonPreference, getAddAnimeError, mergeAddAnimeError
 } from "../utils/cache-util.js";
 import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
@@ -426,9 +426,7 @@ async function executeSourceHandlers(resultData, queryTitle, targetAnimesList, r
       }
     }
     // 逐源隔离的详情存储也会暂存 addAnime 失败原因，合并后由响应统一提示。
-    if (isolatedDetailStore.__addAnimeError && !requestAnimeDetailsMap.__addAnimeError) {
-      requestAnimeDetailsMap.__addAnimeError = isolatedDetailStore.__addAnimeError;
-    }
+    mergeAddAnimeError(requestAnimeDetailsMap, isolatedDetailStore);
   }
 }
 
@@ -597,10 +595,11 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
       if (globals.redisValid && curAnimes.length !== 0) await updateRedisCaches();
       if (globals.localRedisValid && curAnimes.length !== 0) await updateLocalRedisCaches();
       const responseAnimes = curAnimes.map(({ links, ...pureAnime }) => pureAnime);
+      // 链接解析类响应恒有一条合成条目，缓存写入告警放进来会变成"成功却带错误"，此处不承载。
       return jsonResponse({
         errorCode: 0,
         success: true,
-        errorMessage: getAddAnimeError(requestAnimeDetailsMap),
+        errorMessage: "",
         animes: responseAnimes
       });
     }
@@ -694,10 +693,11 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
     // 构造响应 DTO：剥离合并产生的 links，确保接口纯净
     const responseAnimes = curAnimes.map(({ links, ...pureAnime }) => pureAnime);
 
+    // 合并弹幕分支同样恒有一条合成条目，缓存写入告警不放进 errorMessage。
     return jsonResponse({
       errorCode: 0,
       success: true,
-      errorMessage: getAddAnimeError(requestAnimeDetailsMap),
+      errorMessage: "",
       animes: responseAnimes,
     });
   }
@@ -763,9 +763,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
         }
       }
       // 逐源隔离的详情存储也会暂存 addAnime 失败原因，合并后由响应统一提示。
-      if (isolatedDetailStore.__addAnimeError && !requestAnimeDetailsMap.__addAnimeError) {
-        requestAnimeDetailsMap.__addAnimeError = isolatedDetailStore.__addAnimeError;
-      }
+      mergeAddAnimeError(requestAnimeDetailsMap, isolatedDetailStore);
     }
 
     // 缓存首季/默认请求结果，剥离附加链接
@@ -917,10 +915,12 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
       setSearchCache(cacheKey, responseAnimes, requestAnimeDetailsMap);
     }
 
+    // errorMessage 只在"没有结果"时承载 addAnime 写入失败原因；结果可用时它不是错误而是提示，
+    // 放进 errorMessage 会让按"非空即报错"判断的客户端误报。
     return jsonResponse({
       errorCode: 0,
       success: true,
-      errorMessage: getAddAnimeError(requestAnimeDetailsMap),
+      errorMessage: responseAnimes.length === 0 ? getAddAnimeError(requestAnimeDetailsMap) : "",
       animes: responseAnimes,
       tmdbSeasonBoundaries,
     });
@@ -1839,13 +1839,16 @@ async function executeMatchAttempt({ req, title, season, episode, year, preferre
   log("info", `[system] [match] Dynamic platformOrder: ${dynamicPlatformOrder}`);
   log("info", `[system] [match] Preferred platform: ${preferredPlatform || 'none'}`);
 
+  // 本次尝试写入缓存时若失败（如剧集 ID 越界），带回原因，供"未匹配"时向调用方说明
+  const cacheWarning = getAddAnimeError(detailStore);
+
   if (!searchData?.success || !Array.isArray(searchData.animes) || searchData.animes.length === 0) {
-    return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode };
+    return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode, cacheWarning };
   }
 
   const targetCandidates = mapping ? filterMappingTargetCandidates(searchData.animes, mapping) : searchData.animes;
   if (mapping && targetCandidates.length === 0) {
-    return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode };
+    return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode, cacheWarning };
   }
 
   const targetSearchData = { ...searchData, animes: targetCandidates };
@@ -1882,11 +1885,11 @@ async function executeMatchAttempt({ req, title, season, episode, year, preferre
       if (mapping && pass.label === 'qualified') {
         log('info', `[system] [auto-match-mapping] Matched preferred target qualifiers for "${mapping.targetDisplayTitle}"`);
       }
-      return { ...selected, title, season, episode };
+      return { ...selected, title, season, episode, cacheWarning };
     }
   }
 
-  return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode };
+  return { resAnime: null, resEpisode: null, spilloverMatched: false, title, season, episode, cacheWarning };
 }
 
 function prepareQueryTitle(title) {
@@ -2062,6 +2065,11 @@ export async function matchAnime(url, req, clientIp) {
       ]
     }
 
+    // 与搜索接口一致：只有"没匹配上"才用 errorMessage 说明缓存写入失败的原因。
+    if (resData["matches"].length === 0 && attempt.cacheWarning) {
+      resData["errorMessage"] = attempt.cacheWarning;
+    }
+
     if (resData["matches"] && resData["matches"].length > 0) {
       const favoriteTitle = mappingApplied ? originalTitle : attempt.title;
       const favoriteSeason = mappingApplied ? originalSeason : attempt.season;
@@ -2116,10 +2124,11 @@ export async function searchEpisodes(url) {
 
   if (!searchData.success || !searchData.animes || searchData.animes.length === 0) {
     log("info", "[system] [episodes] No anime found for the given title");
+    // 没有结果时，缓存写入失败才是调用方唯一能 actionable 的线索
     return jsonResponse({
       errorCode: 0,
       success: true,
-      errorMessage: "",
+      errorMessage: getAddAnimeError(requestAnimeDetailsMap),
       hasMore: false,
       animes: []
     });
