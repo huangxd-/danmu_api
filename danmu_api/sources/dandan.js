@@ -12,7 +12,7 @@ import MangoSource from "./mango.js";
 import BilibiliSource from "./bilibili.js";
 import YoukuSource from "./youku.js";
 import BahamutSource from "./bahamut.js";
-import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { titleMatches, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { isNonChinese } from "../utils/zh-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
@@ -168,12 +168,30 @@ export default class DandanSource extends BaseSource {
         const resolvedSeason = getExplicitSeasonNumber(keyword);
         // 外文检索词（罗马字/英文等）与中文标题无字符交集，包含与相似度匹配必然失败，
         // 会误杀 dandan 官方搜索的正确命中（如 "Sayonara Lara" → "再见，拉拉"，animeId 已正确返回）。
-        // 此时跳过预过滤，交由 handleAnimes 用详情接口的别名池（含罗马字标题）做最终判定。
-        const preFiltered = isNonChinese(keyword) ? originalResult.data : originalResult.data.filter(anime => {
-          if (anime.isTmdbSource) return true;
-          const t = anime.animeTitle || anime.title || '';
-          return titleMatches(t, keyword, resolvedSeason, true, 0.8);
-        });
+        // 两级策略：标题直击优先——归一化标题包含检索词的条目存在时只返回直击条目
+        // （如 "mygo" 只回标题含 MyGO 的 BanG Dream，滤掉别名子串混入的我女神系列）；
+        // 无直击时全量放行，交由 handleAnimes 用详情接口的别名池（含罗马字标题）做最终判定。
+        let preFiltered;
+        if (isNonChinese(keyword)) {
+          const kw = normalizeTitleForMatch(keyword).toLowerCase();
+          if (kw) {
+            const directHits = originalResult.data.filter(anime => {
+              if (anime.isTmdbSource) return true;
+              const t = normalizeTitleForMatch(anime.animeTitle || anime.title || '').toLowerCase();
+              return t.includes(kw);
+            });
+            preFiltered = directHits.length > 0 ? directHits : originalResult.data;
+          } else {
+            // 归一化后为空的检索词（纯符号/空白）无语义，维持全量放行
+            preFiltered = originalResult.data;
+          }
+        } else {
+          preFiltered = originalResult.data.filter(anime => {
+            if (anime.isTmdbSource) return true;
+            const t = anime.animeTitle || anime.title || '';
+            return titleMatches(t, keyword, resolvedSeason, true, 0.8);
+          });
+        }
         if (preFiltered.length > 0) {
           tmdbAbortController.abort();
           // 记录原始搜索结果的全部animeId，供handleAnimes关联作品恢复误过滤条目使用
