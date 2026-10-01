@@ -136,13 +136,29 @@ const script = `
       assert.deepEqual([...g.favoriteCache.keys()], ['new']);
       assert.equal(g.favoriteCacheWritable.upstash, true);
       assert.equal(g.upstashHashes.favoriteCache, hash);
+    } else if (scenario === 'stale-node-request') {
+      oldStore.set('favoriteCache', JSON.stringify({ shared: fixture() }));
+      const nextStore = stores.get(storeKey('https://new.invalid', 'new-token'));
+      nextStore.set('favoriteCache', JSON.stringify({ shared: fixture(), untouched: fixture() }));
+      const waiting = pause('GET');
+      const oldRequest = request(env(), '/api/favorite/remove', 'POST', { keyword: 'shared' }, 'node');
+      await waiting.begun;
+      await setup(env('https://new.invalid', 'new-token'));
+      const before = nextStore.get('favoriteCache');
+      calls.length = 0; waiting.release();
+      const response = await oldRequest;
+      assert.equal(response.status, 503); assert.equal((await response.json()).success, false);
+      assert.deepEqual([...g.favoriteCache.keys()], ['shared', 'untouched']);
+      assert.equal(nextStore.get('favoriteCache'), before);
+      assert.deepEqual(Object.keys(JSON.parse(oldStore.get('favoriteCache'))), ['shared']);
+      assert.equal(calls.some(x => x.op === 'SET' && x.key === 'favoriteCache'), false);
     } else if (scenario === 'stale-initialization') {
       g.init(env()); await redis.judgeRedisValid('/api/config');
       const waiting = pause('GET');
       const oldOperation = redis.initializePersistentCaches('node');
       await waiting.begun;
       await setup(env('https://new.invalid', 'new-token'));
-      waiting.release(); await oldOperation;
+      waiting.release(); assert.equal(await oldOperation, false);
       assert.deepEqual([...g.favoriteCache.keys()], ['new']);
       assert.equal(g.redisCacheInitialized, true);
       assert.equal(g.favoriteCacheWritable.upstash, true);
@@ -156,7 +172,7 @@ const script = `
 
 for (const scenario of [
   'switch-url', 'switch-token', 'switch-empty', 'switch-unreadable', 'initial-file-fallback',
-  'temporary-read', 'node-read-protection', 'disable-upstash', 'stale-read', 'stale-write', 'stale-initialization'
+  'temporary-read', 'node-read-protection', 'disable-upstash', 'stale-read', 'stale-write', 'stale-initialization', 'stale-node-request'
 ]) {
   test('PR492 favorite regression: ' + scenario, () => {
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, scenario], {

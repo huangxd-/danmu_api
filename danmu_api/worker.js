@@ -109,13 +109,13 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
 
   if (path !== '/favicon.ico' && path !== '/robots.txt' && method !== 'OPTIONS') {
-    await initializePersistentCaches(deployPlatform);
+    const persistentCachesReady = await initializePersistentCaches(deployPlatform);
     let favoriteReadSucceeded = true;
     if (globals.redisValid && deployPlatform !== 'node' && isFavoriteRequest) {
       favoriteReadSucceeded = await getFavoriteCachesFromRedis();
     }
     if (isFavoriteRequest && !isFavoriteListRequest && (
-      !favoriteReadSucceeded || (globals.redisUrl && globals.redisToken && globals.favoriteCacheWritable.upstash === false)
+      !persistentCachesReady || !favoriteReadSucceeded || (globals.redisUrl && globals.redisToken && globals.favoriteCacheWritable.upstash === false)
       || (globals.localCacheValid && globals.favoriteCacheWritable.file === false)
       || (deployPlatform !== 'node' && globals.redisUrl && globals.redisToken && !globals.redisValid)
     )) {

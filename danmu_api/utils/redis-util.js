@@ -239,7 +239,7 @@ export async function initializePersistentCaches(deployPlatform) {
       }
     }
     if (globals.redisValid) await getRedisCaches();
-    return globals.queryCacheInitialized;
+    return isCurrentConnection(version, connectionKey) && globals.queryCacheInitialized;
   })();
   try {
     return await pending;
