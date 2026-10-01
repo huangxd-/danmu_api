@@ -233,3 +233,74 @@ test('PR492 episode IDs: failed batch retains the corrected floor and publishes 
   assert.equal(addEpisode('https://new.invalid/retry', 'retry').id, floor + 1);
   assert.equal(findUrlById(floor), 'https://old.invalid/episode');
 });
+
+test('PR492 Local Redis: serialize once, retain acknowledged hashes, and retry failed writes', () => {
+  const redisModule = import.meta.resolve('redis');
+  const localScript = `
+    import assert from 'node:assert/strict';
+    import { mock } from 'node:test';
+    const base = ${JSON.stringify(base)};
+    const { Globals: g } = await import(base + 'configs/globals.js');
+    const { simpleHash } = await import(base + 'utils/codec-util.js');
+    const values = new Map();
+    const writes = [];
+    let fail = false, pause = null;
+    mock.module(${JSON.stringify(redisModule)}, { namedExports: { createClient: () => ({
+      isReady: false, isOpen: false, on() {},
+      async connect() { this.isReady = this.isOpen = true; },
+      destroy() { this.isReady = this.isOpen = false; },
+      async quit() { this.destroy(); },
+      async get(key) { return values.get(key) ?? null; },
+      async set(key, value) {
+        writes.push([key, value]);
+        if (fail) throw new Error('write failed');
+        if (pause) { const waiting = pause; pause = null; waiting.started(); await waiting.promise; }
+        values.set(key, value); return 'OK';
+      }
+    }) } });
+    const local = await import(base + 'utils/local-redis-util.js');
+    g.init({ LOCAL_REDIS_URL: 'redis://mock', LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error' });
+    g.queryCacheInitialized = true; g.queryCacheWritable.localRedis = true;
+    let serializations = 0;
+    g.animes = [{ toJSON() { serializations++; return { animeId: 1 }; } }];
+    try {
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'] }), true);
+      assert.equal(serializations, 1, 'each selected key is serialized once per batch');
+      assert.equal(writes.length, 1);
+      assert.equal(g.localRedisHashes.animes, simpleHash(values.get('animes')));
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'] }), true);
+      assert.equal(writes.length, 1, 'unchanged data sends no SET');
+      const savedHash = g.localRedisHashes.animes;
+      g.animes = [{ animeId: 2 }]; fail = true;
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'] }), false);
+      assert.equal(g.localRedisHashes.animes, savedHash);
+      fail = false;
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'] }), true);
+      assert.deepEqual(JSON.parse(values.get('animes')), [{ animeId: 2 }]);
+      assert.equal(g.localRedisHashes.animes, simpleHash(values.get('animes')));
+      const beforeForce = writes.length;
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'], force: true }), true);
+      assert.equal(writes.length, beforeForce + 1, 'force still writes unchanged values');
+      let release, started;
+      const promise = new Promise(resolve => { release = resolve; });
+      const begun = new Promise(resolve => { started = resolve; });
+      pause = { promise, started };
+      g.animes = [{ animeId: 3 }];
+      const saving = local.updateLocalRedisCaches({ keys: ['animes'] });
+      await begun; g.animes = [{ animeId: 4 }]; release();
+      assert.equal(await saving, true);
+      assert.deepEqual(JSON.parse(values.get('animes')), [{ animeId: 3 }]);
+      assert.equal(g.localRedisHashes.animes, simpleHash(values.get('animes')));
+      assert.equal(await local.updateLocalRedisCaches({ keys: ['animes'] }), true);
+      assert.deepEqual(JSON.parse(values.get('animes')), [{ animeId: 4 }]);
+      assert.equal((await local.setLocalRedisKey('animes', [{ animeId: 5 }])).result, 'OK');
+      assert.deepEqual(JSON.parse(values.get('animes')), [{ animeId: 5 }]);
+    } finally { await local.closeLocalRedisConnection(); }
+  `;
+  const result = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--input-type=module', '-e', localScript], {
+    encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+    env: { ...process.env, NODE_TEST_CONTEXT: '' }
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});

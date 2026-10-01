@@ -124,8 +124,12 @@ export async function getLocalRedisKey(key) {
 export async function setLocalRedisKey(key, value, { force = false, timeoutMs } = {}) {
   if (!force && !canPersistCacheKey(key, 'localRedis')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
-  const currentHash = simpleHash(serializedValue);
+  return setSerializedLocalRedisKey(key, serializedValue, simpleHash(serializedValue), { force, timeoutMs });
+}
 
+// 批量更新复用同一份序列化快照和 hash，收到成功响应后才确认保存。
+async function setSerializedLocalRedisKey(key, serializedValue, currentHash, { force = false, timeoutMs } = {}) {
+  if (!force && !canPersistCacheKey(key, 'localRedis')) return { result: 'ERROR' };
   // 检查值是否变化
   if (!force && globals.localRedisHashes[key] === currentHash) {
     log("info", `[system] [Local-Redis] 键 ${key} 无变化，跳过 SET 请求`);
@@ -235,7 +239,7 @@ export async function updateLocalRedisCaches({ keys, force = false, timeoutMs } 
       const serializedValue = serializeValue(key, value);
       const currentHash = simpleHash(serializedValue);
       if (force || currentHash !== globals.localRedisHashes[key]) {
-        updates.push({ key, value });
+        updates.push({ key, serializedValue, hash: currentHash });
       }
     }
 
@@ -243,11 +247,11 @@ export async function updateLocalRedisCaches({ keys, force = false, timeoutMs } 
     if (updates.length > 0) {
       log("info", `[system] [Local-Redis] Updating ${updates.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
 
-      const promises = updates.map(async ({ key, value }) => {
+      const promises = updates.map(async ({ key, serializedValue, hash }) => {
         // 清理路径的短预算包含已消耗的连接时间；正常业务仍沿用默认命令超时。
         const remaining = timeoutMs === undefined ? undefined : timeoutMs - (performance.now() - started);
         if (remaining <= 0) return { result: 'ERROR' };
-        return setLocalRedisKey(key, value, { force, timeoutMs: remaining });
+        return setSerializedLocalRedisKey(key, serializedValue, hash, { force, timeoutMs: remaining });
       });
 
       const results = await Promise.all(promises);
