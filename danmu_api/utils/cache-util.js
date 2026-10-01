@@ -430,15 +430,35 @@ export function getEpisodeIdFloor() {
     const include = episode => {
         if (Number.isSafeInteger(episode?.id) && episode.id >= 0) maxId = Math.max(maxId, episode.id);
     };
+    const includeDetails = details => {
+        if (!Array.isArray(details)) return;
+        for (const anime of details) {
+            if (Array.isArray(anime?.links)) anime.links.forEach(include);
+        }
+    };
     globals.episodeIds.forEach(include);
-    for (const anime of globals.animes) {
-        if (Array.isArray(anime?.links)) anime.links.forEach(include);
+    includeDetails(globals.animes);
+    if (globals.favoriteCache instanceof Map) {
+        for (const cached of globals.favoriteCache.values()) includeDetails(cached?.details);
+    }
+    const now = Date.now();
+    if (globals.searchCache instanceof Map) {
+        for (const cached of globals.searchCache.values()) {
+            if ((now - cached?.timestamp) / 60000 > globals.searchCacheMinutes) continue;
+            includeDetails(cached?.details);
+        }
     }
     return maxId;
 }
 
-// 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
+// 对外单集调用独立校正；addAnime 的同步批次只需校正一次。
 export function addEpisode(url, title) {
+    globals.episodeNum = Math.max(globals.episodeNum, getEpisodeIdFloor());
+    return allocateEpisode(url, title);
+}
+
+// 添加元素到 episodeIds：检查 url 是否存在，若不存在则以自增 id 添加
+function allocateEpisode(url, title) {
     // 检查是否已存在相同的 url 和 title
     const existingEpisode = globals.episodeIds.find(episode => episode.url === url && episode.title === title);
     if (existingEpisode) {
@@ -450,7 +470,7 @@ export function addEpisode(url, title) {
         return existingEpisode; // 返回已存在的 episode
     }
 
-    const nextId = Math.max(globals.episodeNum, getEpisodeIdFloor()) + 1;
+    const nextId = globals.episodeNum + 1;
     if (!Number.isSafeInteger(nextId) || nextId >= Number.MAX_SAFE_INTEGER) throw new Error('剧集 ID 超出安全范围，请清理剧集缓存后重试');
     globals.episodeNum = nextId;
     const newEpisode = { id: nextId, url: url, title: title };
@@ -560,7 +580,7 @@ export function mergeAddAnimeError(target, source) {
 export function addAnime(anime, detailStore = null) {
     anime = Anime.fromJson(anime);
     const previousEpisodeCount = globals.episodeIds.length;
-    const previousEpisodeNum = globals.episodeNum;
+    let previousEpisodeNum = globals.episodeNum;
     let allocationComplete = false;
     try {
         // 确保 anime 有 links 属性且是数组
@@ -569,11 +589,13 @@ export function addAnime(anime, detailStore = null) {
             return false;
         }
 
-        // 遍历 links，调用 addEpisode，并收集返回的对象
+        globals.episodeNum = Math.max(globals.episodeNum, getEpisodeIdFloor());
+        previousEpisodeNum = globals.episodeNum; // 分配失败不能回退到既有引用上界以下。
+        // 同步批次内部自增，避免每集重复扫描全部引用。
         const newLinks = [];
         anime.links.forEach(link => {
             if (link.url) {
-                const episode = addEpisode(link.url, link.title);
+                const episode = allocateEpisode(link.url, link.title);
                 if (episode) {
                     newLinks.push(episode); // 仅添加成功添加的 episode
                 }

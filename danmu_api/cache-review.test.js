@@ -167,3 +167,69 @@ for (const scenario of [
     assert.equal(result.status, 0, result.stdout + result.stderr);
   });
 }
+
+const { Globals } = await import('./configs/globals.js');
+const { addAnime, addEpisode, findUrlById, getEpisodeIdFloor } = await import('./utils/cache-util.js');
+const { handleClearCache } = await import('./apis/system-api.js');
+
+function resetEpisodeState() {
+  Globals.init({ LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error', SEARCH_CACHE_MINUTES: '30' });
+  Object.assign(Globals, {
+    deployPlatform: 'node', localCacheValid: false, redisValid: false,
+    queryCacheInitialized: true, queryCacheWritable: {}, favoriteCacheWritable: {},
+    animes: [], episodeIds: [], episodeNum: 10001, favoriteCache: new Map(), searchCache: new Map()
+  });
+}
+
+for (const source of ['favorite', 'search']) {
+  test('PR492 episode IDs: reset retains ' + source + ' references', async () => {
+    resetEpisodeState();
+    const reference = { timestamp: Date.now(), details: [{ animeId: 1,
+      links: [{ id: 10002, url: 'https://old.invalid/episode', title: 'old' }] }] };
+    const store = source === 'favorite' ? Globals.favoriteCache : Globals.searchCache;
+    store.set('saved', reference);
+    assert.equal(findUrlById(10002), 'https://old.invalid/episode');
+    assert.equal((await handleClearCache({ json: async () => ({ items: ['episodeNum'] }) })).status, 200);
+    assert.equal(Globals.episodeNum, 10002);
+    assert.equal(addEpisode('https://new.invalid/episode', 'new').id, 10003);
+    assert.equal(findUrlById(10002), 'https://old.invalid/episode');
+  });
+}
+
+test('PR492 episode IDs: expired search references do not raise the reset floor', () => {
+  resetEpisodeState();
+  Globals.searchCache.set('expired', { timestamp: Date.now() - 31 * 60000,
+    details: [{ links: [{ id: 90000, url: 'https://old.invalid/episode' }] }] });
+  assert.equal(getEpisodeIdFloor(), 10001);
+  assert.equal(addEpisode('https://new.invalid/episode', 'new').id, 10002);
+});
+
+test('PR492 episode IDs: each anime batch scans references once and keeps existing mappings', () => {
+  resetEpisodeState();
+  let visits = 0;
+  const existing = { get id() { visits++; return 20000; }, url: 'https://old.invalid/episode', title: 'old' };
+  Globals.animes = [{ animeId: 1, links: [existing] }];
+  const links = Array.from({ length: 100 }, (_, i) => ({ url: 'https://new.invalid/' + i, title: String(i) }));
+  assert.equal(addAnime({ animeId: 2, animeTitle: 'new', links }), true);
+  assert.ok(visits <= 4, 'the old detail is scanned once per batch, rather than once per new episode');
+  assert.equal(Globals.episodeIds[0].id, 20001);
+  assert.equal(Globals.episodeIds.at(-1).id, 20100);
+  assert.equal(findUrlById(20000), 'https://old.invalid/episode');
+});
+
+test('PR492 episode IDs: failed batch retains the corrected floor and publishes no partial links', () => {
+  resetEpisodeState();
+  const floor = Number.MAX_SAFE_INTEGER - 2;
+  Globals.favoriteCache.set('saved', { details: [{ links: [{ id: floor, url: 'https://old.invalid/episode' }] }] });
+  const details = new Map();
+  assert.equal(addAnime({ animeId: 2, animeTitle: 'new', links: [
+    { url: 'https://new.invalid/1', title: '1' }, { url: 'https://new.invalid/2', title: '2' }
+  ] }, details), false);
+  assert.deepEqual(Globals.episodeIds, []);
+  assert.deepEqual(Globals.animes, []);
+  assert.equal(details.size, 0);
+  assert.equal(Globals.episodeNum, floor);
+  assert.match(details.__addAnimeError, /安全范围/);
+  assert.equal(addEpisode('https://new.invalid/retry', 'retry').id, floor + 1);
+  assert.equal(findUrlById(floor), 'https://old.invalid/episode');
+});
