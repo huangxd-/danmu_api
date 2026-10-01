@@ -8,6 +8,36 @@ let initializing = null;
 let persistentCachesInitializing = null;
 let redisRetryAfter = 0;
 let redisConnectionKey = null;
+let redisConnectionVersion = 0;
+let replaceMissingFavorites = false;
+
+const currentRedisConnectionKey = () => globals.redisUrl && globals.redisToken
+  ? JSON.stringify([globals.redisUrl, globals.redisToken]) : null;
+const isCurrentConnection = (version, key) => version === redisConnectionVersion && key === currentRedisConnectionKey();
+
+function resetRedisConnection() {
+  globals.redisValid = false;
+  delete globals.queryCacheWritable.upstash;
+  globals.redisCacheInitialized = false;
+  globals.favoriteCacheWritable.upstash = false;
+  globals.upstashHashes = {};
+  initializing = persistentCachesInitializing = null;
+  replaceMissingFavorites = true;
+}
+
+function restoreRedisFavorites(raw) {
+  if (raw !== null) {
+    const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏缓存数据类型无效');
+    loadFavorites(value);
+    globals.upstashHashes.favoriteCache = simpleHash(serializeValue('favoriteCache', globals.favoriteCache));
+  } else if (replaceMissingFavorites) {
+    // 首次启动仍允许文件收藏回退；切换目标库后不能把旧库收藏带过去。
+    loadFavorites({});
+  }
+  replaceMissingFavorites = false;
+  globals.favoriteCacheWritable.upstash = true;
+}
 
 // 初始化单独使用短超时；业务请求也有总时限，大弹幕资源允许更长传输时间。
 const requestTimeout = key => String(key).startsWith('localDanmu:') ? 60000 : 30000;
@@ -64,6 +94,8 @@ export async function getRedisKey(key) {
 
 // 使用 POST 发送 SET 命令，仅在值变化时更新
 export async function setRedisKey(key, value) {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
   if (!canPersistCacheKey(key, 'upstash')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
@@ -88,6 +120,7 @@ export async function setRedisKey(key, value) {
     });
     const result = await response.json();
     if (!response.ok || result?.result !== 'OK') throw new Error(`SET 未成功: ${JSON.stringify(result)}`);
+    if (!isCurrentConnection(version, connectionKey)) throw new Error('Redis 连接已切换');
     globals.upstashHashes[key] = currentHash;
     log("info", `[system] [redis] 键 ${key} 更新成功`);
     return result; // 预期: ["OK"]
@@ -104,6 +137,8 @@ export async function setRedisKey(key, value) {
 
 // 使用 POST 发送 SETEX 命令，仅在值变化时更新
 export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
   if (!canPersistCacheKey(key, 'upstash')) return { result: 'ERROR' };
   const serializedValue = serializeValue(key, value);
   const currentHash = simpleHash(serializedValue);
@@ -128,6 +163,7 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
     });
     const result = await response.json();
     if (!response.ok || result?.result !== 'OK') throw new Error(`SETEX 未成功: ${JSON.stringify(result)}`);
+    if (!isCurrentConnection(version, connectionKey)) throw new Error('Redis 连接已切换');
     globals.upstashHashes[key] = currentHash;
     log("info", `[system] [redis] 键 ${key} 更新成功（带过期时间 ${expirySeconds}s）`);
     return result;
@@ -144,6 +180,8 @@ export async function setRedisKeyWithExpiry(key, value, expirySeconds) {
 
 // 通用的 pipeline 请求函数
 export async function runPipeline(commands, { timeoutMs = Math.max(30000, ...commands.map(([, key]) => requestTimeout(key))) } = {}) {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
   const url = `${globals.redisUrl}/pipeline`;
   log("info", `[system] [redis] 开始发送 PIPELINE 请求:`, url);
   try {
@@ -158,6 +196,7 @@ export async function runPipeline(commands, { timeoutMs = Math.max(30000, ...com
     });
     if (!response.ok) throw new Error(`Pipeline HTTP ${response.status}`);
     const result = await response.json();
+    if (!isCurrentConnection(version, connectionKey)) throw new Error('Redis 连接已切换');
     return result; // 返回结果数组，按命令顺序
   } catch (error) {
     log("error", `[system] [redis] Pipeline 请求失败:`, error.message);
@@ -172,20 +211,25 @@ export async function runPipeline(commands, { timeoutMs = Math.max(30000, ...com
 // 查询数据优先恢复 Local Redis；文件和 Upstash 的收藏仍按原顺序加载。
 export async function initializePersistentCaches(deployPlatform) {
   if (persistentCachesInitializing) return persistentCachesInitializing;
-  persistentCachesInitializing = (async () => {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
+  const pending = persistentCachesInitializing = (async () => {
     const restored = {}; // 仅在本次串行恢复中共享，不保留为进程全局状态。
     globals.deployPlatform = deployPlatform;
     if (deployPlatform === 'node' && globals.localRedisUrl) {
       const { getLocalRedisCaches } = await import('./local-redis-util.js');
       await getLocalRedisCaches(restored);
+      if (!isCurrentConnection(version, connectionKey)) return false;
     }
     if (globals.redisValid) await getRedisCaches({ queriesOnly: true, restored });
     else if (globals.redisUrl && globals.redisToken && globals.queryCacheWritable.upstash === undefined) globals.queryCacheWritable.upstash = false;
+    if (!isCurrentConnection(version, connectionKey)) return false;
     if (deployPlatform === 'node') {
       await judgeLocalCacheValid('/api/v2/favorite/list', deployPlatform);
       if (globals.localCacheValid) await getLocalCaches(restored);
       else globals.localCacheInitialized = true;
     }
+    if (!isCurrentConnection(version, connectionKey)) return false;
     if (!globals.queryCacheInitialized) {
       globals.queryCacheInitialized = true;
       if (!restored.idFloorKnown && (restored.damagedIds || Object.values(globals.queryCacheWritable).includes(false))) {
@@ -198,54 +242,53 @@ export async function initializePersistentCaches(deployPlatform) {
     return globals.queryCacheInitialized;
   })();
   try {
-    return await persistentCachesInitializing;
+    return await pending;
   } finally {
-    persistentCachesInitializing = null;
+    if (persistentCachesInitializing === pending) persistentCachesInitializing = null;
   }
 }
 
 // 查询数据从选定后端恢复；收藏保留原有的单次初始化。
 export async function getRedisCaches({ queriesOnly = false, restored = {} } = {}) {
   if (initializing) return initializing;
-  initializing = (async () => {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
+  const pending = initializing = (async () => {
     let success = true;
     try {
       await restoreQueryCache('upstash', async keys => {
         const results = await runPipeline(keys.map(key => ['GET', key]), { timeoutMs: 5000 });
+        if (!isCurrentConnection(version, connectionKey)) throw new Error('Redis 连接已切换');
         const values = readPipelineValues(results, keys.length);
         globals.redisValid = true;
         return values;
-      }, globals.upstashHashes, restored);
+      }, globals.upstashHashes, restored, () => isCurrentConnection(version, connectionKey));
     } catch (error) {
       log('error', `[system] [redis] 查询缓存恢复失败: ${error.message}`);
       success = false;
     }
+    if (!isCurrentConnection(version, connectionKey)) return false;
     if (queriesOnly) return success;
     if (!globals.redisCacheInitialized) {
       globals.favoriteCacheWritable.upstash = false;
       try {
         const results = await runPipeline([['GET', 'favoriteCache']], { timeoutMs: 5000 });
+        if (!isCurrentConnection(version, connectionKey)) return false;
         const [raw] = readPipelineValues(results, 1);
-        if (raw !== null) {
-          const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏缓存数据类型无效');
-          loadFavorites(value);
-          globals.upstashHashes.favoriteCache = simpleHash(serializeValue('favoriteCache', globals.favoriteCache));
-        }
-        globals.favoriteCacheWritable.upstash = true;
+        restoreRedisFavorites(raw);
       } catch (error) {
         log('error', `[system] [redis] 收藏恢复失败，暂停该后端收藏写入至重启: ${error.message}`);
         success = false;
       } finally {
-        globals.redisCacheInitialized = true;
+        if (isCurrentConnection(version, connectionKey)) globals.redisCacheInitialized = true;
       }
     }
     return success;
   })();
   try {
-    return await initializing;
+    return await pending;
   } finally {
-    initializing = null;
+    if (initializing === pending) initializing = null;
   }
 }
 
@@ -264,19 +307,16 @@ function readPipelineValues(results, count) {
 // 预热实例可能错过其他实例新增的收藏，这里在收藏相关请求时直接从 Redis 重新读取。
 export async function getFavoriteCachesFromRedis() {
   if (!globals.redisValid) return false;
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
   try {
     const results = await runPipeline([['GET', 'favoriteCache']]);
+    if (!isCurrentConnection(version, connectionKey)) return false;
     const [raw] = readPipelineValues(results, 1);
-    if (raw !== null) {
-      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏缓存数据类型无效');
-      loadFavorites(value);
-      globals.upstashHashes.favoriteCache = simpleHash(serializeValue('favoriteCache', globals.favoriteCache));
-    }
-    globals.favoriteCacheWritable.upstash = true;
+    restoreRedisFavorites(raw);
     return true;
   } catch (error) {
-    globals.favoriteCacheWritable.upstash = false;
+    if (isCurrentConnection(version, connectionKey)) globals.favoriteCacheWritable.upstash = false;
     log("error", `[system] [redis] getFavoriteCachesFromRedis failed: ${error.message}`);
     return false;
   }
@@ -284,6 +324,8 @@ export async function getFavoriteCachesFromRedis() {
 
 // 优化后的 updateRedisCaches，仅更新有变化的变量
 export async function updateRedisCaches({ keys, force = false, timeoutMs } = {}) {
+  const version = redisConnectionVersion;
+  const connectionKey = currentRedisConnectionKey();
   try {
     log("info", '[system] [redis] updateCaches start.');
     const commands = [];
@@ -305,6 +347,7 @@ export async function updateRedisCaches({ keys, force = false, timeoutMs } = {})
     if (commands.length > 0) {
       log("info", `[system] [redis] Updating ${commands.length} changed keys: ${updates.map(u => u.key).join(', ')}`);
       const results = await runPipeline(commands, { timeoutMs });
+      if (!isCurrentConnection(version, connectionKey)) return false;
 
       // 检查每个操作的结果
       let successCount = 0;
@@ -341,19 +384,19 @@ export async function updateRedisCaches({ keys, force = false, timeoutMs } = {})
 
 // 判断redis是否可用
 export async function judgeRedisValid(path) {
-  if (globals.redisUrl && globals.redisToken && path !== "/favicon.ico" && path !== "/robots.txt") {
-    const connectionKey = `${globals.redisUrl}:${globals.redisToken}`;
-    if (redisConnectionKey !== connectionKey) {
-      if (redisConnectionKey !== null) {
-        globals.redisValid = false;
-        delete globals.queryCacheWritable.upstash;
-        globals.upstashHashes = {};
-      }
-      redisConnectionKey = connectionKey;
-      redisRetryAfter = 0;
-    }
+  if (path === "/favicon.ico" || path === "/robots.txt") return;
+  const connectionKey = currentRedisConnectionKey();
+  if (redisConnectionKey !== connectionKey) {
+    if (redisConnectionVersion > 0) resetRedisConnection();
+    redisConnectionKey = connectionKey;
+    redisConnectionVersion++;
+    redisRetryAfter = 0;
+  }
+  if (connectionKey) {
     if (globals.redisValid || Date.now() < redisRetryAfter) return;
+    const version = redisConnectionVersion;
     const res = await pingRedis();
+    if (!isCurrentConnection(version, connectionKey)) return;
     if (res && res.result && res.result === "PONG") {
       globals.redisValid = true;
       redisRetryAfter = 0;

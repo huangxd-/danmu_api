@@ -848,10 +848,11 @@ export function canPersistCacheKey(key, backend) {
 }
 
 // 只在启动时选择一次内存快照；各后端仍独立确认自身数据与写入资格。
-export async function restoreQueryCache(backend, read, hashes, restored = {}) {
+export async function restoreQueryCache(backend, read, hashes, restored = {}, isCurrent = () => true) {
   if (globals.queryCacheWritable[backend] !== undefined) return;
   globals.queryCacheWritable[backend] = false;
   const values = await read(queryCacheKeys);
+  if (!isCurrent()) throw new Error('缓存连接已切换');
   if (!Array.isArray(values) || values.length !== queryCacheKeys.length) {
     throw new Error('查询缓存响应不完整');
   }

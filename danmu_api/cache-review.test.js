@@ -1,0 +1,169 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+
+const base = new URL('./', import.meta.url).href;
+const script = `
+  import assert from 'node:assert/strict';
+  import fs from 'node:fs/promises';
+  import os from 'node:os';
+  import path from 'node:path';
+  const base = ${JSON.stringify(base)};
+  const { Globals: g } = await import(base + 'configs/globals.js');
+  const redis = await import(base + 'utils/redis-util.js');
+  const cache = await import(base + 'utils/cache-util.js');
+  const { persistFavorites } = await import(base + 'apis/favorite-api.js');
+  const { handleRequest } = await import(base + 'worker.js');
+  const fixture = () => ({ results: [{ animeId: 1, animeTitle: 'saved' }], details: [], timestamp: 1,
+    refreshSchedule: { frequency: 'weekly', weekday: 3, time: '09:00', nextRunAt: 1790816400000 } });
+  const env = (url = 'https://old.invalid', token = 'old-token') => ({
+    UPSTASH_REDIS_REST_URL: url, UPSTASH_REDIS_REST_TOKEN: token,
+    LOCAL_CACHE_ENABLED: 'false', LOG_LEVEL: 'error', RATE_LIMIT_MAX_REQUESTS: '0', TOKEN: '87654321'
+  });
+  const storeKey = (url, token) => JSON.stringify([url, token]);
+  const stores = new Map([
+    [storeKey('https://old.invalid', 'old-token'), new Map([['favoriteCache', JSON.stringify({ old: fixture() })]])],
+    [storeKey('https://new.invalid', 'new-token'), new Map([['favoriteCache', JSON.stringify({ new: fixture() })]])],
+    [storeKey('https://old.invalid', 'new-token'), new Map([['favoriteCache', JSON.stringify({ new: fixture() })]])]
+  ]);
+  const calls = [];
+  let failRead = false;
+  let delay = null;
+  globalThis.fetch = async (url, options = {}) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === '/ping') return Response.json({ result: 'PONG' });
+    assert.equal(parsed.pathname, '/pipeline');
+    const token = options.headers.Authorization.slice(7);
+    const commands = JSON.parse(options.body);
+    const store = stores.get(storeKey(parsed.origin, token));
+    assert.ok(store);
+    const results = commands.map(([op, key, value]) => {
+      calls.push({ url: parsed.origin, token, op, key });
+      if (op === 'GET' && key === 'favoriteCache' && failRead) return { error: 'temporary read failure' };
+      if (op === 'GET') return { result: store.get(key) ?? null };
+      assert.equal(op, 'SET'); store.set(key, value); return { result: 'OK' };
+    });
+    const waiting = delay;
+    if (waiting && parsed.origin === 'https://old.invalid'
+      && commands.some(([op, key]) => op === waiting.op && key === 'favoriteCache')) {
+      delay = null; waiting.started(); await waiting.promise;
+    }
+    return Response.json(results);
+  };
+  const setup = async settings => {
+    g.init(settings); await redis.judgeRedisValid('/api/config'); await redis.initializePersistentCaches('node');
+  };
+  const request = (settings, route, method = 'GET', body = undefined, platform = 'vercel') =>
+    handleRequest(new Request('https://service.invalid' + route, { method,
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    }), settings, platform, '127.0.0.1');
+  const oldStore = stores.get(storeKey('https://old.invalid', 'old-token'));
+  const pause = op => {
+    let release, started;
+    const promise = new Promise(resolve => { release = resolve; });
+    const begun = new Promise(resolve => { started = resolve; });
+    delay = { op, promise, started };
+    return { release, begun };
+  };
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-review-'));
+  const cwd = process.cwd(); process.chdir(dir);
+  try {
+    const scenario = process.argv[1];
+    if (['switch-url', 'switch-token', 'switch-empty', 'switch-unreadable'].includes(scenario)) {
+      await setup(env());
+      const nextEnv = env(scenario === 'switch-token' ? 'https://old.invalid' : 'https://new.invalid', 'new-token');
+      const nextStore = stores.get(storeKey(nextEnv.UPSTASH_REDIS_REST_URL, 'new-token'));
+      if (scenario === 'switch-empty') nextStore.delete('favoriteCache');
+      if (scenario === 'switch-unreadable') failRead = true;
+      await setup(nextEnv); await persistFavorites();
+      assert.ok(calls.some(x => x.url === nextEnv.UPSTASH_REDIS_REST_URL && x.token === 'new-token' && x.op === 'GET' && x.key === 'favoriteCache'));
+      if (scenario === 'switch-unreadable') {
+        assert.equal(g.favoriteCacheWritable.upstash, false);
+        assert.deepEqual(Object.keys(JSON.parse(nextStore.get('favoriteCache'))), ['new']);
+        assert.equal(calls.some(x => x.token === 'new-token' && x.op === 'SET' && x.key === 'favoriteCache'), false);
+      } else {
+        assert.deepEqual([...g.favoriteCache.keys()], scenario === 'switch-empty' ? [] : ['new']);
+        assert.deepEqual(Object.keys(JSON.parse(nextStore.get('favoriteCache'))), scenario === 'switch-empty' ? [] : ['new']);
+        if (scenario !== 'switch-empty') assert.ok(g.favoriteCache.get('new').refreshSchedule);
+      }
+    } else if (scenario === 'disable-upstash') {
+      await setup(env());
+      const settings = { ...env(), UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' };
+      const response = await request(settings, '/api/favorite/remove', 'POST', { keyword: 'old' }, 'node');
+      assert.equal(response.status, 200); assert.equal((await response.json()).success, true);
+      assert.equal(g.favoriteCache.has('old'), false);
+      assert.deepEqual(Object.keys(JSON.parse(oldStore.get('favoriteCache'))), ['old']);
+    } else if (scenario === 'initial-file-fallback') {
+      oldStore.delete('favoriteCache');
+      await fs.mkdir('.cache');
+      await fs.writeFile('.cache/favoritesCache', JSON.stringify(JSON.stringify({ saved: fixture() })));
+      await setup({ ...env(), LOCAL_CACHE_ENABLED: 'true' });
+      assert.ok(g.favoriteCache.has('saved'));
+      assert.equal(await redis.getFavoriteCachesFromRedis(), true);
+      assert.ok(g.favoriteCache.has('saved'));
+    } else if (scenario === 'temporary-read') {
+      oldStore.set('favoriteCache', JSON.stringify({ saved: fixture() }));
+      assert.equal((await request(env(), '/api/favorite/list')).status, 200);
+      const before = JSON.stringify([...g.favoriteCache]);
+      for (const action of ['add', 'remove', 'refresh']) {
+        failRead = true; calls.length = 0;
+        const response = await request(env(), '/api/favorite/' + action, 'POST', { keyword: 'saved' });
+        assert.equal(response.status, 503);
+        assert.equal((await response.json()).success, false);
+        assert.equal(JSON.stringify([...g.favoriteCache]), before);
+        assert.equal(calls.some(x => x.op === 'SET' && x.key === 'favoriteCache'), false);
+      }
+      failRead = false;
+      const retry = await request(env(), '/api/favorite/remove', 'POST', { keyword: 'saved' });
+      assert.equal(retry.status, 200); assert.equal((await retry.json()).success, true);
+      assert.deepEqual(JSON.parse(oldStore.get('favoriteCache')), {});
+      const list = await (await request(env(), '/api/favorite/list')).json();
+      assert.deepEqual(list.favorites, []);
+    } else if (scenario === 'node-read-protection') {
+      failRead = true;
+      const response = await request(env(), '/api/favorite/remove', 'POST', { keyword: 'old' }, 'node');
+      assert.equal(response.status, 503); assert.equal((await response.json()).success, false);
+      assert.deepEqual(Object.keys(JSON.parse(oldStore.get('favoriteCache'))), ['old']);
+    } else if (scenario === 'stale-read' || scenario === 'stale-write') {
+      await setup(env());
+      if (scenario === 'stale-write') g.favoriteCache.set('changed', fixture());
+      const waiting = pause(scenario === 'stale-read' ? 'GET' : 'SET');
+      const oldOperation = scenario === 'stale-read' ? redis.getFavoriteCachesFromRedis() : redis.updateRedisCaches({ keys: ['favoriteCache'] });
+      await waiting.begun;
+      await setup(env('https://new.invalid', 'new-token'));
+      const hash = g.upstashHashes.favoriteCache;
+      waiting.release(); assert.equal(await oldOperation, false);
+      assert.deepEqual([...g.favoriteCache.keys()], ['new']);
+      assert.equal(g.favoriteCacheWritable.upstash, true);
+      assert.equal(g.upstashHashes.favoriteCache, hash);
+    } else if (scenario === 'stale-initialization') {
+      g.init(env()); await redis.judgeRedisValid('/api/config');
+      const waiting = pause('GET');
+      const oldOperation = redis.initializePersistentCaches('node');
+      await waiting.begun;
+      await setup(env('https://new.invalid', 'new-token'));
+      waiting.release(); await oldOperation;
+      assert.deepEqual([...g.favoriteCache.keys()], ['new']);
+      assert.equal(g.redisCacheInitialized, true);
+      assert.equal(g.favoriteCacheWritable.upstash, true);
+    } else {
+      throw new Error('Unknown scenario: ' + scenario);
+    }
+  } finally {
+    process.chdir(cwd); await fs.rm(dir, { recursive: true, force: true });
+  }
+`;
+
+for (const scenario of [
+  'switch-url', 'switch-token', 'switch-empty', 'switch-unreadable', 'initial-file-fallback',
+  'temporary-read', 'node-read-protection', 'disable-upstash', 'stale-read', 'stale-write', 'stale-initialization'
+]) {
+  test('PR492 favorite regression: ' + scenario, () => {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, scenario], {
+      encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+      env: { ...process.env, NODE_TEST_CONTEXT: '' }
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  });
+}
