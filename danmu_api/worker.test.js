@@ -925,11 +925,14 @@ async function checkLocalRedisTimeout(scenario) {
     const scenario = ${JSON.stringify(scenario)};
     const clearing = scenario.startsWith('clear-');
     const writing = scenario === 'write';
-    // 业务命令保留 30 秒预算；仅在测试中缩短，避免每个故障场景等待半分钟。
+    // 生产预算（业务命令 30s、握手 5s、批量/清理 5s、Upstash 5s）仅在测试中钳制到 1200ms，
+    // 避免每个故障场景等待数秒；budgets 记录原始值，断言仍验证 deadline 真实流逝且有上界。
     const budgets = []; const realTimeout = globalThis.setTimeout;
     mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
-      budgets.push(ms); return realTimeout(fn, ms === 30000 ? 5000 : ms, ...args);
+      budgets.push(ms); return realTimeout(fn, ms > 1200 ? 1200 : ms, ...args);
     });
+    const realSignalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    mock.method(AbortSignal, 'timeout', ms => realSignalTimeout(ms > 1200 ? 1200 : ms));
     let stalled = !writing; let recovered = false;
     const sockets = new Set(); let connections = 0;
     const server = net.createServer(socket => {
@@ -945,7 +948,7 @@ async function checkLocalRedisTimeout(scenario) {
           if (fields.length < count * 2 + 2) break;
           const command = fields[2]; pending = fields.slice(count * 2 + 1).join('\\r\\n');
           if (!recovered && scenario.endsWith('handshake')) continue;
-          if (command === 'CLIENT' && scenario === 'clear-write') setTimeout(() => socket.write('+OK\\r\\n'), 3000);
+          if (command === 'CLIENT' && scenario === 'clear-write') setTimeout(() => socket.write('+OK\\r\\n'), 600); // 慢握手须仍快于钳制后的 1200ms 命令预算
           else if (command === 'CLIENT' || command === 'QUIT') socket.write('+OK\\r\\n');
           else if (command === 'PING') socket.write('+PONG\\r\\n');
           else if (!stalled) socket.write(command === 'GET' ? '$-1\\r\\n' : '+OK\\r\\n');
@@ -981,7 +984,8 @@ async function checkLocalRedisTimeout(scenario) {
         assert.deepEqual(Globals.animes, []); assert.match(body.message, /内存已清理/);
         assert.deepEqual(Globals.localRedisHashes, hashes); assert.deepEqual(Globals.upstashHashes, {});
         assert.deepEqual(Globals.queryCacheWritable, { upstash: false, localRedis: false });
-        assert.ok(elapsedMs >= 4500 && elapsedMs < 7500, 'clear includes connection time: ' + elapsedMs + 'ms');
+        assert.ok(elapsedMs >= 1000 && elapsedMs < 4000, 'clear includes connection time: ' + elapsedMs + 'ms');
+        if (scenario === 'clear-write') assert.ok(budgets.some(ms => ms > 3500 && ms < 4900), 'remaining budget subtracts connection time: ' + budgets.join(','));
         console.log(JSON.stringify({ clearMs: Math.round(elapsedMs), scenario }));
         return;
       }
@@ -999,7 +1003,7 @@ async function checkLocalRedisTimeout(scenario) {
         assert.ok(responses.every(response => response.status === 200));
       }
       const first = performance.now() - start;
-      assert.ok(first >= 4500 && first < 9500, 'first request: ' + first + 'ms');
+      assert.ok(first >= 1000 && first < 4000, 'first request: ' + first + 'ms');
       assert.deepEqual(Globals.localRedisHashes, hashes, 'failed commands never advance hashes');
       assert.equal(Globals.localRedisValid, false);
       if (scenario === 'read') assert.equal(Globals.animes[0].animeId, 7001, 'healthy files restore after GET timeout');
