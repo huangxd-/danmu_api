@@ -546,7 +546,8 @@ export default class DandanSource extends BaseSource {
 
     try {
       // 配置弹弹play账号后经 NipaPlay 中转弹弹play服务端取弹幕，并把同一请求下发的弹弹302关联链接分发给
-      // 对应平台源实时拉取，两部分由去重阶段按来源合并；未配置账号或 NipaPlay 中转弹弹play服务端不可用时回退弹弹原生弹幕。
+      // 已在 SOURCE_ORDER 开启的对应平台源实时拉取，两部分由去重阶段按来源合并；
+      // 未配置账号或 NipaPlay 中转弹弹play服务端不可用时回退弹弹原生弹幕。
       const nipaplay = await fetchNipaplayDanmaku(id);
       if (!nipaplay) return await fetchDandanComments(id);
 
@@ -618,13 +619,15 @@ const SOURCE_TO_PLATFORM = {
 };
 
 // 汇总跨平台实时弹幕，复用核心路由同款链接解析（gamer→sn）与各源既有 formatComments，
-// 使每源入参与核心路由一致；按平台标识跳过已独立选择的合并源以免重复；每条弹幕标记实时拉取
-// 来源，供 convertToDanmakuJson 组装 [来源＆平台] 标签，并让去重阶段按真实来源统计重复弹幕；
+// 使每源入参与核心路由一致；仅分发已在 SOURCE_ORDER 开启且未被已独立选择的合并源覆盖的平台；
+// 每条弹幕标记实时拉取来源，供 convertToDanmakuJson 组装 [来源＆平台] 标签，并让去重阶段按真实来源统计重复弹幕；
 // 同平台多个链接串行、间隔 1 秒请求，与手动解析链接防风控一致。
 async function getRelatedDanmuViaNipaplay(links, coveredSources) {
   if (!links) return [];
+  // 关联链接的源需已在 SOURCE_ORDER 中开启，与搜索可选源保持一致
+  const enabledSources = new Set(globals.sourceOrderArr);
   const summary = Object.entries(links)
-    .filter(([, arr]) => arr && arr.length)
+    .filter(([p, arr]) => arr && arr.length && enabledSources.has(p))
     .map(([p, arr]) => `${SOURCE_TO_PLATFORM[p] || p}×${arr.length}`)
     .join(', ');
   if (summary) log("info", `[dandan] 弹弹302关联链接分发目标: ${summary}`);
@@ -636,14 +639,20 @@ async function getRelatedDanmuViaNipaplay(links, coveredSources) {
     tencent: tencentSource,
     imgo: mangoSource,
   };
-  // 收集待拉取任务（按平台标识分组以便同平台串行），已独立选择的合并源跳过。
+  // 收集待拉取任务（按平台标识分组以便同平台串行），未在 SOURCE_ORDER 开启的源与已独立选择的合并源跳过。
   const pending = [];
-  const skipped = [];
+  const skippedDisabled = [];
+  const skippedCovered = [];
   for (const [platform, linksOfPlatform] of Object.entries(links)) {
     if (!linksOfPlatform || linksOfPlatform.length === 0) continue;
     const platformLabel = SOURCE_TO_PLATFORM[platform];
-    if (!platformLabel || coveredSources.has(platform) || coveredSources.has(platformLabel)) {
-      if (platformLabel) skipped.push(platformLabel);
+    if (!platformLabel) continue;
+    if (!enabledSources.has(platform)) {
+      skippedDisabled.push(platformLabel);
+      continue;
+    }
+    if (coveredSources.has(platform) || coveredSources.has(platformLabel)) {
+      skippedCovered.push(platformLabel);
       continue;
     }
     const sourceInstance = sourceMap[platform];
@@ -662,7 +671,8 @@ async function getRelatedDanmuViaNipaplay(links, coveredSources) {
       });
     }
   }
-  if (skipped.length) log("info", `[dandan] 弹弹302关联分发跳过已合并源（避免重复拉取）: ${skipped.join(', ')}`);
+  if (skippedCovered.length) log("info", `[dandan] 弹弹302关联分发跳过已合并源（避免重复拉取）: ${skippedCovered.join(', ')}`);
+  if (skippedDisabled.length) log("info", `[dandan] 弹弹302关联分发跳过未在 SOURCE_ORDER 开启的源: ${skippedDisabled.join(', ')}`);
   // 同平台串行、间隔 1 秒，不同平台并行（防风控）。
   const groups = new Map();
   for (const task of pending) {

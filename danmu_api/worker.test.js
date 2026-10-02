@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { Request as NodeFetchRequest } from 'node-fetch';
 import { handleRequest } from './worker.js';
 import { extractTitleSeasonEpisode, getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp } from "./apis/dandan-api.js";
@@ -3407,6 +3407,78 @@ test('dandan formatComments 按实时拉取标记区分处理', () => {
   assert.strictEqual(dandan.formatComments([native])[0].p, '12.34,1,25,a16777215,0', '原生弹幕执行颜色转换');
 });
 
+test('dandan 关联链接分发仅限已在 SOURCE_ORDER 开启的源', async () => {
+  const location = 'https://x.test/redirect?urls=https://www.bilibili.com/video/BV1xx|https://v.qq.com/x/cover/abc.html&shift=0,0';
+  const originalOrder = Globals.envs.sourceOrderArr;
+  const originalAccount = Globals.envs.dandanplayAccount;
+  const originalPassword = Globals.envs.dandanplayPassword;
+  const originalBilibiliGet = BilibiliSource.prototype.getEpisodeDanmu;
+  const originalBilibiliFormat = BilibiliSource.prototype.formatComments;
+  const originalTencentGet = TencentSource.prototype.getEpisodeDanmu;
+  const originalTencentFormat = TencentSource.prototype.formatComments;
+  const pulled = [];
+
+  // 网关登录应答、评论接口回传 302 关联链接、原生弹幕地址应答
+  const gatewayFetch = async (url) => {
+    const target = String(url);
+    if (target.endsWith('/api/v2/login')) {
+      return mockJsonResponse({ success: true, token: 'mock-token', tokenExpireTime: '2099-01-01T00:00:00Z' });
+    }
+    if (target.includes('/api/v2/comment/')) {
+      return { ok: false, status: 302, url: target, headers: new Headers({ location }), text: async () => '' };
+    }
+    return mockJsonResponse({ comments: [] });
+  };
+
+  try {
+    Globals.envs.dandanplayAccount = 'account@example.com';
+    Globals.envs.dandanplayPassword = 'password';
+    BilibiliSource.prototype.getEpisodeDanmu = async () => {
+      pulled.push('bilibili');
+      return [{ cid: 1, p: '1.00,1,25,16777215,0', t: 1, m: '来自B站' }];
+    };
+    BilibiliSource.prototype.formatComments = (list) => list;
+    TencentSource.prototype.getEpisodeDanmu = async () => { pulled.push('tencent'); return []; };
+    TencentSource.prototype.formatComments = (list) => list;
+
+    await withMockFetch(gatewayFetch, async () => {
+      // 仅开启 bilibili：只拉取 bilibili，跳过未开启的 tencent
+      Globals.envs.sourceOrderArr = ['bilibili'];
+      const onlyBilibili = await new DandanSource().getEpisodeDanmu('ep-1');
+      assert.deepStrictEqual(pulled, ['bilibili'], '仅分发已开启的源');
+      assert.strictEqual(onlyBilibili.length, 1, '分发结果来自已开启的源');
+      assert.strictEqual(onlyBilibili[0].realTimeSource, 'bilibili1', '标记实时拉取来源');
+
+      // 仅开启 tencent：分发目标随之切换
+      pulled.length = 0;
+      Globals.envs.sourceOrderArr = ['tencent'];
+      await new DandanSource().getEpisodeDanmu('ep-2');
+      assert.deepStrictEqual(pulled, ['tencent'], '开启源变化后分发目标随之切换');
+
+      // 两个关联源都未开启：全部跳过
+      pulled.length = 0;
+      Globals.envs.sourceOrderArr = ['douban'];
+      const none = await new DandanSource().getEpisodeDanmu('ep-3');
+      assert.deepStrictEqual(pulled, [], '未开启关联源时不拉取');
+      assert.deepStrictEqual(none, [], '未开启关联源时无关联弹幕');
+
+      // 源已开启但已被独立选择的合并源覆盖：同样跳过，避免重复拉取
+      pulled.length = 0;
+      Globals.envs.sourceOrderArr = ['bilibili', 'tencent'];
+      await new DandanSource().getEpisodeDanmu('ep-4', ['bilibili:123']);
+      assert.deepStrictEqual(pulled, ['tencent'], '已开启但被合并源覆盖的平台仍跳过');
+    });
+  } finally {
+    Globals.envs.sourceOrderArr = originalOrder;
+    Globals.envs.dandanplayAccount = originalAccount;
+    Globals.envs.dandanplayPassword = originalPassword;
+    BilibiliSource.prototype.getEpisodeDanmu = originalBilibiliGet;
+    BilibiliSource.prototype.formatComments = originalBilibiliFormat;
+    TencentSource.prototype.getEpisodeDanmu = originalTencentGet;
+    TencentSource.prototype.formatComments = originalTencentFormat;
+  }
+});
+
 test('fongmi-api season aware scoring', () => {
   // 季号提取: SxxExx / 第x季 / Season N / 2x05; 综艺日期与纯集数不误判
   assert.equal(extractFongmiSeasonNumber('人生切割术 S02E05'), 2);
@@ -5172,4 +5244,86 @@ test('mango variety episodes with trailing part markers should sort 上 before �
     { t1: '第3期上', t2: '2026-08-05', ts: '5' },
   ]);
   assert.deepEqual(direct.map(ep => ep.t1), ['第3期上', '第3期下']);
+});
+
+test('Forward bundles preserve the search-to-comment flow without Node storage', async t => {
+  for (const debug of [false, true]) {
+    await t.test(debug ? 'debug bundle' : 'release bundle', async () => {
+      execFileSync(process.execPath, ['build-forward-widget.js', ...(debug ? ['--debug'] : [])], {
+        cwd: new URL('../', import.meta.url),
+        timeout: 30000,
+        stdio: 'pipe',
+      });
+      const filename = debug ? 'logvar-danmu.debug.js' : 'logvar-danmu.js';
+      const bundle = await fs.readFile(new URL(`../dist/${filename}`, import.meta.url), 'utf8');
+      const storage = new Map();
+      const requests = [];
+      const comments = [{ p: '1,1,16777215', m: '插件构建回归测试' }];
+      const context = vm.createContext({
+        console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
+        Widget: {
+          storage: {
+            get: key => storage.get(key) ?? null,
+            set: (key, value) => storage.set(key, value),
+            remove: key => storage.delete(key),
+            clear: () => storage.clear(),
+          },
+          http: {
+            get: async url => {
+              const request = new URL(url);
+              assert.strictEqual(request.origin, 'https://forward.test');
+              requests.push(request.pathname);
+              if (request.pathname === '/api/v2/search/anime') {
+                return { status: 200, data: { animes: [{
+                  animeId: 9001,
+                  bangumiId: '9001',
+                  animeTitle: '插件构建测试',
+                  startDate: '2026-01-01',
+                  type: 'tvseries',
+                  typeDescription: 'TV',
+                }] } };
+              }
+              if (request.pathname === '/api/v2/bangumi/9001') {
+                return { status: 200, data: { bangumi: { episodes: [{
+                  episodeId: 900101,
+                  episodeTitle: '第1集',
+                  episodeNumber: '1',
+                }] } } };
+              }
+              assert.strictEqual(request.pathname, '/api/v2/comment/900101');
+              return { status: 200, data: { comments } };
+            },
+            post: async () => assert.fail('The fixture does not require POST requests'),
+          },
+        },
+      });
+
+      // A script-only runtime has no module loader, process, Buffer, or filesystem.
+      new vm.Script(bundle, { filename }).runInContext(context, { timeout: 5000 });
+      const params = {
+        title: '插件构建测试',
+        type: 'tv',
+        tmdbId: '9001',
+        season: 1,
+        episode: 1,
+        sourceOrder: 'local,custom',
+        customSourceApiUrl: 'https://forward.test',
+        tmdbApiKey: '',
+      };
+      const search = await context.searchDanmu(params);
+      assert.deepStrictEqual(Array.from(search.animes, anime => anime.animeId), [9001]);
+      const episodes = await context.getDetailById({ ...params, animeId: 9001 });
+      assert.strictEqual(episodes.length, 1);
+      const segments = await context.getCommentsById({ ...params, commentId: episodes[0].episodeId });
+      assert.strictEqual(segments.length, 1);
+      const result = await context.getDanmuWithSegmentTime({ ...params, segmentTime: 0 });
+      assert.strictEqual(result.count, 1);
+      assert.strictEqual(result.comments[0].m, comments[0].m);
+      assert.deepStrictEqual(requests, [
+        '/api/v2/search/anime',
+        '/api/v2/bangumi/9001',
+        '/api/v2/comment/900101',
+      ]);
+    });
+  }
 });

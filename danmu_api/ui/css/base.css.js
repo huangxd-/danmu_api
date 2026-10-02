@@ -189,7 +189,6 @@ body::before {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 12px;
 }
 
 .header h1 {
@@ -327,6 +326,9 @@ body::before {
 }
 
 .footer-bar-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     text-decoration: none;
     color: var(--theme-muted);
     transition: color 0.2s ease;
@@ -336,15 +338,9 @@ body::before {
     color: var(--theme-accent);
 }
 
-.github-link {
-    display: inline-flex;
-    align-items: center;
-}
-
-.github-icon {
-    width: 14px;
-    vertical-align: middle;
-    margin-right: 5px;
+/* 图标取正文色，不随链接文字弱化 */
+.footer-bar-link .ui-icon {
+    color: var(--theme-text);
 }
 
 /* ============ 响应式 ============ */
