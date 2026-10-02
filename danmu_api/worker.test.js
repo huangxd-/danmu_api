@@ -41,7 +41,7 @@ import { Envs } from "./configs/envs.js";
 import { addAnime, addEpisode, getSearchCache, hasSeasonSpecificPreference, isSearchCacheValid, setSearchCache } from "./utils/cache-util.js";
 import { addFavorite, listFavorites, loadFavorites, removeFavorite, resolveFavoriteForKeyword, saveFavorites } from './utils/favorite-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from './utils/auto-match-mapping-util.js';
-import { applyRemoteAutoMatchMappingText, getEffectiveAutoMatchMappingRules, normalizeRemoteSeasonMappingUrl, parseRemoteAutoMatchMappingRules, refreshRemoteAutoMatchMappingNow, resetRemoteAutoMatchMappingForTests } from './utils/auto-match-mapping-url-util.js';
+import { applyRemoteAutoMatchMappingText, getEffectiveAutoMatchMappingRules, normalizeRemoteSeasonMappingUrl, parseRemoteAutoMatchMappingRules, resetRemoteAutoMatchMappingForTests } from './utils/auto-match-mapping-url-util.js';
 import { HTML_TEMPLATE } from './ui/template.js';
 import { apitestJsContent } from './ui/js/apitest.js';
 import { systemSettingsJsContent } from './ui/js/systemsettings.js';
@@ -433,19 +433,25 @@ test('worker.js API endpoints', async (t) => {
       Globals.init({});
     });
 
-    await t.test('manual refresh downloads, parses, merges, and caches remote season rules', async () => {
+    await t.test('manual refresh endpoint preserves its route, downloads rules, and retains cache on failure', async () => {
       const cacheRoot = await mkdtemp(join(tmpdir(), 'danmu-api-season-mapping-'));
       const originalCwd = process.cwd();
       const sourceUrl = 'https://maps.example.test/season-mapping.txt';
       let requestedUrl = '';
       try {
         process.chdir(cacheRoot);
-        Globals.init({
+        const env = {
+          TOKEN: 'season-refresh-test-token',
           AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->本地目标 S01E10',
           AUTO_MATCH_MAPPING_TABLE_URL: sourceUrl,
-        });
+        };
+        Globals.init(env);
         resetRemoteAutoMatchMappingForTests();
-        const result = await withMockFetch(async url => {
+        const requestRefresh = () => handleRequest(
+          new Request('http://localhost/season-refresh-test-token/api/auto-match-mapping/refresh', { method: 'POST' }),
+          env, 'vercel', '127.0.0.1'
+        );
+        const response = await withMockFetch(async url => {
           requestedUrl = String(url);
           return new Response([
             '永生 S05E02->远程目标 S01E58',
@@ -454,13 +460,26 @@ test('worker.js API endpoints', async (t) => {
             status: 200,
             headers: { 'content-type': 'text/plain; charset=utf-8' },
           });
-        }, () => refreshRemoteAutoMatchMappingNow());
+        }, requestRefresh);
 
+        assert.equal(response.status, 200);
+        const result = await parseResponse(response);
         assert.deepEqual(result, { success: true, count: 2 });
         assert.equal(requestedUrl, sourceUrl);
+        const cachedText = await fs.readFile(join(cacheRoot, '.cache', 'auto-match-mapping-remote.txt'), 'utf8');
+        assert.match(cachedText, /一念永恒 S01E53/);
         const effectiveRules = getEffectiveAutoMatchMappingRules();
         assert.equal(resolveAutoMatchMapping(effectiveRules, { title: '永生', season: 5, episode: 2 }).targetTitle, '本地目标');
         assert.equal(resolveAutoMatchMapping(effectiveRules, { title: '一念永恒', season: 1, episode: 54 }).targetEpisode, 2);
+
+        const failed = await withMockFetch(async () => { throw new Error('simulated mapping download failure'); }, requestRefresh);
+        assert.equal(failed.status, 502);
+        const failedResult = await parseResponse(failed);
+        assert.equal(failedResult.success, false);
+        assert.equal(failedResult.count, 2);
+        assert.match(failedResult.error, /simulated mapping download failure/);
+        assert.equal(resolveAutoMatchMapping(getEffectiveAutoMatchMappingRules(), { title: '一念永恒', season: 1, episode: 54 }).targetEpisode, 2);
+        assert.equal(await fs.readFile(join(cacheRoot, '.cache', 'auto-match-mapping-remote.txt'), 'utf8'), cachedText);
       } finally {
         resetRemoteAutoMatchMappingForTests();
         Globals.init({});

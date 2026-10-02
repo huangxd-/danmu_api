@@ -329,6 +329,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       const pathBeforePrefixCheck = path;
       if (!path.startsWith('/api/v2') && path !== '/' && !path.startsWith('/api/logs') 
         && !path.startsWith('/api/env') && !path.startsWith('/api/cache')
+        && !path.startsWith('/api/auto-match-mapping')
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
         && !path.startsWith('/api/favorite')
         && !path.startsWith('/api/ai') && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
