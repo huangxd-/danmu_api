@@ -12,7 +12,8 @@ import MangoSource from "./mango.js";
 import BilibiliSource from "./bilibili.js";
 import YoukuSource from "./youku.js";
 import BahamutSource from "./bahamut.js";
-import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { titleMatches, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { isNonChinese } from "../utils/zh-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
 const tencentSource = new TencentSource();
@@ -165,11 +166,32 @@ export default class DandanSource extends BaseSource {
       const originalResult = await originalSearchPromise;
       if (originalResult.success) {
         const resolvedSeason = getExplicitSeasonNumber(keyword);
-        const preFiltered = originalResult.data.filter(anime => {
-          if (anime.isTmdbSource) return true;
-          const t = anime.animeTitle || anime.title || '';
-          return titleMatches(t, keyword, resolvedSeason, true, 0.8);
-        });
+        // 外文检索词（罗马字/英文等）与中文标题无字符交集，包含与相似度匹配必然失败，
+        // 会误杀 dandan 官方搜索的正确命中（如 "Sayonara Lara" → "再见，拉拉"，animeId 已正确返回）。
+        // 两级策略：标题直击优先——归一化标题包含检索词的条目存在时只返回直击条目
+        // （如 "mygo" 只回标题含 MyGO 的 BanG Dream，滤掉别名子串混入的我女神系列）；
+        // 无直击时全量放行，交由 handleAnimes 用详情接口的别名池（含罗马字标题）做最终判定。
+        let preFiltered;
+        if (isNonChinese(keyword)) {
+          const kw = normalizeTitleForMatch(keyword).toLowerCase();
+          if (kw) {
+            const directHits = originalResult.data.filter(anime => {
+              if (anime.isTmdbSource) return true;
+              const t = normalizeTitleForMatch(anime.animeTitle || anime.title || '').toLowerCase();
+              return t.includes(kw);
+            });
+            preFiltered = directHits.length > 0 ? directHits : originalResult.data;
+          } else {
+            // 归一化后为空的检索词（纯符号/空白）无语义，维持全量放行
+            preFiltered = originalResult.data;
+          }
+        } else {
+          preFiltered = originalResult.data.filter(anime => {
+            if (anime.isTmdbSource) return true;
+            const t = anime.animeTitle || anime.title || '';
+            return titleMatches(t, keyword, resolvedSeason, true, 0.8);
+          });
+        }
         if (preFiltered.length > 0) {
           tmdbAbortController.abort();
           // 记录原始搜索结果的全部animeId，供handleAnimes关联作品恢复误过滤条目使用
@@ -185,11 +207,22 @@ export default class DandanSource extends BaseSource {
       // 原始搜索无结果，对TMDB日语原名结果做最终预过滤
       if (tmdbResult.success) {
         const resolvedSeason = getExplicitSeasonNumber(keyword);
-        const tmdbFiltered = tmdbResult.data.filter(anime => {
-          const t = anime.animeTitle || anime.title || '';
-          return titleMatches(t, keyword, resolvedSeason, true, 0.19);
-        });
-        if (tmdbFiltered.length > 0) return tmdbFiltered;
+        if (isNonChinese(keyword)) {
+          // 外文检索词与 TMDB episodes 返回的中文标题无字符交集，titleMatches 会全灭整批结果（同 original 路径根因）。
+          // 剥离 isTmdbSource 免检标记与 _tmdbCnAlias，使 handleAnimes 走常规 allTitles 匹配：
+          // 用详情接口的别名池（含罗马字/英文别名）做最终判定，别名池不含检索词的无关条目（同字异作）会被自然过滤。
+          const relaxed = tmdbResult.data.map(({ isTmdbSource, _tmdbCnAlias, ...rest }) => rest);
+          if (relaxed.length > 0) {
+            log("info", `[dandan] 外文检索词跳过TMDB结果预过滤，剥离免检标记后交由别名池匹配 (${relaxed.length} 条)`);
+            return relaxed;
+          }
+        } else {
+          const tmdbFiltered = tmdbResult.data.filter(anime => {
+            const t = anime.animeTitle || anime.title || '';
+            return titleMatches(t, keyword, resolvedSeason, true, 0.19);
+          });
+          if (tmdbFiltered.length > 0) return tmdbFiltered;
+        }
       }
 
       log("info", `[dandan] 原始搜索和基于TMDB的搜索均未返回任何结果 (当前搜索词: ${keyword})`);
@@ -546,7 +579,8 @@ export default class DandanSource extends BaseSource {
 
     try {
       // 配置弹弹play账号后经 NipaPlay 中转弹弹play服务端取弹幕，并把同一请求下发的弹弹302关联链接分发给
-      // 对应平台源实时拉取，两部分由去重阶段按来源合并；未配置账号或 NipaPlay 中转弹弹play服务端不可用时回退弹弹原生弹幕。
+      // 已在 SOURCE_ORDER 开启的对应平台源实时拉取，两部分由去重阶段按来源合并；
+      // 未配置账号或 NipaPlay 中转弹弹play服务端不可用时回退弹弹原生弹幕。
       const nipaplay = await fetchNipaplayDanmaku(id);
       if (!nipaplay) return await fetchDandanComments(id);
 
@@ -618,13 +652,15 @@ const SOURCE_TO_PLATFORM = {
 };
 
 // 汇总跨平台实时弹幕，复用核心路由同款链接解析（gamer→sn）与各源既有 formatComments，
-// 使每源入参与核心路由一致；按平台标识跳过已独立选择的合并源以免重复；每条弹幕标记实时拉取
-// 来源，供 convertToDanmakuJson 组装 [来源＆平台] 标签，并让去重阶段按真实来源统计重复弹幕；
+// 使每源入参与核心路由一致；仅分发已在 SOURCE_ORDER 开启且未被已独立选择的合并源覆盖的平台；
+// 每条弹幕标记实时拉取来源，供 convertToDanmakuJson 组装 [来源＆平台] 标签，并让去重阶段按真实来源统计重复弹幕；
 // 同平台多个链接串行、间隔 1 秒请求，与手动解析链接防风控一致。
 async function getRelatedDanmuViaNipaplay(links, coveredSources) {
   if (!links) return [];
+  // 关联链接的源需已在 SOURCE_ORDER 中开启，与搜索可选源保持一致
+  const enabledSources = new Set(globals.sourceOrderArr);
   const summary = Object.entries(links)
-    .filter(([, arr]) => arr && arr.length)
+    .filter(([p, arr]) => arr && arr.length && enabledSources.has(p))
     .map(([p, arr]) => `${SOURCE_TO_PLATFORM[p] || p}×${arr.length}`)
     .join(', ');
   if (summary) log("info", `[dandan] 弹弹302关联链接分发目标: ${summary}`);
@@ -636,14 +672,20 @@ async function getRelatedDanmuViaNipaplay(links, coveredSources) {
     tencent: tencentSource,
     imgo: mangoSource,
   };
-  // 收集待拉取任务（按平台标识分组以便同平台串行），已独立选择的合并源跳过。
+  // 收集待拉取任务（按平台标识分组以便同平台串行），未在 SOURCE_ORDER 开启的源与已独立选择的合并源跳过。
   const pending = [];
-  const skipped = [];
+  const skippedDisabled = [];
+  const skippedCovered = [];
   for (const [platform, linksOfPlatform] of Object.entries(links)) {
     if (!linksOfPlatform || linksOfPlatform.length === 0) continue;
     const platformLabel = SOURCE_TO_PLATFORM[platform];
-    if (!platformLabel || coveredSources.has(platform) || coveredSources.has(platformLabel)) {
-      if (platformLabel) skipped.push(platformLabel);
+    if (!platformLabel) continue;
+    if (!enabledSources.has(platform)) {
+      skippedDisabled.push(platformLabel);
+      continue;
+    }
+    if (coveredSources.has(platform) || coveredSources.has(platformLabel)) {
+      skippedCovered.push(platformLabel);
       continue;
     }
     const sourceInstance = sourceMap[platform];
@@ -662,7 +704,8 @@ async function getRelatedDanmuViaNipaplay(links, coveredSources) {
       });
     }
   }
-  if (skipped.length) log("info", `[dandan] 弹弹302关联分发跳过已合并源（避免重复拉取）: ${skipped.join(', ')}`);
+  if (skippedCovered.length) log("info", `[dandan] 弹弹302关联分发跳过已合并源（避免重复拉取）: ${skippedCovered.join(', ')}`);
+  if (skippedDisabled.length) log("info", `[dandan] 弹弹302关联分发跳过未在 SOURCE_ORDER 开启的源: ${skippedDisabled.join(', ')}`);
   // 同平台串行、间隔 1 秒，不同平台并行（防风控）。
   const groups = new Map();
   for (const task of pending) {

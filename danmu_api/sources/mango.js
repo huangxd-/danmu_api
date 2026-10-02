@@ -334,7 +334,6 @@ export default class MangoSource extends BaseSource {
         // 有"第N期"格式时：只保留纯粹的"第N期"和"第N期上/中/下"
         const qiUpMidDownMatch = fullTitle.match(/第(\d+)期([上中下])/);
         const qiPureMatch = fullTitle.match(/第(\d+)期/);
-        const hasUpMidDown = /第\d+期[上中下]/.test(fullTitle);
 
         if (qiUpMidDownMatch) {
           // 检查是否包含无效后缀
@@ -351,10 +350,12 @@ export default class MangoSource extends BaseSource {
           } else {
             log("info", `[mango] 综艺过滤上中下格式+后缀: ${fullTitle}`);
           }
-        } else if (qiPureMatch && !hasUpMidDown) {
+        } else if (qiPureMatch) {
           // 无上/中/下后缀的纯"第N期"为正片, 直接收录; 主黑名单已在综艺处理前过滤了加更版/合伙人手记等特殊条目
           const qiNum = qiPureMatch[1];
-          qiInfoMap.set(ep, [parseInt(qiNum), '']);
+          // "第N期：标题（上/中/下）"的分部标记在末尾括号中（全/半角可混用），提取仅用于同期内排序
+          const trailingPartMatch = fullTitle.match(/[（(]([上中下])[）)]\s*$/);
+          qiInfoMap.set(ep, [parseInt(qiNum), trailingPartMatch ? trailingPartMatch[1] : '']);
           episodeInfos.push(ep);
           log("info", `[mango] 综艺保留标准期数: ${fullTitle}`);
         }

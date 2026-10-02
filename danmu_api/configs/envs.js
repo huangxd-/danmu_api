@@ -712,7 +712,7 @@ export class Envs {
       'BILIBILI_COOKIE': { category: 'source', type: 'text', description: 'B站Cookie' },
       'DOUBAN_COOKIE': { category: 'source', type: 'text', description: '豆瓣Cookie' },
       'YOUKU_CONCURRENCY': { category: 'source', type: 'number', description: '优酷并发配置，默认8', min: 1, max: 16 },
-      'DANDANPLAY_ACCOUNT': { category: 'source', type: 'text', description: '弹弹play账号（dandan 源获取弹幕使用）。\n与密码同时填写后自动开启，无需额外开关。\n开启后 dandan 源改由 NipaPlay 中转弹弹play服务端获取弹幕，并把同一请求下发的弹弹302关联链接分发给已接入的对应平台源实时拉取：\n最终弹幕为 NipaPlay 中转弹弹play服务端弹幕与自有链路弹幕合并去重后的结果。\n注意：关联链接指向的平台视频若已下架将无法通过自有链路补取；关联含巴哈姆特平台时需确保能够连通巴哈' },
+      'DANDANPLAY_ACCOUNT': { category: 'source', type: 'text', description: '弹弹play账号（dandan 源获取弹幕使用）。\n与密码同时填写后自动开启，无需额外开关。\n开启后 dandan 源改由 NipaPlay 中转弹弹play服务端获取弹幕，并把同一请求下发的弹弹关联链接分发给对应平台源实时拉取（需开启对应源）：\n最终弹幕为 NipaPlay 中转弹弹play服务端弹幕与自有链路弹幕合并去重后的结果。\n注意：关联链接指向的平台视频若已下架将无法通过自有链路补取；关联含巴哈姆特平台时需确保能够连通巴哈' },
       'DANDANPLAY_PASSWORD': { category: 'source', type: 'text', description: '弹弹play密码（dandan 源获取弹幕使用）。\n点击编辑界面的测试连通性按钮可验证账号与 NipaPlay 中转弹弹play服务端是否可用' },
       
       // 匹配配置

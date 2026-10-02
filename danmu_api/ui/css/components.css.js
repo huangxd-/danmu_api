@@ -19,6 +19,12 @@ export const componentsCssContent = /* css */ `
     vertical-align: -0.125em;
 }
 
+/* GitHub 标识：官方实心图形，固定 14px 显示 */
+.ui-icon.github-icon {
+    width: 14px;
+    height: 14px;
+}
+
 /* 图标与文字成对出现时的对齐容器（flex 居中） */
 .ui-icon-label {
     display: inline-flex;
@@ -1939,11 +1945,6 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     display: flex;
     align-items: center;
     gap: 6px;
-}
-
-.record-params-title::before {
-    content: '\\1F4CB';
-    font-size: 14px;
 }
 
 .record-params pre {
