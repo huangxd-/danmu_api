@@ -1,3 +1,5 @@
+import { buildTmdbSeasonBoundaries } from './episode-mapping-util.js';
+export { buildTmdbSeasonBoundaries } from './episode-mapping-util.js';
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { httpGet } from "./http-util.js";
@@ -765,59 +767,17 @@ export function smartTitleReplace(animes, cnAlias) {
 // =====================
 
 /**
- * 将 bangumi-data 的 TMDB 扁平检索结果转换为跨季边界序列.
- * 每个 matchedSiteKey 为 'tmdb' 的结果, 其 siteId 形如 "tv/{id}" 或
- * "tv/{id}/season/N/episode/{M}", M 为该条目在 TMDB 绝对编号中的起始集数;
- * 收集同一 tv/{id} 下各条目起始集数即可推算跨季映射边界
- * @param {Array<Object>} matches searchBangumiData 返回的扁平结果数组
- * @returns {Array<{order:number, startEpisode:number, title:string, tmdbId:string}>|null}
- */
-export function buildTmdbSeasonBoundaries(matches) {
-  const baseMaps = new Map();
-
-  for (const m of matches) {
-    if (!m || m.matchedSiteKey !== 'tmdb' || !m.siteId) continue;
-
-    const epMatch = m.siteId.match(/^(tv\/\d+)(?:\/season\/\d+\/episode\/(\d+))?$/);
-    if (!epMatch) continue;
-
-    const baseId = epMatch[1];
-    const startEp = epMatch[2] ? parseInt(epMatch[2], 10) : 1;
-
-    const entry = { order: 0, startEpisode: startEp, title: m.title || '', tmdbId: baseId };
-    if (!baseMaps.has(baseId)) {
-      baseMaps.set(baseId, [entry]);
-    } else {
-      baseMaps.get(baseId).push(entry);
-    }
-  }
-
-  if (baseMaps.size === 0) return null;
-
-  const best = [...baseMaps.entries()]
-    .sort((a, b) => b[1].length - a[1].length)[0];
-
-  if (best[1].length < 2) return null;
-
-  best[1].sort((a, b) => a.startEpisode - b.startEpisode);
-  for (let i = 0; i < best[1].length; i++) {
-    best[1][i].order = i + 1;
-  }
-  return best[1];
-}
-
-/**
  * 依据番剧标题从 bangumi-data 推导 TMDB 跨季边界, 用于在目标集不在首季时跳过无关季号
  * @param {string} title 检索标题 (直接传给 searchBangumiData, 内部已做季剥离处理)
  * @param {(title: string, siteKeys: string[]) => Promise<Array<Object>>} [searchFn]
  * @returns {Promise<Array<{order:number, startEpisode:number, title:string, tmdbId:string}>|null>}
  */
-export async function getTmdbSeasonBoundaries(title, searchFn = searchBangumiData) {
+export async function getTmdbSeasonBoundaries(title, searchFn = searchBangumiData, options = {}) {
   if (!globals.useBangumiData) return null;
 
   try {
     const matches = await searchFn(title, ['tmdb']);
-    return buildTmdbSeasonBoundaries(matches);
+    return buildTmdbSeasonBoundaries(matches, options);
   } catch (e) {
     log('warn', `[system] [tmdb] Bangumi-Data 本地获取TMDB季边界失败: ${e.message}（检索词：${title}）`);
     return null;

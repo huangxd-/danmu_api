@@ -1,0 +1,212 @@
+{
+  "items": [
+    {
+      "title": "Re:ゼロから始める異世界生活",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从零开始的异世界生活"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活"
+        ],
+        "en": [
+          "Re: ZERO -Starting Life in Another World-",
+          "Re: Life in a different world from zero",
+          "Re:ZERO -Starting Life in Another World-"
+        ]
+      },
+      "type": "tv",
+      "begin": "2016-04-03T16:35:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める休憩時間",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从零开始的休息时间"
+        ]
+      },
+      "type": "tv",
+      "begin": "2016-04-08T16:00:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/0"
+        }
+      ]
+    },
+    {
+      "title": "Re:プチから始める異世界生活",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从迷你开始的异世界生活"
+        ]
+      },
+      "type": "tv",
+      "begin": "2016-06-24T16:00:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/0/episode/12"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 2nd season",
+      "titleTranslate": {
+        "en": [
+          "Re: Life in a different world from zero second season",
+          "Re: ZERO -Starting Life in Another World- Season 2"
+        ],
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第二季"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第二季",
+          "Re：從零開始的異世界生活 第二季 Part1"
+        ]
+      },
+      "type": "tv",
+      "begin": "2020-07-08T13:30:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/26"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 2nd season 後半クール",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第二季 后半部分"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第二季 Part2"
+        ]
+      },
+      "type": "tv",
+      "begin": "2021-01-06T13:30:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/39"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 3rd season 襲撃編",
+      "titleTranslate": {
+        "en": [
+          "Re:ZERO -Starting Life in Another World- Season 3"
+        ],
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第三季 袭击篇",
+          "Re0 第三季"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第三季 襲擊編"
+        ]
+      },
+      "type": "tv",
+      "begin": "2024-10-02T12:25:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/51"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 3rd season",
+      "titleTranslate": {
+        "en": [
+          "Re:ZERO -Starting Life in Another World- Season 3"
+        ],
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第三季 反击篇",
+          "Re0 第三季"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第三季 反擊篇"
+        ]
+      },
+      "type": "tv",
+      "begin": "2025-02-05T14:30:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 3rd season",
+      "titleTranslate": {
+        "en": [
+          "Re:ZERO -Starting Life in Another World- Season 3"
+        ],
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第三季 反击篇",
+          "Re0 第三季"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第三季 反擊篇"
+        ]
+      },
+      "type": "tv",
+      "begin": "2025-02-05T14:30:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/59"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 4th season 喪失編",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第四季 丧失篇"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第四季 喪失篇",
+          "Re:從零開始的異世界生活 第四季 喪失篇"
+        ]
+      },
+      "type": "tv",
+      "begin": "2026-04-08T14:00:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/67"
+        }
+      ]
+    },
+    {
+      "title": "Re:ゼロから始める異世界生活 4th season 奪還編",
+      "titleTranslate": {
+        "zh-Hans": [
+          "Re：从零开始的异世界生活 第四季 夺还篇"
+        ],
+        "zh-Hant": [
+          "Re：從零開始的異世界生活 第四季 奪還篇",
+          "Re:從零開始的異世界生活 第四季 奪還篇"
+        ]
+      },
+      "type": "tv",
+      "begin": "2026-08-12T14:00:00.000Z",
+      "sites": [
+        {
+          "site": "tmdb",
+          "id": "tv/65942/season/1/episode/78"
+        }
+      ]
+    }
+  ]
+}
