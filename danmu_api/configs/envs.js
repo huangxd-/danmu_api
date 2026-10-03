@@ -690,6 +690,7 @@ export class Envs {
    */
   static load(env = {}) {
     this.env = env;
+    const configuredAiMatchPrompt = this.get('AI_MATCH_PROMPT', this.DEFAULT_AI_MATCH_PROMPT, 'string');
     
     // 环境变量分类和描述映射
     const envVarConfig = {
@@ -834,7 +835,7 @@ export class Envs {
       aiBaseUrl: this.get('AI_BASE_URL', 'https://api.openai.com/v1', 'string'), // AI服务基础URL
       aiModel: this.get('AI_MODEL', 'gpt-4o', 'string'), // AI模型名称
       aiApiKey: this.get('AI_API_KEY', '', 'string', true), // AI服务API密钥
-      aiMatchPrompt: this.get('AI_MATCH_PROMPT', this.DEFAULT_AI_MATCH_PROMPT, 'string'), // AI自动匹配提示词模板
+      aiMatchPrompt: configuredAiMatchPrompt.trim() ? configuredAiMatchPrompt : this.DEFAULT_AI_MATCH_PROMPT, // AI自动匹配提示词模板
       useBangumiData: this.get('USE_BANGUMI_DATA', false, 'boolean'), // Bangumi Data 加速匹配开关
       rememberLastSelect: this.get('REMEMBER_LAST_SELECT', true, 'boolean'), // 是否记住手动选择结果，用于match自动匹配时优选上次的选择（默认 true，记住）
       MAX_LAST_SELECT_MAP: this.get('MAX_LAST_SELECT_MAP', 100, 'number'), // 记住上次选择映射缓存大小限制（默认 100）

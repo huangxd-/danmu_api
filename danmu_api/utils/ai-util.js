@@ -20,6 +20,11 @@ export default class AIClient {
       max_tokens: options.maxTokens ?? 8192,
       stream: false,
     }
+    // DeepSeek defaults to thinking mode. Selection/verification can explicitly
+    // request final text without spending the output budget on reasoning.
+    if (options.thinking !== undefined && /deepseek/i.test(body.model)) {
+      body.thinking = { type: options.thinking ? 'enabled' : 'disabled' };
+    }
 
     const res = await httpPost(`${this.baseURL}/chat/completions`, JSON.stringify(body), {
       headers: {
@@ -35,7 +40,18 @@ export default class AIClient {
       throw new Error(`AI API error ${res.status}: ${err}`)
     }
 
-    return data.choices[0].message.content;
+    const choice = data?.choices?.[0];
+    const content = choice?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      const finishReason = choice?.finish_reason || 'unknown';
+      const completionTokens = data?.usage?.completion_tokens ?? 'unknown';
+      const reasoningTokens = data?.usage?.completion_tokens_details?.reasoning_tokens ?? 'unknown';
+      // Report only response metadata; reasoning_content is not a final answer.
+      const error = new Error(`AI returned empty final content (finish_reason=${finishReason}, completion_tokens=${completionTokens}, reasoning_tokens=${reasoningTokens})`);
+      error.code = 'AI_EMPTY_RESPONSE';
+      throw error;
+    }
+    return content;
   }
 
   // 单轮对话快捷方法
@@ -79,7 +95,7 @@ export default class AIClient {
 
   async verify() {
     try {
-        const result = await this.ask('hi', { maxTokens: 1 })
+        const result = await this.ask('Reply with OK only.', { maxTokens: 128, thinking: false })
         return { ok: true, reply: result }
     } catch (err) {
         return { ok: false, error: err.message }
