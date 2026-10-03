@@ -969,7 +969,7 @@ function backupQueryCacheFile(key) {
     for (const old of backups.slice(2)) fs.unlinkSync(path.join(directory, old.name));
     backedUpCacheFiles.add(cacheFilePath);
     backupRetryAfter.delete(cacheFilePath);
-    log('warn', `[cache] 已保留覆盖前的查询缓存: ${backup}`);
+    if (backedUpCacheFiles.size === 1) log('info', `[cache] 已保留覆盖前的查询缓存: ${backup}`);
     return true;
   } catch (error) {
     // 不放行覆盖；短暂磁盘故障冷却后可重试，不随每次请求重复打印堆栈。
