@@ -12,6 +12,13 @@ import { searchBangumiData } from './bangumi-data-util.js';
 // Key: title, Value: { promise, controller, refCount }
 const TMDB_PENDING = new Map();
 
+function parseTmdbData(response) {
+  if (!response?.data) return null;
+  return typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+}
+
+
+
 // TMDB API 请求基础函数
 async function tmdbApiGet(url, options = {}) {
   const tmdbApi = "https://api.tmdb.org/3/";
@@ -110,6 +117,84 @@ export async function getTmdbJpDetail(mediaType, tmdbId, options = {}) {
 export async function getTmdbExternalIds(mediaType, tmdbId, options = {}) {
   const url = `${mediaType}/${tmdbId}/external_ids?api_key=${globals.tmdbApiKey}`;
   return await tmdbApiGet(url, options);
+}
+
+function normalizeTmdbMatchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[.·・:：,，。!！?？;；'"“”‘’()[\]（）【】《》<>_-]/g, '')
+    .trim();
+}
+
+function scoreTmdbTvResult(result, queryTitle, year = null) {
+  const query = normalizeTmdbMatchText(queryTitle);
+  const names = [result?.name, result?.original_name].map(normalizeTmdbMatchText).filter(Boolean);
+  let score = 0;
+
+  if (names.some(name => name === query)) {
+    score += 100;
+  } else if (names.some(name => name.includes(query) || query.includes(name))) {
+    score += 70;
+  } else {
+    const bestCharHit = names.reduce((best, name) => {
+      if (!query || !name) return best;
+      let hit = 0;
+      for (const ch of query) {
+        if (name.includes(ch)) hit++;
+      }
+      return Math.max(best, hit / query.length);
+    }, 0);
+    score += bestCharHit * 50;
+  }
+
+  if (year && result?.first_air_date?.startsWith(String(year))) {
+    score += 10;
+  }
+
+  return score;
+}
+
+// Some TMDB seasons retain absolute episode numbers (e.g. Shippuden S20 starts
+// at 414). Validate the complete season before interpreting a relative E1.
+export async function getTMDBEpisodeContext(title, season, episode, year = null) {
+  if (!globals.tmdbApiKey || !title || !Number.isSafeInteger(season) || season < 1 || season > 100 || !Number.isSafeInteger(episode) || episode < 1) return null;
+  const response = parseTmdbData(await searchTmdbTitles(title, 'tv', { maxPages: 1 }));
+  const ranked = (response?.results || []).map(item => ({ item, score: scoreTmdbTvResult(item, title, year) }))
+    .filter(row => row.score >= 70).sort((a, b) => b.score - a.score).slice(0, 3);
+  for (const { item } of ranked) {
+    if (!Number.isSafeInteger(item.id) || item.id <= 0) continue;
+    const [seriesResponse, seasonResponse] = await Promise.all([
+      tmdbApiGet(`tv/${item.id}?api_key=${globals.tmdbApiKey}&language=zh-CN`, { silent404: true }),
+      tmdbApiGet(`tv/${item.id}/season/${season}?api_key=${globals.tmdbApiKey}&language=zh-CN`, { silent404: true })
+    ]);
+    const series = parseTmdbData(seriesResponse);
+    const data = parseTmdbData(seasonResponse);
+    if (data?.season_number !== undefined && data.season_number !== season) continue;
+    const seasons = (series?.seasons || []).filter(row => row.season_number > 0).sort((a, b) => a.season_number - b.season_number);
+    if (seasons.length < season || seasons.some((row, index) => row.season_number !== index + 1 || !Number.isSafeInteger(row.episode_count) || row.episode_count < 0)) continue;
+    const prior = seasons.slice(0, season - 1);
+    const count = seasons[season - 1].episode_count;
+    if (prior.some(row => row.episode_count < 1) || episode > count) continue;
+    const offset = prior.reduce((total, row) => total + row.episode_count, 0);
+    const episodes = [...(data?.episodes || [])].sort((a, b) => a.episode_number - b.episode_number);
+    if (episodes.length !== count || episodes.some(row => row.season_number !== undefined && row.season_number !== season)) continue;
+    const relative = episodes.every((row, i) => row.episode_number === i + 1);
+    const absolute = episodes.every((row, i) => row.episode_number === offset + i + 1);
+    if (!relative && !absolute) continue;
+    return {
+      tvId: item.id,
+      titles: [...new Set([series?.name, series?.original_name, item.name, item.original_name].filter(Boolean))],
+      season, episode, absoluteEpisode: offset + episode,
+      episodeTitle: episodes[episode - 1].name || '',
+      seasonName: data.name || '', seasonEpisodeCount: count,
+      priorEpisodeCount: offset,
+      priorSeasons: prior.map(row => ({ season: row.season_number, episodes: row.episode_count })),
+      totalEpisodes: seasons.reduce((total, row) => total + row.episode_count, 0),
+      numbering: relative ? 'season-relative' : 'absolute'
+    };
+  }
+  return null;
 }
 
 // 使用 TMDB API 获取别名
