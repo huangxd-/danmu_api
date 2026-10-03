@@ -310,7 +310,7 @@ function checkEpisodeSatisfied(animesList, querySeason, queryEpisode, requestAni
 
       if (bData?.success && bData.bangumi?.episodes) {
         const validEps = bData.bangumi.episodes.filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle));
-        const filtered = filterSameEpisodeTitle(validEps);
+        const filtered = filterSameEpisodeTitle(validEps, { preferredPlatform: tPlat === '_any_' ? null : tPlat });
 
         if (filtered.some(ep => extractEpisodeNumberFromTitle(ep.episodeTitle) === queryEpisode)) {
           isEpisodeSatisfied = true;
@@ -927,22 +927,49 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
 
 }
 
-export function filterSameEpisodeTitle(filteredTmpEpisodes) {
+export function filterSameEpisodeTitle(filteredTmpEpisodes, options = {}) {
+    const {
+      preferredPlatform = null,
+      preserveNumberVariants = false
+    } = options;
     const filteredEpisodes = filteredTmpEpisodes.filter((episode, index, episodes) => {
         // 查找当前 episode 标题是否在之前的 episodes 中出现过
         return !episodes.slice(0, index).some(prevEpisode => {
             return prevEpisode.episodeTitle === episode.episodeTitle;
         });
     });
+
+    // 剧集标题提示需要比较同集号的多平台标题，不能在评分前丢弃候选。
+    if (preserveNumberVariants) {
+        return filteredEpisodes;
+    }
+
     // 对聚合采集源（如360）中来自不同平台的同名集号做二次去重
-    // 同一集号保留首次出现（最早平台）的条目
-    const seenNumbers = new Set();
+    // 默认保留首次出现的条目；指定平台时保留该平台得分更高的代表条目。
+    const selectedByNumber = new Map();
+    for (const episode of filteredEpisodes) {
+        const num = extractEpisodeNumberFromTitle(episode.episodeTitle);
+        if (num === null) continue;
+
+        const selected = selectedByNumber.get(num);
+        if (!selected) {
+            selectedByNumber.set(num, episode);
+            continue;
+        }
+
+        if (preferredPlatform) {
+            const selectedScore = getPlatformMatchScore(extractEpisodeTitle(selected.episodeTitle), preferredPlatform);
+            const candidateScore = getPlatformMatchScore(extractEpisodeTitle(episode.episodeTitle), preferredPlatform);
+            if (candidateScore > selectedScore) {
+                selectedByNumber.set(num, episode);
+            }
+        }
+    }
+
     return filteredEpisodes.filter(ep => {
         const num = extractEpisodeNumberFromTitle(ep.episodeTitle);
         if (num === null) return true;
-        if (seenNumbers.has(num)) return false;
-        seenNumbers.add(num);
-        return true;
+        return selectedByNumber.get(num) === ep;
     });
 }
 
@@ -1455,7 +1482,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
         const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
           return !globals.episodeTitleFilter.test(episode.episodeTitle);
         });
-        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes);
+        const filteredEpisodes = filterSameEpisodeTitle(filteredTmpEpisodes, { preferredPlatform: platform });
         
         log("info", "过滤后的集标题", filteredEpisodes.map(episode => episode.episodeTitle));
 
