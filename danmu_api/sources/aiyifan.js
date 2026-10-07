@@ -374,13 +374,17 @@ export default class AiyifanSource extends BaseSource {
 
     const requestPromise = (async () => {
       let videoId = episodeLink.videoId;
+      let videoType = episodeLink.videoType;
 
-      // 兼容缺少 videoId 的旧链接：用 App 详情接口补齐
+      // 兼容缺少 videoId 的旧链接：用 App 详情接口补齐 ID 和视频类型
       if (!videoId && episodeLink.episodeKey) {
-        const videoInfo = await this.getVideoInfo(episodeLink.mediaKey, episodeLink.episodeKey, episodeLink.videoType);
+        const videoInfo = await this.getVideoInfo(episodeLink.mediaKey, episodeLink.episodeKey, videoType);
         const detailInfo = videoInfo?.detailInfo || {};
         // 弹幕接口用的 videoId 是 uniqueID，episodeId 部分剧集是另一个值（会取不到弹幕）
         videoId = detailInfo.uniqueID != null ? detailInfo.uniqueID : detailInfo.episodeId;
+        if (detailInfo.videoType != null) {
+          videoType = detailInfo.videoType;
+        }
         log("info", `[aiyifan] 详情接口补齐 videoId: ${videoId}`);
       }
 
@@ -389,7 +393,7 @@ export default class AiyifanSource extends BaseSource {
         return [];
       }
 
-      const danmuList = await this.fetchBarrage(episodeLink.mediaKey, videoId, episodeLink.videoType);
+      const danmuList = await this.fetchBarrage(episodeLink.mediaKey, videoId, videoType);
       if (danmuList.length === 0) {
         log("info", "[aiyifan] 未获取到弹幕");
         return [];

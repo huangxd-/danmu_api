@@ -127,7 +127,9 @@ export class AiyifanAppSigningProvider {
     const response = await httpGet(this.proxyUrlBuilder(this.configUrl + "?" + query), {
       headers: headers,
       timeout: this.timeoutMs,
-      retries: 2
+      retries: 2,
+      // 配置已有 TTL 缓存和并发合并；实际获取时绕过请求内缓存，避免同秒刷新复用旧配置。
+      bypassCache: true
     });
 
     const payload = normalizeJsonPayload(response.data);
@@ -181,7 +183,13 @@ export class AiyifanAppSigningProvider {
         statusCode = response.status != null ? response.status : 200;
         payload = normalizeJsonPayload(response.data);
       } else {
-        const response = await httpGet(requestUrl, { headers: headers, timeout: this.timeoutMs, retries: 2 });
+        const response = await httpGet(requestUrl, {
+          headers: headers,
+          timeout: this.timeoutMs,
+          retries: 2,
+          // 签名更新后 URL 可能相同，重试必须重新发送请求。
+          bypassCache: forceRefresh
+        });
         statusCode = response.status != null ? response.status : 200;
         payload = normalizeJsonPayload(response.data);
       }
