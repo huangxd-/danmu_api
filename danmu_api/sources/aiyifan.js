@@ -1,37 +1,40 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
-import { httpGet, updateQueryString } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { hexToInt } from "../utils/danmu-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { globals } from '../configs/globals.js';
-import { AiyifanSigningProvider } from '../utils/aiyifan-util.js';
+import { AiyifanAppSigningProvider, AIYIFAN_APP_BASE_URL } from '../utils/aiyifan-util.js';
 
 // =====================
-// 获取爱壹帆弹幕
+// 获取爱壹帆弹幕（App 链路）
 // =====================
+// 链路对照（签名细节见 utils/aiyifan-util.js 顶部注释）：
+//   搜索  POST https://api.tripdata.app/api/List/GetTitleGetData   body: {"SearchCriteria": 关键词}
+//   选集  POST https://api.tripdata.app/api/Video/VideoChooseGather body: {"mediaKey": mediaKey}
+//   详情  GET  https://api.tripdata.app/api/Video/VideoDetails?mediaKey=&videoType=&episodeKey=
+//   弹幕  GET  https://api.tripdata.app/api/Video/GetBarrages?mediaKey=&videoId=&videoType=1
+// 其中展示用链接仍保留 https://www.yfsp.tv/play/... 形式，
+// 因为 danmu_api 依据 URL 中的 .yfsp.tv 判定来源平台为 aiyifan。
+// 注意：弹幕接口的 videoId 取选集列表里的 uniqueID（不是 episodeId）。
+
 export default class AiyifanSource extends BaseSource {
   constructor() {
     super();
-    this.USER_AGENT = (
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-      "AppleWebKit/537.36 (KHTML, like Gecko) " +
-      "Chrome/124.0.0 Safari/537.36"
-    );
 
-    // API 基础地址
-    this.SEARCH_API      = "https://rankv21.tripdata.app/v3/list/briefsearch";
-    this.PLAYLIST_API    = "https://m10.yfsp.tv/v3/video/languagesplaylist";
-    this.VIDEO_API       = "https://m10.yfsp.tv/v3/video/play";
-    this.DANMU_API       = "https://m10.yfsp.tv/api/video/getBarrage";
-    this.DOMAIN_API      = "https://www.yfsp.tv/play";
-    this.CONFIG_PAGE_API = "https://www.yfsp.tv/";
-    this.signingProvider = new AiyifanSigningProvider({
-      userAgent: this.USER_AGENT,
-      configPageUrl: this.CONFIG_PAGE_API
-    });
+    // App 接口基础地址（1.7.8 安装包内 com.ppde.ppcd 使用 api.tripdata.app）
+    this.SEARCH_API = AIYIFAN_APP_BASE_URL + "api/List/GetTitleGetData";
+    this.EPISODES_API = AIYIFAN_APP_BASE_URL + "api/Video/VideoChooseGather";
+    this.DETAILS_API = AIYIFAN_APP_BASE_URL + "api/Video/VideoDetails";
+    this.DANMU_API = AIYIFAN_APP_BASE_URL + "api/Video/GetBarrages";
+
+    // 仅用于拼接剧集链接（保持 .yfsp.tv 域名以维持平台识别）
+    this.PLAY_PAGE_BASE = "https://www.yfsp.tv/play";
+    this.DEFAULT_VIDEO_TYPE = 1;
+
+    this.signingProvider = new AiyifanAppSigningProvider();
     this.inflightDanmuRequests = new Map();
   }
 
@@ -44,34 +47,44 @@ export default class AiyifanSource extends BaseSource {
   }
 
   /**
-   * 搜索电视剧
-   * @param {string} keyword - 搜索关键词
-   * @param {number} page - 页码，默认为1
-   * @param {number} size - 每页数量，默认为10
-   * @returns {Promise<Object>} 搜索结果
+   * 解析剧集链接
+   * 形如 https://www.yfsp.tv/play/{mediaKey}?id={episodeKey}&videoId={uniqueID}&videoType=1
+   * @param {string} id - 剧集链接
+   * @returns {Object|null} { mediaKey, episodeKey, videoId, videoType }
    */
-  async searchDrama(keyword, page = 1, size = 10) {
-    const params = {
-      tags: keyword,
-      orderby: 4,
-      page: page,
-      size: size,
-      desc: 1,
-      isserial: -1
-    };
+  parseEpisodeLink(id) {
+    if (!id || typeof id !== 'string') {
+      return null;
+    }
 
-    const headers = {
-      "User-Agent": this.USER_AGENT,
-      "Accept": "application/json"
-    };
-
-    log("info", `[aiyifan] [搜索] 关键词: ${keyword}, 页码: ${page}`);
-    
+    let url;
     try {
-      const urlWithParams = updateQueryString(this.SEARCH_API, params);
-      const response = await httpGet(globals.makeProxyUrl(urlWithParams), { headers });
-      
-      const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+      url = new URL(id);
+    } catch {
+      return null;
+    }
+
+    const segments = url.pathname.split('/').filter(Boolean);
+    return {
+      mediaKey: segments.length ? segments[segments.length - 1] : '',
+      episodeKey: url.searchParams.get("id") || '',
+      videoId: url.searchParams.get("videoId") || '',
+      videoType: url.searchParams.get("videoType") || String(this.DEFAULT_VIDEO_TYPE)
+    };
+  }
+
+  /**
+   * 搜索剧目
+   * @param {string} keyword - 搜索关键词
+   * @returns {Promise<Object|null>} 搜索结果
+   */
+  async searchDrama(keyword) {
+    log("info", `[aiyifan] [搜索] 关键词: ${keyword}`);
+
+    try {
+      const { data } = await this.signingProvider.signedPostJson(this.SEARCH_API, {
+        SearchCriteria: keyword
+      }, "搜索");
       return data;
     } catch (error) {
       log("error", `[aiyifan] [搜索失败] 错误: ${error.message}`);
@@ -86,153 +99,123 @@ export default class AiyifanSource extends BaseSource {
    */
   extractDramaList(searchResult) {
     const dramas = [];
-    const infoList = searchResult?.data?.info || [];
+    const list = searchResult?.data?.list || [];
 
-    if (!infoList.length) {
+    if (!list.length) {
       log("warn", "[aiyifan] [警告] 搜索结果为空");
       return dramas;
     }
 
-    for (const item of infoList) {
-      const result = item.result || [];
-      if (!result.length) {
+    for (const item of list) {
+      if (!item || !item.title) {
         continue;
       }
 
-      for (const dramaInfo of result) {
-        const vid = dramaInfo.contxt;
-        const title = dramaInfo.title;
-
-        // 搜索结果里的 key 字段即为剧集 vid
-        // 不同接口字段名可能不同，优先取 key
-        dramas.push({
-          contxt: vid,
-          title: title,
-          ...dramaInfo
-        });
-        log("info", `[aiyifan] [发现剧目] ${title}  vid=${vid}`);
+      // App 搜索里的 mediaKey 即剧集标识，也是选集/弹幕接口的入参
+      const mediaKey = item.mediaKey || item.mediaId;
+      if (!mediaKey) {
+        continue;
       }
+
+      const episodes = Array.isArray(item.episodes) ? item.episodes : [];
+      const playableEpisodes = episodes.filter(ep => ep && ep.episodeKey);
+      const postTime = item.postTime ? new Date(item.postTime) : null;
+      const year = postTime && !isNaN(postTime.getTime()) ? postTime.getFullYear() : null;
+
+      dramas.push({
+        mediaKey: mediaKey,
+        mediaId: item.mediaId,
+        title: item.title,
+        type: item.mediaType || item.contentType || "影视",
+        year: year,
+        imageUrl: item.coverImgUrl || null,
+        episodeCount: playableEpisodes.length,
+        raw: item
+      });
+      log("info", `[aiyifan] [发现剧目] ${item.title}  mediaKey=${mediaKey}`);
     }
 
     return dramas;
   }
 
   /**
-   * 通过 languagesplaylist 接口获取该剧集的全部集信息
-   * @param {string} vid - 剧集唯一标识
-   * @returns {Promise<Array>} 集列表
+   * 获取剧集分集列表
+   * @param {string} id - 剧集 mediaKey
+   * @returns {Promise<Array>} 分集列表
    */
-  async getPlaylist(vid) {
-    const baseParams = {
-      cinema: 1,
-      vid: vid,
-      lsk: 1,
-      taxis: 0,
-      cid: "0,1,4,152",
-    };
+  async getEpisodes(id) {
+    log("info", `[aiyifan] [选集] 请求 mediaKey: ${id}`);
 
-    const headers = {
-      "User-Agent": this.USER_AGENT,
-      "Accept": "application/json"
-    };
-
-    log("info", `[aiyifan] [播放列表] 请求 vid: ${vid}`);
-    
+    let list = [];
     try {
-      const { data } = await this.signingProvider.signedGetJson(this.PLAYLIST_API, baseParams, headers, "播放列表");
-
-      const episodes = [];
-      const infoList = data.data?.info || [];
-      for (const info of infoList) {
-        for (const ep of info.playList || []) {
-          episodes.push(ep);
-        }
-      }
-
-      log("info", `[aiyifan] [播放列表] 共获取到 ${episodes.length} 集`);
-      return episodes;
+      const { data } = await this.signingProvider.signedPostJson(this.EPISODES_API, {
+        mediaKey: id
+      }, "选集");
+      list = data?.data?.list || [];
     } catch (error) {
-      log("error", `[aiyifan] [播放列表失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [选集失败] 错误: ${error.message}`);
       return [];
     }
+
+    // 转换为标准格式，弹幕接口需要的 videoId 存在链接里（取 uniqueID）
+    const result = list
+      .filter(ep => ep && ep.episodeKey)
+      .map((ep, index) => {
+        const videoType = ep.videoType != null ? ep.videoType : this.DEFAULT_VIDEO_TYPE;
+        const videoId = ep.uniqueID != null ? ep.uniqueID : ep.episodeId;
+        return {
+          vid: videoId,
+          id: ep.episodeKey,
+          title: ep.episodeTitle || ep.title || `第${index + 1}集`,
+          link: `${this.PLAY_PAGE_BASE}/${id}?id=${encodeURIComponent(ep.episodeKey)}&videoId=${videoId}&videoType=${videoType}`
+        };
+      });
+
+    log("info", `[aiyifan] [选集] 共获取到 ${result.length} 集`);
+    return result;
   }
 
   /**
-   * 获取视频播放信息，包括 uniqueKey
-   * @param {string} epKey - 剧集的 key
-   * @param {number} epId - 剧集的 id（可选，用于打印）
-   * @returns {Promise<Object>} 包含 uniqueKey 等信息的 data 字典
+   * 获取视频详情（用于补齐老链接缺失的 videoId）
+   * @param {string} mediaKey - 剧集标识
+   * @param {string} episodeKey - 分集标识
+   * @param {string|number} videoType - 视频类型
+   * @returns {Promise<Object>} 详情数据
    */
-  async getVideoInfo(epKey, epId = null) {
-    const baseParams = {
-      cinema: 1,
-      id: epKey,
-      a: 0,
-      lang: "none",
-      usersign: 1,
-      region: "GL.",
-      device: 0,
-      isMasterSupport: 1
-    };
-
-    const headers = {
-      "User-Agent": this.USER_AGENT,
-      "Accept": "application/json"
-    };
-
-    const epInfo = epId ? `(ID:${epId})` : "";
-    log("info", `[aiyifan] [视频信息] 请求 key: ${epKey} ${epInfo}`);
+  async getVideoInfo(mediaKey, episodeKey, videoType) {
+    log("info", `[aiyifan] [详情] 请求 mediaKey: ${mediaKey} episodeKey: ${episodeKey}`);
 
     try {
-      const { data, vv } = await this.signingProvider.signedGetJson(this.VIDEO_API, baseParams, headers, "视频信息");
-      log("info", `[aiyifan] [视频信息] vv签名: ${vv.substring(0, 16)}...`);
-      return data.data || {};
+      const { data } = await this.signingProvider.signedGetJson(this.DETAILS_API, {
+        mediaKey: mediaKey,
+        videoType: videoType,
+        episodeKey: episodeKey
+      }, "详情");
+      return data?.data || {};
     } catch (error) {
-      log("error", `[aiyifan] [视频信息失败] 错误: ${error.message}`);
+      log("error", `[aiyifan] [详情失败] 错误: ${error.message}`);
       return null;
     }
   }
 
   /**
-   * 从视频信息中提取 uniqueKey
-   * @param {Object} videoInfo - 视频信息
-   * @returns {string} uniqueKey
-   */
-  extractUniqueKey(videoInfo) {
-    const info = videoInfo.info?.[0] || {};
-    const uniqueKey = info.uniqueKey;
-    if (uniqueKey) {
-      log("info", `[aiyifan] [视频信息] 获取到 uniqueKey: ${uniqueKey}`);
-    }
-    return uniqueKey;
-  }
-
-  /**
    * 获取弹幕列表
-   * @param {string} uniqueKey - 唯一标识
-   * @param {number} page - 页码，默认为1
-   * @param {number} size - 每页数量，默认为30000
+   * @param {string} mediaKey - 剧集标识
+   * @param {string|number} videoId - 分集弹幕标识（uniqueID）
+   * @param {string|number} videoType - 视频类型
    * @returns {Promise<Array>} 弹幕列表
    */
-  async fetchBarrage(uniqueKey, page = 1, size = 30000) {
-    const baseParams = {
-      cinema: 1,
-      page: page,
-      size: size,
-      uniqueKey: uniqueKey,
-    };
-
-    const headers = {
-      "User-Agent": this.USER_AGENT,
-    };
-
-    log("info", `[aiyifan] [弹幕] 请求 uniqueKey: ${uniqueKey}`);
+  async fetchBarrage(mediaKey, videoId, videoType) {
+    log("info", `[aiyifan] [弹幕] 请求 mediaKey=${mediaKey} videoId=${videoId} videoType=${videoType}`);
 
     try {
-      const { data, vv } = await this.signingProvider.signedGetJson(this.DANMU_API, baseParams, headers, "弹幕");
-      log("info", `[aiyifan] [弹幕] vv签名: ${vv.substring(0, 16)}...`);
+      const { data } = await this.signingProvider.signedGetJson(this.DANMU_API, {
+        mediaKey: mediaKey,
+        videoId: videoId,
+        videoType: videoType
+      }, "弹幕");
 
-      const danmuList = data.data?.info || [];
+      const danmuList = data?.data?.list || [];
       log("info", `[aiyifan] [弹幕] 获取到 ${danmuList.length} 条弹幕`);
       return danmuList;
     } catch (error) {
@@ -266,44 +249,17 @@ export default class AiyifanSource extends BaseSource {
     const results = dramas.map(drama => {
       return {
         provider: "aiyifan",
-        mediaId: drama.contxt,  // vid 作为 mediaId
+        mediaId: drama.mediaKey,  // mediaKey 作为剧集标识
         title: drama.title,
-        type: drama.atypeName,  // 默认类型
-        year: new Date(drama.postTime).getFullYear(),  // 年份信息可能需要从其他地方获取
-        imageUrl: drama.imgPath || null,  // 图片链接
-        episodeCount: 0 // 初始集数为0，后续获取
+        type: drama.type,
+        year: drama.year,
+        imageUrl: drama.imageUrl,
+        episodeCount: drama.episodeCount
       };
     });
 
     log("info", `[aiyifan] 搜索完成，找到 ${results.length} 个结果`);
     return results;
-  }
-
-  /**
-   * 获取剧集详情
-   * @param {string} id - 剧集ID
-   * @returns {Promise<Array>} 剧集列表
-   */
-  async getEpisodes(id) {
-    log("info", `[aiyifan] 获取剧集详情: ${id}`);
-
-    // 获取播放列表
-    const episodes = await this.getPlaylist(id);
-    if (!episodes.length) {
-      log("error", "[aiyifan] 获取播放列表失败");
-      return [];
-    }
-
-    // 转换为标准格式
-    const result = episodes.map((ep, index) => ({
-      vid: ep.key,  // 使用key作为vid
-      id: ep.id,
-      title: ep.name || `第${index + 1}集`,
-      link: `${this.DOMAIN_API}/${id}?id=${ep.key}`
-    }));
-
-    log("info", `[aiyifan] 获取到 ${result.length} 个剧集`);
-    return result;
   }
 
   /**
@@ -397,11 +353,17 @@ export default class AiyifanSource extends BaseSource {
 
   /**
    * 获取某集的弹幕
-   * @param {string} id - 视频ID
+   * @param {string} id - 剧集链接
    * @returns {Promise<Array>} 弹幕列表
    */
   async getEpisodeDanmu(id) {
     log("info", `[aiyifan] 获取弹幕: ${id}`);
+
+    const episodeLink = this.parseEpisodeLink(id);
+    if (!episodeLink || !episodeLink.mediaKey) {
+      log("error", "[aiyifan] 无法解析剧集链接");
+      return [];
+    }
 
     const requestKey = this.extractEpisodeRequestKey(id);
     const inflightRequest = this.inflightDanmuRequests.get(requestKey);
@@ -411,25 +373,23 @@ export default class AiyifanSource extends BaseSource {
     }
 
     const requestPromise = (async () => {
-      // 从 URL 中提取 id 参数
-      const videoId = requestKey;
+      let videoId = episodeLink.videoId;
 
-      // 获取视频信息
-      const videoInfo = await this.getVideoInfo(videoId);
-      if (!videoInfo) {
-        log("error", "[aiyifan] 获取视频信息失败");
+      // 兼容缺少 videoId 的旧链接：用 App 详情接口补齐
+      if (!videoId && episodeLink.episodeKey) {
+        const videoInfo = await this.getVideoInfo(episodeLink.mediaKey, episodeLink.episodeKey, episodeLink.videoType);
+        const detailInfo = videoInfo?.detailInfo || {};
+        // 弹幕接口用的 videoId 是 uniqueID，episodeId 部分剧集是另一个值（会取不到弹幕）
+        videoId = detailInfo.uniqueID != null ? detailInfo.uniqueID : detailInfo.episodeId;
+        log("info", `[aiyifan] 详情接口补齐 videoId: ${videoId}`);
+      }
+
+      if (!videoId) {
+        log("error", "[aiyifan] 未获取到 videoId，无法获取弹幕");
         return [];
       }
 
-      // 提取uniqueKey
-      const uniqueKey = this.extractUniqueKey(videoInfo);
-      if (!uniqueKey) {
-        log("error", "[aiyifan] 未获取到uniqueKey");
-        return [];
-      }
-
-      // 获取弹幕
-      const danmuList = await this.fetchBarrage(uniqueKey);
+      const danmuList = await this.fetchBarrage(episodeLink.mediaKey, videoId, episodeLink.videoType);
       if (danmuList.length === 0) {
         log("info", "[aiyifan] 未获取到弹幕");
         return [];
@@ -452,24 +412,24 @@ export default class AiyifanSource extends BaseSource {
 
   /**
    * 获取某集的弹幕分片列表
-   * @param {string} id - 视频ID
+   * @param {string} id - 剧集链接
    * @returns {Promise<any>} 弹幕分片列表
    */
   async getEpisodeDanmuSegments(id) {
-    // 这里可以实现分片逻辑，暂时返回基本结构
     const danmaku = await this.getEpisodeDanmu(id);
-    
-    // 创建分段列表
+    const maxSecond = danmaku.length ? Math.max(...danmaku.map(d => d.second || 0)) : 0;
+
+    // App 弹幕接口一次返回全量，这里仍按分片结构返回，url 直接复用剧集链接
     const segmentList = [{
       "type": "aiyifan",
       "segment_start": 0,
-      "segment_end": Math.max(...danmaku.map(d => d.second || 0), 0),
-      "url": `${this.DANMU_API}?uniqueKey=${id}`
+      "segment_end": maxSecond,
+      "url": id
     }];
 
     return {
       "type": "aiyifan",
-      "duration": Math.max(...danmaku.map(d => d.second || 0), 0),
+      "duration": maxSecond,
       "segmentList": segmentList
     };
   }
@@ -480,13 +440,40 @@ export default class AiyifanSource extends BaseSource {
    * @returns {Promise<Array>} 分片弹幕
    */
   async getEpisodeSegmentDanmu(segment) {
-    // 从segment中提取uniqueKey并获取弹幕
-    const uniqueKey = segment.url?.split('uniqueKey=')[1];
-    if (!uniqueKey) {
+    const link = this.resolveSegmentLink(segment);
+    if (!link) {
+      log("warn", "[aiyifan] 分片信息缺少剧集链接");
       return [];
     }
-    
-    return await this.getEpisodeDanmu(uniqueKey);
+    return await this.getEpisodeDanmu(link);
+  }
+
+  resolveSegmentLink(segment) {
+    if (!segment) {
+      return null;
+    }
+
+    const rawUrl = typeof segment.url === 'string' ? segment.url : '';
+    if (!rawUrl) {
+      return null;
+    }
+
+    // 新格式：url 直接是剧集链接
+    if (rawUrl.includes('yfsp.tv')) {
+      return rawUrl;
+    }
+
+    // 兼容旧格式：url 里带 link=<剧集链接>
+    const linkIndex = rawUrl.indexOf('link=');
+    if (linkIndex !== -1) {
+      try {
+        return decodeURIComponent(rawUrl.slice(linkIndex + 5).split('&')[0]);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -496,10 +483,11 @@ export default class AiyifanSource extends BaseSource {
    */
   formatComments(comments) {
     return comments.map(comment => {
+      const colorHex = String(comment.color || '#ffffff').replace('#', '');
       // 将弹幕转换为标准格式
       return {
         // 时间（秒）
-        p: `${comment.second || 0},${comment.position === 1 ? 5 : 1},25,${hexToInt(comment.color.replace("#", ""))},0,0,0,0`, // 标准弹幕格式: time, type, fontsize, color, unix_timestamp, pool, uid, row_id
+        p: `${comment.second || 0},${comment.position === 1 ? 5 : 1},25,${hexToInt(colorHex)},0,0,0,0`, // 标准弹幕格式: time, type, fontsize, color, unix_timestamp, pool, uid, row_id
         m: comment.contxt || comment.content || '', // 弹幕内容
         like: comment.good, // 点赞数
         // 保留原始数据

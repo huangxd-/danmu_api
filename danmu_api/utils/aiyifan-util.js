@@ -1,267 +1,35 @@
 import { globals } from '../configs/globals.js';
 import { log } from "./log-util.js";
 import { md5 } from "./codec-util.js";
-import { httpGet, updateQueryString } from "./http-util.js";
+import { httpGet, httpPost } from "./http-util.js";
 
-const DEFAULT_CONFIG_PAGE_URL = "https://www.yfsp.tv/";
-const DEFAULT_USER_AGENT = (
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-  "AppleWebKit/537.36 (KHTML, like Gecko) " +
-  "Chrome/124.0.0 Safari/537.36"
-);
+// =====================
+// 爱壹帆 App 链路签名工具
+// =====================
+// 逆向自 1.7.8 安装包（com.ppde.ppcd）的 OkHttp 拦截器
+// （com/ppde/library/network/e.smali、d.smali）：
+//   1. App 启动后先请求 GET https://api.tripdata.app/api/home/config，
+//      该引导请求用内置私钥签名（x-pub 为空），返回 data.list.pConfig：
+//      { publicKey, privateKey: ["..."] }；
+//   2. 之后所有 App 接口都带三个请求头：
+//        x-timestamp：秒级时间戳
+//        x-pub：pConfig.publicKey
+//        x-sign：MD5(query + x-timestamp + pConfig.privateKey[0])
+//      query 为 URL 中 "?" 之后的部分；请求本身没有 query 时会先补
+//      _t=<x-timestamp> 再参与签名（POST 请求即属于这种情况）。
+//   3. 服务端当前对签名校验很宽松，但这里仍完全按 App 算法实现，
+//      避免服务端以后收紧校验导致失效。
 
-export const AIYIFAN_SIGNING_CONFIG_TTL_MS = 60 * 1000;
+export const AIYIFAN_APP_BASE_URL = "https://api.tripdata.app/";
+export const AIYIFAN_APP_CONFIG_API = "api/home/config";
+export const AIYIFAN_APP_CONFIG_TTL_MS = 30 * 60 * 1000;
+export const AIYIFAN_APP_DEFAULT_PRIVATE_KEY = "57688*1-331@";
+export const AIYIFAN_APP_USER_AGENT = "okhttp-okgo/jeasonlzy";
+export const AIYIFAN_APP_BUNDLE_ID = "com.cqcsy.ifvod";
+export const AIYIFAN_APP_VERSION = "1.7.8";
 
-// 安全获取对象属性（替代可选链操作符）
-function safeGet(obj, path, defaultValue) {
-  if (obj == null) return defaultValue;
-  const keys = path.split('.');
-  let result = obj;
-  for (let i = 0; i < keys.length; i++) {
-    if (result == null) return defaultValue;
-    // 处理数组索引，如 config[0]
-    const key = keys[i];
-    const arrayMatch = key.match(/^(.+)\[(\d+)\]$/);
-    if (arrayMatch) {
-      const arrKey = arrayMatch[1];
-      const index = parseInt(arrayMatch[2], 10);
-      result = result[arrKey];
-      if (Array.isArray(result) && index < result.length) {
-        result = result[index];
-      } else {
-        return defaultValue;
-      }
-    } else {
-      result = result[key];
-    }
-  }
-  return result !== undefined ? result : defaultValue;
-}
-
-function extractAssignedObjectLiteral(html, variableName) {
-  const assignmentPattern = new RegExp('\\b(?:var|let|const)\\s+' + variableName + '\\s*=\\s*');
-  const match = assignmentPattern.exec(html);
-  if (!match) {
-    return null;
-  }
-
-  const objectStart = html.indexOf("{", match.index + match[0].length);
-  if (objectStart === -1) {
-    return null;
-  }
-
-  let depth = 0;
-  let inString = false;
-  let quote = "";
-  let escaped = false;
-
-  for (let i = objectStart; i < html.length; i++) {
-    const char = html[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        inString = false;
-        quote = "";
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      inString = true;
-      quote = char;
-      continue;
-    }
-
-    if (char === "{") {
-      depth += 1;
-      continue;
-    }
-
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return html.slice(objectStart, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
-function parseFallbackPConfig(html) {
-  const match = html.match(/"pConfig"\s*:\s*\{\s*"publicKey"\s*:\s*"([^"]+)"\s*,\s*"privateKey"\s*:\s*\[(.*?)\]\s*\}/s);
-  if (!match) {
-    return null;
-  }
-
-  let privateKeys = [];
-  try {
-    privateKeys = JSON.parse('[' + match[2] + ']');
-  } catch (e) {
-    return null;
-  }
-
-  if (!match[1] || !privateKeys.length) {
-    return null;
-  }
-
-  return {
-    publicKey: match[1],
-    privateKey: privateKeys[0]
-  };
-}
-
-export function extractPConfigFromInjectJson(injectJson) {
-  // 使用安全获取替代可选链
-  const config = safeGet(injectJson, 'config[0]', null);
-  const pConfig = config ? config.pConfig : null;
-  
-  if (!pConfig) return null;
-  
-  const publicKey = pConfig.publicKey;
-  const privateKey = Array.isArray(pConfig.privateKey) ? pConfig.privateKey[0] : pConfig.privateKey;
-
-  if (!publicKey || !privateKey) {
-    return null;
-  }
-
-  return { publicKey, privateKey };
-}
-
-export function extractPConfigFromHtml(html) {
-  const objectLiteral = extractAssignedObjectLiteral(html, "injectJson");
-  if (objectLiteral) {
-    try {
-      const injectJson = JSON.parse(objectLiteral);
-      const signingConfig = extractPConfigFromInjectJson(injectJson);
-      if (signingConfig) {
-        return signingConfig;
-      }
-    } catch (error) {
-      log("warn", '[system] [aiyifan] 解析 injectJson 失败，回退到 pConfig 提取: ' + (error.message || '未知错误'));
-    }
-  }
-
-  return parseFallbackPConfig(html);
-}
-
-function normalizeQueryValue(value) {
-  if (value === undefined || value === null) {
-    return null;
-  }
-  return String(value);
-}
-
-function isSigningParam(key) {
-  return key === "vv" || key === "pub";
-}
-
-function splitQueryString(queryString) {
-  if (!queryString) {
-    return [];
-  }
-
-  return queryString
-    .split("&")
-    .filter(Boolean)
-    .map(function(pair) {
-      const equalsIndex = pair.indexOf("=");
-      const rawKey = equalsIndex === -1 ? pair : pair.slice(0, equalsIndex);
-      const rawValue = equalsIndex === -1 ? "" : pair.slice(equalsIndex + 1);
-      
-      // 手动解码，替代 decodeURIComponent 的异常处理
-      function safeDecode(str) {
-        try {
-          return decodeURIComponent(str.replace(/\+/g, "%20"));
-        } catch (e) {
-          return str;
-        }
-      }
-      
-      const key = safeDecode(rawKey);
-      const value = safeDecode(rawValue);
-      return [key, value];
-    });
-}
-
-function getQueryEntries(input) {
-  if (!input) {
-    return [];
-  }
-
-  if (typeof input === "string") {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      return [];
-    }
-
-    let queryString = trimmed;
-    const queryIndex = trimmed.indexOf("?");
-    if (queryIndex !== -1) {
-      const hashIndex = trimmed.indexOf("#", queryIndex);
-      queryString = trimmed.slice(queryIndex + 1, hashIndex === -1 ? undefined : hashIndex);
-    } else if (trimmed.charAt(0) === "?") {
-      queryString = trimmed.slice(1);
-    }
-
-    return splitQueryString(queryString);
-  }
-
-  // 移除 URLSearchParams 检查，统一按普通对象处理
-  if (typeof input === "object" && input !== null) {
-    // 如果 input 有 entries 方法且返回数组，使用它
-    if (typeof input.entries === "function") {
-      try {
-        var entries = input.entries();
-        if (Array.isArray(entries)) {
-          return entries;
-        }
-        // 处理迭代器情况
-        var result = [];
-        // 尝试作为 Map 或类似对象处理
-        if (typeof input.forEach === "function") {
-          input.forEach(function(value, key) {
-            result.push([key, normalizeQueryValue(value)]);
-          });
-          return result.filter(function(item) {
-            return item[1] !== null;
-          });
-        }
-      } catch (e) {
-        // 失败则回退到 Object.entries
-      }
-    }
-    
-    // 标准对象处理
-    return Object.keys(input).map(function(key) {
-      return [key, normalizeQueryValue(input[key])];
-    }).filter(function(item) {
-      return item[1] !== null;
-    });
-  }
-
-  return [];
-}
-
-export function buildCanonicalQuery(input) {
-  return getQueryEntries(input)
-    .filter(function(item) {
-      return !isSigningParam(item[0]);
-    })
-    .map(function(item) {
-      return item[0] + "=" + item[1];
-    })
-    .join("&");
-}
-
-export function computeAiyifanVv(input, signingConfig) {
-  const query = buildCanonicalQuery(input);
-  const raw = signingConfig.publicKey + "&" + query.toLowerCase() + "&" + signingConfig.privateKey;
-  return md5(raw);
+export function computeAiyifanAppSign(query, timestamp, privateKey) {
+  return md5(query + timestamp + privateKey);
 }
 
 function normalizeJsonPayload(data) {
@@ -271,109 +39,183 @@ function normalizeJsonPayload(data) {
   return data;
 }
 
-function isSignedRequestSuccessful(payload) {
-  // 使用安全获取替代可选链
-  var ret = safeGet(payload, 'ret', null);
-  var code = safeGet(payload, 'data.code', null);
-  return ret === 200 && code === 0;
+function isAppRequestSuccessful(payload) {
+  return !!payload && payload.ret === 200;
 }
 
 function getFailureMessage(payload, status) {
-  // 使用安全获取替代可选链
-  var msg = safeGet(payload, 'data.msg', null) || safeGet(payload, 'msg', null);
+  const msg = payload && (payload.msg || (payload.data && payload.data.msg));
   return msg || ('HTTP ' + status);
 }
 
-export class AiyifanSigningProvider {
+export class AiyifanAppSigningProvider {
   constructor(options) {
     options = options || {};
-    this.proxyUrlBuilder = options.proxyUrlBuilder || function(url) { 
-      return globals.makeProxyUrl(url); 
+    this.baseUrl = options.baseUrl || AIYIFAN_APP_BASE_URL;
+    this.configUrl = options.configUrl || (this.baseUrl + AIYIFAN_APP_CONFIG_API);
+    this.proxyUrlBuilder = options.proxyUrlBuilder || function(url) {
+      return globals.makeProxyUrl(url);
     };
-    this.userAgent = options.userAgent || DEFAULT_USER_AGENT;
-    this.configPageUrl = options.configPageUrl || DEFAULT_CONFIG_PAGE_URL;
-    this.ttlMs = options.ttlMs || AIYIFAN_SIGNING_CONFIG_TTL_MS;
+    this.userAgent = options.userAgent || AIYIFAN_APP_USER_AGENT;
+    this.version = options.version || AIYIFAN_APP_VERSION;
+    this.deviceId = options.deviceId || "2da4a414036a4332782795a031dcab6b4";
+    this.deviceInfo = options.deviceInfo || "Xiaomi 23127PN0CC";
+    this.ttlMs = options.ttlMs || AIYIFAN_APP_CONFIG_TTL_MS;
+    this.timeoutMs = options.timeoutMs || 10000;
     this.now = options.now || function() { return Date.now(); };
     this.signingConfig = null;
     this.signingConfigFetchedAt = 0;
+    this.inflightConfigRequest = null;
   }
 
+  // App 固定请求头（okhttp-okgo 默认头 + 设备信息）
+  buildCommonHeaders() {
+    return {
+      "User-Agent": this.userAgent,
+      "Accept-Language": "zh-CN,zh;q=0.8",
+      "Lat": "0.0",
+      "Lng": "0.0",
+      "BundleId": AIYIFAN_APP_BUNDLE_ID,
+      "AppVersion": this.version,
+      "System": "Android",
+      "SystemVersion": "17",
+      "DeviceInfo": this.deviceInfo,
+      "DeviceId": this.deviceId,
+      "Version": "V3",
+      "Lang": "0"
+    };
+  }
+
+  buildSignedHeaders(query, timestamp, signingConfig) {
+    const headers = this.buildCommonHeaders();
+    headers["x-timestamp"] = String(timestamp);
+    headers["x-pub"] = signingConfig.publicKey;
+    headers["x-sign"] = computeAiyifanAppSign(query, timestamp, signingConfig.privateKey);
+    return headers;
+  }
+
+  // 获取（并缓存）pConfig 签名配置；并发请求会合并到同一个请求上
   async getSigningConfig(forceRefresh) {
     forceRefresh = forceRefresh || false;
-    var now = this.now();
-    var cacheValid = this.signingConfig && (now - this.signingConfigFetchedAt) < this.ttlMs;
+    if (this.inflightConfigRequest) {
+      return await this.inflightConfigRequest;
+    }
 
+    const now = this.now();
+    const cacheValid = this.signingConfig && (now - this.signingConfigFetchedAt) < this.ttlMs;
     if (!forceRefresh && cacheValid) {
       return this.signingConfig;
     }
 
-    var response = await httpGet(this.proxyUrlBuilder(this.configPageUrl), {
-      headers: {
-        "User-Agent": this.userAgent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-      }
+    const task = this.fetchSigningConfig();
+    this.inflightConfigRequest = task;
+    try {
+      return await task;
+    } finally {
+      this.inflightConfigRequest = null;
+    }
+  }
+
+  async fetchSigningConfig() {
+    const timestamp = Math.floor(this.now() / 1000);
+    const query = "_t=" + timestamp;
+    const headers = this.buildCommonHeaders();
+    headers["x-timestamp"] = String(timestamp);
+    headers["x-pub"] = "";
+    headers["x-sign"] = computeAiyifanAppSign(query, timestamp, AIYIFAN_APP_DEFAULT_PRIVATE_KEY);
+
+    const response = await httpGet(this.proxyUrlBuilder(this.configUrl + "?" + query), {
+      headers: headers,
+      timeout: this.timeoutMs,
+      retries: 2
     });
 
-    var html = typeof response.data === "string" ? response.data : String(response.data || "");
-    var signingConfig = extractPConfigFromHtml(html);
-    if (!signingConfig) {
-      throw new Error("未能从桌面站页面解析到 pConfig");
+    const payload = normalizeJsonPayload(response.data);
+    const pConfig = payload?.data?.list?.pConfig;
+    const publicKey = pConfig?.publicKey;
+    const privateKeyList = pConfig?.privateKey;
+    const privateKey = Array.isArray(privateKeyList) ? privateKeyList[0] : privateKeyList;
+
+    if (!publicKey || !privateKey) {
+      throw new Error("未能从 App 配置接口(/api/home/config)获取 pConfig");
     }
 
-    this.signingConfig = signingConfig;
-    this.signingConfigFetchedAt = now;
-    log("info", '[system] [aiyifan] 已更新桌面站签名配置: ' + signingConfig.publicKey.slice(0, 12) + '...');
-    return signingConfig;
+    this.signingConfig = { publicKey: publicKey, privateKey: privateKey };
+    this.signingConfigFetchedAt = this.now();
+    log("info", '[system] [aiyifan] 已更新 App 签名配置: ' + publicKey.slice(0, 12) + '...');
+    return this.signingConfig;
   }
 
-  buildSignedParams(baseParams, signingConfig) {
-    var result = {};
-    // 手动复制对象，替代展开运算符
-    for (var key in baseParams) {
-      if (baseParams.hasOwnProperty(key)) {
-        result[key] = baseParams[key];
+  // 按 App 规则拼签名 query：GET 用原始参数，POST 用 _t 时间戳
+  buildSignQuery(method, params, timestamp) {
+    if (method === 'POST') {
+      return "_t=" + timestamp;
+    }
+    const entries = [];
+    for (const key in params) {
+      if (!Object.prototype.hasOwnProperty.call(params, key)) {
+        continue;
       }
+      const value = params[key];
+      if (value === undefined || value === null) {
+        continue;
+      }
+      entries.push(key + "=" + value);
     }
-    result.vv = computeAiyifanVv(baseParams, signingConfig);
-    result.pub = signingConfig.publicKey;
-    return result;
+    return entries.length ? entries.join("&") : "_t=" + timestamp;
   }
 
-  async signedGetJson(api, baseParams, headers, logPrefix, forceRefresh) {
-    headers = headers || {};
-    logPrefix = logPrefix || "Aiyifan";
-    forceRefresh = forceRefresh || false;
-    
-    var signingConfig = await this.getSigningConfig(forceRefresh);
-    var signedParams = this.buildSignedParams(baseParams, signingConfig);
-    var requestUrl = updateQueryString(api, signedParams);
-    var response = await httpGet(this.proxyUrlBuilder(requestUrl), { headers: headers });
+  async signedRequest(method, api, params, body, logPrefix, forceRefresh) {
+    const signingConfig = await this.getSigningConfig(forceRefresh);
+    const timestamp = Math.floor(this.now() / 1000);
+    const query = this.buildSignQuery(method, params, timestamp);
+    const headers = this.buildSignedHeaders(query, timestamp, signingConfig);
+    const requestUrl = this.proxyUrlBuilder(api + "?" + query);
 
-    var payload;
+    let payload;
+    let statusCode = 200;
     try {
-      payload = normalizeJsonPayload(response.data);
+      if (method === 'POST') {
+        headers["Content-Type"] = "application/json;charset=utf-8";
+        const response = await httpPost(requestUrl, JSON.stringify(body), { headers: headers, timeout: this.timeoutMs, retries: 2 });
+        statusCode = response.status != null ? response.status : 200;
+        payload = normalizeJsonPayload(response.data);
+      } else {
+        const response = await httpGet(requestUrl, { headers: headers, timeout: this.timeoutMs, retries: 2 });
+        statusCode = response.status != null ? response.status : 200;
+        payload = normalizeJsonPayload(response.data);
+      }
     } catch (error) {
       if (!forceRefresh) {
-        log("warn", '[' + logPrefix + '] 响应无法解析为 JSON，刷新签名配置后重试: ' + (error.message || '未知错误'));
-        return this.signedGetJson(api, baseParams, headers, logPrefix, true);
+        log("warn", '[' + logPrefix + '] 请求异常，刷新 App 签名配置后重试: ' + (error.message || '未知错误'));
+        return await this.signedRequest(method, api, params, body, logPrefix, true);
       }
       throw error;
     }
 
-    // 安全获取状态码，如果不存在则默认为200
-    var statusCode = response.status != null ? response.status : 200;
-    if (statusCode !== 200 || !isSignedRequestSuccessful(payload)) {
+    if (statusCode !== 200 || !isAppRequestSuccessful(payload)) {
       if (!forceRefresh) {
-        log("warn", '[' + logPrefix + '] 当前签名请求失败，刷新 pConfig 后重试: ' + getFailureMessage(payload, statusCode));
-        return this.signedGetJson(api, baseParams, headers, logPrefix, true);
+        log("warn", '[' + logPrefix + '] 当前签名请求失败，刷新 App 签名配置后重试: ' + getFailureMessage(payload, statusCode));
+        return await this.signedRequest(method, api, params, body, logPrefix, true);
       }
       throw new Error(getFailureMessage(payload, statusCode));
     }
 
     return {
       data: payload,
-      vv: signedParams.vv,
       signingConfig: signingConfig
     };
+  }
+
+  async signedGetJson(api, params, logPrefix, forceRefresh) {
+    logPrefix = logPrefix || "Aiyifan";
+    forceRefresh = forceRefresh || false;
+    return await this.signedRequest('GET', api, params || {}, null, logPrefix, forceRefresh);
+  }
+
+  async signedPostJson(api, body, logPrefix, forceRefresh) {
+    logPrefix = logPrefix || "Aiyifan";
+    forceRefresh = forceRefresh || false;
+    return await this.signedRequest('POST', api, null, body, logPrefix, forceRefresh);
   }
 }
