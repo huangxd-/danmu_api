@@ -6,7 +6,7 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { globals } from '../configs/globals.js';
-import { AiyifanAppSigningProvider, AIYIFAN_APP_BASE_URL } from '../utils/aiyifan-util.js';
+import { AiyifanAppSigningProvider, AIYIFAN_APP_BASE_URL, AIYIFAN_WEB_YEAR_MAX_WAIT_MS } from '../utils/aiyifan-util.js';
 
 // =====================
 // 获取爱壹帆弹幕（App 链路）
@@ -119,15 +119,17 @@ export default class AiyifanSource extends BaseSource {
 
       const episodes = Array.isArray(item.episodes) ? item.episodes : [];
       const playableEpisodes = episodes.filter(ep => ep && ep.episodeKey);
+      // App 的 postTime 是站点加入时间，仅作为网页搜索取不到作品年份时的兜底
       const postTime = item.postTime ? new Date(item.postTime) : null;
-      const year = postTime && !isNaN(postTime.getTime()) ? postTime.getFullYear() : null;
+      const joinYear = postTime && !isNaN(postTime.getTime()) ? postTime.getFullYear() : null;
 
       dramas.push({
         mediaKey: mediaKey,
         mediaId: item.mediaId,
         title: item.title,
         type: item.mediaType || item.contentType || "影视",
-        year: year,
+        // 年份优先用网页搜索接口的作品年份，补不到时回退这个加入年份
+        year: joinYear,
         imageUrl: item.coverImgUrl || null,
         episodeCount: playableEpisodes.length,
         raw: item
@@ -232,6 +234,12 @@ export default class AiyifanSource extends BaseSource {
   async search(keyword) {
     log("info", `[aiyifan] 开始搜索: ${keyword}`);
 
+    // App 接口不返回真实年份（postTime 是加入时间），这里与 App 搜索并发请求
+    // 旧网页搜索接口补真实年份；该接口取不到时回退 App 的加入年份。
+    // lookupYears 内部已兜底，不会 reject。
+    const yearDeadline = Date.now() + AIYIFAN_WEB_YEAR_MAX_WAIT_MS;
+    const yearPromise = this.signingProvider.lookupYears(keyword, "年份");
+
     // Step 1: 搜索，拿到剧目列表
     const searchResult = await this.searchDrama(keyword);
     if (!searchResult) {
@@ -245,14 +253,20 @@ export default class AiyifanSource extends BaseSource {
       return [];
     }
 
+    // 从发起年份查询算起最多等 5 秒：被 Cloudflare 拦/超时就直接用 App 加入年份，不拖住整个搜索
+    const remainingWaitMs = yearDeadline - Date.now();
+    const yearMap = (remainingWaitMs > 0 ? await this.waitYearMap(yearPromise, remainingWaitMs) : null) || new Map();
+
     // 转换搜索结果格式
     const results = dramas.map(drama => {
+      // 网页搜索的作品年份优先，取不到（含接口被 Cloudflare 拦）时回退 App 加入年份
+      const year = yearMap.get(drama.mediaKey) || drama.year || null;
       return {
         provider: "aiyifan",
         mediaId: drama.mediaKey,  // mediaKey 作为剧集标识
         title: drama.title,
         type: drama.type,
-        year: drama.year,
+        year: year,
         imageUrl: drama.imageUrl,
         episodeCount: drama.episodeCount
       };
@@ -260,6 +274,48 @@ export default class AiyifanSource extends BaseSource {
 
     log("info", `[aiyifan] 搜索完成，找到 ${results.length} 个结果`);
     return results;
+  }
+
+  /**
+   * 等待网页搜索补年份的结果，最多等 timeoutMs：
+   * 被 Cloudflare 拦、超时或出错都不阻塞搜索，直接返回 null（调用方回退 App 加入年份）。
+   * 后台请求若稍后完成，结果仍会写入 provider 缓存，下次搜索可直接命中。
+   * @param {Promise<Map>} promise - lookupYears 返回的 Promise
+   * @param {number} timeoutMs - 最长等待时间
+   * @returns {Promise<Map|null>} 年份映射，或 null（超时/失败）
+   */
+  waitYearMap(promise, timeoutMs) {
+    if (!timeoutMs || timeoutMs <= 0) {
+      return promise;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        log("warn", `[aiyifan] 网页年份查询超过 ${timeoutMs}ms 未返回，本次回退 App 加入年份`);
+        resolve(null);
+      }, timeoutMs);
+
+      promise.then((map) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(map);
+      }).catch(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
   }
 
   /**

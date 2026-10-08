@@ -28,6 +28,26 @@ export const AIYIFAN_APP_USER_AGENT = "okhttp-okgo/jeasonlzy";
 export const AIYIFAN_APP_BUNDLE_ID = "com.cqcsy.ifvod";
 export const AIYIFAN_APP_VERSION = "1.7.8";
 
+// 网页版搜索接口：App 接口不返回作品年份（postTime 是站点发布时间），
+// 这个接口返回同一个 contxt（== App mediaKey），且 postTime 是作品年份。
+// 只用于补年份，弹幕/选集等仍走 App 接口。
+export const AIYIFAN_WEB_SEARCH_API = "https://rankv21.tripdata.app/v3/list/briefsearch";
+export const AIYIFAN_WEB_SEARCH_TTL_MS = 30 * 60 * 1000;
+export const AIYIFAN_WEB_SEARCH_CACHE_MAX = 100;
+// 搜索链路里等待网页年份结果的上限：超时/被拦都不阻塞搜索，直接回退 App 加入年份
+export const AIYIFAN_WEB_YEAR_MAX_WAIT_MS = 5000;
+// 年份接口连续失败后的熔断时间：期间直接返回未知年份，不再发请求拖慢搜索
+export const AIYIFAN_WEB_SEARCH_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
+export const AIYIFAN_WEB_USER_AGENT = (
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) " +
+  "Chrome/124.0.0 Safari/537.36"
+);
+
+export function computeAiyifanWebSign(query, signingConfig) {
+  return md5(signingConfig.publicKey + "&" + query.toLowerCase() + "&" + signingConfig.privateKey);
+}
+
 export function computeAiyifanAppSign(query, timestamp, privateKey) {
   return md5(query + timestamp + privateKey);
 }
@@ -53,19 +73,25 @@ export class AiyifanAppSigningProvider {
     options = options || {};
     this.baseUrl = options.baseUrl || AIYIFAN_APP_BASE_URL;
     this.configUrl = options.configUrl || (this.baseUrl + AIYIFAN_APP_CONFIG_API);
+    this.webSearchApi = options.webSearchApi || AIYIFAN_WEB_SEARCH_API;
     this.proxyUrlBuilder = options.proxyUrlBuilder || function(url) {
       return globals.makeProxyUrl(url);
     };
     this.userAgent = options.userAgent || AIYIFAN_APP_USER_AGENT;
+    this.webUserAgent = options.webUserAgent || AIYIFAN_WEB_USER_AGENT;
     this.version = options.version || AIYIFAN_APP_VERSION;
     this.deviceId = options.deviceId || "2da4a414036a4332782795a031dcab6b4";
     this.deviceInfo = options.deviceInfo || "Xiaomi 23127PN0CC";
     this.ttlMs = options.ttlMs || AIYIFAN_APP_CONFIG_TTL_MS;
+    this.webCacheTtlMs = options.webCacheTtlMs || AIYIFAN_WEB_SEARCH_TTL_MS;
+    this.webFailureCooldownMs = options.webFailureCooldownMs || AIYIFAN_WEB_SEARCH_FAILURE_COOLDOWN_MS;
     this.timeoutMs = options.timeoutMs || 10000;
     this.now = options.now || function() { return Date.now(); };
     this.signingConfig = null;
     this.signingConfigFetchedAt = 0;
     this.inflightConfigRequest = null;
+    this.yearCache = new Map();
+    this.yearLookupDisabledUntil = 0;
   }
 
   // App 固定请求头（okhttp-okgo 默认头 + 设备信息）
@@ -226,4 +252,137 @@ export class AiyifanAppSigningProvider {
     forceRefresh = forceRefresh || false;
     return await this.signedRequest('POST', api, null, body, logPrefix, forceRefresh);
   }
+
+  // =====================
+  // 网页版搜索（仅用于补作品年份）
+  // =====================
+  // vv = MD5(publicKey + "&" + query.toLowerCase() + "&" + privateKey)，
+  // 签名结果与 publicKey 一起作为 query 参数追加在 URL 上。
+  buildWebSignedQuery(params, signingConfig) {
+    const entries = [];
+    for (const key in params) {
+      if (!Object.prototype.hasOwnProperty.call(params, key)) {
+        continue;
+      }
+      const value = params[key];
+      if (value === undefined || value === null) {
+        continue;
+      }
+      entries.push(key + "=" + value);
+    }
+    const query = entries.join("&");
+    return query + "&vv=" + computeAiyifanWebSign(query, signingConfig) + "&pub=" + signingConfig.publicKey;
+  }
+
+  async signedWebGetJson(api, params, logPrefix, forceRefresh) {
+    const signingConfig = await this.getSigningConfig(forceRefresh);
+    const requestUrl = this.proxyUrlBuilder(api + "?" + this.buildWebSignedQuery(params || {}, signingConfig));
+
+    let payload;
+    let statusCode = 200;
+    try {
+      const response = await httpGet(requestUrl, {
+        headers: {
+          "User-Agent": this.webUserAgent,
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+        },
+        timeout: this.timeoutMs,
+        retries: 2,
+        // 签名更新后 URL 可能相同，重试必须重新发送请求。
+        bypassCache: forceRefresh
+      });
+      statusCode = response.status != null ? response.status : 200;
+      payload = normalizeJsonPayload(response.data);
+    } catch (error) {
+      if (!forceRefresh) {
+        log("warn", '[' + logPrefix + '] 网页搜索请求异常，刷新签名配置后重试: ' + (error.message || '未知错误'));
+        return await this.signedWebGetJson(api, params, logPrefix, true);
+      }
+      throw error;
+    }
+
+    if (statusCode !== 200 || !isAppRequestSuccessful(payload)) {
+      if (!forceRefresh) {
+        log("warn", '[' + logPrefix + '] 网页搜索失败，刷新签名配置后重试: ' + getFailureMessage(payload, statusCode));
+        return await this.signedWebGetJson(api, params, logPrefix, true);
+      }
+      throw new Error(getFailureMessage(payload, statusCode));
+    }
+
+    return { data: payload, signingConfig: signingConfig };
+  }
+
+  // 按关键词查询网页搜索，返回 mediaKey(contxt) -> 作品年份 的映射
+  // 同关键词带 TTL 缓存；失败时返回空 Map（年份保持未知，不影响主链路）
+  async lookupYears(keyword, logPrefix) {
+    logPrefix = logPrefix || "Aiyifan";
+    const cacheKey = String(keyword || "").trim();
+    if (!cacheKey) {
+      return new Map();
+    }
+
+    const now = this.now();
+    const cached = this.yearCache.get(cacheKey);
+    if (cached && (now - cached.fetchedAt) < this.webCacheTtlMs) {
+      return cached.years;
+    }
+
+    // 熔断期：年份接口刚失败过，直接按未知处理，避免并发重试拖慢整个搜索
+    if (now < this.yearLookupDisabledUntil) {
+      return new Map();
+    }
+
+    const years = new Map();
+    try {
+      const { data } = await this.signedWebGetJson(this.webSearchApi, {
+        tags: cacheKey,
+        orderby: 4,
+        page: 1,
+        size: 10,
+        desc: 1,
+        isserial: -1
+      }, logPrefix);
+
+      const groups = (data && data.data && data.data.info) || [];
+      for (const group of groups) {
+        for (const item of (group && group.result) || []) {
+          if (!item || !item.contxt) {
+            continue;
+          }
+          const year = parseAiyifanYear(item.postTime);
+          if (year) {
+            years.set(item.contxt, year);
+          }
+        }
+      }
+      // 请求成功则解除熔断
+      this.yearLookupDisabledUntil = 0;
+    } catch (error) {
+      this.yearLookupDisabledUntil = this.now() + this.webFailureCooldownMs;
+      log("warn", '[' + logPrefix + '] 获取作品年份失败，本次保留未知年份，' +
+        Math.round(this.webFailureCooldownMs / 60000) + ' 分钟内不再重试: ' + (error.message || '未知错误'));
+      return new Map();
+    }
+
+    if (this.yearCache.size >= AIYIFAN_WEB_SEARCH_CACHE_MAX) {
+      this.yearCache.clear();
+    }
+    this.yearCache.set(cacheKey, { years: years, fetchedAt: this.now() });
+    log("info", '[' + logPrefix + '] 年份查询命中 ' + years.size + ' 条: ' + cacheKey);
+    return years;
+  }
+}
+
+// postTime 形如 2003-01-01T00:00:00，取其中合法的年份
+export function parseAiyifanYear(postTime) {
+  if (!postTime || typeof postTime !== 'string') {
+    return null;
+  }
+  const match = postTime.match(/^(\d{4})-/);
+  if (!match) {
+    return null;
+  }
+  const year = parseInt(match[1], 10);
+  return year >= 1900 && year <= 2100 ? year : null;
 }
