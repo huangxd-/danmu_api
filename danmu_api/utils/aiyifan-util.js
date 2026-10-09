@@ -34,7 +34,7 @@ export const AIYIFAN_APP_VERSION = "1.7.8";
 export const AIYIFAN_WEB_SEARCH_API = "https://rankv21.tripdata.app/v3/list/briefsearch";
 export const AIYIFAN_WEB_SEARCH_TTL_MS = 30 * 60 * 1000;
 export const AIYIFAN_WEB_SEARCH_CACHE_MAX = 100;
-// 搜索链路里等待网页年份结果的上限：超时/被拦都不阻塞搜索，直接回退 App 加入年份
+// 搜索链路里等待网页年份结果的上限：超时/被拦都不阻塞搜索，保留未知年份
 export const AIYIFAN_WEB_YEAR_MAX_WAIT_MS = 5000;
 // 年份接口连续失败后的熔断时间：期间直接返回未知年份，不再发请求拖慢搜索
 export const AIYIFAN_WEB_SEARCH_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
@@ -260,6 +260,7 @@ export class AiyifanAppSigningProvider {
   // 签名结果与 publicKey 一起作为 query 参数追加在 URL 上。
   buildWebSignedQuery(params, signingConfig) {
     const entries = [];
+    const encodedEntries = [];
     for (const key in params) {
       if (!Object.prototype.hasOwnProperty.call(params, key)) {
         continue;
@@ -269,9 +270,11 @@ export class AiyifanAppSigningProvider {
         continue;
       }
       entries.push(key + "=" + value);
+      encodedEntries.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
     }
     const query = entries.join("&");
-    return query + "&vv=" + computeAiyifanWebSign(query, signingConfig) + "&pub=" + signingConfig.publicKey;
+    return encodedEntries.join("&") + "&vv=" + computeAiyifanWebSign(query, signingConfig)
+      + "&pub=" + encodeURIComponent(signingConfig.publicKey);
   }
 
   async signedWebGetJson(api, params, logPrefix, forceRefresh) {

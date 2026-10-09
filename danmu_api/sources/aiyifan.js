@@ -119,17 +119,13 @@ export default class AiyifanSource extends BaseSource {
 
       const episodes = Array.isArray(item.episodes) ? item.episodes : [];
       const playableEpisodes = episodes.filter(ep => ep && ep.episodeKey);
-      // App 的 postTime 是站点加入时间，仅作为网页搜索取不到作品年份时的兜底
-      const postTime = item.postTime ? new Date(item.postTime) : null;
-      const joinYear = postTime && !isNaN(postTime.getTime()) ? postTime.getFullYear() : null;
-
       dramas.push({
         mediaKey: mediaKey,
         mediaId: item.mediaId,
         title: item.title,
         type: item.mediaType || item.contentType || "影视",
-        // 年份优先用网页搜索接口的作品年份，补不到时回退这个加入年份
-        year: joinYear,
+        // App 的 postTime 是站点加入时间，不能作为作品年份
+        year: null,
         imageUrl: item.coverImgUrl || null,
         episodeCount: playableEpisodes.length,
         raw: item
@@ -235,10 +231,11 @@ export default class AiyifanSource extends BaseSource {
     log("info", `[aiyifan] 开始搜索: ${keyword}`);
 
     // App 接口不返回真实年份（postTime 是加入时间），这里与 App 搜索并发请求
-    // 旧网页搜索接口补真实年份；该接口取不到时回退 App 的加入年份。
+    // 旧网页搜索接口补真实年份；该接口取不到时保留未知年份。
     // lookupYears 内部已兜底，不会 reject。
-    const yearDeadline = Date.now() + AIYIFAN_WEB_YEAR_MAX_WAIT_MS;
-    const yearPromise = this.signingProvider.lookupYears(keyword, "年份");
+    const yearPromise = this.waitYearMap(
+      this.signingProvider.lookupYears(keyword, "年份"), AIYIFAN_WEB_YEAR_MAX_WAIT_MS
+    );
 
     // Step 1: 搜索，拿到剧目列表
     const searchResult = await this.searchDrama(keyword);
@@ -253,14 +250,12 @@ export default class AiyifanSource extends BaseSource {
       return [];
     }
 
-    // 从发起年份查询算起最多等 5 秒：被 Cloudflare 拦/超时就直接用 App 加入年份，不拖住整个搜索
-    const remainingWaitMs = yearDeadline - Date.now();
-    const yearMap = (remainingWaitMs > 0 ? await this.waitYearMap(yearPromise, remainingWaitMs) : null) || new Map();
+    // 从发起年份查询算起最多等 5 秒，App 搜索较慢时仍保留已返回的年份
+    const yearMap = (await yearPromise) || new Map();
 
     // 转换搜索结果格式
     const results = dramas.map(drama => {
-      // 网页搜索的作品年份优先，取不到（含接口被 Cloudflare 拦）时回退 App 加入年份
-      const year = yearMap.get(drama.mediaKey) || drama.year || null;
+      const year = yearMap.get(drama.mediaKey) || null;
       return {
         provider: "aiyifan",
         mediaId: drama.mediaKey,  // mediaKey 作为剧集标识
@@ -278,7 +273,7 @@ export default class AiyifanSource extends BaseSource {
 
   /**
    * 等待网页搜索补年份的结果，最多等 timeoutMs：
-   * 被 Cloudflare 拦、超时或出错都不阻塞搜索，直接返回 null（调用方回退 App 加入年份）。
+   * 被 Cloudflare 拦、超时或出错都不阻塞搜索，直接返回 null（调用方保留未知年份）。
    * 后台请求若稍后完成，结果仍会写入 provider 缓存，下次搜索可直接命中。
    * @param {Promise<Map>} promise - lookupYears 返回的 Promise
    * @param {number} timeoutMs - 最长等待时间
@@ -296,7 +291,7 @@ export default class AiyifanSource extends BaseSource {
           return;
         }
         settled = true;
-        log("warn", `[aiyifan] 网页年份查询超过 ${timeoutMs}ms 未返回，本次回退 App 加入年份`);
+        log("warn", `[aiyifan] 网页年份查询超过 ${timeoutMs}ms 未返回，本次保留未知年份`);
         resolve(null);
       }, timeoutMs);
 
@@ -383,7 +378,7 @@ export default class AiyifanSource extends BaseSource {
             type: anime.type,
             typeDescription: anime.type,
             imageUrl: anime.imageUrl,
-            startDate: generateValidStartDate(anime.year),
+            startDate: anime.year ? generateValidStartDate(anime.year) : '',
             episodeCount: links.length,
             rating: 0,
             isFavorited: true,
@@ -518,19 +513,17 @@ export default class AiyifanSource extends BaseSource {
       return null;
     }
 
-    // 新格式：url 直接是剧集链接
-    if (rawUrl.includes('yfsp.tv')) {
-      return rawUrl;
-    }
-
-    // 兼容旧格式：url 里带 link=<剧集链接>
-    const linkIndex = rawUrl.indexOf('link=');
-    if (linkIndex !== -1) {
-      try {
-        return decodeURIComponent(rawUrl.slice(linkIndex + 5).split('&')[0]);
-      } catch (error) {
-        return null;
+    try {
+      const url = new URL(rawUrl);
+      // 先解包旧分片 URL，再判断是否为真正的剧集链接
+      const link = url.searchParams.get('link') || url.searchParams.get('uniqueKey') || rawUrl;
+      const episodeUrl = new URL(link);
+      if ((episodeUrl.hostname === 'yfsp.tv' || episodeUrl.hostname.endsWith('.yfsp.tv'))
+          && episodeUrl.pathname.startsWith('/play/')) {
+        return link;
       }
+    } catch {
+      return null;
     }
 
     return null;
