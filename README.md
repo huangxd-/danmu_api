@@ -37,7 +37,7 @@ LogVar 弹幕 API 服务器
 - [Docker 一键启动 【推荐】](#docker-一键启动-推荐)
 - [部署到 Vercel 【推荐】](#部署到-vercel-推荐)
 - [部署到 Netlify](#部署到-netlify)
-- [部署到 腾讯云 edgeone pages](#部署到-腾讯云-edgeone-pages)
+- [部署到 腾讯云 EdgeOne Makers](#部署到-腾讯云-edgeone-makers)
 - [部署到 Cloudflare](#部署到-cloudflare)
 - [部署到 Hugging Face Spaces](#部署到-hugging-face-spaces)
 - [API食用指南](#api食用指南)
@@ -98,7 +98,7 @@ LogVar 弹幕 API 服务器
   - Redis 分布式缓存支持，包括本地redis和upstash redis（可选）
   - 配置redis可持久化原有查询信息和永久收藏；搜索结果与弹幕缓存仍只保存在实例内存中，不会写入 Redis
   - 本地和Docker部署支持实时保存缓存到文件（挂载.cache目录即可）
-- **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、Edgeone 一键部署、Cloudflare 一键部署、Hugging Face Spaces部署和 Docker 一键启动。
+- **部署支持**：支持本地运行、Docker 容器化、Vercel 一键部署、Netlify 一键部署、EdgeOne Makers 一键部署、Cloudflare 一键部署、Hugging Face Spaces部署和 Docker 一键启动。
 - **手动选择记忆**：支持记住之前搜索title时手动选择的anime，并在后续的match自动匹配时优选该anime，支持记住集episode，下次自动匹配时会对集进行偏移【实验性】。
 - **手动搜索支持输入播放链接获取弹幕**：支持手动搜索的播放器输入爱优腾芒哔咪狐乐西埋巴Ani红播放链接可获取弹幕，如`senplayer`。
   - 支持空格分隔多个链接合并弹幕，例如：`https://www.iqiyi.com/v_xxx.html https://v.qq.com/x/cover/xxx.html`
@@ -348,10 +348,18 @@ GET http://127.0.0.1:9321/87654321/api/logs
   2. 在“Environment variables”部分点击 “Add a variable” 添加 `TOKEN` 变量，输入你的 API 令牌值。
   3. 保存更改并重新部署。
 
-## 部署到 腾讯云 edgeone pages
+<a id="部署到-腾讯云-edgeone-pages"></a>
+
+## 部署到 腾讯云 EdgeOne Makers
+
+EdgeOne Pages 已更名为 EdgeOne Makers，现有项目无需因品牌更名迁移，本项目也无需为项目 ID 前缀变化升级部署代码。[官方更名说明](https://pages.edgeone.ai/zh/resources/announcement-makers-rename)
+
+使用 UI 管理云端环境变量时，`DEPLOY_PLATFROM_PROJECT` 请填写控制台显示的完整项目 ID：旧项目通常为 `pages-xxxxxxxxxxxx`，新版控制台创建的项目通常为 `makers-xxxxxxxxxxxx`。两种前缀均可直接填写，请勿自行替换前缀。`DEPLOY_PLATFROM_TOKEN` 填写项目所属账号的 API Token，具体获取步骤见 [部署平台环境变量配置指南](danmu_api/ui/README.md#3-edgeone-makers-平台)。
+
+部署链接和接口地址中仍可能保留 `pages`，无需按品牌名称自行改成 `makers`。
 
 ### 一键部署
-[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
+[![使用 EdgeOne Makers 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 
 > 注意：部署时请在环境变量配置区域填写你的TOKEN值，该变量将用于API服务的身份验证相关功能
 > 
@@ -360,11 +368,11 @@ GET http://127.0.0.1:9321/87654321/api/logs
 >
 > 部署的时候项目加速区域最好设置为"全球可用区（不含中国大陆）"，不然不绑定自定义域名貌似只能生成3小时的预览链接？[相关文档](https://edgeone.cloud.tencent.com/pages/document/175191784523485184)
 > 
-> 也可直接用国际站的部署按钮一键部署，默认选择"全球可用区（不含中国大陆）" [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
+> 也可直接用国际站的部署按钮一键部署，默认选择"全球可用区（不含中国大陆）" [![使用 EdgeOne Makers 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=https://github.com/huangxd-/danmu_api&project-name=danmu-api&root-directory=.%2F&env=TOKEN)
 > 
 <img src="https://i.mji.rip/2025/09/17/3a675876dabb92e4ce45c10d543ce66b.png" style="width:400px" />
 
-> 如果每次访问都遇到404等问题，可能是edgeone pages修改了访问策略，每次接口请求都转发到了新的环境，没有缓存，导致获取不到对应的弹幕，推荐用vercel/netlify部署。
+> 如果每次访问都遇到404等问题，可能是 EdgeOne Makers 修改了访问策略，每次接口请求都转发到了新的环境，没有缓存，导致获取不到对应的弹幕，推荐用vercel/netlify部署。
 > 
 > 解决方法：请配置环境变量`UPSTASH_REDIS_REST_URL`和`UPSTASH_REDIS_REST_TOKEN`，开启upstash redis存储
 
@@ -521,7 +529,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | LOCAL_CACHE_ENABLED    | 【可选】Node/Docker 通用文件缓存开关，默认为 `true`，需已有 `.cache` 目录；设置 `false` 后不读取或写入通用文件缓存，包括收藏与定时计划；已配置 Upstash 时仍可持久化。不影响本地弹幕文件、Bangumi Data、内存缓存或 Redis。运行中开启时保存当前内存，不自动导入旧文件。       |
 | LOCAL_REDIS_URL    | 【可选】本地 Redis 连接 URL，用于查询数据持久化，适用于 Docker 和本地部署，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地 Redis）。       |
 | DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
-| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称或 ID，EdgeOne Makers 填控制台显示的完整项目 ID（`pages-...` 或 `makers-...`），调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
 | NODE_TLS_REJECT_UNAUTHORIZED      | 【可选】在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1       |
 | AI_BASE_URL      | 【可选】AI服务的基础URL地址，用于配置AI相关功能的API端点，不填默认为https://api.openai.com/v1       |
@@ -650,7 +658,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       └── sync_hf.yml          # Hugging Face Space 同步
 ├── build-forward-widget.js     # 构建forward弹幕插件脚本
 ├── Dockerfile
-├── edgeone.json                # edgeone pages 配置文件
+├── edgeone.json                # EdgeOne Makers 配置文件
 ├── LICENSE
 ├── netlify.toml                # netlify 配置文件
 ├── package.json
@@ -776,8 +784,8 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   └── functions/
 │       └── api.js              # netlify 中间处理逻辑
 └── node-functions/
-    ├── [[...path]]..js         # edgeone pages 所有路由跳转指向index
-    └── index.js                # edgeone pages 中间处理逻辑
+    ├── [[...path]]..js         # EdgeOne Makers 所有路由跳转指向index
+    └── index.js                # EdgeOne Makers 中间处理逻辑
 ```
 
 ## 注意事项
