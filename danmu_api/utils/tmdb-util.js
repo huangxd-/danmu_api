@@ -130,7 +130,7 @@ function extractChineseTitleFromAlternatives(altData, mediaType, queryTitle = ""
   // 定义优先级判定规则数组，按先后顺序依次验证
   const priorityRules = [
     // 1. 最高优先级：精确命中用户搜索词
-    t => cleanQuery && getStr(t).toLowerCase().trim() === cleanQuery,
+    t => cleanQuery && getStr(t).toLowerCase().trim() === cleanQuery && !isNonChinese(getStr(t)),
     // 2. 地区优先级：按 CN > TW > HK > SG 顺序映射出 4 个规则函数
     ...['CN', 'TW', 'HK', 'SG'].map(region => 
       t => (t.iso_3166_1 || t.iso_639_1) === region && !isNonChinese(getStr(t))
@@ -156,8 +156,9 @@ function extractChineseTitleFromAlternatives(altData, mediaType, queryTitle = ""
 async function getChineseTitleForResult(result, signal, queryTitle = "") {
   const resultTitle = result.name || result.title || "";
 
-  // 如果主标题正好完全匹配搜索词，直接返回
-  if (queryTitle && resultTitle.toLowerCase().trim() === queryTitle.toLowerCase().trim()) {
+  // 已经是中文的精确标题无需再访问别名接口。外文精确命中仍需
+  // 查询别名，否则像 Wednesday 这样的条目永远拿不到“星期三”。
+  if (queryTitle && resultTitle.toLowerCase().trim() === queryTitle.toLowerCase().trim() && !isNonChinese(resultTitle)) {
     return resultTitle;
   }
 
@@ -590,10 +591,16 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
     return title;
   }
 
-// 优先尝试本地 Bangumi Data 转换
-  if (globals.useBangumiData) {
+  const getLocalBangumiTitle = async () => {
+    if (!globals.useBangumiData) return null;
     const cleanTitle = cleanSearchQuery(title);
-    const localMatches = await searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
+    let localMatches;
+    try {
+      localMatches = await searchBangumiData(cleanTitle, ['tmdb', 'bangumi', 'anidb']);
+    } catch (error) {
+      log("warn", `[system] [tmdb] Bangumi-Data 回退失败: ${error.message}`);
+      return null;
+    }
     if (localMatches && localMatches.length > 0) {
       const m = localMatches[0];
       // 找一个不全是外文的翻译作为中文名
@@ -603,7 +610,8 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
         return displayTitle;
       }
     }
-  }
+    return null;
+  };
 
   // 判断是电影还是电视剧
   const isTV = season !== null && season !== undefined;
@@ -616,33 +624,41 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
     // 检查是否有结果
     if (!searchResponse.data.results || searchResponse.data.results.length === 0) {
       log("info", '[system] [tmdb] TMDB未找到任何结果');
-      return title;
+      return (await getLocalBangumiTitle()) || title;
     }
 
-    // 获取第一个匹配结果的 ID
-    // 查找第一个 name/title 包含中文的结果
-    const firstResult = searchResponse.data.results.find(result => {
-      const resultName = isTV ? result.name : result.title;
-      return resultName && !isNonChinese(resultName);
+    const query = title.toLowerCase().trim();
+    const resultTitle = result => isTV ? result.name : result.title;
+    const exactResult = searchResponse.data.results.find(result => {
+      const displayTitle = resultTitle(result) || '';
+      const originalTitle = isTV ? result.original_name : result.original_title;
+      return displayTitle.toLowerCase().trim() === query
+        || (originalTitle && originalTitle.toLowerCase().trim() === query);
     });
+    const chineseResult = searchResponse.data.results.find(result => {
+      const displayTitle = resultTitle(result);
+      return displayTitle && !isNonChinese(displayTitle);
+    });
+    const selectedResult = exactResult || chineseResult || searchResponse.data.results[0];
 
-    // 如果没有找到包含中文的结果，使用第一个结果
-    const selectedResult = firstResult || searchResponse.data.results[0];
+    // Prefer the exact search result. Its Chinese name often lives in
+    // /alternative_titles rather than in the localized search response.
+    const selectedTitle = resultTitle(selectedResult) || '';
+    const aliasTitle = await getChineseTitleForResult(selectedResult, null, title);
+    const chineseTitle = !isNonChinese(aliasTitle || '')
+      ? aliasTitle
+      : (!isNonChinese(selectedTitle) ? selectedTitle : title);
 
-    // 电视剧使用 name 字段，电影使用 title 字段
-    const chineseTitle = isTV ? selectedResult.name : selectedResult.title;
-
-    // 如果有中文标题则返回，否则返回原标题
-    if (chineseTitle) {
+    if (!isNonChinese(chineseTitle)) {
       log("info", `原标题: ${title} -> 中文标题: ${chineseTitle}`);
       return chineseTitle;
-    } else {
-      return title;
     }
+
+    return (await getLocalBangumiTitle()) || title;
 
   } catch (error) {
     log("error", '查询 TMDB 时出错:', error);
-    return title;
+    return (await getLocalBangumiTitle()) || title;
   }
 }
 
