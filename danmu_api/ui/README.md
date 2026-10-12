@@ -17,7 +17,7 @@
   - [各平台变量获取详细步骤](#各平台变量获取详细步骤)
     - [1. Vercel 平台](#1-vercel-平台)
     - [2. Netlify 平台](#2-netlify-平台)
-    - [3. EdgeOne (腾讯云 Pages) 平台](#3-edgeone-腾讯云-pages-平台)
+    - [3. EdgeOne Makers 平台](#3-edgeone-makers-平台)
     - [4. Cloudflare 平台](#4-cloudflare-平台)
   - [常见问题](#常见问题)
 - [API 端点](#api-端点)
@@ -165,7 +165,7 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 - Netlify
 - Cloudflare
 - Docker
-- EdgeOne
+- EdgeOne Makers（原 EdgeOne Pages）
 
 根据部署平台的不同，可能需要配置额外的环境变量。
 
@@ -177,7 +177,7 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 |------|----------------------|----------------------|---------------------|
 | Vercel | ❌ | ✅ | ✅ |
 | Netlify | ✅ | ✅ | ✅ |
-| EdgeOne | ❌ | ✅ | ✅ |
+| EdgeOne Makers | ❌ | ✅ | ✅ |
 | Cloudflare | ✅ | ✅ | ✅ |
 | Hugging Face Spaces | ✅ | ✅ | ✅ |
 | Node.js | ❌ | ❌ | ❌ |
@@ -280,25 +280,40 @@ UI 系统需要通过在 URL 中添加 TOKEN 来访问，以确保安全性：
 
 ---
 
-### 3. EdgeOne (腾讯云 Pages) 平台
+<a id="3-edgeone-腾讯云-pages-平台"></a>
+
+### 3. EdgeOne Makers 平台
+
+EdgeOne Pages 已更名为 EdgeOne Makers，账号、项目、构建和域名等既有行为保持不变，现有项目无需迁移。[官方更名说明](https://pages.edgeone.ai/zh/resources/announcement-makers-rename)
 
 #### 需要的变量
-- `DEPLOY_PLATFROM_PROJECT`: 项目 ID
-- `DEPLOY_PLATFROM_TOKEN`: API 密钥
+
+- `DEPLOY_PLATFROM_PROJECT`: 控制台显示的完整项目 ID，支持 `pages-...` 和 `makers-...`
+- `DEPLOY_PLATFROM_TOKEN`: 项目所属账号的 API Token
+
+变量名中的 `PLATFROM` 沿用项目既有拼写，请按原样填写。
 
 #### 获取步骤
 
 **获取 Project ID (`DEPLOY_PLATFROM_PROJECT`)**
 
 1. 登录 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone)
-2. 进入 **Pages** 服务
+2. 进入 **Makers** 服务（旧版控制台名称为 **Pages**）
 3. 选择你的项目
-4. 在URL可以看到项目 ID(格式类似: `pages-xxxxxxxxxxxx`)
+4. 从项目页面 URL 中复制完整项目 ID。旧项目通常为 `pages-xxxxxxxxxxxx`，新版控制台创建的项目通常为 `makers-xxxxxxxxxxxx`，请以控制台实际显示的值为准，不要自行替换前缀。
 
-**获取 API 密钥 (`DEPLOY_PLATFROM_TOKEN`)**
+例如，新项目的实际 ID 为 `makers-xxxxxxxxxxxx` 时，填写：
+
+```env
+DEPLOY_PLATFROM_PROJECT=makers-xxxxxxxxxxxx
+```
+
+本项目会将项目 ID 原样传给平台接口，无需为 `makers-` 前缀修改代码。部署链接和接口地址中的 `pages` 也无需按品牌名称自行替换。
+
+**获取 API Token (`DEPLOY_PLATFROM_TOKEN`)**
 
 1. 登录 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone)
-2. 进入 **Pages** 服务
+2. 进入 **Makers** 服务（旧版控制台名称为 **Pages**）
 3. 选择 **API Token** 标签页 
 4. 点击 **创建 API Token** 按钮
 5. 输入描述和过期时间，点击提交后复制相应Token
