@@ -304,6 +304,62 @@ export default class TencentSource extends BaseSource {
     return `lid=&cid=${cid}&page_num=${pageNum}&page_size=30&id_type=1&req_type=6&req_from=web_vsite&req_from_second_type=&detail_page_type=1&year=&tab_type=4&chapter_name=${chapterName}&is_nocopyright=false`;
   }
 
+  // 从分集接口的 item_params 中提取标题相关字段，供 buildEpisodeTitle 统一组装。
+  // 腾讯各字段含义：
+  //   play_title     —— 展示用标题，连续剧为「兰香如故 第01集」，综艺为「第1期：xxx」
+  //   video_subtitle —— 该集副标题（如「寒山图解生存厄 寒舍三人盼新生」），电影/综艺常为空
+  //   union_title    —— 内部标题，连续剧多为「兰香如故_01」（不含集标题），仅作兜底
+  //   c_title_output / title —— 纯集号（如 "01" / "1"），或在综艺中与 union_title 相同
+  extractEpisodeMeta(itemParams) {
+    const p = itemParams || {};
+    return {
+      vid: p.vid,
+      title: p.title,
+      unionTitle: p.union_title || p.title,
+      playTitle: p.play_title || '',
+      videoSubtitle: p.video_subtitle || '',
+      cTitleOutput: p.c_title_output || '',
+    };
+  }
+
+  // 「兰香如故_01」->「兰香如故 第01集」；仅处理腾讯连续剧惯用的下划线+集号形态
+  normalizeUnionTitle(unionTitle) {
+    if (!unionTitle) return '';
+    const m = unionTitle.match(/^(.*?)_0*(\d+)$/);
+    return m && m[1] ? `${m[1]} 第${m[2]}集` : unionTitle;
+  }
+
+  /**
+   * 组装分集显示标题，与 iqiyi/youku 源保持一致的「集数 + 标题」形态。
+   *
+   * 原先仅取 union_title，连续剧只能显示「兰香如故_01」——只有集号、没有集标题，
+   * 与 iqiyi 的「南部档案第1集 你俩掉进邪神洞」差距明显。改为：
+   *   主标题 play_title（自带剧名与集数）> union_title 规范化 > c_title_output > title
+   *   再追加 video_subtitle 作为集标题（已包含时跳过）
+   *
+   * @param {object} ep allEpisodes 中的分集对象
+   * @returns {string} 组装后的标题，全部字段缺失时返回空串
+   */
+  buildEpisodeTitle(ep) {
+    if (!ep) return '';
+    const playTitle = typeof ep.playTitle === 'string' ? ep.playTitle.trim() : '';
+    const subtitle = typeof ep.videoSubtitle === 'string' ? ep.videoSubtitle.trim() : '';
+    const cTitleOutput = typeof ep.cTitleOutput === 'string' ? ep.cTitleOutput.trim() : '';
+    const title = typeof ep.title === 'string' ? ep.title.trim() : '';
+
+    let base = playTitle || this.normalizeUnionTitle(ep.unionTitle) || cTitleOutput || title;
+    if (!base) return '';
+
+    // 集号去前导零：「第001话」->「第1话」，与 iqiyi/youku 展示风格一致
+    base = base.replace(/第0+(\d+)([集话回期])/g, '第$1$2');
+
+    // 追加集副标题，避免与主标题重复
+    if (subtitle && !base.includes(subtitle)) {
+      base = `${base} ${subtitle}`;
+    }
+    return base;
+  }
+
   async getEpisodes(id, chapterContexts = []) {
     try {
       log("info", `[tencent] 获取分集列表: cid=${id}`);
@@ -385,11 +441,7 @@ export default class TencentSource extends BaseSource {
                   if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
                     if (!seenVids.has(item.item_params.vid)) {
                       seenVids.add(item.item_params.vid);
-                      allEpisodes.push({
-                        vid: item.item_params.vid,
-                        title: item.item_params.title,
-                        unionTitle: item.item_params.union_title || item.item_params.title
-                      });
+                      allEpisodes.push(this.extractEpisodeMeta(item.item_params));
                     }
                   }
                 }
@@ -445,9 +497,7 @@ export default class TencentSource extends BaseSource {
                           if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
                             pageItemCount++;
                             seasonEpisodes.push({
-                              vid: item.item_params.vid,
-                              title: item.item_params.title,
-                              unionTitle: item.item_params.union_title || item.item_params.title,
+                              ...this.extractEpisodeMeta(item.item_params),
                               order: parseInt(item.item_params.episode_on_chapter, 10) || 0
                             });
                           }
@@ -464,11 +514,9 @@ export default class TencentSource extends BaseSource {
               for (const ep of seasonEpisodes) {
                 if (seenVids.has(ep.vid)) continue;
                 seenVids.add(ep.vid);
-                allEpisodes.push({
-                  vid: ep.vid,
-                  title: ep.title,
-                  unionTitle: ep.unionTitle
-                });
+                // order 仅用于季内排序，不进入分集数据
+                const { order, ...epMeta } = ep;
+                allEpisodes.push(epMeta);
               }
             } catch (error) {
               log("error", `[tencent] 分季分集请求失败: ${error.message}`);
@@ -521,11 +569,7 @@ export default class TencentSource extends BaseSource {
                 if (moduleData.item_data_lists && moduleData.item_data_lists.item_datas) {
                   for (const item of moduleData.item_data_lists.item_datas) {
                     if (item.item_params && item.item_params.vid && item.item_params.is_trailer !== "1") {
-                      allEpisodes.push({
-                        vid: item.item_params.vid,
-                        title: item.item_params.title,
-                        unionTitle: item.item_params.union_title || item.item_params.title
-                      });
+                      allEpisodes.push(this.extractEpisodeMeta(item.item_params));
                     }
                   }
                 }
@@ -589,7 +633,8 @@ export default class TencentSource extends BaseSource {
 
           for (let i = 0; i < eps.length; i++) {
             const ep = eps[i];
-            const epTitle = ep.unionTitle || ep.title || `第${i + 1}集`;
+            // 组装「集数 + 集标题」，与 iqiyi/youku 源展示形态一致
+            const epTitle = this.buildEpisodeTitle(ep) || `第${i + 1}集`;
             // 构建完整URL: https://v.qq.com/x/cover/{cid}/{vid}.html
             const fullUrl = `https://v.qq.com/x/cover/${anime.mediaId}/${ep.vid}.html`;
             links.push({
@@ -600,8 +645,8 @@ export default class TencentSource extends BaseSource {
           }
 
           if (links.length > 0) {
-            // 从第一集标题中提取版本信息
-            const firstEpTitle = eps[0].unionTitle || eps[0].title || `第1集`;
+            // 从第一集的各个标题字段中提取版本信息（如 [特别版]），任一字段带标记即可命中
+            const firstEpTitle = [eps[0].playTitle, eps[0].unionTitle, eps[0].title].filter(Boolean).join(' ') || `第1集`;
             let displayTitle = anime.title;
 
             // 检查第一集标题是否包含 anime.title 且匹配 xxxx[xxx版] 格式
@@ -742,6 +787,53 @@ export default class TencentSource extends BaseSource {
     return contents;
   }
 
+  /**
+   * 获取视频真实时长（秒）
+   *
+   * 腾讯弹幕分片接口(base)只提供按 30s 对齐的分片边界，末段 segment_end 是分片桶的
+   * 上边界（会把片尾广告/占位时长也算进去），并非正片真实时长。
+   * vv.video.qq.com/getinfo 的 vl.vi[0].td 才是权威的视频总时长。
+   *
+   * @param {string} vid - 视频 vid
+   * @returns {Promise<number>} 视频时长（秒），拿不到时返回 0
+   */
+  async getVideoDuration(vid) {
+    if (!vid) return 0;
+
+    try {
+      const infoUrl = `https://vv.video.qq.com/getinfo?vids=${encodeURIComponent(vid)}&platform=101001&charge=0&otype=json&defn=shd&defaultfmt=auto&defnpayver=0&spsrt=1`;
+      const res = await httpGet(infoUrl, {
+        headers: {
+          "Content-Type": "application/json",
+          'Origin': 'https://v.qq.com',
+          'Referer': `https://v.qq.com/x/cover/${vid}.html`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+
+      if (!res || !res.data) return 0;
+
+      // getinfo 返回 JSONP 包裹：QZOutputJson={...};
+      let raw = typeof res.data === "string" ? res.data : String(res.data);
+      const braceIndex = raw.indexOf("{");
+      if (braceIndex === -1) return 0;
+      const data = JSON.parse(raw.slice(braceIndex).replace(/;?\s*$/, ""));
+
+      // 真实时长为 vl.vi[0].td（浮点秒）
+      const td = Number(data?.vl?.vi?.[0]?.td);
+      if (!Number.isFinite(td) || td <= 0) {
+        log("info", `[tencent] getinfo 未返回有效 td 字段: ${data?.vl?.vi?.[0]?.td}`);
+        return 0;
+      }
+
+      log("info", `[tencent] 视频真实时长(td): ${td}s`);
+      return td;
+    } catch (error) {
+      log("error", "[tencent] 获取视频真实时长失败:", error.message);
+      return 0;
+    }
+  }
+
   async getEpisodeDanmuSegments(id) {
     log("info", "[tencent] 获取腾讯视频弹幕分段列表...", id);
 
@@ -752,6 +844,9 @@ export default class TencentSource extends BaseSource {
     let vid = this.extractVid(id);
 
     log("info", `[tencent] 获取弹幕分段列表 - vid: ${vid}`);
+
+    // 并行获取真实视频时长，避免分片边界被当作视频总时长
+    const durationPromise = this.getVideoDuration(vid).catch(() => 0);
 
     // 获取弹幕基础数据
     let res;
@@ -797,8 +892,12 @@ export default class TencentSource extends BaseSource {
       });
     }
 
+    // 真实视频时长（td）；拿不到时为 0，交由上游回落到分片边界推断
+    const videoDuration = await durationPromise;
+
     return new SegmentListResponse({
       "type": "qq",
+      "duration": videoDuration,
       "segmentList": segmentList
     });
   }
