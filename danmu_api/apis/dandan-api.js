@@ -22,7 +22,7 @@ import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimeline
 import { getHanjutvSourceLabel } from "../utils/hanjutv-util.js";
 import AIClient from '../utils/ai-util.js';
 import { getSourceByKey, getSourceMetaByKey, getLogNameByKey } from "../sources/registry.js";
-import { isHongguoPlayerUrl } from "../sources/hongguo.js";
+import { isHongguoPlayerUrl } from "../utils/hongguo-util.js";
 import BilibiliSource from "../sources/bilibili.js"; // resolveB23Link 为 BilibiliSource 实例方法，单测中仍需直接 new
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
 

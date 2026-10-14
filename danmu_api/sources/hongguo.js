@@ -2,37 +2,96 @@ import BaseSource from "./base.js";
 import { globals } from "../configs/globals.js";
 import { log } from "../utils/log-util.js";
 import { httpGet, httpPost, buildQueryString } from "../utils/http-util.js";
+import { convertToAsciiSum, md5, stringToUtf8Bytes } from "../utils/codec-util.js";
 import {
-  aesCbcEncrypt,
-  bytesToHex,
-  bytesToBase64,
-  convertToAsciiSum,
-  hexToBytes,
-  md5,
-  pkcs7Pad,
-  sm3Bytes,
-  stringToUtf8Bytes,
-} from "../utils/codec-util.js";
-import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
+  addAnime,
+  readCacheFromFile,
+  writeCacheToFile,
+} from "../utils/cache-util.js";
+import { getLocalRedisKey, setLocalRedisKey } from "../utils/local-redis-util.js";
+import { getRedisKey, setRedisKey } from "../utils/redis-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { titleMatches } from "../utils/common-util.js";
 import { SegmentListResponse } from "../models/dandan-model.js";
 
+import {
+  COMMENT_WINDOW_MS, MIN_IDENTITY_SAMPLE,
+  createHongguoIdentity, maskHongguoIdentity, parseHongguoIdentity, isQualityDelivery,
+  signHongguoRequest, createHongguoEpisodeId, parseHongguoEpisodeId,
+  createHongguoSeriesId, parseHongguoSeriesId, isHongguoSeriesId, parseHongguoPlayerUrl,
+  parseWebSearchResults, parseSearchSuggestions, parseWebPlayerDuration,
+  parseHongguoResponse, parseApiEpisodeDetails, parseWebEpisodeDetails,
+  positiveDuration, parseSearchCell, parseDeclaredCount,
+  parseCommentWindow, dedupeDanmus, getFragmentNumber,
+} from "../utils/hongguo-util.js";
+
+// 读取顺序：云端 Upstash → 本地 Redis → 文件（.cache）；各后端独立容错，失败即跳过。
+async function readPersistedIdentity() {
+  try {
+    if (globals.redisUrl && globals.redisToken) {
+      const identity = parseHongguoIdentity(await getRedisKey(COMMENT_IDENTITY_CACHE_KEY));
+      if (identity) return identity;
+    }
+  } catch {
+    // 单后端失败不影响其他后端
+  }
+  try {
+    if (globals.localRedisUrl) {
+      const identity = parseHongguoIdentity(await getLocalRedisKey(COMMENT_IDENTITY_CACHE_KEY));
+      if (identity) return identity;
+    }
+  } catch {
+    // 同上
+  }
+  try {
+    const identity = globals.localCacheEnabled === false
+      ? null
+      : parseHongguoIdentity(readCacheFromFile(COMMENT_IDENTITY_CACHE_KEY));
+    if (identity) return identity;
+  } catch {
+    // 同上
+  }
+  return null;
+}
+
+// 写入所有可用后端（文件 / 本地 Redis / Upstash），返回成功的后端名列表；都失败则本次仅内存复用。
+async function persistHongguoIdentity(identity) {
+  const saved = [];
+  try {
+    if (writeCacheToFile(COMMENT_IDENTITY_CACHE_KEY, identity, { force: true })) saved.push("file");
+  } catch {
+    // ignore
+  }
+  try {
+    if (globals.localRedisUrl) {
+      const result = await setLocalRedisKey(COMMENT_IDENTITY_CACHE_KEY, identity);
+      if (result && result.result === "OK") saved.push("localRedis");
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (globals.redisUrl && globals.redisToken) {
+      const result = await setRedisKey(COMMENT_IDENTITY_CACHE_KEY, identity);
+      if (result && result.result === "OK") saved.push("upstash");
+    }
+  } catch {
+    // ignore
+  }
+  return saved;
+}
+
 const CLIENT_CONFIG = {
+  // api5-normal-lf / api5-normal-lq / api5-normal-hl 为降级节点：
+  // 实测任何设备身份（含优质身份）在它们上都只下发 7 条/窗口，直接移除不再使用。
   apiHosts: Object.freeze([
     "api5-normal-sinfonlinea.fqnovel.com",
     "api5-normal-sinfonlinec.fqnovel.com",
-    "api5-normal-lf.fqnovel.com",
-    "api5-normal-lq.fqnovel.com",
     "api5-normal-sinfonlineb.fqnovel.com",
-    "api5-normal-hl.fqnovel.com",
   ]),
   baseQuery: {
-    iid: "4439167111854618",
-    device_id: "4439167111850522",
     channel: "huawei_8662_64",
     device_type: "V2284A",
-    cdid: "6100e9f9-a1a0-4f65-ab47-94f5b41b8efb",
     aid: "8662",
     app_name: "novelread",
     version_code: "72932",
@@ -58,9 +117,7 @@ const CLIENT_CONFIG = {
     is_android_pad_screen: "1",
     rom_version: "V417IR+release-keys",
   },
-  sessionHeaders: {
-    cookie: "",
-    "x-tt-token": "",
+  headers: {
     "user-agent": "com.phoenix.read/72932 (Linux; U; Android 12; zh_CN; V2284A; Build/V417IR;tt-ok/3.12.13.20)",
     "x-tt-store-region": "cn-zj",
     "x-tt-store-region-src": "did",
@@ -71,588 +128,98 @@ const CLIENT_CONFIG = {
 
 const WEB_ORIGIN = "https://hongguoduanju.com";
 
-function parseWebSearchResults(html) {
-  const marker = '"searchList":';
-  const start = html.indexOf(marker);
-  if (start < 0) return [];
-  let i = start + marker.length;
-  while (i < html.length && /\s/.test(html[i])) i++;
-  if (html[i] !== "[") return [];
-  let depth = 0;
-  let quoted = false;
-  let escaped = false;
-  let end = i;
-  for (; end < html.length; end++) {
-    const ch = html[end];
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') quoted = false;
-      continue;
-    }
-    if (ch === '"') quoted = true;
-    else if (ch === "[") depth++;
-    else if (ch === "]" && --depth === 0) break;
-  }
-  try { return JSON.parse(html.slice(i, end + 1)); } catch { return []; }
-}
-
-function parseWebSeriesDetail(html) {
-  const marker = '"seriesDetail":';
-  const start = html.indexOf(marker);
-  if (start < 0) return null;
-  let i = start + marker.length;
-  while (i < html.length && /\s/.test(html[i])) i++;
-  if (html[i] !== "{") return null;
-  let depth = 0;
-  let quoted = false;
-  let escaped = false;
-  let end = i;
-  for (; end < html.length; end++) {
-    const ch = html[end];
-    if (quoted) { if (escaped) escaped = false; else if (ch === "\\") escaped = true; else if (ch === '"') quoted = false; continue; }
-    if (ch === '"') quoted = true;
-    else if (ch === "{") depth++;
-    else if (ch === "}" && --depth === 0) break;
-  }
-  try { return JSON.parse(html.slice(i, end + 1)); } catch { return null; }
-}
-
 const COMMENT_SOURCE = 601;
 const SERVER_CHANNEL = 1000;
-const COMMENT_WINDOW_MS = 30_000;
-const COMMENT_COUNT = 90;
-const COMMENT_CONCURRENCY = 3;
-// 弹幕请求的最小节流间隔（毫秒），随机抖动避免固定节律被平台识别
-const COMMENT_THROTTLE_MS = 180;
-const COMMENT_THROTTLE_JITTER_MS = 240;
+const COMMENT_COUNT = 500;
+const COMMENT_CONCURRENCY = 8;
+// 两类请求分别节流；遇冷却翻倍退避，连续成功后逐档恢复。
+const COMMENT_THROTTLE_MS = 30;
+const COMMENT_THROTTLE_JITTER_MS = 30;
+const THROTTLE_MAX_BACKOFF = 8;
+const THROTTLE_RECOVER_STREAK = 10;
+// 设备身份探测：含持久化身份最多四组，达到优质线即提前停止，否则复用本轮最佳身份。
+const COMMENT_IDENTITY_CACHE_KEY = "hongguo_identity";
+const COMMENT_IDENTITY_CANDIDATES = 4;
+// 探测请求之间的额外间隔（避免连续拨打触发风控）与连续失败上限（提前收手，保住已有的最优身份）
+const COMMENT_IDENTITY_PROBE_INTERVAL_MS = 600;
+const COMMENT_IDENTITY_PROBE_JITTER_MS = 300;
+const COMMENT_IDENTITY_PROBE_MAX_FAILURES = 2;
+const COMMENT_IDENTITY_RETRY_MS = 30_000;
+const COMMENT_IDENTITY_MAX_RETRY_MS = 300_000;
+// 未知时长的抓取、裁剪、分段和全集偏移统一使用三分钟；不写入真实时长缓存。
+const EPISODE_FALLBACK_DURATION_SECONDS = 180;
+const DURATION_LOOKUP_CONCURRENCY = 3;
+const DURATION_FAILURE_TTL_MS = 30_000;
+const DETAIL_CACHE_TTL_MS = 120_000;
+const DETAIL_FAILURE_TTL_MS = 30_000;
+const DETAIL_LOOKUP_TIMEOUT_MS = 6000;
+const PLAYER_LOOKUP_TIMEOUT_MS = 2000;
+const DETAIL_CACHE_MAX_ITEMS = 100;
+const DURATION_FAILURE_MAX_ITEMS = 1000;
+const METADATA_THROTTLE_MS = 100;
+const METADATA_THROTTLE_JITTER_MS = 51;
 const MAX_SEARCH_ITEMS = 20;
+const SEARCH_SUGGESTION_COUNT = 50;
+const SEARCH_SUGGESTION_TIMEOUT_MS = 2000;
+const SEARCH_DETAIL_CONCURRENCY = 3;
+const SEARCH_DETAIL_BUDGET_MS = 8000;
 const IMAGE_SHRINK =
   "W3siaW1hZ2VfdHlwZSI6MywiaW1hZ2Vfd2lkdGgiOjkwMCwic2hyaW5rX3R5cGUiOjN9LHsiaW1h\n" +
   "Z2VfdHlwZSI6NCwiaW1hZ2Vfd2lkdGgiOjU0LCJzaHJpbmtfdHlwZSI6NH1d\n";
 
-const SIGN_KEY = hexToBytes("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c");
-const ARGUS_HEADER = hexToBytes("3ccc");
-const ARGUS_PREFIX = hexToBytes("a6e783ee7001100918");
-const ARGUS_SUFFIX = hexToBytes("567b");
-const ARGUS_XOR_WORD = hexToBytes("d04ffdff");
-const LICENSE_ID = 1611921764;
-const METASEC_APP_ID = 3019;
-const SDK_VERSION = 135135744;
-const COUNTER_VALUE = 1388734;
-const SIMON_Z = word64(0x046d678b, 0x3dc94c3a);
-
-function concatBytes(...parts) {
-  const arrays = parts.map((part) => part instanceof Uint8Array ? part : new Uint8Array(part || []));
-  const output = new Uint8Array(arrays.reduce((sum, part) => sum + part.length, 0));
-  let offset = 0;
-  for (const part of arrays) {
-    output.set(part, offset);
-    offset += part.length;
-  }
-  return output;
+function checkAborted(signal) {
+  if (signal?.aborted) throw signal.reason || new DOMException("已取消", "AbortError");
 }
 
-function randomBytes(length) {
-  const output = new Uint8Array(length);
-  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(output);
-    return output;
-  }
-  for (let i = 0; i < length; i++) output[i] = Math.floor(Math.random() * 256);
-  return output;
+function waitWithSignal(task, signal) {
+  if (!signal) return task;
+  return new Promise((resolve, reject) => {
+    const aborted = () => {
+      signal.removeEventListener("abort", aborted);
+      reject(signal.reason || new DOMException("已取消", "AbortError"));
+    };
+    if (signal.aborted) aborted();
+    else signal.addEventListener("abort", aborted, { once: true });
+    Promise.resolve(task).then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+  });
 }
 
-function reverseBytes(bytes) {
-  const output = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) output[i] = bytes[bytes.length - i - 1];
-  return output;
+function sleep(milliseconds, signal) {
+  checkAborted(signal);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener("abort", aborted);
+    const timer = setTimeout(() => { cleanup(); resolve(); }, milliseconds);
+    const aborted = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(signal.reason || new DOMException("已取消", "AbortError"));
+    };
+    signal?.addEventListener("abort", aborted, { once: true });
+  });
 }
 
-function getHeader(headers, name) {
-  const expected = String(name).toLowerCase();
-  for (const [key, value] of Object.entries(headers || {})) {
-    if (key.toLowerCase() === expected && value != null) return String(value);
-  }
-  return "";
-}
-
-function getQueryString(url) {
-  const text = String(url || "");
-  const question = text.indexOf("?");
-  if (question < 0) return "";
-  const hash = text.indexOf("#", question);
-  return text.slice(question + 1, hash < 0 ? undefined : hash);
-}
-
-function getQueryParam(url, name) {
-  const expected = String(name);
-  for (const pair of getQueryString(url).split("&")) {
-    if (!pair) continue;
-    const separator = pair.indexOf("=");
-    const key = separator < 0 ? pair : pair.slice(0, separator);
-    if (decodeURIComponent(key) === expected) {
-      return decodeURIComponent(separator < 0 ? "" : pair.slice(separator + 1));
-    }
-  }
-  return null;
-}
-
-function encodeVarint(value) {
-  let remaining = Number(value);
-  if (!Number.isSafeInteger(remaining) || remaining < 0) throw new RangeError("protobuf varint must be a safe non-negative integer");
-  const output = [];
-  while (remaining >= 0x80) {
-    output.push((remaining % 0x80) | 0x80);
-    remaining = Math.floor(remaining / 0x80);
-  }
-  output.push(remaining);
-  return new Uint8Array(output);
-}
-
-function pbVarint(field, value) {
-  return concatBytes(encodeVarint(field * 8), encodeVarint(value));
-}
-
-function pbBytes(field, value) {
-  const encoded = value instanceof Uint8Array ? value : stringToUtf8Bytes(String(value));
-  return concatBytes(encodeVarint(field * 8 + 2), encodeVarint(encoded.length), encoded);
-}
-
-function word64(lo, hi) {
-  return { lo: lo >>> 0, hi: hi >>> 0 };
-}
-
-function xor64(...values) {
-  let lo = 0;
-  let hi = 0;
-  for (const value of values) {
-    lo ^= value.lo;
-    hi ^= value.hi;
-  }
-  return word64(lo, hi);
-}
-
-function and64(a, b) {
-  return word64(a.lo & b.lo, a.hi & b.hi);
-}
-
-function not64(value) {
-  return word64(~value.lo, ~value.hi);
-}
-
-function add64(a, b) {
-  const lo = (a.lo + b.lo) >>> 0;
-  return word64(lo, (a.hi + b.hi + (lo < a.lo ? 1 : 0)) >>> 0);
-}
-
-function rol64(value, count) {
-  const shift = ((count % 64) + 64) % 64;
-  if (shift === 0) return word64(value.lo, value.hi);
-  if (shift < 32) {
-    return word64(
-      (value.lo << shift) | (value.hi >>> (32 - shift)),
-      (value.hi << shift) | (value.lo >>> (32 - shift)),
-    );
-  }
-  if (shift === 32) return word64(value.hi, value.lo);
-  const rest = shift - 32;
-  return word64(
-    (value.hi << rest) | (value.lo >>> (32 - rest)),
-    (value.lo << rest) | (value.hi >>> (32 - rest)),
-  );
-}
-
-function ror64(value, count) {
-  return rol64(value, 64 - (count % 64));
-}
-
-function readWord64LE(bytes, offset = 0) {
-  const lo = (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
-  const hi = (bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24)) >>> 0;
-  return word64(lo, hi);
-}
-
-function writeWord64LE(output, offset, value) {
-  for (let i = 0; i < 4; i++) {
-    output[offset + i] = (value.lo >>> (i * 8)) & 0xff;
-    output[offset + 4 + i] = (value.hi >>> (i * 8)) & 0xff;
-  }
-}
-
-function simonZBit(index) {
-  return word64(index < 32 ? (SIMON_Z.lo >>> index) & 1 : (SIMON_Z.hi >>> (index - 32)) & 1, 0);
-}
-
-function simonRoundKeys(key) {
-  const words = Array.from({ length: 4 }, (_, index) => readWord64LE(key, index * 8));
-  for (let index = 4; index < 72; index++) {
-    let mixed = xor64(ror64(words[index - 1], 3), words[index - 3]);
-    mixed = xor64(mixed, ror64(mixed, 1));
-    words.push(xor64(not64(words[index - 4]), mixed, simonZBit((index - 4) % 62), word64(3, 0)));
-  }
-  return words;
-}
-
-function simonEncrypt(block, roundKeys) {
-  let left = readWord64LE(block, 0);
-  let right = readWord64LE(block, 8);
-  for (const key of roundKeys) {
-    const oldRight = right;
-    const nonlinear = and64(rol64(right, 1), rol64(right, 8));
-    right = xor64(left, nonlinear, rol64(right, 2), key);
-    left = oldRight;
-  }
-  const output = new Uint8Array(16);
-  writeWord64LE(output, 0, left);
-  writeWord64LE(output, 8, right);
-  return output;
-}
-
-function argusProtobuf(query, stub, timestamp, options) {
-  const bodyInput = /^[0-9a-f]{32}$/i.test(stub) ? hexToBytes(stub) : new Uint8Array(16);
-  const randomValue = options.argusRandom == null ? readWord32LE(randomBytes(4)) : options.argusRandom >>> 0;
-  const signCount = options.argusSignCount == null ? 2 + (randomBytes(1)[0] % 49) * 2 : options.argusSignCount;
-  const nested = concatBytes(
-    pbVarint(1, signCount),
-    pbVarint(2, COUNTER_VALUE),
-    pbVarint(3, COUNTER_VALUE),
-    pbVarint(4, COUNTER_VALUE),
-  );
-  return concatBytes(
-    pbVarint(1, 0x20200929 * 2),
-    pbVarint(2, 2),
-    pbVarint(3, randomValue),
-    pbBytes(4, METASEC_APP_ID),
-    pbBytes(6, LICENSE_ID),
-    pbBytes(7, "6.8.1.32"),
-    pbBytes(8, "v04.07.01-ml-android"),
-    pbVarint(9, SDK_VERSION),
-    pbBytes(10, new Uint8Array(8)),
-    pbVarint(12, timestamp * 2),
-    pbBytes(13, sm3Bytes(bodyInput).slice(0, 6)),
-    pbBytes(14, sm3Bytes(stringToUtf8Bytes(query)).slice(0, 6)),
-    pbBytes(15, nested),
-    pbBytes(20, "none"),
-    pbVarint(21, 738),
-  );
-}
-
-function readWord32LE(bytes) {
-  return (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0;
-}
-
-export function createArgus(query, stub, timestamp, options = {}) {
-  const protobuf = pkcs7Pad(argusProtobuf(query, stub, timestamp, options));
-  const simonKey = sm3Bytes(concatBytes(SIGN_KEY, ARGUS_HEADER, ARGUS_SUFFIX, SIGN_KEY));
-  const roundKeys = simonRoundKeys(simonKey);
-  const encrypted = [];
-  for (let offset = 0; offset < protobuf.length; offset += 16) {
-    encrypted.push(simonEncrypt(protobuf.slice(offset, offset + 16), roundKeys));
-  }
-
-  const xorKey = concatBytes(ARGUS_XOR_WORD, ARGUS_XOR_WORD);
-  const encoded = concatBytes(xorKey, ...encrypted);
-  for (let index = 8; index < encoded.length; index++) encoded[index] ^= encoded[index % 8];
-  const container = concatBytes(ARGUS_PREFIX, reverseBytes(encoded), ARGUS_SUFFIX);
-  const key = hexToBytes(md5(SIGN_KEY.slice(0, 16)));
-  const iv = hexToBytes(md5(SIGN_KEY.slice(16)));
-  return bytesToBase64(concatBytes(ARGUS_HEADER, aesCbcEncrypt(container, key, iv)));
-}
-
-function ladonRoundKeys(randomPrefix, aid) {
-  const asciiDigest = stringToUtf8Bytes(md5(concatBytes(randomPrefix, stringToUtf8Bytes(String(aid)))));
-  const table = new Uint8Array(288);
-  table.set(asciiDigest);
-  const queue = Array.from({ length: 4 }, (_, index) => readWord64LE(table, index * 8));
-  let left = queue.shift();
-  let right = queue.shift();
-  for (let index = 0; index < 0x22; index++) {
-    const mixed = xor64(add64(ror64(right, 8), left), word64(index, 0));
-    queue.push(mixed);
-    left = xor64(mixed, ror64(left, 61));
-    writeWord64LE(table, (index + 1) * 8, left);
-    right = queue.shift();
-  }
-  return Array.from({ length: 0x22 }, (_, index) => readWord64LE(table, index * 8));
-}
-
-function ladonEncryptBlock(block, roundKeys) {
-  let left = readWord64LE(block, 0);
-  let right = readWord64LE(block, 8);
-  for (const key of roundKeys) {
-    right = xor64(key, add64(left, ror64(right, 8)));
-    left = xor64(right, ror64(left, 61));
-  }
-  const output = new Uint8Array(16);
-  writeWord64LE(output, 0, left);
-  writeWord64LE(output, 8, right);
-  return output;
-}
-
-export function createLadon(timestamp, aid, options = {}) {
-  const randomPrefix = options.ladonRandom == null
-    ? randomBytes(4)
-    : new Uint8Array(options.ladonRandom);
-  if (randomPrefix.length !== 4) throw new RangeError("ladonRandom must be four bytes");
-  const data = stringToUtf8Bytes(`${timestamp}-${LICENSE_ID}-${METASEC_APP_ID}`);
-  const paddedSize = Math.ceil(data.length / 16) * 16;
-  const padded = new Uint8Array(paddedSize);
-  padded.set(data);
-  const padding = 16 - (data.length % 16);
-  if (data.length + padding <= paddedSize) padded.fill(padding, data.length);
-  const roundKeys = ladonRoundKeys(randomPrefix, aid);
-  const ciphertext = [];
-  for (let offset = 0; offset < padded.length; offset += 16) {
-    ciphertext.push(ladonEncryptBlock(padded.slice(offset, offset + 16), roundKeys));
-  }
-  return bytesToBase64(concatBytes(randomPrefix, ...ciphertext));
-}
-
-function md5Prefix(value) {
-  const bytes = value instanceof Uint8Array ? value : stringToUtf8Bytes(String(value));
-  return hexToBytes(md5(bytes)).slice(0, 4);
-}
-
-export function buildGorgonSeed(url, { headers = {}, body = null, khronos } = {}) {
-  if (!Number.isInteger(khronos) || khronos < 0 || khronos > 0xffffffff) {
-    throw new RangeError("khronos must be an unsigned 32-bit integer");
-  }
-  const stub = getHeader(headers, "x-ss-stub").trim();
-  let bodyPrefix = new Uint8Array(4);
-  if (/^[0-9a-f]{32}$/i.test(stub)) bodyPrefix = hexToBytes(stub.slice(0, 8));
-  else if (body != null) {
-    const bodyBytes = body instanceof Uint8Array ? body : stringToUtf8Bytes(String(body));
-    if (bodyBytes.length > 0) bodyPrefix = md5Prefix(bodyBytes);
-  }
-  const cookie = getHeader(headers, "cookie");
-  const timestamp = new Uint8Array([
-    (khronos >>> 24) & 0xff,
-    (khronos >>> 16) & 0xff,
-    (khronos >>> 8) & 0xff,
-    khronos & 0xff,
-  ]);
-  return concatBytes(
-    md5Prefix(getQueryString(url)),
-    bodyPrefix,
-    cookie ? md5Prefix(cookie) : new Uint8Array(4),
-    new Uint8Array([0x00, 0x01, 0x07, 0x04]),
-    timestamp,
-  );
-}
-
-function reverseBits(value) {
-  let result = ((value << 1) & 0xaa) | ((value >>> 1) & 0x55);
-  result = ((result << 2) & 0xcc) | ((result >>> 2) & 0x33);
-  return ((result << 4) | (result >>> 4)) & 0xff;
-}
-
-export function transformGorgonSeed(seed, { headerByte2, headerByte3, parameter = 0 } = {}) {
-  const input = seed instanceof Uint8Array ? seed : new Uint8Array(seed || []);
-  if (input.length !== 20) throw new TypeError("seed must contain 20 bytes");
-  const key = new Uint8Array([0x4a, parameter & 0xff, 0x16, headerByte3, 0x47, 0x6c, parameter >>> 8, headerByte2]);
-  const sbox = Uint8Array.from({ length: 256 }, (_, index) => index);
-  let j = 0;
-  for (let i = 0; i < 256; i++) {
-    j = (j + sbox[i] + key[i & 7]) & 0xff;
-    sbox[i] = sbox[j];
-  }
-  const payload = new Uint8Array(input);
-  let i = 0;
-  j = 0;
-  for (let offset = 0; offset < payload.length; offset++) {
-    i = (i + 1) & 0xff;
-    j = (j + sbox[i]) & 0xff;
-    sbox[i] = sbox[j];
-    payload[offset] ^= sbox[(sbox[i] + sbox[j]) & 0xff];
-  }
-  const lengthMask = (~payload.length) & 0xff;
-  for (let offset = 0; offset < payload.length; offset++) {
-    const swappedNibbles = ((payload[offset] << 4) | (payload[offset] >>> 4)) & 0xff;
-    payload[offset] = reverseBits(swappedNibbles ^ payload[(offset + 1) % payload.length]) ^ lengthMask;
-  }
-  return concatBytes(new Uint8Array([0x84, 0x04, headerByte2, headerByte3, parameter & 0xff, parameter >>> 8]), payload);
-}
-
-export function signHongguoRequest(url, options = {}) {
-  const timestamp = options.timestamp == null
-    ? (options.khronos == null ? Math.floor(Date.now() / 1000) : options.khronos)
-    : options.timestamp;
-  if (!Number.isInteger(timestamp) || timestamp < 0 || timestamp > 0xffffffff) {
-    throw new RangeError("timestamp must be an unsigned 32-bit integer");
-  }
-  const aid = parseInt(getQueryParam(url, "aid"), 10);
-  if (!Number.isSafeInteger(aid)) throw new TypeError("signed URL must contain a numeric aid parameter");
-  const random = randomBytes(2);
-  const headerByte2 = options.headerByte2 == null ? ((random[0] % 7) + 1) << 5 : options.headerByte2;
-  const headerByte3 = options.headerByte3 == null ? 0xe0 | (random[1] & 0x0f) : options.headerByte3;
-  const headers = options.headers || {};
-  const seed = buildGorgonSeed(url, { headers, body: options.body, khronos: timestamp });
-  return {
-    "X-Argus": createArgus(getQueryString(url), getHeader(headers, "x-ss-stub").trim(), timestamp, options),
-    "X-Gorgon": bytesToHex(transformGorgonSeed(seed, { headerByte2, headerByte3, parameter: options.parameter || 0 })),
-    "X-Khronos": String(timestamp),
-    "X-Ladon": createLadon(timestamp, aid, options),
-  };
-}
-
-export function createHongguoEpisodeId(seriesId, vid, durationSeconds) {
-  return `hongguo:v1:${encodeURIComponent(String(seriesId))}:${encodeURIComponent(String(vid))}:${Math.max(0, Math.trunc(Number(durationSeconds) || 0))}`;
-}
-
-export function createHongguoSeriesId(seriesId) {
-  return `hongguo:series:v1:${encodeURIComponent(String(seriesId))}`;
-}
-
-export function parseHongguoSeriesId(value) {
-  const rawValue = String(value || "").split("#", 1)[0];
-  const match = rawValue.match(/^hongguo:series:v1:([^:]+)$/);
-  if (!match) throw new Error("无效的红果全集 ID");
-  return { seriesId: decodeURIComponent(match[1]) };
-}
-
-export function isHongguoSeriesId(value) {
+// httpGet 自身的超时只覆盖响应头；外部信号同时限制正文读取和调用方等待。
+async function boundedHttpGet(url, options = {}, timeoutMs = SEARCH_SUGGESTION_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const aborted = () => controller.abort(options.signal.reason);
+  if (options.signal?.aborted) aborted();
+  else options.signal?.addEventListener("abort", aborted, { once: true });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    parseHongguoSeriesId(value);
-    return true;
-  } catch {
-    return false;
+    checkAborted(controller.signal);
+    return await waitWithSignal(httpGet(url, { ...options, timeout: timeoutMs, retries: 0, signal: controller.signal }), controller.signal);
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", aborted);
   }
 }
 
-export function parseHongguoEpisodeId(value) {
-  const rawValue = String(value || "").split("#", 1)[0];
-  const match = rawValue.match(/^hongguo:v1:([^:]+):([^:]+):(\d+)$/);
-  if (!match) throw new Error("无效的红果剧集 ID");
-  return {
-    seriesId: decodeURIComponent(match[1]),
-    vid: decodeURIComponent(match[2]),
-    duration: Number(match[3]),
-  };
-}
-
-export function parseHongguoPlayerUrl(value) {
-  const normalized = String(value || "")
-    .trim()
-    .replace(/@%?-?\d+(?:\.\d+)?$/, "");
-  if (normalized.split("#", 1)[0].startsWith("hongguo:v1:")) {
-    const info = parseHongguoEpisodeId(normalized);
-    return { seriesId: info.seriesId, vid: info.vid };
-  }
-  const match = normalized.match(
-    /^https?:\/\/(?:www\.)?hongguoduanju\.com(?::\d+)?\/player\/(\d+)\/(\d+)\/?(?:\?[^#]*)?(?:#.*)?$/i,
-  );
-  if (!match) throw new Error("无效的红果短剧播放链接");
-  return { seriesId: match[1], vid: match[2] };
-}
-
-export function isHongguoPlayerUrl(value) {
-  try {
-    parseHongguoPlayerUrl(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function extractImageUrl(value) {
-  if (typeof value === "string") {
-    const url = value.trim();
-    return url.startsWith("//") ? `https:${url}` : url;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const url = extractImageUrl(item);
-      if (url) return url;
-    }
-    return "";
-  }
-  if (!value || typeof value !== "object") return "";
-  for (const key of ["url", "main_url", "download_url", "url_list", "urlList", "urls"]) {
-    const url = extractImageUrl(value[key]);
-    if (url) return url;
-  }
-  return "";
-}
-
-function extractYearFromTimestamp(...values) {
-  for (const value of values) {
-    if (value == null || value === "") continue;
-    const timestamp = Number(value);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) continue;
-    const milliseconds = timestamp >= 1e12 ? timestamp : timestamp * 1000;
-    const year = new Date(milliseconds).getUTCFullYear();
-    if (year >= 1900 && year <= 2100) return year;
-  }
-  return null;
-}
-
-function parseSearchCell(cell) {
-  const seriesId = cell && (cell.book_id || cell.search_result_id);
-  if (!seriesId) return null;
-  const detail = cell.video_detail || {};
-  let videoData = cell.video_data;
-  if (Array.isArray(videoData)) videoData = videoData[0] || {};
-  if (!videoData || typeof videoData !== "object") videoData = {};
-  const inner = videoData.video_detail || {};
-  const albumInfo = videoData.album_info || inner.album_info || detail.album_info || {};
-  const episodeCount = detail.episode_cnt || videoData.episode_cnt || inner.episode_cnt || albumInfo.episode_cnt || 0;
-  if (!episodeCount) return null;
-  const highlighted = cell.search_high_light && cell.search_high_light.title && cell.search_high_light.title.text;
-  const title = String(highlighted || detail.series_title || videoData.title || inner.series_title || albumInfo.title || "")
-    .replace(/<[^>]+>/g, "")
-    .trim();
-  if (!title) return null;
-  return {
-    seriesId: String(seriesId),
-    name: title,
-    episodeCount: Number(episodeCount) || 0,
-    score: videoData.score || inner.score || albumInfo.score || "",
-    year: extractYearFromTimestamp(
-      albumInfo.create_time,
-      inner.create_time,
-      videoData.create_time,
-      detail.create_time,
-      cell.create_time,
-    ),
-    imageUrl: extractImageUrl(
-      inner.series_cover || videoData.cover || detail.series_cover || albumInfo.cover || cell.series_cover || cell.cover,
-    ),
-  };
-}
-
-function parseDanmuResponse(payload) {
-  const output = [];
-  const data = payload && payload.data;
-  for (const item of (data && data.data_list) || []) {
-    const comment = item.comment || {};
-    const common = comment.common || {};
-    const content = common.content || {};
-    const expand = comment.expand || {};
-    const text = String(content.text || "").trim();
-    const offsetMs = Number(expand.offset_time);
-    if (!text || !Number.isFinite(offsetMs)) continue;
-    output.push({
-      commentId: String(comment.comment_id || ""),
-      offsetMs: Math.max(0, Math.trunc(offsetMs)),
-      text,
-      diggCount: Math.max(0, Math.trunc(Number((comment.stat || {}).digg_count) || 0)),
-    });
-  }
-  return output;
-}
-
-function dedupeDanmus(items) {
-  const seen = new Map();
-  for (const item of items) {
-    const key = item.commentId ? `id:${item.commentId}` : `anonymous:${item.offsetMs}:${item.text}`;
-    seen.set(key, item);
-  }
-  return [...seen.values()].sort((a, b) => a.offsetMs - b.offsetMs || a.commentId.localeCompare(b.commentId) || a.text.localeCompare(b.text));
-}
-
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function rememberTimed(map, key, value, ttlMs, maxItems) {
+  const now = Date.now();
+  for (const [oldKey, entry] of map) if (entry.expiresAt <= now) map.delete(oldKey);
+  map.delete(key);
+  map.set(key, { value, expiresAt: now + ttlMs });
+  while (map.size > maxItems) map.delete(map.keys().next().value);
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {
@@ -675,36 +242,39 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return results;
 }
 
-function getFragmentNumber(value, name) {
-  const hashIndex = String(value || "").indexOf("#");
-  if (hashIndex < 0) return null;
-  const expected = String(name);
-  const fragment = String(value).slice(hashIndex + 1);
-  for (const pair of fragment.split("&")) {
-    const separator = pair.indexOf("=");
-    const key = separator < 0 ? pair : pair.slice(0, separator);
-    if (decodeURIComponent(key) !== expected) continue;
-    const number = Number(decodeURIComponent(separator < 0 ? "" : pair.slice(separator + 1)));
-    return Number.isFinite(number) ? number : null;
-  }
-  return null;
-}
-
 export default class HongguoSource extends BaseSource {
   constructor() {
     super();
     this.preferredApiHost = CLIENT_CONFIG.apiHosts[0];
     this.nextRequestAt = 0;
+    this.nextCommentRequestAt = 0;
+    this.requestCooldownUntil = 0;
+    this.metadataCooldownUntil = 0;
     this.playerEpisodeResolutions = new Map();
     this.activeCommentRequests = 0;
     this.commentRequestWaiters = [];
-    this.lastDanmu = [];
+    this.activeMetadataRequests = 0;
+    this.metadataRequestWaiters = [];
+    this.episodeDetailsCache = new Map();
+    this.pendingEpisodeDetails = new Map();
     this.durationCache = new Map();
+    this.durationFailures = new Map();
+    this.pendingDurationLookups = new Map();
     this.pendingEpisodeDanmu = new Map();
+    this.deliveryIdentity = createHongguoIdentity();
+    this.deliveryIdentityReady = false;
+    this.deliveryIdentityTask = null;
+    this.deliveryIdentityRetryAt = 0;
+    this.deliveryIdentityRetryCount = 0;
+    // 弹幕节流自适应：1 为 30ms 快档，翻倍退避最多 THROTTLE_MAX_BACKOFF 倍
+    this.commentThrottleBackoff = 1;
+    this.commentSuccessStreak = 0;
+    this.metadataThrottleBackoff = 1;
+    this.metadataSuccessStreak = 0;
   }
 
   buildUrl(path, extraQuery = {}, apiHost = this.preferredApiHost) {
-    const query = { ...CLIENT_CONFIG.baseQuery, ...extraQuery, _rticket: String(Date.now()) };
+    const query = { ...CLIENT_CONFIG.baseQuery, ...this.deliveryIdentity, ...extraQuery, _rticket: String(Date.now()) };
     return `https://${apiHost || CLIENT_CONFIG.apiHosts[0]}${path}?${buildQueryString(query)}`;
   }
 
@@ -714,77 +284,43 @@ export default class HongguoSource extends BaseSource {
     return [preferred, ...CLIENT_CONFIG.apiHosts.filter((host) => host !== preferred)];
   }
 
-  parseApiResponse(response) {
-    const status = response && response.status != null ? `HTTP ${response.status}` : "未知 HTTP 状态";
-    if (!response || !("data" in response)) throw new Error(`无效响应 (${status})`);
-    const statusCode = response.status == null ? null : Number(response.status);
-    if (Number.isFinite(statusCode) && (statusCode < 200 || statusCode >= 300)) {
-      throw new Error(`接口返回 ${status}`);
-    }
-    if (typeof response.data !== "string") {
-      if (!response.data || typeof response.data !== "object") throw new Error(`无效响应 (${status})`);
-      return response.data;
-    }
-
-    const text = response.data.trim();
-    if (!text) throw new Error(`接口返回空响应 (${status})`);
-    try {
-      const result = JSON.parse(text);
-      if (!result || typeof result !== "object") throw new Error("JSON 根节点不是对象");
-      return result;
-    } catch (error) {
-      throw new Error(`接口返回无效 JSON (${status}): ${error.message}`);
+  async throttle(baseMs = METADATA_THROTTLE_MS, jitterMs = METADATA_THROTTLE_JITTER_MS, { comment = false, signal } = {}) {
+    const nextKey = comment ? "nextCommentRequestAt" : "nextRequestAt";
+    const cooldownKey = comment ? "requestCooldownUntil" : "metadataCooldownUntil";
+    for (;;) {
+      checkAborted(signal);
+      const now = Date.now();
+      const scheduled = Math.max(now, this[nextKey], this[cooldownKey]);
+      this[nextKey] = scheduled + baseMs + Math.floor(Math.random() * jitterMs);
+      if (scheduled > now) await sleep(scheduled - now, signal);
+      // 其他并发请求可能在本次等待期间收到冷却指令，重新排队后再发送。
+      if (Date.now() >= this[cooldownKey]) return;
     }
   }
 
-  async throttle(baseMs = 600, jitterMs = 401) {
-    const now = Date.now();
-    const scheduled = Math.max(now, this.nextRequestAt);
-    this.nextRequestAt = scheduled + baseMs + Math.floor(Math.random() * jitterMs);
-    if (scheduled > now) await sleep(scheduled - now);
-  }
-
-  checkResponse(payload) {
-    if (!payload || typeof payload !== "object") throw new Error("平台返回了无效响应");
-    const code = payload.code;
-    if (code == null || code === 0) return;
-    const message = String(payload.message || payload.msg || "未知错误");
-    const normalizedMessage = message.toLowerCase();
-    const authFailed = [401, 403, 8, 1001].includes(Number(code)) ||
-      ["token", "login", "登录", "未登录", "expire"].some((word) => normalizedMessage.includes(word));
-    if (authFailed) throw new Error(`鉴权失败 code=${code}: ${message}`);
-    // 频控冷却指令：服务端以 JSON 返回 {"min_ban_time": 3, "max_ban_time": 5, "ban_rate": 0}
-    let coolDownMs = 0;
-    try {
-      const detail = JSON.parse(message);
-      if (detail && typeof detail === "object") {
-        coolDownMs = Math.max(0, Number(detail.min_ban_time) || Number(detail.max_ban_time) || 0) * 1000;
-      }
-    } catch { /* message 不是 JSON 时忽略 */ }
-    if (coolDownMs > 0) {
-      const error = new Error(`风控冷却: 需暂停 ${Math.round(coolDownMs / 1000)}s (code=${code})`);
-      error.coolDownMs = coolDownMs;
-      return error;
-    }
-    throw new Error(`风控或平台异常 code=${code}: ${message}`);
-  }
-
-  async request(method, path, { body = null, extraQuery = {}, comment = false } = {}) {
+  async request(method, path, { body = null, extraQuery = {}, comment = false, signal } = {}) {
     const apiHosts = this.getApiHosts();
     const failures = [];
     const payload = body == null ? null : JSON.stringify(body);
+    const kind = comment ? "comment" : "metadata";
+    const backoffKey = `${kind}ThrottleBackoff`;
+    const successKey = `${kind}SuccessStreak`;
+    const baseMs = comment ? COMMENT_THROTTLE_MS : METADATA_THROTTLE_MS;
+    const jitterMs = comment ? COMMENT_THROTTLE_JITTER_MS : METADATA_THROTTLE_JITTER_MS;
     for (let index = 0; index < apiHosts.length; index++) {
       const apiHost = apiHosts[index];
-      // 风控冷却是按设备身份生效的（与具体主机无关），在主机内做有限次退避重试，之后再切换线路
+      // 同类接口跨主机共享冷却；弹幕和元数据各自遵守服务端返回的冷却指令。
       const maxAttempts = 3;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        let releaseSlot;
         try {
+          checkAborted(signal);
+          releaseSlot = await this.acquireRequestSlot(comment, signal);
+          await this.throttle(baseMs * this[backoffKey], jitterMs * this[backoffKey], { comment, signal });
+          checkAborted(signal);
+          // 排队和冷却结束后再构建 URL / 签名，避免发送过期的时间戳。
           const url = this.buildUrl(path, extraQuery, apiHost);
-          const headers = {};
-          for (const [key, value] of Object.entries(CLIENT_CONFIG.sessionHeaders)) {
-            if (value) headers[key] = String(value);
-          }
-          headers["content-type"] = "application/json; charset=utf-8";
+          const headers = { ...CLIENT_CONFIG.headers, "content-type": "application/json; charset=utf-8" };
           if (comment) {
             headers["comment-source"] = String(COMMENT_SOURCE);
             headers["server-channel"] = String(SERVER_CHANNEL);
@@ -793,28 +329,30 @@ export default class HongguoSource extends BaseSource {
             headers["x-ss-stub"] = md5(stringToUtf8Bytes(payload)).toUpperCase();
           }
           Object.assign(headers, signHongguoRequest(url, { headers }));
-          const releaseCommentSlot = comment ? await this.acquireCommentSlot() : null;
-          // 弹幕请求同样需要节流，避免分页/整剧连发触发风控
-          if (comment) await this.throttle(COMMENT_THROTTLE_MS, COMMENT_THROTTLE_JITTER_MS);
-          else await this.throttle();
-          let response;
-          try {
-            response = method === "GET"
-              ? await httpGet(url, { headers, timeout: 30000 })
-              : await httpPost(url, payload, { headers, timeout: 30000 });
-          } finally {
-            if (releaseCommentSlot) releaseCommentSlot();
-          }
-          const result = this.parseApiResponse(response);
-          const responseError = this.checkResponse(result);
-          if (responseError) throw responseError;
+          const response = await waitWithSignal(method === "GET"
+            ? httpGet(url, { headers, timeout: 30000, signal })
+            : httpPost(url, payload, { headers, timeout: 30000, signal }), signal);
+          const result = parseHongguoResponse(response);
           this.preferredApiHost = apiHost;
+          if (++this[successKey] >= THROTTLE_RECOVER_STREAK) {
+            this[successKey] = 0;
+            this[backoffKey] = Math.max(1, this[backoffKey] / 2);
+          }
           return result;
         } catch (error) {
+          checkAborted(signal);
           if (error && error.coolDownMs) {
-            // 遵守服务端给出的冷却时间并稍作随机，退避后重试当前主机
+            // 先公布该类接口的期限，再释放槽位；另一类接口不被这次冷却阻塞。
             log("warn", `[Hongguo] ${apiHost} 触发风控冷却 ${Math.round(error.coolDownMs / 1000)}s，退避后重试`);
-            await sleep(error.coolDownMs + Math.floor(Math.random() * 1000));
+            const cooldownKey = comment ? "requestCooldownUntil" : "metadataCooldownUntil";
+            const nextKey = comment ? "nextCommentRequestAt" : "nextRequestAt";
+            this[cooldownKey] = Math.max(
+              this[cooldownKey],
+              Date.now() + error.coolDownMs + Math.floor(Math.random() * 1000),
+            );
+            this[nextKey] = Math.max(this[nextKey], this[cooldownKey]);
+            this[successKey] = 0;
+            this[backoffKey] = Math.min(THROTTLE_MAX_BACKOFF, this[backoffKey] * 2);
             if (attempt < maxAttempts - 1) continue;
           }
           const message = error && error.message ? error.message : String(error);
@@ -824,6 +362,8 @@ export default class HongguoSource extends BaseSource {
             log("warn", `[Hongguo] ${apiHost} 请求失败，切换到 ${nextApiHost}: ${message}`);
           }
           break;
+        } finally {
+          if (releaseSlot) releaseSlot();
         }
       }
     }
@@ -834,15 +374,48 @@ export default class HongguoSource extends BaseSource {
     throw requestError;
   }
 
+  async fetchWebSearch(keyword) {
+    const response = await boundedHttpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, {
+      headers: { accept: "text/html" },
+    });
+    return parseWebSearchResults(typeof response.data === "string" ? response.data : "");
+  }
+
+  async fetchSearchSuggestions(keyword) {
+    const query = buildQueryString({ app_id: "8662", query: keyword, count: String(SEARCH_SUGGESTION_COUNT) });
+    const response = await boundedHttpGet(`${WEB_ORIGIN}/incent_resource/suggestion?${query}`, {
+      headers: { accept: "application/json", referer: `${WEB_ORIGIN}/`, "user-agent": "Mozilla/5.0" },
+    });
+    return parseSearchSuggestions(parseHongguoResponse(response));
+  }
+
   async search(keyword) {
-    try {
-      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { accept: "text/html" }, timeout: 30000 });
-      const items = parseWebSearchResults(typeof response.data === "string" ? response.data : "");
-      if (items.length) return items.map((item) => {
-        const data = item.video_data || {};
-        return { seriesId: String(data.series_id || item.keyword || ""), name: String(data.series_name || data.series_title || item.name || ""), episodeCount: Number(data.episode_cnt) || 0, score: "", year: extractYearFromTimestamp(data.create_time), imageUrl: extractImageUrl(data.series_cover) };
-      }).filter((item) => item.seriesId && item.name && item.episodeCount > 0).slice(0, MAX_SEARCH_ITEMS);
-    } catch (error) { log("warn", `[Hongguo] web search unavailable: ${error.message}`); }
+    const pages = await Promise.allSettled([this.fetchWebSearch(keyword), this.fetchSearchSuggestions(keyword)]);
+    const merged = new Map();
+    for (let index = 0; index < pages.length; index++) {
+      const page = pages[index];
+      if (page.status === "rejected") {
+        log("warn", `[Hongguo] ${index === 0 ? "网页搜索" : "搜索联想"}不可用: ${page.reason.message}`);
+        continue;
+      }
+      for (const item of page.value) if (!merged.has(item.seriesId)) merged.set(item.seriesId, item);
+    }
+    if (merged.size) {
+      const allResults = [...merged.values()];
+      let results = allResults.slice(0, MAX_SEARCH_ITEMS);
+      if (allResults.length > MAX_SEARCH_ITEMS && pages[0].status === "fulfilled" && pages[1].status === "fulfilled") {
+        const webIds = new Set(pages[0].value.map(item => item.seriesId));
+        const suggestionOnly = [...new Map(pages[1].value.filter(item => !webIds.has(item.seriesId)).map(item => [item.seriesId, item])).values()];
+        // 给联想独有结果预留最多一半名额，网页满额时也能保留补出的季。
+        const reserved = suggestionOnly.slice(0, Math.ceil(MAX_SEARCH_ITEMS / 2));
+        const reservedIds = new Set(reserved.map(item => item.seriesId));
+        results = allResults.filter(item => !reservedIds.has(item.seriesId)).slice(0, MAX_SEARCH_ITEMS - reserved.length).concat(reserved);
+      }
+      log("info", `[Hongguo] 网页与联想合并后找到 ${results.length} 个结果`);
+      return results;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEARCH_SUGGESTION_TIMEOUT_MS);
     try {
       const results = [];
       const seen = new Set();
@@ -860,7 +433,9 @@ export default class HongguoSource extends BaseSource {
         };
         if (passback) params.passback = passback;
         if (searchId) params.search_id = searchId;
-        const payload = await this.request("GET", "/reading/bookapi/search/tab/v", { extraQuery: params });
+        const payload = await waitWithSignal(this.request("GET", "/reading/bookapi/search/tab/v", {
+          extraQuery: params, signal: controller.signal,
+        }), controller.signal);
         const tabs = payload.search_tabs || [];
         if (!tabs.length) break;
         const tab = tabs[0];
@@ -882,10 +457,40 @@ export default class HongguoSource extends BaseSource {
     } catch (error) {
       log("error", `[Hongguo] 搜索失败: ${error.message}`);
       return [];
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  async getEpisodes(seriesId) {
+  async getEpisodes(seriesId, { signal } = {}) {
+    checkAborted(signal);
+    const key = String(seriesId);
+    const cached = this.episodeDetailsCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return structuredClone(cached.value);
+    this.episodeDetailsCache.delete(key);
+    let task = this.pendingEpisodeDetails.get(key);
+    if (!task) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), DETAIL_LOOKUP_TIMEOUT_MS);
+      // 共享加载有自己的截止时间；一个搜索调用取消，不会中断其他调用正在复用的详情。
+      task = waitWithSignal(this.fetchEpisodeDetails(key, controller.signal), controller.signal).catch(error => {
+        if (!controller.signal.aborted) throw error;
+        log("warn", `[Hongguo] 剧集 ${key} 详情达到 ${DETAIL_LOOKUP_TIMEOUT_MS / 1000}s 等待上限`);
+        return { episodes: [], year: null, imageUrl: "" };
+      }).then(details => {
+        rememberTimed(this.episodeDetailsCache, key, details,
+          details.episodes.length ? DETAIL_CACHE_TTL_MS : DETAIL_FAILURE_TTL_MS, DETAIL_CACHE_MAX_ITEMS);
+        return details;
+      }).finally(() => {
+        clearTimeout(timer);
+        this.pendingEpisodeDetails.delete(key);
+      });
+      this.pendingEpisodeDetails.set(key, task);
+    }
+    return structuredClone(await waitWithSignal(task, signal));
+  }
+
+  async fetchEpisodeDetails(seriesId, signal) {
     const body = {
       biz_param: {
         detail_page_version: 0,
@@ -902,62 +507,93 @@ export default class HongguoSource extends BaseSource {
       series_id: String(seriesId),
     };
 
-    const parseApiEpisodes = (payload) => {
-      const responseData = payload && payload.data || {};
-      const entry = responseData[String(seriesId)] || responseData;
-      const videoData = entry && entry.video_data || {};
-      const episodes = (videoData.video_list || []).map((item) => ({
-        index: Number(item.vid_index) || 0,
-        vid: String(item.vid || ""),
-        title: String(item.episode_title || "").trim().slice(0, 30),
-        duration: Math.max(0, Number(item.duration) || 0),
-        commentCount: Math.max(0, Number(item.comment_count) || 0),
-        imageUrl: extractImageUrl(item.episode_cover || item.cover),
-      })).filter((item) => item.vid).sort((a, b) => a.index - b.index);
-      if (!episodes.length) return null;
-      return {
-        episodes,
-        year: extractYearFromTimestamp(videoData.create_time),
-        imageUrl: extractImageUrl(videoData.series_cover) ||
-          (episodes.find((episode) => episode.imageUrl) || {}).imageUrl ||
-          "",
-      };
-    };
-
     try {
-      const apiResult = parseApiEpisodes(await this.request("POST", "/novel/player/multi_video_detail/v1/", { body }));
-      if (apiResult) return apiResult;
+      const payload = await this.request("POST", "/novel/player/multi_video_detail/v1/", { body, signal });
+      const details = parseApiEpisodeDetails(payload, seriesId);
+      if (details) {
+        this.cacheEpisodeDurations(seriesId, details.episodes);
+        return details;
+      }
       log("warn", `[Hongguo] API detail returned no episodes for series ${seriesId}, falling back to web detail`);
     } catch (error) {
       log("warn", `[Hongguo] API detail unavailable: ${error.message}, falling back to web detail`);
     }
-
     try {
-      const response = await httpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, { headers: { accept: "text/html" }, timeout: 30000 });
-      const detail = parseWebSeriesDetail(typeof response.data === "string" ? response.data : "");
-      if (detail && Array.isArray(detail.vid_list) && detail.vid_list.length) {
-        return {
-          episodes: detail.vid_list.map((item, index) => {
-            const value = item && typeof item === "object" ? item : {};
-            const vid = typeof item === "object"
-              ? (value.vid || value.video_id || value.id || "")
-              : item;
-            if (!vid) return null;
-            return {
-              index: index + 1,
-              vid: String(vid),
-              title: String(value.episode_title || value.title || `第${index + 1}集`).trim().slice(0, 30),
-              duration: Math.max(0, Number(value.duration || value.video_duration) || 0),
-              commentCount: Math.max(0, Number(value.comment_count) || 0),
-              imageUrl: extractImageUrl(value.episode_cover || value.cover),
-            };
-          }).filter(Boolean),
-          year: extractYearFromTimestamp(detail.create_time),
-          imageUrl: extractImageUrl(detail.series_cover),
-        };
+      const response = await boundedHttpGet(`${WEB_ORIGIN}/detail?series_id=${encodeURIComponent(seriesId)}`, {
+        headers: { accept: "text/html" }, signal,
+      });
+      const details = parseWebEpisodeDetails(typeof response.data === "string" ? response.data : "");
+      if (details) {
+        this.cacheEpisodeDurations(seriesId, details.episodes);
+        return details;
       }
-    } catch (error) { log("warn", `[Hongguo] web detail unavailable: ${error.message}`); }
+    } catch (error) {
+      log("warn", `[Hongguo] web detail unavailable: ${error.message}`);
+    }
     return { episodes: [], year: null, imageUrl: "" };
+  }
+
+  cacheEpisodeDurations(seriesId, episodes) {
+    for (const episode of episodes) {
+      const duration = positiveDuration(episode.duration);
+      if (duration) this.durationCache.set(`${seriesId}:${episode.vid}`, duration);
+    }
+  }
+
+  async resolveEpisodeDuration(info, refreshDetails = false) {
+    const duration = positiveDuration(info.duration);
+    if (duration) return duration;
+    const cacheKey = `${info.seriesId}:${info.vid}`;
+    const cached = positiveDuration(this.durationCache.get(cacheKey));
+    if (cached) return cached;
+    const failure = this.durationFailures.get(cacheKey);
+    if (failure && failure.expiresAt > Date.now()) return 0;
+    this.durationFailures.delete(cacheKey);
+    const pending = this.pendingDurationLookups.get(cacheKey);
+    if (pending) return pending;
+    const task = (async () => {
+      if (refreshDetails) {
+        try {
+          const details = await this.getEpisodes(info.seriesId);
+          this.cacheEpisodeDurations(info.seriesId, details.episodes);
+          const fromDetails = positiveDuration(this.durationCache.get(cacheKey));
+          if (fromDetails) return fromDetails;
+        } catch (error) {
+          log("warn", `[Hongguo] 补查详情时长失败: ${error.message}`);
+        }
+      }
+      try {
+        const response = await boundedHttpGet(`${WEB_ORIGIN}/player/${encodeURIComponent(info.seriesId)}/${encodeURIComponent(info.vid)}`, {
+          headers: { accept: "text/html" },
+        }, PLAYER_LOOKUP_TIMEOUT_MS);
+        const fromPlayer = parseWebPlayerDuration(typeof response.data === "string" ? response.data : "", info);
+        if (fromPlayer) {
+          this.durationCache.set(cacheKey, fromPlayer);
+          this.durationFailures.delete(cacheKey);
+          return fromPlayer;
+        }
+      } catch (error) {
+        log("warn", `[Hongguo] 播放页时长不可用(${info.vid}): ${error.message}`);
+      }
+      // 0 表示真实时长仍未知；兜底值只用于排布，不写入真实时长缓存。
+      rememberTimed(this.durationFailures, cacheKey, null, DURATION_FAILURE_TTL_MS, DURATION_FAILURE_MAX_ITEMS);
+      return 0;
+    })().finally(() => this.pendingDurationLookups.delete(cacheKey));
+    this.pendingDurationLookups.set(cacheKey, task);
+    return task;
+  }
+
+  async getSeriesEpisodeInfos(seriesId) {
+    const details = await this.getEpisodes(seriesId);
+    this.cacheEpisodeDurations(seriesId, details.episodes);
+    return mapWithConcurrency(details.episodes, DURATION_LOOKUP_CONCURRENCY, async episode => ({
+      ...episode,
+      duration: await this.resolveEpisodeDuration({ ...episode, seriesId }),
+    }));
+  }
+
+  async enrichEpisodeInfo(info) {
+    return { ...info, duration: await this.resolveEpisodeDuration(info, true) };
   }
 
   async resolveEpisodeInfo(value) {
@@ -967,10 +603,10 @@ export default class HongguoSource extends BaseSource {
     raw = raw.trim();
     const embedded = raw.match(/hongguo:v1:[^\s#]+:[^\s#]+:\d+/);
     if (embedded) {
-      try { return parseHongguoEpisodeId(embedded[0]); } catch { /* continue */ }
+      try { return this.enrichEpisodeInfo(parseHongguoEpisodeId(embedded[0])); } catch { /* continue */ }
     }
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (raw.split("#", 1)[0].startsWith("hongguo:v1:")) return parseHongguoEpisodeId(raw);
+      if (raw.split("#", 1)[0].startsWith("hongguo:v1:")) return this.enrichEpisodeInfo(parseHongguoEpisodeId(raw));
       try {
         const decoded = decodeURIComponent(raw);
         if (decoded === raw) break;
@@ -991,14 +627,16 @@ export default class HongguoSource extends BaseSource {
         return {
           seriesId: player.seriesId,
           vid: player.vid,
-          duration: episode.duration,
+          duration: await this.resolveEpisodeDuration({ ...episode, seriesId: player.seriesId }),
         };
       })();
       this.playerEpisodeResolutions.set(cacheKey, resolution);
     }
 
     try {
-      return await resolution;
+      const info = await resolution;
+      if (!info.duration) this.playerEpisodeResolutions.delete(cacheKey);
+      return info;
     } catch (error) {
       if (this.playerEpisodeResolutions.get(cacheKey) === resolution) {
         this.playerEpisodeResolutions.delete(cacheKey);
@@ -1007,26 +645,41 @@ export default class HongguoSource extends BaseSource {
     }
   }
 
-  createCommentSlotRelease() {
+  createRequestSlotRelease(comment) {
+    const waiters = comment ? this.commentRequestWaiters : this.metadataRequestWaiters;
+    const activeKey = comment ? "activeCommentRequests" : "activeMetadataRequests";
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      const next = this.commentRequestWaiters.shift();
+      const next = waiters.shift();
       if (next) {
-        next(this.createCommentSlotRelease());
+        next(this.createRequestSlotRelease(comment));
       } else {
-        this.activeCommentRequests--;
+        this[activeKey]--;
       }
     };
   }
 
-  async acquireCommentSlot() {
-    if (this.activeCommentRequests < COMMENT_CONCURRENCY) {
-      this.activeCommentRequests++;
-      return this.createCommentSlotRelease();
+  async acquireRequestSlot(comment, signal) {
+    checkAborted(signal);
+    const activeKey = comment ? "activeCommentRequests" : "activeMetadataRequests";
+    const waiters = comment ? this.commentRequestWaiters : this.metadataRequestWaiters;
+    const limit = comment ? COMMENT_CONCURRENCY : SEARCH_DETAIL_CONCURRENCY;
+    if (this[activeKey] < limit) {
+      this[activeKey]++;
+      return this.createRequestSlotRelease(comment);
     }
-    return new Promise((resolve) => this.commentRequestWaiters.push(resolve));
+    return new Promise((resolve, reject) => {
+      const ready = release => { signal?.removeEventListener("abort", aborted); resolve(release); };
+      const aborted = () => {
+        const index = waiters.indexOf(ready);
+        if (index >= 0) waiters.splice(index, 1);
+        reject(signal.reason || new DOMException("已取消", "AbortError"));
+      };
+      waiters.push(ready);
+      signal?.addEventListener("abort", aborted, { once: true });
+    });
   }
 
   resolveSeriesId(value) {
@@ -1045,8 +698,27 @@ export default class HongguoSource extends BaseSource {
     if (!Array.isArray(sourceAnimes)) return [];
     const transformed = [];
     const filtered = sourceAnimes.filter((item) => titleMatches(item.name, queryTitle, querySeason));
-    for (const anime of filtered) {
-      const details = await this.getEpisodes(anime.seriesId);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEARCH_DETAIL_BUDGET_MS);
+    let detailed;
+    try {
+      detailed = await mapWithConcurrency(filtered, SEARCH_DETAIL_CONCURRENCY, async (anime) => {
+        if (controller.signal.aborted) return null;
+        try {
+          return { anime, details: await waitWithSignal(this.getEpisodes(anime.seriesId, { signal: controller.signal }), controller.signal) };
+        } catch (error) {
+          if (!controller.signal.aborted) log("warn", `[Hongguo] 剧集 ${anime.seriesId} 详情获取失败: ${error.message}`);
+          return null;
+        }
+      });
+      if (controller.signal.aborted) log("warn", `[Hongguo] 搜索详情达到 ${SEARCH_DETAIL_BUDGET_MS / 1000}s 等待上限，保留已完成的结果`);
+    } finally {
+      clearTimeout(timer);
+    }
+    // 详情请求并行，缓存写入保持搜索结果顺序。
+    for (const result of detailed) {
+      if (!result) continue;
+      const { anime, details } = result;
       const episodes = details.episodes;
       const links = globals.hongguoMergeAllEpisodes && episodes.length
         ? [{
@@ -1081,7 +753,6 @@ export default class HongguoSource extends BaseSource {
       };
       transformed.push(item);
       addAnime({ ...item, links }, detailStore);
-      if (globals.animes.length > globals.MAX_ANIMES) removeEarliestAnime();
     }
     this.sortAndPushAnimesByYear(transformed, curAnimes);
     return transformed;
@@ -1114,47 +785,150 @@ export default class HongguoSource extends BaseSource {
       body: this.buildCommentBody(info, startMs, cursor),
       comment: true,
     });
-    const data = payload.data || {};
-    const listInfo = data.common_list_info || {};
-    const extra = data.extra || {};
-    let nextStart = Number(extra.next_query_danmaku_list_time);
-    if (!Number.isFinite(nextStart)) nextStart = startMs + COMMENT_WINDOW_MS;
-    if (nextStart <= startMs) nextStart = startMs + COMMENT_WINDOW_MS;
-    return {
-      comments: parseDanmuResponse(payload),
-      nextStart,
-      cursor: String(listInfo.cursor || ""),
-      hasMore: Boolean(listInfo.has_more),
-    };
+    return parseCommentWindow(payload, startMs);
+  }
+
+  // 同身份下发量有长期粘性；复检持久化身份，候选择优后供整个实例复用。
+  async ensureDeliveryIdentity(info) {
+    if (this.deliveryIdentityReady) return;
+    if (this.deliveryIdentityTask) return this.deliveryIdentityTask;
+    if (Date.now() < this.deliveryIdentityRetryAt) return;
+    this.deliveryIdentityTask = (async () => {
+      const candidates = [];
+      let bestPage = null;
+      const saved = await readPersistedIdentity();
+      if (saved) candidates.push(saved);
+      if (!candidates.length) candidates.push(this.deliveryIdentity);
+      while (candidates.length < COMMENT_IDENTITY_CANDIDATES) candidates.push(createHongguoIdentity());
+      let best = null;
+      let bestCount = -1;
+      let bestQuality = false;
+      let failures = 0;
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index];
+        if (index > 0) {
+          await sleep(COMMENT_IDENTITY_PROBE_INTERVAL_MS + Math.floor(Math.random() * COMMENT_IDENTITY_PROBE_JITTER_MS));
+        }
+        this.deliveryIdentity = candidate;
+        let count;
+        let declared;
+        let page;
+        try {
+          page = await this.fetchCommentWindow(info, 0, "");
+          count = dedupeDanmus(page.comments.filter(item => item.offsetMs >= 0 && item.offsetMs < page.nextStart)).length;
+          declared = Number(page.declaredWindowComments) || 0;
+          failures = 0;
+        } catch (error) {
+          failures++;
+          log("warn", `[Hongguo] 设备身份探测失败(${maskHongguoIdentity(candidate)}): ${error.message}`);
+          if (failures >= COMMENT_IDENTITY_PROBE_MAX_FAILURES) {
+            log("warn", "[Hongguo] 设备身份探测连续失败，提前结束并使用当前最优身份");
+            break;
+          }
+          continue;
+        }
+        const quality = isQualityDelivery(count, declared);
+        log("info", `[Hongguo] 设备身份探测 ${maskHongguoIdentity(candidate)} 窗口0下发 ${count}${declared > 0 ? `/${declared}` : ""} 条${quality ? "（优质档）" : ""}`);
+        if (count > bestCount || (count === bestCount && quality && !bestQuality)) {
+          best = candidate;
+          bestCount = count;
+          bestPage = page;
+          bestQuality = quality;
+        }
+        if (quality && best === candidate) break;
+        // 明确声明窗口 0 为空时无法评估身份；未知计数的空响应仍需尝试其他候选。
+        if (count === 0 && (page.declaredTotal === 0 || parseDeclaredCount(page.declaredWindows?.['0']) === 0)) break;
+        // 声明量本来不足五条时，继续换身份也无法达到最小样本要求。
+        if (count < MIN_IDENTITY_SAMPLE && declared > 0 && declared < MIN_IDENTITY_SAMPLE) break;
+      }
+      if (best) {
+        this.deliveryIdentity = best;
+        // 探测窗口拿到的数据本身就可以用于本次弹幕获取，避免重复请求。
+        this.deliveryIdentityProbe = { vid: String(info.vid), page: bestPage };
+        const backends = bestCount >= MIN_IDENTITY_SAMPLE ? await persistHongguoIdentity(best) : [];
+        const tierHint = bestCount < MIN_IDENTITY_SAMPLE
+          ? "，样本不足，稍后继续探测"
+          : bestQuality ? "" : "，未达优质线，重启/冷启动会继续自动探测";
+        log("info", `[Hongguo] 采用设备身份 ${maskHongguoIdentity(best)}（窗口0 探测 ${bestCount} 条，持久化: ${backends.join("/") || "仅内存"}${tierHint}）`);
+      } else if (candidates.length) {
+        // 全部探测失败：保留原身份，短暂退避后允许后续请求重新探测。
+        this.deliveryIdentity = candidates[0];
+        log("warn", `[Hongguo] 设备身份探测均未成功，回退使用 ${maskHongguoIdentity(candidates[0])}`);
+      }
+      this.deliveryIdentityReady = bestCount >= MIN_IDENTITY_SAMPLE;
+      this.deliveryIdentityRetryCount = this.deliveryIdentityReady ? 0 : this.deliveryIdentityRetryCount + 1;
+      const retryMs = Math.min(COMMENT_IDENTITY_MAX_RETRY_MS,
+        COMMENT_IDENTITY_RETRY_MS * 2 ** Math.min(this.deliveryIdentityRetryCount - 1, 4));
+      this.deliveryIdentityRetryAt = this.deliveryIdentityReady ? 0 : Date.now() + retryMs;
+    })().finally(() => {
+      this.deliveryIdentityTask = null;
+    });
+    return this.deliveryIdentityTask;
   }
 
   async getDanmuForEpisode(info) {
-    const durationMs = info.duration * 1000;
+    await this.ensureDeliveryIdentity(info);
+    const knownDurationMs = positiveDuration(info.duration) * 1000;
+    const durationMs = knownDurationMs || EPISODE_FALLBACK_DURATION_SECONDS * 1000;
     const comments = [];
     const seenMarkers = new Set();
     let startMs = 0;
     let cursor = "";
+    let declaredWindows = null;
+    let declaredTotal = null;
+    const probe = this.deliveryIdentityProbe;
+    let initialPage = null;
+    if (probe && probe.vid === String(info.vid) && probe.page) {
+      this.deliveryIdentityProbe = null;
+      initialPage = probe.page;
+    }
     const maxRequests = Math.max(1, Math.ceil(durationMs / COMMENT_WINDOW_MS) + 5);
     for (let requestIndex = 0; requestIndex < maxRequests; requestIndex++) {
       const marker = `${startMs}:${cursor}`;
       if (seenMarkers.has(marker)) break;
       seenMarkers.add(marker);
-      const page = await this.fetchCommentWindow(info, startMs, cursor);
-      comments.push(...page.comments);
-      if (durationMs && page.nextStart >= durationMs) break;
-      if (!page.hasMore && !durationMs) break;
-      startMs = page.nextStart;
-      cursor = page.cursor;
+      // 探测页与普通页共用终止和空窗口跳过逻辑，避免多请求或漏处理。
+      const page = initialPage || await this.fetchCommentWindow(info, startMs, cursor);
+      initialPage = null;
+      comments.push(...page.comments.filter(item => item.offsetMs >= startMs && item.offsetMs < Math.min(page.nextStart, durationMs)));
+      if (page.declaredWindows) declaredWindows = page.declaredWindows;
+      if (Number.isFinite(page.declaredTotal)) declaredTotal = page.declaredTotal;
+      if (page.nextStart >= durationMs) break;
+      if (!page.hasMore && !knownDurationMs) break;
+      let nextStart = page.nextStart;
+      let nextCursor = page.cursor;
+      // 空窗口跳过：cursor 里带整集窗口计数表，声明为 0 的窗口无需请求；
+      // 声明缺失（拿不到计数）的窗口仍照常请求，保证不丢弹幕。
+      if (declaredTotal === 0 && comments.length === 0) {
+        log("info", `[Hongguo] 该集无弹幕数据，跳过剩余窗口: ${info.vid}`);
+        break;
+      }
+      if (declaredWindows) {
+        const declaredAt = (start) => {
+          return parseDeclaredCount(declaredWindows[String(start)]);
+        };
+        let skippedTo = nextStart;
+        while (declaredAt(skippedTo) === 0 && skippedTo < durationMs) skippedTo += COMMENT_WINDOW_MS;
+        if (skippedTo > nextStart) {
+          log("info", `[Hongguo] 跳过空窗口至 ${skippedTo / 1000}s: ${info.vid}`);
+          nextStart = skippedTo;
+          // 跳过窗口后不再沿用旧 cursor（旧 cursor 会覆盖 start 的窗口范围），改为直接按窗口起点请求
+          nextCursor = "";
+        }
+      }
+      if (nextStart >= durationMs) break;
+      startMs = nextStart;
+      cursor = nextCursor;
     }
     return comments;
   }
 
   async getSeriesDanmu(seriesId) {
-    const details = await this.getEpisodes(seriesId);
+    const episodes = await this.getSeriesEpisodeInfos(seriesId);
     let cumulativeMs = 0;
-    const episodeTasks = details.episodes.map((episode) => {
+    const episodeTasks = episodes.map((episode) => {
       const task = { episode, offsetMs: cumulativeMs };
-      cumulativeMs += Math.max(0, Number(episode.duration) || 0) * 1000;
+      cumulativeMs += this.getSeriesEpisodeDuration(seriesId, episode) * 1000;
       return task;
     });
     const groupedComments = await mapWithConcurrency(episodeTasks, COMMENT_CONCURRENCY, async ({ episode, offsetMs }) => {
@@ -1168,11 +942,7 @@ export default class HongguoSource extends BaseSource {
         offsetMs: comment.offsetMs + offsetMs,
       }));
     });
-    const comments = [];
-    for (const episodeComments of groupedComments) {
-      comments.push(...episodeComments);
-    }
-    return dedupeDanmus(comments);
+    return dedupeDanmus(groupedComments.flat());
   }
 
   async getEpisodeDanmu(id) {
@@ -1186,30 +956,15 @@ export default class HongguoSource extends BaseSource {
       const pending = this.pendingEpisodeDanmu.get(cacheKey);
       if (pending) {
         log("info", `[Hongguo] 复用进行中的整段弹幕请求: ${cacheKey}`);
-        return pending;
+        return await pending;
       }
-      const task = (async () => {
-        const comments = dedupeDanmus(await this.getDanmuForEpisode(info));
-        if (!info.duration && comments.length) {
-          const maxOffset = Math.max(...comments.map((item) => Number(item.offsetMs) || 0));
-          if (maxOffset > 0) this.durationCache.set(cacheKey, Math.ceil(maxOffset / 1000) + 30);
-        }
-        this.lastDanmu = comments;
-        return comments;
-      })().catch((error) => {
-        // 仅网络/风控等抓取阶段失败才允许回退 lastDanmu
-        const fetchError = new Error(`弹幕抓取失败: ${error.message}`);
-        fetchError.danmuFetchFailed = true;
-        throw fetchError;
-      }).finally(() => {
+      const task = this.getDanmuForEpisode(info).then(dedupeDanmus).finally(() => {
         this.pendingEpisodeDanmu.delete(cacheKey);
       });
       this.pendingEpisodeDanmu.set(cacheKey, task);
-      return task;
+      return await task;
     } catch (error) {
       log("error", `[Hongguo] 获取弹幕失败(${String(id).slice(0, 80)}): ${error.message}`);
-      // 链接/ID 解析失败等不应回退旧数据，避免误报并重复输出；仅抓取失败时回退最近一次成功结果
-      if (error.danmuFetchFailed && this.lastDanmu && this.lastDanmu.length) return this.lastDanmu;
       return [];
     }
   }
@@ -1222,15 +977,7 @@ export default class HongguoSource extends BaseSource {
       const info = await this.resolveEpisodeInfo(id);
       const episodeId = createHongguoEpisodeId(info.seriesId, info.vid, info.duration);
       const segmentList = [];
-      // 详情页偶尔没有对应播放器页（通常是后续集），用 10 分钟窗口覆盖短剧常见时长；
-      // 弹幕接口会在无更多数据时提前停止，不会实际请求完整 10 分钟。
-      let effectiveDuration = info.duration > 0 ? info.duration : this.durationCache.get(`${info.seriesId}:${info.vid}`) || 0;
-      if (!effectiveDuration) {
-        const comments = await this.getDanmuForEpisode(info);
-        const maxOffset = comments.reduce((max, item) => Math.max(max, Number(item.offsetMs) || 0), 0);
-        effectiveDuration = maxOffset > 0 ? Math.ceil(maxOffset / 1000) + 30 : 600;
-        this.durationCache.set(`${info.seriesId}:${info.vid}`, effectiveDuration);
-      }
+      const effectiveDuration = this.getSeriesEpisodeDuration(info.seriesId, info);
       for (let start = 0; start < effectiveDuration; start += COMMENT_WINDOW_MS / 1000) {
         segmentList.push({
           type: "hongguo",
@@ -1247,12 +994,12 @@ export default class HongguoSource extends BaseSource {
   }
 
   async getSeriesDanmuSegments(seriesId) {
-    const details = await this.getEpisodes(seriesId);
+    const episodes = await this.getSeriesEpisodeInfos(seriesId);
     const segmentList = [];
     let cumulativeSeconds = 0;
-    for (const episode of details.episodes) {
-      const duration = Math.max(0, Number(episode.duration) || 600);
-      const episodeId = createHongguoEpisodeId(seriesId, episode.vid, duration);
+    for (const episode of episodes) {
+      const duration = this.getSeriesEpisodeDuration(seriesId, episode);
+      const episodeId = createHongguoEpisodeId(seriesId, episode.vid, episode.duration);
       for (let start = 0; start < duration; start += COMMENT_WINDOW_MS / 1000) {
         const end = Math.min(start + COMMENT_WINDOW_MS / 1000, duration);
         segmentList.push({
@@ -1265,6 +1012,14 @@ export default class HongguoSource extends BaseSource {
       cumulativeSeconds += duration;
     }
     return new SegmentListResponse({ type: "hongguo", segmentList, duration: cumulativeSeconds });
+  }
+
+  getSeriesEpisodeDuration(seriesId, episode) {
+    const duration = positiveDuration(episode.duration);
+    if (duration) return duration;
+    // 与全集分段采用同一兜底时长，避免未知时长的集把后续弹幕叠在同一时间点。
+    const cached = positiveDuration(this.durationCache.get(`${seriesId}:${episode.vid}`));
+    return cached || EPISODE_FALLBACK_DURATION_SECONDS;
   }
 
   async getEpisodeSegmentDanmu(segment) {
@@ -1280,7 +1035,15 @@ export default class HongguoSource extends BaseSource {
       const localEndSeconds = Math.min(info.duration > 0 ? info.duration : localStartSeconds + segmentDurationSeconds, localStartSeconds + segmentDurationSeconds);
       const startMs = localStartSeconds * 1000;
       const endMs = Math.max(startMs, localEndSeconds * 1000);
-      const page = await this.fetchCommentWindow(info, startMs, "");
+      await this.ensureDeliveryIdentity(info);
+      let page;
+      const probe = this.deliveryIdentityProbe;
+      if (startMs === 0 && probe && probe.vid === String(info.vid) && probe.page) {
+        this.deliveryIdentityProbe = null;
+        page = probe.page;
+      } else {
+        page = await this.fetchCommentWindow(info, startMs, "");
+      }
       const offsetMs = globalOffsetSeconds * 1000;
       return dedupeDanmus(page.comments
         .filter((item) => item.offsetMs >= startMs && item.offsetMs < endMs)
