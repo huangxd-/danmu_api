@@ -24,13 +24,14 @@ export const responsiveCssContent = /* css */ `
         box-shadow: var(--app-shadow-md);
     }
 
-    .header {
-        padding: 12px 14px;
+    :root {
+        --header-pad-y: 12px;
+        --header-pad-x: 14px;
+        --logo-size: 36px;
+        --title-size: 21px;
     }
 
     .logo {
-        width: 36px;
-        height: 36px;
         font-size: 20px;
         border-radius: 10px;
     }
@@ -46,11 +47,6 @@ export const responsiveCssContent = /* css */ `
         flex-direction: row;
         align-items: center;
         gap: 8px;
-    }
-
-    .header h1 {
-        font-size: 21px;
-        margin: 0;
     }
 
     .version-info {
@@ -213,10 +209,6 @@ export const responsiveCssContent = /* css */ `
 
 /* ============ 小屏手机 (<= 480px) ============ */
 @media (max-width: 480px) {
-    .header h1 {
-        font-size: 21px;
-    }
-
     .nav-btn {
         flex: 1 1 calc(33.333% - 4px);
         font-size: 11px;

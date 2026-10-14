@@ -194,12 +194,14 @@ function loadEnvVariables() {
                     scheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                 }
                 document.body.dataset.colorScheme = scheme;
+                document.documentElement.dataset.colorScheme = scheme;
             }
             updateColorSchemeToggle();
             // 用户未手动选择时，跟随系统深浅色变更
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
                 if (!getStoredColorScheme()) {
                     document.body.dataset.colorScheme = e.matches ? 'dark' : 'light';
+                    document.documentElement.dataset.colorScheme = e.matches ? 'dark' : 'light';
                     updateColorSchemeToggle();
                 }
             });
@@ -683,17 +685,51 @@ init();
 function toggleColorScheme() {
     const currentScheme = document.body.dataset.colorScheme || 'light';
     const newScheme = currentScheme === 'dark' ? 'light' : 'dark';
-    document.body.dataset.colorScheme = newScheme;
-    storeColorScheme(newScheme);
+    const btn = document.getElementById('theme-scheme-toggle');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!document.startViewTransition || !btn || reducedMotion) {
+        applyColorScheme(newScheme);
+        return;
+    }
+    // 以开关中心为圆心、到最远角的距离为半径展开圆形裁剪
+    const rect = btn.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const radius = Math.hypot(
+        Math.max(centerX, window.innerWidth - centerX),
+        Math.max(centerY, window.innerHeight - centerY),
+    );
+    const transition = document.startViewTransition(function () { applyColorScheme(newScheme); });
+    transition.ready.then(function () {
+        document.documentElement.animate(
+            {
+                clipPath: [
+                    'circle(0px at ' + centerX + 'px ' + centerY + 'px)',
+                    'circle(' + radius + 'px at ' + centerX + 'px ' + centerY + 'px)',
+                ],
+            },
+            { duration: 600, easing: 'ease-out', pseudoElement: '::view-transition-new(root)' },
+        );
+    }).catch(function () { /* 过渡被中断时无需处理，主题已应用 */ });
+}
+
+/** 应用明暗模式并保存偏好；切换期间关闭元素自身的颜色过渡，避免视图快照捕获中间态 */
+function applyColorScheme(scheme) {
+    const root = document.documentElement;
+    root.classList.add('theme-switching');
+    document.body.dataset.colorScheme = scheme;
+    root.dataset.colorScheme = scheme;
+    storeColorScheme(scheme);
     updateColorSchemeToggle();
+    requestAnimationFrame(function () { root.classList.remove('theme-switching'); });
 }
 
 function updateColorSchemeToggle() {
-    const btn = document.getElementById('theme-corner-toggle');
+    const btn = document.getElementById('theme-scheme-toggle');
     if (!btn) return;
     const scheme = document.body.dataset.colorScheme || 'light';
-    btn.innerHTML = uiIcon(scheme === 'dark' ? 'sun' : 'moon');
     btn.title = scheme === 'dark' ? '切换浅色模式' : '切换暗色模式';
+    btn.setAttribute('aria-pressed', String(scheme === 'dark'));
 }
 
 // ===== 背景弹幕词库 =====
@@ -703,7 +739,7 @@ const DANMAKU_DICT = [
     // TG 管理员与活跃人员
     '鸽子', '豆佬', '@一路走来', '@摆烂 10','@𝒏𝒆𝒌𝒐', '@sleep', '@Aurora', '@🐳𝔀𝓭𝓷𝓶𝓵𝓰𝓫𝓭', '@mask','@我勒个豆儿', '@从', '@比企谷 雪乃', '@水东', '@一只歌鸽子(半夜看到我叫我滚去睡觉', '@狗剩', '@马牛逼',
     // github 贡献者
-    '@huangxd-', '@wan0ge', '@woleigedouer', '@Wo254992', '@lilixu3','@Celestials316', '@dyphire', '@piaoyizy', '@xiaoQQya', '@liixing','@goodcommunication', '@Mr-Quin', '@chason-zhao', '@DemoJameson','@rinnein', '@Lampon', '@zcw199604', '@Mashiro000', '@wade6716','@xlmc', '@mz289', '@sugarbliss', '@Backsoon0',
+    '@huangxd-', '@wan0ge', '@woleigedouer', '@Wo254992', '@lilixu3','@Celestials316', '@dyphire', '@piaoyizy', '@xiaoQQya', '@liixing','@goodcommunication', '@Mr-Quin', '@chason-zhao', '@DemoJameson','@rinnein', '@Lampon', '@zcw199604', '@Mashiro000', '@wade6716','@xlmc', '@mz289', '@sugarbliss', '@Backsoon0', '@ynsen', '@karasushin', '@desmond9527',
 ];
 
 // 背景弹幕发射间隔 0.5~1.5s
@@ -742,11 +778,11 @@ const DANMAKU_INTERVAL_MS = 500;
             'color:' + color,'opacity:' + opacity.toFixed(2),
             'pointer-events:none','user-select:none',
             'text-shadow:0 0 2px rgba(0,0,0,0.08), 0 0 6px currentColor',
-            'animation:danmakuScroll2 ' + duration + 's linear ' + delay + 's infinite',
+            'animation:danmakuScroll2 ' + duration + 's linear ' + delay + 's',
             'animation-fill-mode:backwards',
         ].join(';');
         container.appendChild(el);
-        setTimeout(() => { if (running) el.remove(); }, (duration + delay) * 1000 + 500);
+        el.addEventListener('animationend', () => el.remove());
     }
 
     function tick() {

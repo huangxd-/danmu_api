@@ -81,7 +81,12 @@ function renderPreview() {
     const proxyConfigContainer = document.getElementById('proxy-config-container');
 
     if (preview) {
-        preview.innerHTML = '<p class="text-gray">正在加载配置...</p>';
+        preview.innerHTML = '<p class="text-gray">正在加载配置...</p>'
+            + '<div class="skeleton-stack">'
+            + '<span class="skeleton-line"></span>'
+            + '<span class="skeleton-line"></span>'
+            + '<span class="skeleton-line"></span>'
+            + '</div>';
     }
 
     fetch(buildApiUrl('/api/config'))

@@ -43,6 +43,7 @@ function applyTheme(theme) {
     const normalizedTheme = String(theme || '').toLowerCase();
     const selectedTheme = Object.prototype.hasOwnProperty.call(UI_THEMES, normalizedTheme) ? normalizedTheme : 'lavender';
     document.body.dataset.theme = selectedTheme;
+    document.documentElement.dataset.theme = selectedTheme;
 
     document.querySelectorAll('[data-theme-option]').forEach(button => {
         const isSelected = button.dataset.themeOption === selectedTheme;
@@ -84,7 +85,8 @@ async function selectTheme(theme) {
     }
 }
 
-applyTheme(getStoredTheme() || document.body.dataset.theme || 'lavender');
+const initialTheme = getStoredTheme() || document.body.dataset.theme;
+if (initialTheme) applyTheme(initialTheme);
 
 // 导出当前管理员可见的环境变量配置
 async function exportSystemConfig() {
@@ -845,10 +847,10 @@ function renderValueInput(item) {
                 \${shouldShowMergeMode ? \`
                 <div class="merge-mode-controls">
                     <div class="merge-mode-btn" id="merge-mode-toggle" onclick="toggleMergeMode()">
-                        \${uiIcon('link')} 开启合并模式
+                        \${uiIcon('link')} 合并模式
                     </div>
                     <div class="form-help" style="margin: 0; margin-left: 10px;">
-                        开启后点击下方选项将添加到暂存区,组合后点击 √ 确认
+                        点击开启/关闭，在暂存区组合后添加。
                     </div>
                 </div>
 
@@ -1764,12 +1766,12 @@ function toggleMergeMode() {
 
     if (isMergeMode) {
         btn.classList.add('active');
-        btn.innerHTML = uiIcon('unlink') + ' 合并模式已开启，点击关闭';
+        btn.innerHTML = uiIcon('unlink') + ' 合并模式';
         stagingArea.classList.add('active');
         renderStagingArea();
     } else {
         btn.classList.remove('active');
-        btn.innerHTML = uiIcon('link') + ' 点击开启合并模式';
+        btn.innerHTML = uiIcon('link') + ' 合并模式';
         stagingArea.classList.remove('active');
         stagingTags = [];
     }
