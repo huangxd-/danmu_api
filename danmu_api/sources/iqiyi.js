@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
-import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle, extractAnimeTitle } from "../utils/common-util.js";
 import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes, decompressBrotli, utf8BytesToString } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
@@ -70,8 +70,8 @@ export default class IqiyiSource extends BaseSource {
         return typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
       };
 
-      // 搜索接口风控时延迟重试，最多重试两次
-      const MAX_RETRIES = 2;
+      // 搜索接口风控时延迟重试，最多重试三次
+      const MAX_RETRIES = 3;
       let data = await doSearch();
       for (let attempt = 0; attempt < MAX_RETRIES && (!data || data.code === "-1"); attempt++) {
         const reason = !data ? "搜索响应为空" : `搜索接口风控 (code=${data.code})`;
@@ -370,11 +370,7 @@ export default class IqiyiSource extends BaseSource {
                 if (!tvidMatch) continue;
 
                 const tvid = tvidMatch[1];
-                let title = epData.short_display_name || epData.title || "未知分集";
-                const subtitle = epData.subtitle;
-                if (subtitle && !title.includes(subtitle)) {
-                  title = `${title} ${subtitle}`;
-                }
+                const title = this._buildEpisodeTitle(epData);
 
                 const order = epData.album_order;
                 const pageUrl = epData.page_url;
@@ -448,11 +444,7 @@ export default class IqiyiSource extends BaseSource {
                   if (!tvidMatch) continue;
 
                   const tvid = tvidMatch[1];
-                  let title = epData.short_display_name || epData.title || "未知分集";
-                  const subtitle = epData.subtitle;
-                  if (subtitle && !title.includes(subtitle)) {
-                    title = `${title} ${subtitle}`;
-                  }
+                  const title = this._buildEpisodeTitle(epData);
 
                   const order = epData.album_order;
                   const pageUrl = epData.page_url;
@@ -552,6 +544,40 @@ export default class IqiyiSource extends BaseSource {
       return null;
     }
     return data;
+  }
+
+  /**
+   * 组装分集标题：取接口的分集名，并在标题末尾补上副标题
+   * @param {object} epData - 分集原始数据
+   * @returns {string} 分集标题
+   */
+  _buildEpisodeTitle(epData) {
+    let title = epData.short_display_name || epData.title || "未知分集";
+    const subtitle = epData.subtitle;
+    if (subtitle && !title.includes(subtitle)) {
+      title = `${title} ${subtitle}`;
+    }
+    return title;
+  }
+
+  /**
+   * 补齐分集标题缺失的集数，集数置于作品名后面，与接口自带集数的分集保持同一格式
+   * @param {string} title - 分集标题
+   * @param {string} animeTitle - 所属作品名
+   * @param {number} order - 分集序号
+   * @returns {string} 含集数的分集标题
+   */
+  _ensureEpisodeNumber(title, animeTitle, order) {
+    if (extractEpisodeNumberFromTitle(title) !== null) return title;
+    // 缺少分集序号时无法补全，保持标题原样
+    if (order === undefined || order === null || order === "") return title;
+    // 作品名去掉年份与类型后缀后再与分集标题比对，避免拼接出来的名字对不上
+    const animeName = extractAnimeTitle(animeTitle || "");
+    const prefix = animeName && title.startsWith(animeName) ? animeName : "";
+    const rest = prefix ? title.slice(prefix.length).trim() : title;
+    return prefix
+      ? `${prefix} 第${order}集 ${rest}`.trim()
+      : `第${order}集 ${rest}`.trim();
   }
 
   /**
@@ -801,7 +827,7 @@ export default class IqiyiSource extends BaseSource {
             links.push({
               "name": ep.order.toString(),
               "url": fullUrl,
-              "title": `【qiyi】 ${ep.title}`
+              "title": `【qiyi】 ${this._ensureEpisodeNumber(ep.title, anime.title, ep.order)}`
             });
           }
 
