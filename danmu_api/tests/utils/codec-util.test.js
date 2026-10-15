@@ -164,7 +164,44 @@ test('codec parseDanmakuBase64 按 proto 解析弹幕元素', () => {
 
   assert.deepStrictEqual(parseDanmakuBase64(''), [], '空 payload 返回空数组');
   assert.deepStrictEqual(parseDanmakuBase64(Buffer.from([0x12, 0x01, 0x00]).toString('base64')), [],
-    '首字段不是 elems(1, wire=2) 时立即结束');
+    '不含 elems 字段时返回空数组');
+});
+
+test('codec parseDanmakuBase64 正确解析字段标签占多字节的弹幕', () => {
+  // 真实数据：该条含 field 22，其标签占两个字节（0xb2 0x01）。标签按单字节读取会漏掉第二个字节，
+  // 使后续字段整体错位，content 会被解析成 field 22 的 JSON 参数
+  const elemHex = '0880fe8df4dcf794e61e10948a2d180520192880feff073207393434366161373a15e7bca9e59cb0e68890e5afb8e5a4aae5b885e4ba864095d9a6d606480a621332323139323430373931303635343630343830688080427803a2010130aa010130b2015f7b226964223a32303032352c22636964223a302c22616476616e6365645f626c6f636b223a302c22616e696d6174696f6e5f61747472223a302c226d696d65223a227a6970222c227265736f75726365223a22222c227363616c65223a307dc80101d001b18884e79e01d80101';
+  const elem = Buffer.from(elemHex, 'hex');
+  const payload = Buffer.concat([Buffer.from([0x0a, 0xd2, 0x01]), elem]);
+  const parsed = parseDanmakuBase64(payload.toString('base64'));
+  assert.strictEqual(parsed.length, 1);
+  assert.strictEqual(parsed[0].content, '缩地成寸太帅了');
+  assert.strictEqual(parsed[0].progress, 738580);
+  assert.strictEqual(parsed[0].mode, 5);
+});
+
+test('codec parseDanmakuBase64 跳过未知字段与定长字段', () => {
+  const elem = new Uint8Array([0x10, 0x7b, 0x3a, 0x0c, ...Buffer.from('正常弹幕', 'utf8')]);
+  const payload = new Uint8Array([0x12, 0x01, 0x00, 0x0a, elem.length, ...elem]);
+  const parsed = parseDanmakuBase64(Buffer.from(payload).toString('base64'));
+  assert.strictEqual(parsed.length, 1, '外层未知字段应被跳过而不是终止解析');
+  assert.strictEqual(parsed[0].content, '正常弹幕');
+
+  // 外层字段标签占多字节时同样应被跳过（0xb2 0x01 = field 22, length-delimited）
+  const outerElem = new Uint8Array([0x10, 0x7b, 0x3a, 0x0f, ...Buffer.from('外层多字节', 'utf8')]);
+  const outerPayload = new Uint8Array([0xb2, 0x01, 0x01, 0x00, 0x0a, outerElem.length, ...outerElem]);
+  const parsed3 = parseDanmakuBase64(Buffer.from(outerPayload).toString('base64'));
+  assert.strictEqual(parsed3.length, 1, '外层多字节标签的字段应被整体跳过');
+  assert.strictEqual(parsed3[0].content, '外层多字节');
+
+  const withFixed = new Uint8Array([0x10, 0x2a, 0xa1, 0x01, 1, 2, 3, 4, 5, 6, 7, 8, 0x3a, 0x0c, ...Buffer.from('定长跳过', 'utf8')]);
+  const parsed2 = parseDanmakuBase64(Buffer.from([0x0a, withFixed.length, ...withFixed]).toString('base64'));
+  assert.strictEqual(parsed2[0].content, '定长跳过', '内层 64 位定长字段应整体跳过');
+
+  assert.doesNotThrow(() => parseDanmakuBase64(Buffer.from([0x0a, 0x64, 0x08, 0x01]).toString('base64')),
+    '截断数据不应抛出');
+  assert.doesNotThrow(() => parseDanmakuBase64(Buffer.from([0x0a, 0x05, 0x0b, 0x00, 0x00, 0x00, 0x00]).toString('base64')),
+    '内层遇到不支持的 wire type 不应抛出');
 });
 
 test('codec generateSign / generateXCaSign 拼接稳定（防签名漂移）', () => {

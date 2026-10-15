@@ -345,9 +345,20 @@ export function parseDanmakuBase64(base64) {
 
   let offset = 0;
   while (offset < bytes.length) {
-    // 每个 DanmakuElem 在 elems 列表里是 length-delimited
-    const key = bytes[offset++];
-    if (key !== 0x0a) break; // field=1 (elems), wire=2
+    // 字段标签本身是 varint，字段号较大时会占多个字节
+    const [key, afterKey] = readVarint(bytes, offset);
+    const fieldNumber = key >>> 3;
+    const wireType = key & 0x07;
+    offset = afterKey;
+
+    // 每个 DanmakuElem 在 elems 列表里是 length-delimited；其余字段按类型跳过
+    if (fieldNumber !== 1 || wireType !== 2) {
+      const skipped = skipField(bytes, offset, wireType);
+      if (skipped <= offset) break;
+      offset = skipped;
+      continue;
+    }
+
     const [msgBytes, nextOffset] = readLengthDelimited(bytes, offset);
     offset = nextOffset;
 
@@ -355,9 +366,10 @@ export function parseDanmakuBase64(base64) {
     const elem = {};
 
     while (innerOffset < msgBytes.length) {
-      const tag = msgBytes[innerOffset++];
-      const fieldNumber = tag >> 3;
+      const [tag, afterTag] = readVarint(msgBytes, innerOffset);
+      const fieldNumber = tag >>> 3;
       const wireType = tag & 0x07;
+      innerOffset = afterTag;
 
       if (wireType === 0) {
         // varint
@@ -389,9 +401,10 @@ export function parseDanmakuBase64(base64) {
           case 16: elem.color_v2 = utf8BytesToString(valBytes); break;
         }
       } else {
-        // 其他类型不常用，忽略
-        const [_, innerNext] = readVarint(msgBytes, innerOffset);
-        innerOffset = innerNext;
+        // 定长字段（64 位 / 32 位）按对应长度跳过
+        const skipped = skipField(msgBytes, innerOffset, wireType);
+        if (skipped <= innerOffset) break;
+        innerOffset = skipped;
       }
     }
 
@@ -401,11 +414,28 @@ export function parseDanmakuBase64(base64) {
   return elems;
 }
 
+/**
+ * 按字段的 wire type 跳过其值，返回下一个字段的偏移
+ * @param {Uint8Array} bytes - 字节序列
+ * @param {number} offset - 值起始偏移
+ * @param {number} wireType - 字段类型（0 varint / 1 64 位 / 2 length-delimited / 5 32 位）
+ * @returns {number} 下一个字段的偏移，类型无法识别时返回 -1
+ */
+function skipField(bytes, offset, wireType) {
+  switch (wireType) {
+    case 0: return readVarint(bytes, offset)[1];
+    case 1: return offset + 8;
+    case 2: return readLengthDelimited(bytes, offset)[1];
+    case 5: return offset + 4;
+    default: return -1;
+  }
+}
+
 function readVarint(bytes, offset) {
   let result = 0n;
   let shift = 0n;
   let pos = offset;
-  while (true) {
+  while (pos < bytes.length) {
     const b = bytes[pos++];
     result |= BigInt(b & 0x7f) << shift;
     if ((b & 0x80) === 0) break;
