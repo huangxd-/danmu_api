@@ -16,13 +16,15 @@ import { convertDanAny } from './dan-any.js';
  * @returns {Array} 处理后的弹幕列表
  */
 export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
-  // 特殊逻辑：如果未开启分组(n=0)且为单源，直接返回原始数据
+  // 特殊逻辑：如果未开启分组(n=0)且为单源，按时间排序后返回原始数据
   // 若为多源，即使n=0也强制执行精确时间点去重，以消除源之间的重复数据
   if (n === 0 && !isMultiSource) {
-    return filteredDanmus.map(danmu => ({
-      ...danmu,
-      t: danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0])
-    }));
+    return filteredDanmus
+      .map(danmu => ({
+        ...danmu,
+        t: danmu.t !== undefined ? danmu.t : parseFloat(danmu.p.split(',')[0])
+      }))
+      .sort((a, b) => a.t - b.t);
   }
 
   // 按 n 分钟分组

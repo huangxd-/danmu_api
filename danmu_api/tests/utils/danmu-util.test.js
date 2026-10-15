@@ -7,7 +7,7 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert';
 import { Globals } from '../../configs/globals.js';
-import { convertToDanmakuJson, splitBlockedWords, parseBlockedWord } from '../../utils/danmu-util.js';
+import { convertToDanmakuJson, splitBlockedWords, parseBlockedWord, groupDanmusByMinute } from '../../utils/danmu-util.js';
 import { resetSearchState } from '../helpers/context.js';
 
 test('danmu text conversion should run after normalization and before filtering and grouping', () => {
@@ -97,3 +97,34 @@ test('BLOCKED_WORDS 屏蔽词解析与过滤', async () => {
 
     resetSearchState();
   });
+
+test('danmu groupDanmusByMinute 未分组单源时按时间升序返回', () => {
+  // 输入按弹幕源返回顺序给出（非时间序），输出应按弹幕时间升序
+  const input = [
+    { p: '30.00,1,16777215,[dandan]', m: '第三条', cid: 3, t: 30 },
+    { p: '10.00,1,16777215,[dandan]', m: '第一条', cid: 1, t: 10 },
+    { p: '20.00,1,16777215,[dandan]', m: '第二条', cid: 2, t: 20 },
+  ];
+  const out = groupDanmusByMinute(input, 0, false);
+  assert.deepStrictEqual(out.map(d => d.t), [10, 20, 30]);
+  assert.strictEqual(out.length, input.length, '不开启分组时不增删弹幕');
+});
+
+test('danmu groupDanmusByMinute 缺少 t 字段时按 p 解析时间并排序', () => {
+  const input = [
+    { p: '5.00,1,16777215,[dandan]', m: '后一条', cid: 2 },
+    { p: '1.25,1,16777215,[dandan]', m: '前一条', cid: 1 },
+  ];
+  const out = groupDanmusByMinute(input, 0, false);
+  assert.deepStrictEqual(out.map(d => d.t), [1.25, 5]);
+});
+
+test('danmu groupDanmusByMinute 分组路径同样按时间升序返回', () => {
+  const input = [
+    { p: '130.00,1,16777215,[dandan]', m: '第三条', cid: 3, t: 130 },
+    { p: '1.00,1,16777215,[dandan]', m: '第一条', cid: 1, t: 1 },
+    { p: '61.00,1,16777215,[dandan]', m: '第二条', cid: 2, t: 61 },
+  ];
+  const out = groupDanmusByMinute(input, 1, false);
+  assert.ok(out.every((d, i) => i === 0 || out[i - 1].t <= d.t), '分组路径应保持时间升序');
+});
