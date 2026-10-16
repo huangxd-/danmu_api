@@ -7,12 +7,12 @@
   external_node_modules = []
 
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
-  force = true
+from = "/api/*"
+to = "/.netlify/functions/api/:splat"
+status = 200
+force = true
 
 [[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/api"
-  status = 200
+from = "/*"
+to = "/.netlify/functions/api"
+status = 200
