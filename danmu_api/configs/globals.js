@@ -109,9 +109,12 @@ export const Globals = {
       } else if (conf.startsWith('animeko@') && (hostname.includes('animeko') || hostname.includes('bgm.tv'))) {
          specificProxy = conf.substring(8);
          break;
+      } else if (conf.startsWith('aiyifan@') && /(^|\.)(tripdata\.app|yfsp\.tv)$/.test(hostname)) {
+         specificProxy = conf.substring(8);
+         break;
       } else if (conf.startsWith('@') && !universalProxy) {
          universalProxy = conf.substring(1);
-      } else if (!conf.includes('@') && !forwardProxy) {
+      } else if (/^https?:\/\//i.test(conf) && !forwardProxy) {
          forwardProxy = conf;
       }
     }
