@@ -29,6 +29,17 @@ test('dandan-model 数据模型对 null 缺省值取默认值', () => {
   assert.strictEqual(anime.startDate, '', 'startDate 为 null 时取默认空串');
   assert.strictEqual(anime.imageUrl, 'https://assets.anixer.net/image/poster/medium/1.jpg', '非 null 字段保持原值');
 
+  const metadataAnime = Anime.fromJson({
+    animeId: 20418,
+    bangumiId: '20418',
+    animeTitle: '保留集数元数据',
+    type: 'tvseries',
+    typeDescription: 'TV',
+    links: [{ id: 20418002, title: '【测试源】 正片', url: 'episode-2', episodeNumber: '2', sort: '2' }]
+  });
+  assert.strictEqual(metadataAnime.links[0].episodeNumber, '2', 'Link 保留源站 episodeNumber');
+  assert.strictEqual(metadataAnime.links[0].sort, '2', 'Link 保留源站 sort');
+
   // 声明了默认值的 number 与 boolean 字段同样对 null 取默认值
   const defaults = new Anime({ episodeCount: null, isFavorited: null });
   assert.strictEqual(defaults.episodeCount, 1, 'number 字段为 null 时取默认值');
