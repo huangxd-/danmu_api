@@ -4,6 +4,7 @@ import { log, formatLogMessage } from './utils/log-util.js'
 import { getFavoriteCachesFromRedis, judgeRedisValid, initializePersistentCaches } from "./utils/redis-util.js";
 import { cleanupExpiredIPs, findUrlById, getCommentCache, judgeLocalCacheValid } from "./utils/cache-util.js";
 import { formatDanmuResponse } from "./utils/danmu-util.js";
+import { createAiVerifier } from './utils/ai-verify-util.js';
 import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
@@ -23,8 +24,13 @@ import {
 } from "./utils/cookie-util.js";
 
 let globals;
+const scheduleAiVerify = createAiVerifier({
+  verify: config => new AIClient(config).verify(),
+  onStatus: valid => { if (globals) globals.aiValid = valid; },
+  onError: message => log('warn', `[system] [AI] Verification failed: ${message}`)
+});
 
-async function handleRequest(req, env, deployPlatform, clientIp) {
+async function handleRequest(req, env, deployPlatform, clientIp, executionContext = null) {
   // 加载全局变量和环境变量配置
   globals = Globals.init(env);
 
@@ -39,17 +45,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     await judgeLocalRedisValid(path);
   }
   await judgeRedisValid(path);
-  if (!globals.aiValid && globals.aiBaseUrl && globals.aiModel && globals.aiApiKey && path !== "/favicon.ico" && path !== "/robots.txt") {
-    const ai = new AIClient({
-      baseURL: globals.aiBaseUrl,
-      model: globals.aiModel,
-      apiKey: globals.aiApiKey,
-      systemPrompt: '回答尽量简洁',
-    })
-
-    const status = await ai.verify()
-    if (status.ok) {
-      globals.aiValid = true;
+  if (path !== '/favicon.ico' && path !== '/robots.txt') {
+    const verification = scheduleAiVerify({ baseURL: globals.aiBaseUrl, model: globals.aiModel, apiKey: globals.aiApiKey });
+    if (verification) {
+      if (typeof executionContext?.waitUntil === 'function') executionContext.waitUntil(verification);
+      else if (!['node', 'huggingface'].includes(deployPlatform)) await verification;
     }
   }
 
@@ -773,7 +773,7 @@ export default {
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    const response = await handleRequest(request, env, detectDeployPlatform(env), clientIp);
+    const response = await handleRequest(request, env, detectDeployPlatform(env), clientIp, ctx);
     // 边缘运行时在响应返回后延长生命周期，容纳可能在途的 Bangumi Data 后台静默下载
     extendBangumiDownloadLifecycle(ctx);
     return response;
