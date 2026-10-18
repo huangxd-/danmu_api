@@ -142,6 +142,81 @@ test('TV episode matching prefers source episode metadata over list position', a
   assert.equal(result.resAnime?.animeId, anime.animeId);
   assert.equal(result.resEpisode?.episodeId, 410101);
 });
+test('TV episode matching does not treat generated position as explicit episode number', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const anime = {
+    animeId: 4151,
+    bangumiId: '4151',
+    animeTitle: '前情错位剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 2,
+    rating: 0,
+    isFavorited: true,
+    links: [
+      { id: 415100, title: '【qq】 前情提要', url: 'trailer' },
+      { id: 415101, title: '【qq】 第1集', url: 'episode-1' },
+      { id: 415102, title: '【qq】 第2集', url: 'episode-2' }
+    ]
+  };
+  const result = await matchAniAndEp(
+    1,
+    1,
+    2026,
+    { animes: [anime] },
+    '前情错位剧',
+    null,
+    null,
+    null,
+    null,
+    new Map([[anime.animeId, anime]])
+  );
+
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeId, 415101);
+});
+test('TV episode matching uses offset-mapped position before source title number', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const anime = {
+    animeId: 4161,
+    bangumiId: '4161',
+    animeTitle: '偏移剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 16,
+    rating: 0,
+    isFavorited: true,
+    links: Array.from({ length: 16 }, (_, index) => ({
+      id: 416100 + index,
+      title: `【qq】 第${index + 5}集`,
+      url: `episode-${index + 5}`
+    }))
+  };
+  const result = await matchAniAndEp(
+    1,
+    11,
+    2026,
+    { animes: [anime] },
+    '偏移剧',
+    null,
+    null,
+    null,
+    { '1': '10:【qq】 第5集' },
+    new Map([[anime.animeId, anime]])
+  );
+
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeId, 416101);
+  assert.equal(result.resEpisode?.episodeTitle, '【qq】 第6集');
+});
 test('bangumi details keep source episode numbers after editorial filtering', async () => {
   Globals.init({ LOG_LEVEL: 'error' });
   const originalFilterEnabled = Globals.envs.enableAnimeEpisodeFilter;

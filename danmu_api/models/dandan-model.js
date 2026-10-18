@@ -224,7 +224,7 @@ export class BangumiEpisode {
   constructor(rawJson = {}) {
     const {
       seasonId = "", episodeId = 10001, episodeTitle = "", episodeNumber = "",
-      airDate = "", url = ""
+      airDate = "", url = "", _episodeNumberExplicit = undefined
     } = nullToUndefined(rawJson);
     validateType(seasonId, "string", "seasonId");
     validateType(episodeId, "number", "episodeId");
@@ -235,6 +235,16 @@ export class BangumiEpisode {
 
     // 直接解构并赋值给 this
     Object.assign(this, { seasonId, episodeId, episodeTitle, episodeNumber, airDate, url });
+
+    // 仅供服务端匹配逻辑区分“源站显式集数”和“按当前位置生成的集数”。
+    // 设为不可枚举，避免把内部实现字段暴露给 DanDanPlay 客户端。
+    if (_episodeNumberExplicit !== undefined) {
+      Object.defineProperty(this, "_episodeNumberExplicit", {
+        value: Boolean(_episodeNumberExplicit),
+        enumerable: false,
+        configurable: true,
+      });
+    }
   }
 
   // ---- 静态方法：从 JSON 创建 BangumiEpisode 对象 ----
