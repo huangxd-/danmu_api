@@ -322,11 +322,22 @@ export default class TencentSource extends BaseSource {
     };
   }
 
-  // 「兰香如故_01」->「兰香如故 第01集」；仅处理腾讯连续剧惯用的下划线+集号形态
+  // 「兰香如故_01」->「兰香如故 第1集」；兼容纯数字集号（如 "01"）
   normalizeUnionTitle(unionTitle) {
-    if (!unionTitle) return '';
-    const m = unionTitle.match(/^(.*?)_0*(\d+)$/);
-    return m && m[1] ? `${m[1]} 第${m[2]}集` : unionTitle;
+    if (unionTitle === undefined || unionTitle === null) return '';
+    const value = String(unionTitle).trim();
+    if (!value) return '';
+    const m = value.match(/^(.*?)_0*(\d+)$/);
+    if (m && m[1]) return `${m[1]} 第${m[2]}集`;
+    return this.formatEpisodeNumber(value);
+  }
+
+  // 纯数字集号统一补成「第N集」，非纯数字标题原样返回
+  formatEpisodeNumber(value) {
+    if (value === undefined || value === null) return '';
+    const text = String(value).trim();
+    if (!/^\d+$/.test(text)) return text;
+    return `第${Number.parseInt(text, 10)}集`;
   }
 
   /**
@@ -347,7 +358,10 @@ export default class TencentSource extends BaseSource {
     const cTitleOutput = typeof ep.cTitleOutput === 'string' ? ep.cTitleOutput.trim() : '';
     const title = typeof ep.title === 'string' ? ep.title.trim() : '';
 
-    let base = playTitle || this.normalizeUnionTitle(ep.unionTitle) || cTitleOutput || title;
+    let base = playTitle
+      || this.normalizeUnionTitle(ep.unionTitle)
+      || this.formatEpisodeNumber(cTitleOutput)
+      || this.formatEpisodeNumber(title);
     if (!base) return '';
 
     // 集号去前导零：「第001话」->「第1话」，与 iqiyi/youku 展示风格一致
@@ -735,8 +749,8 @@ export default class TencentSource extends BaseSource {
     const title = titleMatch ? titleMatch[1].split("_")[0] : "未知标题";
     log("info", `[tencent] 标题: ${title}`);
 
-    // 获取弹幕分段数据
-    const segmentResult = await this.getEpisodeDanmuSegments(id);
+    // 普通弹幕流程只需要分片列表，不请求仅用于时长展示的 getinfo
+    const segmentResult = await this.getEpisodeDanmuSegments(id, false);
     if (!segmentResult || !segmentResult.segmentList || segmentResult.segmentList.length === 0) {
       return [];
     }
@@ -803,6 +817,8 @@ export default class TencentSource extends BaseSource {
     try {
       const infoUrl = `https://vv.video.qq.com/getinfo?vids=${encodeURIComponent(vid)}&platform=101001&charge=0&otype=json&defn=shd&defaultfmt=auto&defnpayver=0&spsrt=1`;
       const res = await httpGet(infoUrl, {
+        // 时长是可选信息，超时后直接回落到分片边界，避免拖慢弹幕请求
+        timeout: 3000,
         headers: {
           "Content-Type": "application/json",
           'Origin': 'https://v.qq.com',
@@ -813,11 +829,13 @@ export default class TencentSource extends BaseSource {
 
       if (!res || !res.data) return 0;
 
-      // getinfo 返回 JSONP 包裹：QZOutputJson={...};
-      let raw = typeof res.data === "string" ? res.data : String(res.data);
-      const braceIndex = raw.indexOf("{");
-      if (braceIndex === -1) return 0;
-      const data = JSON.parse(raw.slice(braceIndex).replace(/;?\s*$/, ""));
+      // getinfo 返回 JSONP 包裹：QZOutputJson={...}; httpGet 也可能已解析为对象
+      let data = res.data;
+      if (typeof res.data === "string") {
+        const braceIndex = res.data.indexOf("{");
+        if (braceIndex === -1) return 0;
+        data = JSON.parse(res.data.slice(braceIndex).replace(/;?\s*$/, ""));
+      }
 
       // 真实时长为 vl.vi[0].td（浮点秒）
       const td = Number(data?.vl?.vi?.[0]?.td);
@@ -834,7 +852,7 @@ export default class TencentSource extends BaseSource {
     }
   }
 
-  async getEpisodeDanmuSegments(id) {
+  async getEpisodeDanmuSegments(id, includeDuration = true) {
     log("info", "[tencent] 获取腾讯视频弹幕分段列表...", id);
 
     // 弹幕 API 基础地址
@@ -845,8 +863,8 @@ export default class TencentSource extends BaseSource {
 
     log("info", `[tencent] 获取弹幕分段列表 - vid: ${vid}`);
 
-    // 并行获取真实视频时长，避免分片边界被当作视频总时长
-    const durationPromise = this.getVideoDuration(vid).catch(() => 0);
+    // 仅在明确需要时长时并行获取，避免普通弹幕请求额外访问 getinfo
+    const durationPromise = includeDuration ? this.getVideoDuration(vid) : null;
 
     // 获取弹幕基础数据
     let res;
@@ -893,7 +911,7 @@ export default class TencentSource extends BaseSource {
     }
 
     // 真实视频时长（td）；拿不到时为 0，交由上游回落到分片边界推断
-    const videoDuration = await durationPromise;
+    const videoDuration = durationPromise ? await durationPromise : 0;
 
     return new SegmentListResponse({
       "type": "qq",
