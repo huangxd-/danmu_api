@@ -596,15 +596,14 @@ export default class SohuSource extends BaseSource {
   formatComments(comments) {
     return comments.map(comment => {
       try {
-        // 解析颜色
+        // color 模式交给公共颜色池/渐变逻辑统一配色。
         let color = 16777215; // 默认白色
-        if (comment.t && comment.t.c) {
-          const colorValue = comment.t.c;
-          if (typeof colorValue === 'string' && colorValue.startsWith('#')) {
-            color = parseInt(colorValue.substring(1), 16);
-          } else {
-            color = parseInt(String(colorValue), 16);
-          }
+        if (globals.convertColor !== 'color' && comment.t?.c != null) {
+          // 搜狐通常返回十进制字符串，同时兼容 #RRGGBB 和裸十六进制。
+          const colorValue = String(comment.t.c).trim();
+          color = /^\d+$/.test(colorValue)
+            ? parseInt(colorValue, 10)
+            : parseInt(colorValue.replace(/^#/, ''), 16);
         }
 
         // 时间（秒）
