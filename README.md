@@ -58,8 +58,8 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/comment/:commentId?format=json&duration=true`：获取指定弹幕评论；当 `duration=true` 且返回 JSON 时，会额外附带 `videoDuration` 字段，优先返回源站时长，拿不到时返回 `0`。
   - `GET /api/v2/comment?url=${videoUrl}&format=json`：通过视频URL直接获取弹幕（兼容第三方弹幕服务器格式）。
   - `POST /api/v2/segmentcomment?format=json`：通过comment接口返回体中的Segment类JSON数据获取单独一个分片的弹幕数据。
-  - `GET /api/v2/fongmi/danmaku?name={name}&episode={episode}`：FengMi影视api。
-  - `GET /danmaku/api/v2/fongmi/danmaku?name={name}&episode={episode}`：兼容FengMi影视api短路径。
+  - `GET|POST /api/v2/fongmi/danmaku?name={name}&episode={episode}`：FengMi影视api。
+  - `GET|POST /danmaku`：兼容FengMi影视弹幕短地址（含 `/danmaku/api/v2/fongmi/danmaku` 兼容形式）；在FengMi自定义弹幕API中直接填写部署根地址（如 `http://192.168.1.7:9321`）也可使用，兼容地址末尾带 `/danmaku` 或 `/danmaku/` 的写法。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
   - `GET /api/cache/animes`：获取最近的 animes 缓存。
   - `POST /api/v2/favorite/add`：新增收藏。手动匹配测试使用 `{ "keyword": "火影忍者" }` 保存搜索关键词及整组搜索结果；同时兼容 `{ "fileName": "火影忍者 S01E01" }`。

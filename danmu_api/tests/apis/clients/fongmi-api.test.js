@@ -6,8 +6,33 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { extractFongmiSeasonNumber, scoreFongmiEpisodeMatch } from '../../../apis/clients/fongmi-api.js';
+import { buildFongmiApiBase, extractFongmiSeasonNumber, scoreFongmiEpisodeMatch } from '../../../apis/clients/fongmi-api.js';
+import { Globals } from '../../../configs/globals.js';
 import { Season } from '../../../models/dandan-model.js';
+
+test('fongmi-api comment base preserves token and strips danmaku route suffixes', () => {
+  Globals.init({ TOKEN: 'user-token-1', ADMIN_TOKEN: 'admin-tok' });
+  const base = path => buildFongmiApiBase({ url: `https://example.com${path}` });
+
+  assert.equal(base('/'), 'https://example.com');
+  assert.equal(base('/danmaku'), 'https://example.com');
+  assert.equal(base('/danmaku/'), 'https://example.com');
+  assert.equal(base('/api/v2/fongmi/danmaku'), 'https://example.com');
+  assert.equal(base('/danmaku/api/v2/fongmi/danmaku'), 'https://example.com');
+  assert.equal(base('/danmaku/api/v2/fongmi/danmaku/'), 'https://example.com');
+  assert.equal(base('/danmaku//api/v2/fongmi/danmaku/'), 'https://example.com');
+  assert.equal(base('//danmaku///api//v2/fongmi/danmaku//'), 'https://example.com');
+  assert.equal(base('/api//v2/fongmi/danmaku'), 'https://example.com');
+  assert.equal(base('/user-token-1'), 'https://example.com/user-token-1');
+  assert.equal(base('/user-token-1/danmaku'), 'https://example.com/user-token-1');
+  assert.equal(base('/user-token-1/danmaku/api/v2/fongmi/danmaku'), 'https://example.com/user-token-1');
+  assert.equal(base('/user-token-1/danmaku//api/v2/fongmi/danmaku/'), 'https://example.com/user-token-1');
+  assert.equal(base('/admin-tok//danmaku/'), 'https://example.com/admin-tok');
+
+  // TOKEN 本身恰好叫 danmaku 时，不能被误当成路由后缀删除。
+  Globals.init({ TOKEN: 'danmaku' });
+  assert.equal(base('/danmaku'), 'https://example.com/danmaku');
+});
 
 test('fongmi-api season aware scoring', () => {
   // 季号提取: SxxExx / 第x季 / Season N / 2x05; 综艺日期与纯集数不误判

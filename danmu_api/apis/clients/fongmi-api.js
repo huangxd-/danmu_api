@@ -217,24 +217,23 @@ function buildFongmiSearchKeywords(name) {
  */
 function buildFongmiApiBase(req) {
   const reqUrl = new URL(req.url);
-  const path = reqUrl.pathname.replace(/\/+$/, "");
-  const apiMarker = "/api/v2/";
-  const danmakuMarker = "/danmaku";
+  const path = reqUrl.pathname.replace(/\/{2,}/g, "/");
+  const parts = path.split("/").filter(Boolean);
+  const firstPart = parts[0] || "";
+  const isExplicitToken = !!firstPart && (
+    firstPart === globals.token ||
+    (!!globals.adminToken && firstPart === globals.adminToken)
+  );
+  const tokenPrefix = isExplicitToken ? `/${firstPart}` : "";
 
-  let prefix = "";
-  const apiMarkerIndex = path.indexOf(apiMarker);
-  if (apiMarkerIndex >= 0) {
-    prefix = path.slice(0, apiMarkerIndex);
-  } else {
-    const danmakuIndex = path.indexOf(danmakuMarker);
-    if (danmakuIndex >= 0) {
-      prefix = path.slice(0, danmakuIndex);
-    } else {
-      prefix = path;
-    }
-  }
+  let routePath = isExplicitToken
+    ? `/${parts.slice(1).join("/")}`
+    : path;
+  routePath = routePath.replace(/\/+$/, "");
+  routePath = routePath.replace(/\/api\/v2\/fongmi\/danmaku$/, "");
+  routePath = routePath.replace(/\/danmaku$/, "");
 
-  return `${reqUrl.origin}${prefix}`;
+  return `${reqUrl.origin}${tokenPrefix}${routePath}`;
 }
 
 /**
@@ -448,4 +447,4 @@ export async function getFongmiDanmaku(url, req) {
   return jsonResponse(items, 200);
 }
 
-export { extractFongmiEpisodeNumber, extractFongmiSeasonNumber, scoreFongmiEpisodeMatch };
+export { buildFongmiApiBase, extractFongmiEpisodeNumber, extractFongmiSeasonNumber, scoreFongmiEpisodeMatch };
