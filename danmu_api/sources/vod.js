@@ -130,6 +130,7 @@ export default class VodSource extends BaseSource {
 
   async search(keyword, preferAnimeId = null, preferSource = null) {
     if (!globals.vodServers || globals.vodServers.length === 0) {
+      log("info", "[vod] 未配置 VOD_SERVERS，跳过 VOD 搜索");
       return [];
     }
 
