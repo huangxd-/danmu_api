@@ -90,24 +90,12 @@ WidgetMetadata = {
     },
     {
       name: "vodServers",
-      title: "VOD站点配置，格式：名称@URL,名称@URL，默认金蝉'https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top'",
+      title: "VOD站点配置，默认空（未配置跳过），格式：名称@URL,名称@URL；自定义源@https://example.com仅为格式示例，不是可用采集服务",
       type: "input",
       placeholders: [
         {
-          title: "配置1",
-          value: "金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top",
-        },
-        {
-          title: "配置2",
-          value: "金蝉@https://zy.jinchancaiji.com",
-        },
-        {
-          title: "配置3",
-          value: "金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou",
-        },
-        {
-          title: "配置4",
-          value: "金蝉@https://zy.jinchancaiji.com,听风@https://gctf.tfdh.top",
+          title: "无站点（跳过VOD）",
+          value: "",
         },
       ],
     },

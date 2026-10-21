@@ -340,7 +340,7 @@ test('parseRawEnvText 的解析结果直接驱动 RAW_ENV_KEYS 取值', async ()
   }
 });
 
-test('resolveVodServers 名称/URL 解析与空值回退', () => {
+test('resolveVodServers 名称/URL 解析，缺省与空值均不启用上游', () => {
   const saved = snapshotProcessEnv();
   try {
     initEnvs({ VOD_SERVERS: '金蝉@https://a.test, https://b.test ,789@https://c.test' });
@@ -350,15 +350,10 @@ test('resolveVodServers 名称/URL 解析与空值回退', () => {
       { name: '789', url: 'https://c.test' },
     ]);
 
-    initEnvs({ VOD_SERVERS: '   ' });
-    assert.deepStrictEqual(Envs.resolveVodServers(), []);
-
-    initEnvs({});
-    assert.deepStrictEqual(Envs.resolveVodServers(), [
-      { name: '金蝉', url: 'https://zy.jinchancaiji.com' },
-      { name: '789', url: 'https://www.caiji.cyou' },
-      { name: '听风', url: 'https://gctf.tfdh.top' },
-    ]);
+    for (const config of [{}, { VOD_SERVERS: '' }, { VOD_SERVERS: '   ' }, { VOD_SERVERS: ', ,名称@' }]) {
+      initEnvs(config);
+      assert.deepStrictEqual(Envs.resolveVodServers(), []);
+    }
   } finally {
     restoreProcessEnv(saved);
   }

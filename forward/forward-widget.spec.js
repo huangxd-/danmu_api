@@ -220,7 +220,7 @@ async function testNewFlow() {
       sourceOrder: 'douban',
       otherServer: 'https://api.danmu.icu',
       customSourceApiUrl: '',
-      vodServers: '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top',
+      vodServers: '', // 默认无上游，跳过 VOD；不访问关停采集站
       vodReturnMode: 'fastest',
       vodRequestTimeout: 10000,
       bilibiliCookie: '',
