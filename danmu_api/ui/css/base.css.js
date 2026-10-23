@@ -41,6 +41,12 @@ html.theme-switching .header {
     transition: none;
 }
 
+/* 切换期间关闭开关外壳与两端图标的过渡；滑块的颜色过渡保留，由样式表中的延迟控制移动结束后的变色 */
+html.theme-switching .theme-float-toggle,
+html.theme-switching .theme-float-toggle .theme-toggle-icon {
+    transition: none;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
     min-height: 100vh;
@@ -115,7 +121,8 @@ body::before {
     border-radius: 50%;
     background: var(--theme-header);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-    transition: transform 0.30s var(--app-ease-smooth), background-color 0.30s var(--app-ease-smooth);
+    /* 颜色延后到位移接近收尾时再变，滑块移动过程中保持切换前的颜色 */
+    transition: transform 0.30s var(--app-ease-smooth), background-color 0.30s var(--app-ease-smooth) 0.20s;
 }
 
 :is(html, body)[data-color-scheme="dark"] .theme-toggle-thumb {
@@ -149,7 +156,9 @@ body::before {
     opacity: 1;
 }
 
-.theme-float-toggle:hover {
+/* 指针悬浮与切换过程中都放大；切换态由脚本添加，过渡结束后移除，使系统切换时也能看到是哪个按钮在变化 */
+.theme-float-toggle:hover,
+.theme-float-toggle.is-scheme-switching {
     transform: scale(1.15);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
 }
