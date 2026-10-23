@@ -332,7 +332,7 @@ export function buildGradientSampler(rawStops) {
 export function convertToDanmakuJson(contents, platform) {
   let danmus = [];
   let cidCounter = 1;
-  let isMultiSource = false; // 用于记录当前弹幕集合是否为多源组合
+  const sourceLabels = new Set(); // 收集本次弹幕出现过的来源标签，用于判定是否为多源组合
   let colorV2Count = 0; // 源渐变色弹幕（B站 color_v2）透传计数
 
   // 统一处理输入为数组
@@ -415,10 +415,8 @@ export function convertToDanmakuJson(contents, platform) {
       currentPlatform = `${currentPlatform}＆${item.realTimeSource}`;
     }
 
-    // 在组装字符串时，顺带通过符号检测判定当前是否为多源组合数据
-    if (!isMultiSource && /[&＆]/.test(currentPlatform)) {
-      isMultiSource = true;
-    }
+    // 记录本条弹幕的来源标签，循环结束后按标签种类判定是否为多源组合
+    sourceLabels.add(currentPlatform);
 
     attributes = [
       time,
@@ -509,8 +507,9 @@ export function convertToDanmakuJson(contents, platform) {
     }
   }
 
-  // 按n分钟内去重
-  log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}`);
+  // 按n分钟内去重；来源标签多于一种即为多源组合
+  const isMultiSource = sourceLabels.size > 1;
+  log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}，来源标签 ${sourceLabels.size} 种`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource);
 
   // 处理点赞数
