@@ -6,6 +6,7 @@ import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
+import { getCurrentMirrorBase, requestMirror } from '../utils/animeko-util.js';
 
 // =====================
 // 获取Animeko弹幕（https://github.com/open-ani/animeko）
@@ -81,7 +82,7 @@ export default class AnimekoSource extends BaseSource {
    */
   _getSubjectServerPriority() {
     const officialBase = "https://api.bgm.tv";
-    const mirrorBase = "https://api.bangumi.vip";
+    const mirrorBase = getCurrentMirrorBase();
     // 获取可能被代理的官方 URL
     const proxyOfficialBase = this._applyProxyForSearch(officialBase);
 
@@ -108,13 +109,13 @@ export default class AnimekoSource extends BaseSource {
       return [
         ...animekoNodes,
         { type: 'V0', url: proxyOfficialBase },
-        { type: 'V0', url: mirrorBase }
+        { type: 'V0', url: mirrorBase, mirror: true }
       ];
     } else {
       // 常规直连：Animeko(V2) > 镜像(V0) > 官方(V0)
       return [
         ...animekoNodes,
-        { type: 'V0', url: mirrorBase },
+        { type: 'V0', url: mirrorBase, mirror: true },
         { type: 'V0', url: officialBase }
       ];
     }
@@ -194,6 +195,48 @@ export default class AnimekoSource extends BaseSource {
   }
 
   /**
+   * 通过 V0 接口获取条目详情数据（剧集列表与关联条目）
+   * @param {string} serverUrl 节点地址
+   * @param {number} subjectId 条目 ID
+   * @returns {Promise<Object|null>} 归一化为 V2 格式的详情数据，无有效数据时返回 null
+   */
+  async _fetchV0SubjectData(serverUrl, subjectId) {
+    // 基础搜索流程已提供充足详情元数据，此处直接并发获取 V0 独立的剧集与关联端点数据，组装归一化为 V2 格式
+    const [episodesData, relationsResp] = await Promise.all([
+      this._fetchV0AllEpisodes(serverUrl, subjectId),
+      httpGet(`${serverUrl}/v0/subjects/${subjectId}/subjects`, { headers: this.headers, timeout: 3000 })
+        .catch(e => { log("warn", `[animeko] V0关联获取异常: ${e.message}`); return null; })
+    ]);
+
+    // 当至少有一个接口成功响应时，构建 V2 格式的基础数据对象
+    if (!((episodesData && episodesData.length > 0) || relationsResp)) {
+      return null;
+    }
+
+    const resultData = { id: subjectId };
+
+    // 组装并映射剧集数据至 V2 预期格式
+    if (episodesData && episodesData.length > 0) {
+      resultData.episodes = episodesData.map(ep => ({
+        episodeId: ep.id,
+        sort: ep.sort,
+        ep: ep.ep,
+        type: ep.type === 0 ? 'MAIN' : (ep.type === 1 ? 'SP' : String(ep.type)),
+        name: ep.name,
+        nameCn: ep.name_cn,
+        airdate: ep.airdate
+      }));
+    }
+
+    // 挂载关联数组数据 (后续 _extractRelations 已具备数组格式兼容能力)
+    if (relationsResp && relationsResp.data && Array.isArray(relationsResp.data)) {
+      resultData.relations = relationsResp.data;
+    }
+
+    return resultData;
+  }
+
+  /**
    * 通过多源聚合获取条目详情（含剧集与关联数据，支持智能路由降级）
    * V2 节点: 单次请求聚合返回
    * V0 节点: 采用适配器模式，并发获取子端点数据并组装归一化为 V2 格式，实现底层调用抹平
@@ -222,59 +265,45 @@ export default class AnimekoSource extends BaseSource {
 
     for (let i = 0; i < servers.length; i++) {
       const server = servers[(startIndex + i) % servers.length];
-      
+
       try {
         let resultData = null;
+        // 实际生效的节点地址，镜像节点切换域名后与队列中的地址可能不同
+        let resolvedUrl = server.url;
 
         if (server.type === 'V2') {
           log("info", `[animeko] 详情接口请求 V2 节点: ${server.url} (${subjectId})`);
-          const resp = await httpGet(`${server.url}/v2/subjects/${subjectId}`, { 
-            headers: this.headers, 
+          const resp = await httpGet(`${server.url}/v2/subjects/${subjectId}`, {
+            headers: this.headers,
             timeout: 3000 // 限制节点请求超时时间，加速故障节点跳过与轮询降级
           });
           if (resp && resp.data && resp.data.id) {
             resultData = resp.data;
           }
         } else if (server.type === 'V0') {
-          log("info", `[animeko] 详情补全请求 V0 节点: ${server.url} (${subjectId})`);
-          
-          // 基础搜索流程已提供充足详情元数据，此处直接并发获取 V0 独立的剧集与关联端点数据，组装归一化为 V2 格式
-          const [episodesData, relationsResp] = await Promise.all([
-            this._fetchV0AllEpisodes(server.url, subjectId),
-            httpGet(`${server.url}/v0/subjects/${subjectId}/subjects`, { headers: this.headers, timeout: 3000 })
-              .catch(e => { log("warn", `[animeko] V0关联获取异常: ${e.message}`); return null; })
-          ]);
+          if (server.mirror) {
+            // 镜像节点：当前域名不可用时经发布页获取备用域名重试
+            const mirrorResult = await requestMirror(async (base) => {
+              log("info", `[animeko] 详情补全请求镜像节点: ${base} (${subjectId})`);
+              return this._fetchV0SubjectData(base, subjectId);
+            });
 
-          // 当至少有一个接口成功响应时，构建 V2 格式的基础数据对象
-          if ((episodesData && episodesData.length > 0) || relationsResp) {
-            resultData = { id: subjectId };
-            
-            // 组装并映射剧集数据至 V2 预期格式
-            if (episodesData && episodesData.length > 0) {
-              resultData.episodes = episodesData.map(ep => ({
-                episodeId: ep.id,
-                sort: ep.sort,
-                ep: ep.ep,
-                type: ep.type === 0 ? 'MAIN' : (ep.type === 1 ? 'SP' : String(ep.type)),
-                name: ep.name,
-                nameCn: ep.name_cn,
-                airdate: ep.airdate
-              }));
+            if (mirrorResult) {
+              resultData = mirrorResult.result;
+              resolvedUrl = mirrorResult.base;
             }
-            
-            // 挂载关联数组数据 (后续 _extractRelations 已具备数组格式兼容能力)
-            if (relationsResp && relationsResp.data && Array.isArray(relationsResp.data)) {
-              resultData.relations = relationsResp.data;
-            }
+          } else {
+            log("info", `[animeko] 详情补全请求 V0 节点: ${server.url} (${subjectId})`);
+            resultData = await this._fetchV0SubjectData(server.url, subjectId);
           }
         }
 
         if (resultData) {
-          if (API_HEALTH.subject !== server.url) {
-            log("info", `[animeko] 详情节点健康状态更新: ${API_HEALTH.subject} -> ${server.url}`);
-            API_HEALTH.subject = server.url;
+          if (API_HEALTH.subject !== resolvedUrl) {
+            log("info", `[animeko] 详情节点健康状态更新: ${API_HEALTH.subject} -> ${resolvedUrl}`);
+            API_HEALTH.subject = resolvedUrl;
           }
-          
+
           // 将成功获取的数据连同当前时间戳一并写入缓存
           SUBJECT_CACHE.set(subjectId, {
             data: resultData,
@@ -289,7 +318,13 @@ export default class AnimekoSource extends BaseSource {
 
           return resultData;
         }
-        log("warn", `[animeko] 节点 ${server.url} 返回无效数据`);
+
+        // 镜像节点的候选域名由镜像工具逐个记录失败原因，此处仅汇总镜像节点整体不可用
+        if (server.mirror) {
+          log("warn", "[animeko] 镜像节点全部候选域名均未返回有效数据");
+        } else {
+          log("warn", `[animeko] 节点 ${server.url} 返回无效数据`);
+        }
       } catch (error) {
         log("warn", `[animeko] 节点请求失败: ${server.url} - ${error.message}`);
       }
@@ -350,8 +385,7 @@ export default class AnimekoSource extends BaseSource {
       while (true) {
         const searchPath = `/v0/search/subjects?limit=${limit}&offset=${offset}`;
         const officialUrl = `https://api.bgm.tv${searchPath}`;
-        const mirrorUrl = `https://api.bangumi.vip${searchPath}`;
-        
+
         // 获取可能被代理的官方 URL
         const proxySearchUrl = this._applyProxyForSearch(officialUrl);
 
@@ -362,11 +396,11 @@ export default class AnimekoSource extends BaseSource {
         if (proxySearchUrl !== officialUrl) {
           endpointQueue = [
             { id: 'PROXY_OFFICIAL', url: proxySearchUrl },
-            { id: 'MIRROR', url: mirrorUrl }
+            { id: 'MIRROR', mirror: true }
           ];
         } else {
           endpointQueue = [
-            { id: 'MIRROR', url: mirrorUrl },
+            { id: 'MIRROR', mirror: true },
             { id: 'OFFICIAL', url: officialUrl }
           ];
         }
@@ -380,12 +414,30 @@ export default class AnimekoSource extends BaseSource {
 
         let resp = null;
         for (const ep of endpointQueue) {
+          // 镜像节点：当前域名不可用时经发布页获取备用域名重试
+          if (ep.mirror) {
+            const mirrorResult = await requestMirror(async (base) => {
+              const mirrorResp = await httpPost(`${base}${searchPath}`, JSON.stringify(payload), {
+                headers: this.headers,
+                timeout: 5000 // 限制搜索超时时间，确保多节点故障转移的流畅性
+              });
+              return (mirrorResp && mirrorResp.data) ? mirrorResp : null;
+            });
+
+            if (mirrorResult) {
+              resp = mirrorResult.result;
+              log("info", `[animeko] 搜索节点 [MIRROR] 请求成功 (${mirrorResult.base}, offset: ${offset})`);
+              break;
+            }
+            continue;
+          }
+
           try {
             resp = await httpPost(ep.url, JSON.stringify(payload), {
               headers: this.headers,
               timeout: 5000 // 限制搜索超时时间，确保多节点故障转移的流畅性
             });
-            
+
             if (resp && resp.data) {
               log("info", `[animeko] 搜索节点 [${ep.id}] 请求成功 (offset: ${offset})`);
               break;

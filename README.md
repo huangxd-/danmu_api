@@ -749,6 +749,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   └── utils/
 │       ├── ai-util.js          # AI相关处理工具
 │       ├── aiyifan-util.js     # 爱壹帆签名工具
+│       ├── animeko-util.js     # Animeko 镜像域名发布页解析与回退工具
 │       ├── auto-match-mapping-util.js # 自动匹配映射规则解析与候选筛选工具
 │       ├── bangumi-data-util.js # Bangumi Data管理工具
 │       ├── cache-util.js       # 缓存数据处理工具
