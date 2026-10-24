@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
-import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle, extractAnimeTitle } from "../utils/common-util.js";
+import { printFirst200Chars, settleWithConcurrency, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle, extractAnimeTitle } from "../utils/common-util.js";
 import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes, decompressBrotli, utf8BytesToString } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
@@ -12,6 +12,7 @@ import { SegmentListResponse } from '../models/dandan-model.js';
 // 获取爱奇艺弹幕
 // =====================
 export default class IqiyiSource extends BaseSource {
+  static SEGMENT_DOWNLOAD_CONCURRENCY = 6;
   // 爱奇艺 API 签名相关常量
   static XOR_KEY = 0x75706971676c;
   static SECRET_KEY = "howcuteitis";
@@ -895,24 +896,21 @@ export default class IqiyiSource extends BaseSource {
     const segmentList = segmentResult.segmentList;
     log("info", `[iqiyi] 弹幕分段数量: ${segmentList.length}`);
 
-    // 创建请求Promise数组
-    const promises = [];
-    for (const segment of segmentList) {
-      promises.push(this.getEpisodeSegmentDanmu(segment));
-    }
-
     // 解析弹幕数据
     let contents = [];
     try {
-      const results = await Promise.allSettled(promises);
-      const datas = results
-        .filter(result => result.status === "fulfilled")
-        .map(result => result.value)
-        .filter(data => data !== null); // 过滤掉null值
-
-      datas.forEach(data => {
-        contents.push(...data);
-      });
+      const results = await settleWithConcurrency(
+        segmentList,
+        segment => this.getEpisodeSegmentDanmu(segment, true),
+        IqiyiSource.SEGMENT_DOWNLOAD_CONCURRENCY,
+      );
+      const failedSegments = results.filter(result => result.status === "rejected").length;
+      for (const result of results) {
+        if (result.status === "fulfilled" && Array.isArray(result.value)) {
+          contents.push(...result.value);
+        }
+      }
+      log("info", `[iqiyi] 分段下载完成: ${segmentList.length - failedSegments}/${segmentList.length}`);
     } catch (error) {
       log("error", "[iqiyi] 解析弹幕数据失败:", error);
       return [];
@@ -1048,7 +1046,7 @@ export default class IqiyiSource extends BaseSource {
     });
   }
 
-  async getEpisodeSegmentDanmu(segment) {
+  async getEpisodeSegmentDanmu(segment, throwOnError = false) {
     try {
       const response = await httpGet(segment.url, {
         headers: {
@@ -1075,6 +1073,7 @@ export default class IqiyiSource extends BaseSource {
       return this._parseIqiyiProtoDanmu(payload);
     } catch (error) {
       log("error", "[iqiyi] 请求分片弹幕失败:", error);
+      if (throwOnError) throw error;
       return []; // 返回空数组而不是抛出错误，保持与getEpisodeDanmu一致的行为
     }
   }

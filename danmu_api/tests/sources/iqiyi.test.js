@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import IqiyiSource from '../../sources/iqiyi.js';
+import { withMockFetch } from '../helpers/context.js';
 
 const buildTitle = (epData) => IqiyiSource.prototype._buildEpisodeTitle.call({}, epData);
 const ensureNumber = (title, animeTitle, order) =>
@@ -64,4 +65,33 @@ test('iqiyi episode titles share one format across all episodes', () => {
   for (const title of [...withoutNumber, withNumber]) {
     assert.match(title, new RegExp(`^${animeTitle} 第\\d+集 `));
   }
+});
+
+test('iqiyi 整集分片下载限制并发并保留成功分片', async () => {
+  const source = new IqiyiSource();
+  const segmentCount = 14;
+  let active = 0;
+  let peak = 0;
+  source.getEpisodeDanmuSegments = async () => ({
+    segmentList: Array.from({ length: segmentCount }, (_, index) => ({ index })),
+  });
+  source.getEpisodeSegmentDanmu = async segment => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 1));
+    active--;
+    if (segment.index === 5) throw new Error('simulated segment failure');
+    return [{ index: segment.index }];
+  };
+
+  const comments = await withMockFetch(async () => ({
+    ok: true,
+    status: 200,
+    url: '',
+    headers: new Headers({ 'content-type': 'text/html' }),
+    text: async () => '<html><title>测试剧集</title></html>',
+  }), () => source.getEpisodeDanmu('https://www.iqiyi.com/v_test.html'));
+
+  assert.equal(peak, IqiyiSource.SEGMENT_DOWNLOAD_CONCURRENCY);
+  assert.deepEqual(comments.map(comment => comment.index), [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13]);
 });

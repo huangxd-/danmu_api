@@ -14,7 +14,30 @@ import {
   createDynamicPlatformOrder, sanitizeSearchKeyword, stripNonTitleChars, strictTitleMatch,
   getExplicitSeasonNumber, titleMatches, extractEpisodeNumberFromTitle, extractAnimeInfo,
   extractEpisodeTitle, extractAnimeTitle, printFirst200Chars, normalizeTitleForMatch,
+  settleWithConcurrency,
 } from '../../utils/common-util.js';
+
+test('settleWithConcurrency limits workers, keeps order, and isolates failures', async () => {
+  let active = 0;
+  let peak = 0;
+  const results = await settleWithConcurrency([0, 1, 2, 3, 4], async value => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, value === 2 ? 5 : 1));
+    active--;
+    if (value === 3) throw new Error('segment failed');
+    return value * 10;
+  }, 2);
+
+  assert.equal(peak, 2);
+  assert.deepStrictEqual(results.map(result => result.status), [
+    'fulfilled', 'fulfilled', 'fulfilled', 'rejected', 'fulfilled',
+  ]);
+  assert.deepStrictEqual(
+    results.filter(result => result.status === 'fulfilled').map(result => result.value),
+    [0, 10, 20, 40],
+  );
+});
 
 test('season extraction recognizes season markers', () => {
   // 尾部阿拉伯数字、中文数字、S/Season/Part、罗马数字均识别为季号

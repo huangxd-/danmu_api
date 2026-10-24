@@ -5,13 +5,14 @@ import { httpGet, httpPost } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { printFirst200Chars, settleWithConcurrency, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
 // 获取腾讯视频弹幕
 // =====================
 export default class TencentSource extends BaseSource {
+  static SEGMENT_DOWNLOAD_CONCURRENCY = 6;
   extractAliasesFromHintWords(hintWords) {
     if (!hintWords || typeof hintWords !== 'string') return [];
 
@@ -758,39 +759,32 @@ export default class TencentSource extends BaseSource {
     const segmentList = segmentResult.segmentList;
     log("info", `[tencent] 弹幕分段数量: ${segmentList.length}`);
 
-    // 创建请求Promise数组
-    const promises = [];
-    for (const segment of segmentList) {
-      promises.push(
-        httpGet(segment.url, {
+    // 解析弹幕数据
+    let contents = [];
+    try {
+      const results = await settleWithConcurrency(
+        segmentList,
+        segment => httpGet(segment.url, {
           headers: {
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           },
           retries: 1,
-        })
+        }),
+        TencentSource.SEGMENT_DOWNLOAD_CONCURRENCY,
       );
-    }
-
-    // 解析弹幕数据
-    let contents = [];
-    try {
-      const results = await Promise.allSettled(promises);
-      const datas = results
-        .filter(result => result.status === "fulfilled")
-        .map(result => {
-          // 检查result是否包含响应数据
-          if (result.value && result.value.data) {
-            return result.value.data;
-          }
-          return null;
-        })
-        .filter(data => data !== null); // 过滤掉null值
-
-      datas.forEach(data => {
-        data = typeof data === "string" ? JSON.parse(data) : data;
-        contents.push(...data.barrage_list);
-      });
+      let failedSegments = results.filter(result => result.status === "rejected").length;
+      for (const result of results) {
+        if (result.status !== "fulfilled" || !result.value?.data) continue;
+        try {
+          const data = typeof result.value.data === "string" ? JSON.parse(result.value.data) : result.value.data;
+          if (Array.isArray(data?.barrage_list)) contents.push(...data.barrage_list);
+        } catch (error) {
+          failedSegments++;
+          log("error", "[tencent] 解析分片弹幕失败:", error);
+        }
+      }
+      log("info", `[tencent] 分段下载完成: ${segmentList.length - failedSegments}/${segmentList.length}`);
     } catch (error) {
       log("error", "[tencent] 解析弹幕数据失败:", error);
       return [];

@@ -145,6 +145,31 @@ test('tencent 普通弹幕流程不请求 getinfo', async () => {
   assert.equal(calls.getinfo, 0);
 });
 
+test('tencent 整集分片下载限制并发并保留成功分片', async () => {
+  const source = new TencentSource();
+  const segmentCount = 14;
+  let active = 0;
+  let peak = 0;
+  source.getEpisodeDanmuSegments = async () => ({
+    segmentList: Array.from({ length: segmentCount }, (_, index) => ({ url: `https://segments.test/${index}` })),
+  });
+
+  const comments = await withMockFetch(async input => {
+    const url = String(input);
+    if (url === PLAYER_URL) return mockResponse('<html><title>测试剧集</title></html>');
+    active++;
+    peak = Math.max(peak, active);
+    const index = Number(url.split('/').pop());
+    await new Promise(resolve => setTimeout(resolve, 1));
+    active--;
+    if (index === 5) throw new Error('simulated segment failure');
+    return mockResponse({ barrage_list: [{ index }] });
+  }, () => source.getEpisodeDanmu(PLAYER_URL));
+
+  assert.equal(peak, TencentSource.SEGMENT_DOWNLOAD_CONCURRENCY);
+  assert.deepEqual(comments.map(comment => comment.index), [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13]);
+});
+
 test('tencent 分片接口按需请求时长，includeDuration=false 时跳过', async () => {
   const source = new TencentSource();
   const withDuration = buildTencentFetch();

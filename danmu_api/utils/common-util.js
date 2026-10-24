@@ -24,6 +24,34 @@ export function printFirst200Chars(data) {
   log("info", "[system] [common]", dataToPrint.slice(0, 200));  // 打印前200个字符
 }
 
+/**
+ * Run an async worker with bounded concurrency while retaining input order.
+ * Source adapters use the settled result to keep successful danmaku segments
+ * when individual upstream segment requests fail.
+ */
+export async function settleWithConcurrency(items, worker, concurrency = 6) {
+  const input = Array.isArray(items) ? items : [];
+  if (input.length === 0) return [];
+
+  const limit = Math.max(1, Math.min(input.length, Math.floor(Number(concurrency)) || 1));
+  const results = new Array(input.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (nextIndex < input.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = { status: 'fulfilled', value: await worker(input[index], index) };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: limit }, runWorker));
+  return results;
+}
+
 // 正则表达式：提取episode标题中的内容
 export const extractEpisodeTitle = (title) => {
   const match = title.match(/【(.*?)】/);  // 匹配【】中的内容
