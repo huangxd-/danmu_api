@@ -6,7 +6,7 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp } from '../../apis/dandan-api.js';
+import { extractTitleSeasonEpisode, buildSearchAnimeUrl, getBangumi, matchSeason, matchAniAndEp, fallbackMatchAniAndEp } from '../../apis/dandan-api.js';
 import { Globals } from '../../configs/globals.js';
 import { normalizeTitleForMatch } from '../../utils/common-util.js';
 import { urlPrefix } from '../helpers/context.js';
@@ -101,6 +101,152 @@ test('movie matching unifies traditional and simplified titles', async () => {
   // 不同作品与续作编号仍视为不同作品
   assert.equal(await matchMovie([different], '某电影'), null);
   assert.equal(await matchMovie([sequel], '某电影'), null);
+});
+test('TV episode matching prefers source episode metadata over list position', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+
+  const anime = {
+    animeId: 4101,
+    bangumiId: '4101',
+    animeTitle: '错序剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 2,
+    rating: 0,
+    isFavorited: true,
+    // 源站返回顺序与集数元数据相反，标题本身没有可解析的集数。
+    links: [
+      { id: 410102, title: '【qq】 正片 B', url: 'episode-2', episodeNumber: '2' },
+      { id: 410101, title: '【qq】 正片 A', url: 'episode-1', episodeNumber: '1' }
+    ]
+  };
+  const detailStore = new Map([[anime.animeId, anime]]);
+
+  const result = await matchAniAndEp(
+    1,
+    1,
+    2026,
+    { animes: [anime] },
+    '错序剧',
+    null,
+    null,
+    null,
+    null,
+    detailStore
+  );
+
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeId, 410101);
+});
+test('TV episode matching does not treat generated position as explicit episode number', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const anime = {
+    animeId: 4151,
+    bangumiId: '4151',
+    animeTitle: '前情错位剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 2,
+    rating: 0,
+    isFavorited: true,
+    links: [
+      { id: 415100, title: '【qq】 前情提要', url: 'trailer' },
+      { id: 415101, title: '【qq】 第1集', url: 'episode-1' },
+      { id: 415102, title: '【qq】 第2集', url: 'episode-2' }
+    ]
+  };
+  const result = await matchAniAndEp(
+    1,
+    1,
+    2026,
+    { animes: [anime] },
+    '前情错位剧',
+    null,
+    null,
+    null,
+    null,
+    new Map([[anime.animeId, anime]])
+  );
+
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeId, 415101);
+});
+test('TV episode matching uses offset-mapped position before source title number', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const anime = {
+    animeId: 4161,
+    bangumiId: '4161',
+    animeTitle: '偏移剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 16,
+    rating: 0,
+    isFavorited: true,
+    links: Array.from({ length: 16 }, (_, index) => ({
+      id: 416100 + index,
+      title: `【qq】 第${index + 5}集`,
+      url: `episode-${index + 5}`
+    }))
+  };
+  const result = await matchAniAndEp(
+    1,
+    11,
+    2026,
+    { animes: [anime] },
+    '偏移剧',
+    null,
+    null,
+    null,
+    { '1': '10:【qq】 第5集' },
+    new Map([[anime.animeId, anime]])
+  );
+
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeId, 416101);
+  assert.equal(result.resEpisode?.episodeTitle, '【qq】 第6集');
+});
+test('bangumi details keep source episode numbers after editorial filtering', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const originalFilterEnabled = Globals.envs.enableAnimeEpisodeFilter;
+  const originalEpisodeTitleFilter = Globals.envs.episodeTitleFilter;
+  Globals.envs.enableAnimeEpisodeFilter = true;
+  Globals.envs.episodeTitleFilter = /预告/;
+
+  try {
+    const anime = {
+      animeId: 4201,
+      bangumiId: '4201',
+      animeTitle: '过滤后仍保留集数',
+      type: 'tvseries',
+      typeDescription: '电视剧',
+      links: [
+        { id: 420100, title: '【qq】 预告', url: 'trailer' },
+        { id: 420101, title: '【qq】 正片 A', url: 'episode-1', sort: '1' },
+        { id: 420102, title: '【qq】 正片 B', url: 'episode-2', sort: '2' }
+      ]
+    };
+    const response = await getBangumi('/api/v2/bangumi/4201', new Map([[anime.animeId, anime]]));
+    const body = await response.json();
+
+    assert.equal(body.success, true);
+    assert.deepEqual(body.bangumi.episodes.map(episode => episode.episodeNumber), ['1', '2']);
+    assert.deepEqual(body.bangumi.episodes.map(episode => episode.episodeId), [420101, 420102]);
+  } finally {
+    Globals.envs.enableAnimeEpisodeFilter = originalFilterEnabled;
+    Globals.envs.episodeTitleFilter = originalEpisodeTitleFilter;
+  }
 });
 test('fallback matching prefers the candidate of the target season', async () => {
   Globals.init({ LOG_LEVEL: 'error' });
