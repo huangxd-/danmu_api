@@ -6,6 +6,70 @@ import assert from 'node:assert';
 import { Globals } from '../../configs/globals.js';
 import HanjutvSource from '../../sources/hanjutv.js';
 
+for (const method of ['buildMobileHeaders', 'buildTvHeaders']) {
+  test(`Hanjutv ${method} should reuse identity until 12 hours and share concurrent refresh`, async (t) => {
+    const startedAt = 1700000000000;
+    const ttl = 12 * 60 * 60 * 1000;
+    let now = startedAt;
+    t.mock.method(Date, 'now', () => now);
+    const source = new HanjutvSource();
+
+    const firstBatch = await Promise.all(Array.from({ length: 4 }, () => source[method]()));
+    const originalUid = firstBatch[0].uid;
+    assert.ok(firstBatch.every(item => item.uid === originalUid));
+
+    now = startedAt + ttl / 2;
+    assert.equal((await source[method]()).uid, originalUid);
+    now = startedAt + ttl - 1;
+    assert.equal((await source[method]()).uid, originalUid);
+
+    now = startedAt + ttl;
+    const refreshedBatch = await Promise.all(Array.from({ length: 4 }, () => source[method]()));
+    const refreshedUid = refreshedBatch[0].uid;
+    assert.notEqual(refreshedUid, originalUid);
+    assert.ok(refreshedBatch.every(item => item.uid === refreshedUid));
+
+    now += ttl - 1;
+    assert.equal((await source[method]()).uid, refreshedUid);
+    now++;
+    assert.notEqual((await source[method]()).uid, refreshedUid);
+  });
+}
+
+test('Hanjutv expired mobile identity should warm up once before concurrent searches continue', async (t) => {
+  let now = 1700000000000;
+  t.mock.method(Date, 'now', () => now);
+  const source = new HanjutvSource();
+  let warmups = 0;
+  let finishRefresh;
+  source.warmupMobileIdentity = async () => {
+    warmups++;
+    if (warmups === 2) return new Promise(resolve => { finishRefresh = resolve; });
+    return true;
+  };
+
+  assert.equal(await source.ensureMobileIdentityWarmed(), true);
+  const originalUid = (await source.buildMobileHeaders()).uid;
+  now += 12 * 60 * 60 * 1000 - 1;
+  await source.ensureMobileIdentityWarmed();
+  assert.equal(warmups, 1);
+
+  now++;
+  let completed = 0;
+  const searches = Array.from({ length: 4 }, () => source.ensureMobileIdentityWarmed().then(result => {
+    completed++;
+    return result;
+  }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(warmups, 2);
+  assert.equal(completed, 0);
+  assert.notEqual((await source.buildMobileHeaders()).uid, originalUid);
+  finishRefresh(true);
+  assert.deepEqual(await Promise.all(searches), [true, true, true, true]);
+  await source.ensureMobileIdentityWarmed();
+  assert.equal(warmups, 2);
+});
+
 test('Hanjutv warmup should retry after failure and share concurrent promise', async () => {
   const source = new HanjutvSource();
   let attempts = 0;

@@ -19,6 +19,7 @@ import {
 const CATE_MAP = { 1: "韩剧", 2: "综艺", 3: "电影", 4: "日剧", 5: "美剧", 6: "泰剧", 7: "国产剧" };
 const MAX_AXIS = 100000000;
 const DANMU_WINDOW_MS = 60000;
+const IDENTITY_TTL_MS = 12 * 60 * 60 * 1000;
 const HANJUTV_VARIANTS = Object.freeze({
   HXQ: "hxq",
   TV: "tv",
@@ -38,6 +39,8 @@ export default class HanjutvSource extends BaseSource {
     this.appUserAgent = "HanjuTV/6.8.2 (Redmi Note 12; Android 14; Scale/2.00)";
     this._mobileMakeHeaders = null;
     this._tvMakeHeaders = null;
+    this._mobileIdentityCreatedAt = 0;
+    this._tvIdentityCreatedAt = 0;
     this._mobileWarmupPromise = null;
     this._mobileWarmedUid = null;
   }
@@ -68,17 +71,30 @@ export default class HanjutvSource extends BaseSource {
    * 构建 TV 端请求头，返回 { headers, uid }
    */
   async buildTvHeaders() {
-    if (!this._tvMakeHeaders) {
-      this._tvMakeHeaders = await buildLiteHeaders(Date.now());
+    const now = Date.now();
+    if (!this._tvMakeHeaders || now - this._tvIdentityCreatedAt >= IDENTITY_TTL_MS) {
+      this._tvIdentityCreatedAt = now;
+      this._tvMakeHeaders = buildLiteHeaders(now).catch(error => {
+        this._tvMakeHeaders = null;
+        throw error;
+      });
     }
-    return this._tvMakeHeaders(Date.now());
+    const makeHeaders = await this._tvMakeHeaders;
+    return makeHeaders(Date.now());
   }
 
   async buildMobileHeaders() {
-    if (!this._mobileMakeHeaders) {
-      this._mobileMakeHeaders = await buildHanjutvSearchHeaders(Date.now());
+    const now = Date.now();
+    if (!this._mobileMakeHeaders || now - this._mobileIdentityCreatedAt >= IDENTITY_TTL_MS) {
+      this._mobileIdentityCreatedAt = now;
+      this._mobileWarmedUid = null;
+      this._mobileMakeHeaders = buildHanjutvSearchHeaders(now).catch(error => {
+        this._mobileMakeHeaders = null;
+        throw error;
+      });
     }
-    return this._mobileMakeHeaders(Date.now());
+    const makeHeaders = await this._mobileMakeHeaders;
+    return makeHeaders(Date.now());
   }
 
   /**
@@ -520,7 +536,7 @@ export default class HanjutvSource extends BaseSource {
   }
 
   async ensureMobileIdentityWarmed(bypassCache = false) {
-    if (this._mobileWarmedUid) return true;
+    if (this._mobileWarmedUid && Date.now() - this._mobileIdentityCreatedAt < IDENTITY_TTL_MS) return true;
     if (this._mobileWarmupPromise) return this._mobileWarmupPromise;
 
     const warmupPromise = (async () => {
