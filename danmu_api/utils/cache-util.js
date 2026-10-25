@@ -597,7 +597,19 @@ export function addAnime(anime, detailStore = null) {
             if (link.url) {
                 const episode = allocateEpisode(link.url, link.title);
                 if (episode) {
-                    newLinks.push(episode); // 仅添加成功添加的 episode
+                    // episodeIds 只是全局 id/url/title 索引，不应将某个 Anime 源站的
+                    // 集数元数据写回其中。但重建 Anime links 时必须保留显式
+                    // 集号/排序，否则预告、花絮或乱序返回会在后续匹配时退化为数组下标。
+                    // 复制而非修改 episode：同一 id/url/title 可被不同 Anime 复用，元数据
+                    // 属于当前源条目。
+                    const rebuiltLink = { ...episode };
+                    if (link.episodeNumber !== undefined && link.episodeNumber !== null) {
+                        rebuiltLink.episodeNumber = link.episodeNumber;
+                    }
+                    if (link.sort !== undefined && link.sort !== null) {
+                        rebuiltLink.sort = link.sort;
+                    }
+                    newLinks.push(rebuiltLink); // 仅添加成功添加的 episode
                 }
             } else {
                 log("error", `[cache] Invalid link in anime, missing url: ${JSON.stringify(link)}`);

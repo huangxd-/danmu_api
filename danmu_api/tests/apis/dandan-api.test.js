@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { extractTitleSeasonEpisode, buildSearchAnimeUrl, getBangumi, matchSeason, matchAniAndEp, fallbackMatchAniAndEp } from '../../apis/dandan-api.js';
 import { Globals } from '../../configs/globals.js';
+import { addAnime, resolveAnimeByIdFromDetailStore } from '../../utils/cache-util.js';
 import { normalizeTitleForMatch } from '../../utils/common-util.js';
 import { urlPrefix } from '../helpers/context.js';
 
@@ -141,6 +142,69 @@ test('TV episode matching prefers source episode metadata over list position', a
 
   assert.equal(result.resAnime?.animeId, anime.animeId);
   assert.equal(result.resEpisode?.episodeId, 410101);
+});
+test('TV episode matching preserves source metadata through addAnime detail storage', async () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+
+  const anime = {
+    animeId: 4102,
+    bangumiId: '4102',
+    animeTitle: '重建后错序剧(2026)【电视剧】from tencent',
+    aliases: [],
+    source: 'tencent',
+    type: 'tvseries',
+    typeDescription: '电视剧',
+    startDate: '2026-01-01T00:00:00.000Z',
+    imageUrl: '',
+    episodeCount: 2,
+    rating: 0,
+    isFavorited: true,
+    // 不可从标题解析集号，且源站返回顺序与集数相反。
+    links: [
+      { title: '【qq】 正片 B', url: 'rebuilt-episode-2', episodeNumber: '2' },
+      { title: '【qq】 正片 A', url: 'rebuilt-episode-1', sort: '1' }
+    ]
+  };
+  const detailStore = new Map();
+
+  assert.equal(addAnime(anime, detailStore), true);
+  const detail = resolveAnimeByIdFromDetailStore(anime.animeId, detailStore, anime.source);
+  assert.deepEqual(detail.links.map(link => [link.episodeNumber ?? null, link.sort ?? null]), [['2', null], [null, '1']]);
+
+  // 生产链路：addAnime 重建详情 -> matchAniAndEp 重读详情。
+  const result = await matchAniAndEp(
+    1,
+    1,
+    2026,
+    { animes: [anime] },
+    '重建后错序剧',
+    null,
+    null,
+    null,
+    null,
+    detailStore
+  );
+  assert.equal(result.resAnime?.animeId, anime.animeId);
+  assert.equal(result.resEpisode?.episodeTitle, '【qq】 正片 A');
+
+  // 同一详情也必须供 /bangumi 输出正确的源站集号。
+  const bangumi = await getBangumi('/api/v2/bangumi/4102', detailStore, 'tencent');
+  const body = await bangumi.json();
+  assert.deepEqual(body.bangumi.episodes.map(episode => episode.episodeNumber), ['2', '1']);
+
+  // 同一全局 id/url/title 的索引可被不同候选复用；各自的源站集号不得互相污染。
+  const alternateAnime = {
+    ...anime,
+    animeId: 4103,
+    bangumiId: '4103',
+    animeTitle: '另一条目(2026)【电视剧】from tencent',
+    links: [{ title: '【qq】 正片 A', url: 'rebuilt-episode-1', episodeNumber: '7' }]
+  };
+  assert.equal(addAnime(alternateAnime, detailStore), true);
+  const alternateDetail = resolveAnimeByIdFromDetailStore(4103, detailStore, 'tencent');
+  assert.equal(alternateDetail.links[0].episodeNumber, '7');
+  assert.equal(detail.links[1].sort, '1');
+  assert.equal('episodeNumber' in Globals.episodeIds.find(link => link.url === 'rebuilt-episode-1'), false);
 });
 test('TV episode matching does not treat generated position as explicit episode number', async () => {
   Globals.init({ LOG_LEVEL: 'error' });
