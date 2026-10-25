@@ -24,6 +24,17 @@ import {
 
 let globals;
 
+// 系统管理接口：必须显式携带 ADMIN_TOKEN，默认 TOKEN=87654321 的免 token 兼容不适用于这些路径
+const ADMIN_ONLY_PATH_PATTERNS = [
+  /^\/api\/env\/(?:set|add|del)\/?$/,
+  /^\/api\/deploy\/?$/,
+  /^\/api\/cache\/(?:clear|animes)\/?$/,
+  /^\/api\/logs\/clear\/?$/,
+  /^\/api\/cookie\/(?:status|save|verify|qr\/generate|qr\/check)\/?$/,
+  /^\/api\/ai\/verify\/?$/,
+  /^\/api\/nipaplay\/verify\/?$/,
+];
+
 async function handleRequest(req, env, deployPlatform, clientIp) {
   // 加载全局变量和环境变量配置
   globals = Globals.init(env);
@@ -260,6 +271,18 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     } else {
       // 移除 token 部分，剩下的才是真正的路径
       path = "/" + parts.slice(1).join("/");
+    }
+  }
+
+  // 系统管理接口鉴权：只看请求实际携带的 token（explicitToken），避免默认 token 兼容垫片被用来自我授权
+  if (ADMIN_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(path))) {
+    const isAdminRequest = Boolean(globals.adminToken) && explicitToken === globals.adminToken;
+    if (!isAdminRequest) {
+      const errorMessage = globals.adminToken
+        ? "Unauthorized: 系统管理接口需要 ADMIN_TOKEN"
+        : "Unauthorized: 系统管理接口需要先设置 ADMIN_TOKEN";
+      log("warn", `[system] [server] Admin-only endpoint denied: ${path} - ${errorMessage}`);
+      return jsonResponse({ errorCode: 401, success: false, errorMessage }, 401);
     }
   }
 

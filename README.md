@@ -61,7 +61,7 @@ LogVar 弹幕 API 服务器
   - `GET /api/v2/fongmi/danmaku?name={name}&episode={episode}`：FengMi影视api。
   - `GET /danmaku/api/v2/fongmi/danmaku?name={name}&episode={episode}`：兼容FengMi影视api短路径。
   - `GET /api/logs`：获取最近的日志（最多 500 行，格式为 `[时间戳] 级别: 消息`）。
-  - `GET /api/cache/animes`：获取最近的 animes 缓存。
+  - `GET /api/cache/animes`：获取最近的 animes 缓存（系统管理接口，需 `ADMIN_TOKEN`）。
   - `POST /api/v2/favorite/add`：新增收藏。手动匹配测试使用 `{ "keyword": "火影忍者" }` 保存搜索关键词及整组搜索结果；同时兼容 `{ "fileName": "火影忍者 S01E01" }`。
   - `GET /api/v2/favorite/list`：获取收藏摘要列表，包含收藏关键词、来源、总集数、首条搜索结果图片、收藏时间及最近刷新时间；响应中的 `favoriteSupported` 表示当前部署是否具备持久化收藏能力。
   - `POST /api/v2/favorite/refresh`：使用 `{ "keyword": "火影忍者" }` 强制重新搜索并更新收藏缓存。
@@ -476,7 +476,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | 变量名称      | 描述 |
 | ----------- | ----------- |
 | TOKEN      | 【可选】自定义用户token，不填默认为`87654321`       |
-| ADMIN_TOKEN      | 【可选】系统管理访问令牌，如果未配置此值，则无法访问系统管理功能，需要先配置后在URL中填入此token才能打开系统管理       |
+| ADMIN_TOKEN      | 【可选】系统管理访问令牌，如果未配置此值，则无法访问系统管理功能，需要先配置后在URL中填入此token才能打开系统管理。系统管理接口（`/api/env/set\|add\|del`、`/api/deploy`、`/api/cache/clear\|animes`、`/api/logs/clear`、`/api/cookie/*`、`/api/ai/verify`、`/api/nipaplay/verify`）在服务端强制要求 `ADMIN_TOKEN`：未配置时这些接口一律返回 `401`，默认 `TOKEN=87654321` 的免 token 兼容**不适用**于这些接口。升级须知：此前未配置 `ADMIN_TOKEN` 的部署，升级后需先设置 `ADMIN_TOKEN` 才能使用上述接口       |
 | FAVORITE_REQUIRE_ADMIN | 【可选】收藏写入和管理接口是否必须使用 `ADMIN_TOKEN`，默认为 `false`。设为 `false` 时接受 `TOKEN` 或 `ADMIN_TOKEN`；自定义 `TOKEN` 必须在 URL 路径中显式携带，默认 `TOKEN=87654321` 时可省略。设为 `true` 时只接受已配置的 `ADMIN_TOKEN`。`GET /api/v2/favorite/list` 始终公开，无需 token。 |
 | LOCAL_DANMU_NOT_REQUIRE_ADMIN | 【可选】本地弹幕上传和删除是否无需 ADMIN 权限，默认为 `false`。普通 `TOKEN` 用户可查看已导入列表。设为 `false` 时仅 `ADMIN_TOKEN` 可上传和删除，非管理员点击“选择文件”或删除按钮会直接提示需要 ADMIN 权限；设为 `true` 时也允许普通 `TOKEN` 用户上传和删除。 |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`，其他可选：`https://fc.lyz05.cn`，`https://dmku.hls.one`，`https://se.678.ooo`，`https://danmu.56uxi.com`，`https://dm.lxlad.com`       |
