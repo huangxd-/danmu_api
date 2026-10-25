@@ -3,7 +3,7 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { Globals } from '../../configs/globals.js';
+import { Globals, globals } from '../../configs/globals.js';
 import TencentSource from '../../sources/tencent.js';
 import { withMockFetch } from '../helpers/context.js';
 
@@ -176,4 +176,78 @@ test('tencent getinfo 失败时保留分片列表并回退 duration=0', async ()
 
   assert.equal(result.duration, 0);
   assert.equal(result.segmentList.length, 1);
+});
+
+// 并发与失败统计：用可控的 mock fetch 记录在飞请求数，验证分批逻辑
+async function runConcurrencyTest({ batchSize, concurrency, failIndex = -1, badShapeIndex = -1 }) {
+  Globals.init({ TENCENT_CONCURRENCY: String(concurrency) });
+  const source = new TencentSource();
+  let maxInFlight = 0;
+  let inFlight = 0;
+
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url === PLAYER_URL) {
+      return mockResponse('<html><title>测试剧集</title></html>');
+    }
+    if (url === BASE_URL) {
+      const segmentIndex = {};
+      for (let i = 0; i < batchSize; i++) {
+        segmentIndex[String(i * 30000)] = { segment_start: String(i * 30000), segment_name: `t/v1/${i * 30000}/30000` };
+      }
+      return mockResponse({ segment_index: segmentIndex });
+    }
+    const segmentMatch = url.match(/barrage\/segment\/[^/]+\/t\/v1\/(\d+)\/30000$/);
+    if (segmentMatch) {
+      const index = Number(segmentMatch[1]) / 30000;
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        if (index === failIndex) {
+          throw new Error('HTTP error! status: 500');
+        }
+        if (index === badShapeIndex) {
+          return mockResponse({});
+        }
+        return mockResponse({ barrage_list: [{ content: `第${index}段` }] });
+      } finally {
+        await new Promise((resolve) => {
+          setTimeout(resolve, batchSize > 3 && index < 2 ? 5 : 1);
+        });
+        inFlight--;
+      }
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  const comments = await withMockFetch(fetchImpl, () => source.getEpisodeDanmu(PLAYER_URL));
+  Globals.init({});
+  return { comments, maxInFlight };
+}
+
+test('tencent 整集弹幕按 TENCENT_CONCURRENCY 分批且保留分片顺序', async () => {
+  const { comments, maxInFlight } = await runConcurrencyTest({ batchSize: 12, concurrency: 3 });
+  assert.equal(maxInFlight <= 3, true, `峰值并发 ${maxInFlight} 应不超过 3`);
+  assert.equal(comments.length, 12);
+  for (let i = 0; i < 12; i++) {
+    assert.equal(comments[i].content, `第${i}段`);
+  }
+});
+
+test('tencent 单个分片失败不影响其余分片并输出统计', async () => {
+  globals.logBuffer.length = 0;
+  const { comments, maxInFlight } = await runConcurrencyTest({ batchSize: 6, concurrency: 3, failIndex: 2 });
+  assert.equal(maxInFlight <= 3, true);
+  assert.equal(comments.length, 5);
+  const summary = globals.logBuffer.find((entry) => entry.message.includes('分段下载完成: 5/6'));
+  const failure = globals.logBuffer.find((entry) => entry.message.includes('第 3 个分片请求失败'));
+  assert.ok(summary, '应输出分段完成统计');
+  assert.ok(failure, '应输出失败分片信息');
+});
+
+test('tencent 某段返回空对象不再导致整集返回空数组', async () => {
+  const { comments, maxInFlight } = await runConcurrencyTest({ batchSize: 4, concurrency: 2, badShapeIndex: 1 });
+  assert.equal(maxInFlight <= 2, true);
+  assert.equal(comments.length, 3);
+  assert.equal(comments.every((item) => item.content !== undefined), true);
 });
