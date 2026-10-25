@@ -991,3 +991,87 @@ test('worker 平台适配层：netlifyHandler / vercelHandler 映射为标准响
   assert.strictEqual(captured.headers['access-control-allow-origin'], '*');
   assert.strictEqual(captured.body, '');
 });
+
+// ============================================================================
+// 系统管理接口鉴权（#531）：默认 TOKEN 的免 token 兼容不适用于管理接口
+// ============================================================================
+
+const ADMIN_ONLY_PROBES = [
+  ['/api/env/set', 'POST'],
+  ['/api/env/add', 'POST'],
+  ['/api/env/del', 'POST'],
+  ['/api/deploy', 'POST'],
+  ['/api/cache/clear', 'POST'],
+  ['/api/cache/animes', 'GET'],
+  ['/api/logs/clear', 'POST'],
+  ['/api/cookie/status', 'GET'],
+  ['/api/cookie/save', 'POST'],
+  ['/api/cookie/verify', 'POST'],
+  ['/api/cookie/qr/generate', 'POST'],
+  ['/api/cookie/qr/check', 'POST'],
+  ['/api/ai/verify', 'POST'],
+  ['/api/nipaplay/verify', 'POST'],
+];
+
+test('worker 默认 TOKEN 下管理接口无 token 一律 401（默认 token 不是凭据）', async () => {
+  for (const [path, method] of ADMIN_ONLY_PROBES) {
+    const tokenless = await callWorker(`http://localhost${path}`, {
+      method, headers: { 'content-type': 'application/json' }, body: method === 'GET' ? undefined : '{}',
+    });
+    assert.strictEqual(tokenless.status, 401, `${path} 无 token 应被拦截`);
+    assert.strictEqual(tokenless.json.errorCode, 401);
+    assert.match(tokenless.json.errorMessage, /ADMIN_TOKEN/, `${path} 应提示需要 ADMIN_TOKEN`);
+    assert.strictEqual(tokenless.json.message, undefined, `${path} 不应进入处理器（处理器会返回业务 message）`);
+
+    // 显式携带公开的默认 token 同样不构成管理凭据
+    const withDefaultToken = await callWorker(`http://localhost/87654321${path}`, {
+      method, headers: { 'content-type': 'application/json' }, body: method === 'GET' ? undefined : '{}',
+    });
+    assert.strictEqual(withDefaultToken.status, 401, `${path} 携带默认 token 仍应被拦截`);
+  }
+});
+
+test('worker 配置 ADMIN_TOKEN 后管理接口放行，普通业务接口的免 token 兼容不受影响', async () => {
+  const env = { ADMIN_TOKEN: 'admin-tok' };
+
+  const clearCache = await callWorker('http://localhost/admin-tok/api/cache/clear', { method: 'POST', env });
+  assert.strictEqual(clearCache.status, 200);
+  assert.strictEqual(clearCache.json.success, true);
+
+  const clearLogs = await callWorker('http://localhost/admin-tok/api/logs/clear', { method: 'POST', env });
+  assert.strictEqual(clearLogs.status, 200);
+
+  // 通过闸门后落到处理器自身的参数校验（400），证明已放行而不是被鉴权拦下
+  const delEnv = await callWorker('http://localhost/admin-tok/api/env/del', {
+    method: 'POST', env, headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.strictEqual(delEnv.status, 400);
+  assert.strictEqual(delEnv.json.message, '缺少环境变量名称');
+
+  // 默认 TOKEN 下普通业务接口仍可无 token 访问
+  const reqRecords = await callWorker('http://localhost/api/reqrecords');
+  assert.strictEqual(reqRecords.status, 200);
+  const logs = await callWorker('http://localhost/api/logs');
+  assert.strictEqual(logs.status, 200, 'GET /api/logs 仍可非 admin 读取（内容脱敏）');
+});
+
+test('worker 自定义 TOKEN 下管理接口只接受 ADMIN_TOKEN', async () => {
+  const env = { TOKEN: 'user-token-1', ADMIN_TOKEN: 'admin-tok' };
+
+  const userToken = await callWorker('http://localhost/user-token-1/api/env/set', {
+    method: 'POST', env, headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.strictEqual(userToken.status, 401, '普通 token 不能访问管理接口');
+  assert.match(userToken.json.errorMessage, /ADMIN_TOKEN/);
+
+  const noToken = await callWorker('http://localhost/api/env/set', {
+    method: 'POST', env, headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.strictEqual(noToken.status, 401);
+
+  const adminToken = await callWorker('http://localhost/admin-tok/api/env/set', {
+    method: 'POST', env, headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.strictEqual(adminToken.status, 400, 'ADMIN_TOKEN 应通过闸门并落到处理器参数校验');
+  assert.strictEqual(adminToken.json.message, '缺少环境变量名称');
+});

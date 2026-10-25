@@ -758,43 +758,39 @@ export default class TencentSource extends BaseSource {
     const segmentList = segmentResult.segmentList;
     log("info", `[tencent] 弹幕分段数量: ${segmentList.length}`);
 
-    // 创建请求Promise数组
-    const promises = [];
-    for (const segment of segmentList) {
-      promises.push(
-        httpGet(segment.url, {
+    // 分批请求弹幕分片，防止长视频一次性 fan-out 数百个上游请求
+    const concurrency = Math.max(1, Number(globals.tencentConcurrency) || 100);
+    let contents = [];
+    let fulfilledCount = 0;
+    for (let batchStart = 0; batchStart < segmentList.length; batchStart += concurrency) {
+      const batch = segmentList.slice(batchStart, batchStart + concurrency);
+      const batchPromises = batch.map(async (segment) => {
+        const response = await httpGet(segment.url, {
           headers: {
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
           },
           retries: 1,
-        })
-      );
-    }
-
-    // 解析弹幕数据
-    let contents = [];
-    try {
-      const results = await Promise.allSettled(promises);
-      const datas = results
-        .filter(result => result.status === "fulfilled")
-        .map(result => {
-          // 检查result是否包含响应数据
-          if (result.value && result.value.data) {
-            return result.value.data;
-          }
-          return null;
-        })
-        .filter(data => data !== null); // 过滤掉null值
-
-      datas.forEach(data => {
-        data = typeof data === "string" ? JSON.parse(data) : data;
-        contents.push(...data.barrage_list);
+        });
+        if (!response || !response.data) return [];
+        const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+        return Array.isArray(data?.barrage_list) ? data.barrage_list : [];
       });
-    } catch (error) {
-      log("error", "[tencent] 解析弹幕数据失败:", error);
-      return [];
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+        const result = batchResults[batchIndex];
+        const segment = batch[batchIndex];
+        const segmentIndex = batchStart + batchIndex + 1;
+        if (result.status === "fulfilled") {
+          fulfilledCount++;
+          contents.push(...result.value);
+        } else {
+          log("warn", `[tencent] 第 ${segmentIndex} 个分片请求失败: ${result.reason?.message || result.reason}（${segment.segment_start}-${segment.segment_end}s）`);
+        }
+      }
     }
+    log("info", `[tencent] 分段下载完成: ${fulfilledCount}/${segmentList.length}` + (fulfilledCount < segmentList.length ? `，失败 ${segmentList.length - fulfilledCount} 段` : ""));
 
     printFirst200Chars(contents);
 

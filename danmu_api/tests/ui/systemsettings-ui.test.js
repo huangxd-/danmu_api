@@ -67,3 +67,16 @@ test('frontend bundle contains working favorite controls', () => {
       assert.doesNotMatch(systemSettingsJsContent, /JSON\.stringify\(isMasked \? \{\} : \{ 'aiApiKey': apiKey \}\)/);
       assert.doesNotMatch(systemSettingsJsContent, /JSON\.stringify\(isMasked \? \{\} : \{ 'dandanplayPassword': password \}\)/);
     });
+
+test('系统设置页的环境变量写接口统一携带 ADMIN_TOKEN', () => {
+    // 服务端对 /api/env/* 强制要求 ADMIN_TOKEN，前端必须使用 buildApiUrl(path, true)
+    assert.match(systemSettingsJsContent, /buildApiUrl\(endpoint, true\)/);
+    assert.match(systemSettingsJsContent, /buildApiUrl\('\/api\/env\/set', true\)/);
+    assert.match(systemSettingsJsContent, /buildApiUrl\('\/api\/env\/add', true\)/);
+    assert.match(systemSettingsJsContent, /buildApiUrl\('\/api\/env\/del', true\)/);
+    // 不应残留不带 admin token 的调用
+    assert.doesNotMatch(systemSettingsJsContent, /buildApiUrl\('\/api\/env\/(?:set|add|del)'\)/);
+    // 401 时给出统一提示且不再回落 add 接口
+    assert.match(systemSettingsJsContent, /function isAdminAuthError\(status, result\)/);
+    assert.match(systemSettingsJsContent, /alertAdminTokenRequired\(\)/);
+});

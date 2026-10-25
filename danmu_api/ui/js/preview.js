@@ -39,7 +39,7 @@ const previewGroupDefinitions = {
     source: [
         { name: '源选择与合并', keys: ['SOURCE_ORDER', 'MERGE_SOURCE_PAIRS', 'CUSTOM_MERGE_RULES'] },
         { name: '第三方与 VOD 服务', keys: ['OTHER_SERVER', 'CUSTOM_SOURCE_API_URL', 'VOD_SERVERS', 'VOD_RETURN_MODE', 'VOD_REQUEST_TIMEOUT'] },
-        { name: '平台凭证与并发', keys: ['BILIBILI_COOKIE', 'DOUBAN_COOKIE', 'YOUKU_CONCURRENCY'] },
+        { name: '平台凭证与并发', keys: ['BILIBILI_COOKIE', 'DOUBAN_COOKIE', 'YOUKU_CONCURRENCY', 'TENCENT_CONCURRENCY', 'IQIYI_CONCURRENCY'] },
         { name: 'NipaPlay 中转弹弹play服务端', keys: ['DANDANPLAY_ACCOUNT', 'DANDANPLAY_PASSWORD'] }
     ],
     match: [
