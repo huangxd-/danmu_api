@@ -11,7 +11,7 @@ import {
 } from "../utils/cache-util.js";
 import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
-import { resolveOffset, resolveOffsetRule, applyOffset, stripLinkOffset } from "../utils/offset-util.js";
+import { resolveOffsetRule, applyOffset, stripLinkOffset, offsetDuration } from "../utils/offset-util.js";
 import { filterMappingQualifierCandidates, filterMappingTargetCandidates, resolveAutoMatchMapping } from "../utils/auto-match-mapping-util.js";
 import { 
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeTitleForMatch,
@@ -162,25 +162,49 @@ async function resolveMergedDuration(url) {
   if (!url) return 0;
 
   try {
-    // 单链接直接返回其时长
+    // 单链接：时长按链接偏移换算到偏移后的时间轴末端
     if (!url.includes(MERGE_DELIMITER)) {
-      return await resolveUrlDuration(url);
+      const meta = stripLinkOffset(url);
+      const sourceDuration = await resolveUrlDuration(meta.cleanUrl);
+      return offsetDuration(sourceDuration, meta.offset, meta.percent);
     }
 
     // 合并链接的时长取各子链接偏移后时间轴末端的最大值，而非各子链接时长的简单取大
     const linkMetas = extractMergedUrls(url).map(stripLinkOffset);
     const durations = await Promise.all(linkMetas.map((meta) => resolveUrlDuration(meta.cleanUrl)));
-    // 复用 applyOffset 的偏移语义计算各子链接末端，确保返回的合并时长与弹幕实际落点完全一致
+    // 复用 offsetDuration 的端点语义计算各子链接末端，确保返回的合并时长与弹幕实际落点完全一致
     return linkMetas.reduce((maxEnd, meta, index) => {
-      const sourceDuration = durations[index];
-      if (!(sourceDuration > 0)) return maxEnd;
-      const end = applyOffset([{ t: sourceDuration }], meta.offset, { usePercent: meta.percent, videoDuration: sourceDuration })[0].t;
+      const end = offsetDuration(durations[index], meta.offset, meta.percent);
       return end > maxEnd ? end : maxEnd;
     }, 0);
   } catch (error) {
     log('warn', `[system] [duration] 获取时长失败: ${error.message}`);
     return 0;
   }
+}
+
+/**
+ * 解析条目对应的偏移规则
+ * @param {string} animeTitle 条目标题
+ * @param {string} episodeTitle 集标题
+ * @param {number} commentId 弹幕 ID
+ * @param {string} source 来源
+ * @returns {{ctx: Object|null, rule: Object|null, offset: number}} 匹配上下文、命中规则与偏移量
+ */
+function resolveCommentOffsetRule(animeTitle, episodeTitle, commentId, source) {
+  if (!animeTitle || !episodeTitle || !(globals.danmuOffsetRules?.length > 0)) {
+    return { ctx: null, rule: null, offset: 0 };
+  }
+  const { baseTitle, fullTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+  const ctx = {
+    anime: baseTitle,
+    fullTitle,
+    season: `S${String(season || 1).padStart(2, '0')}`,
+    episode: `E${String(episode || findIndexById(commentId) + 1).padStart(2, '0')}`,
+    source
+  };
+  const rule = resolveOffsetRule(globals.danmuOffsetRules, ctx);
+  return { ctx, rule, offset: rule?.offset || 0 };
 }
 
 // 匹配年份函数，优先于季匹配
@@ -2459,25 +2483,25 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   if (globals.danmuOffsetRules?.length > 0 && animeTitle && commentId) {
     const [, , episodeTitle] = findAnimeIdByCommentId(commentId);
     if (episodeTitle) {
-      let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+      let { baseTitle, fullTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
       season ||= 1;
       episode ||= findIndexById(commentId) + 1;
       const seasonStr = `S${season.toString().padStart(2, '0')}`;
       const episodeStr = `E${episode.toString().padStart(2, '0')}`;
       for (let idx = 0; idx < results.length; idx++) {
         const list = results[idx];
+        const sourceName = sourceNames[idx];
         const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
           anime: baseTitle,
+          fullTitle,
           season: seasonStr,
           episode: episodeStr,
-          source: sourceNames[idx]
+          source: sourceName
         });
         const offset = offsetRule?.offset || 0;
+        const videoDuration = offset !== 0 && offsetRule?.usePercent ? await resolveUrlDuration(realIds[idx]) : 0;
+        log("info", `[merge] [offset] [${sourceName}] ${fullTitle || baseTitle} ${offsetRule ? `命中偏移规则: ${offsetRule.raw}` : '未命中偏移规则'}`);
         if (offset !== 0) {
-          const targetUrl = realIds[idx];
-          const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(targetUrl) : 0;
-          const offsetMode = offsetRule?.usePercent ? '%' : 's';
-          log("info", `[merge] 应用偏移 ${offset}${offsetMode} -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
           results[idx] = applyOffset(list, offset, {
             usePercent: offsetRule?.usePercent,
             videoDuration
@@ -2547,9 +2571,15 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   const cacheKey = resolveCommentCacheKey(url);
   const cachedComments = getCommentCache(cacheKey);
   if (cachedComments !== null) {
+    let videoDuration = shouldAttachDuration ? await resolveMergedDuration(url) : null;
+    if (shouldAttachDuration) {
+      const [, cachedSource, cachedEpisodeTitle] = findAnimeIdByCommentId(commentId);
+      const { rule, offset } = resolveCommentOffsetRule(animeTitle, cachedEpisodeTitle, commentId, cachedSource);
+      videoDuration = offsetDuration(videoDuration, offset, rule?.usePercent === true);
+    }
     const responseData = buildDanmuResponse(
       { count: cachedComments.length, comments: cachedComments },
-      shouldAttachDuration ? await resolveMergedDuration(url) : null
+      videoDuration
     );
     return formatDanmuResponse(responseData, queryFormat);
   }
@@ -2701,23 +2731,24 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   }
 
   // 应用弹幕时间偏移（合并源已在 fetchMergedComments 中按来源分别应用）
-  if (animeTitle && episodeTitle && globals.danmuOffsetRules?.length > 0 && !(url && url.includes(MERGE_DELIMITER))) {
-    let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
-    season ||= 1;
-    episode ||= findIndexById(commentId) + 1;
-    const seasonStr = `S${season.toString().padStart(2, '0')}`;
-    const episodeStr = `E${episode.toString().padStart(2, '0')}`;
-    const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
-      anime: baseTitle, season: seasonStr, episode: episodeStr, source
-    });
-    const offset = offsetRule?.offset || 0;
-    if (offset !== 0) {
-      const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(url) : 0;
-      log("info", `[system] [LogVar-API] Applying danmu offset: ${offset}${offsetRule?.usePercent ? '%' : 's'} for ${baseTitle}/${seasonStr}/${episodeStr}${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
-      danmus = applyOffset(danmus, offset, {
-        usePercent: offsetRule?.usePercent,
-        videoDuration
-      });
+  let appliedRuleOffset = 0;
+  let appliedRulePercent = false;
+  if (animeTitle && episodeTitle && !(url && url.includes(MERGE_DELIMITER))) {
+    const { ctx, rule, offset } = resolveCommentOffsetRule(animeTitle, episodeTitle, commentId, source);
+    if (ctx) {
+      // 无链接偏移时，请求已解析的时长与原始片长一致，直接复用，避免重复拉取分片列表
+      const videoDuration = offset !== 0 && rule?.usePercent
+        ? (singleUrlOffset === 0 && durationPromise ? await durationPromise : await resolveUrlDuration(cleanUrl))
+        : 0;
+      log("info", `[system] [offset] ${ctx.fullTitle || ctx.anime} ${rule ? `命中偏移规则: ${rule.raw}` : '未命中偏移规则'}`);
+      if (offset !== 0) {
+        danmus = applyOffset(danmus, offset, {
+          usePercent: rule?.usePercent,
+          videoDuration
+        });
+        appliedRuleOffset = offset;
+        appliedRulePercent = rule?.usePercent === true;
+      }
     }
   }
 
@@ -2730,9 +2761,13 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     }
   }
 
+  let responseDuration = durationPromise ? await durationPromise : null;
+  if (responseDuration !== null) {
+    responseDuration = offsetDuration(responseDuration, appliedRuleOffset, appliedRulePercent);
+  }
   const responseData = buildDanmuResponse(
     { count: danmus.length, comments: danmus },
-    durationPromise ? await durationPromise : null
+    responseDuration
   );
   return formatDanmuResponse(responseData, queryFormat);
 }

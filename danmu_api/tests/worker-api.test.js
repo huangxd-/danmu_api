@@ -1,5 +1,5 @@
-// 请求级端点测试：欢迎页与请求体（分块/多字节/multipart）处理
-// 由原单文件测试 worker.test.js 机械拆分而来，用例名与断言未做改动。
+// 请求级端点测试：欢迎页、请求体（分块/多字节/multipart）与弹幕偏移处理
+// 由原单文件测试 worker.test.js 机械拆分而来；弹幕偏移用例覆盖规则/链接偏移的返回时长与匹配日志。
 
 import dotenv from 'dotenv';
 dotenv.config();
@@ -188,6 +188,166 @@ test('GET /api/v2/comment/:id?format=json&duration=true should prefer explicit d
     BilibiliSource.prototype.getComments = originalBilibiliGetComments;
     Globals.episodeIds = [];
     Globals.commentCache = new Map();
+  }
+});
+
+test('GET /api/v2/comment/:id applies rule offset to videoDuration', async () => {
+  Globals.init({});
+  Globals.animes = [];
+  Globals.episodeIds = [];
+  Globals.episodeNum = 10001;
+  Globals.commentCache = new Map();
+  Globals.requestHistory = new Map();
+  Globals.logBuffer.length = 0;
+
+  const env = { DANMU_OFFSET: '钢铁侠2@bilibili%:270' };
+  const originalBilibiliGetComments = BilibiliSource.prototype.getComments;
+  let commentFetches = 0;
+  let segmentFetches = 0;
+  BilibiliSource.prototype.getComments = async function(url, plat, segmentFlag) {
+    if (segmentFlag) {
+      segmentFetches += 1;
+      return new SegmentListResponse({
+        type: 'bilibili1',
+        duration: 7173,
+        segmentList: [{ type: 'bilibili1', segment_start: 0, segment_end: 7173, url: 'mock-bili-1' }]
+      });
+    }
+    commentFetches += 1;
+    return Array.from({ length: 120 }, () => ({ p: '0.36,1,16777215,bilibili1', m: '弹幕' }));
+  };
+
+  try {
+    addAnime({
+      animeId: 5030376, bangumiId: 'ss46058', animeTitle: '钢铁侠2(2010)【电影】from bilibili',
+      type: 'movie', typeDescription: '电影', source: 'bilibili',
+      links: [{ title: '【bilibili1】 原版', url: 'https://www.bilibili.com/bangumi/play/ep777132' }],
+    });
+    const episode = Globals.animes.find(anime => anime.animeId === 5030376).links[0];
+    const request = () => new MockRequest(
+      urlPrefix + '/api/v2/comment/' + episode.id + '?format=json&duration=true',
+      { method: 'GET' }
+    );
+
+    const first = await parseResponse(await handleRequest(request(), env, undefined, 'offset-rule-test'));
+    assert.equal(first.videoDuration, 7443, '规则百分比偏移换算进总时长');
+    assert.equal(segmentFetches, 1, '首次请求只解析一次时长');
+    assert.equal(first.comments[0].p.split(',')[0], '0.37');
+    assert.ok(Globals.logBuffer.some(entry => entry.message === '[system] [offset] 钢铁侠2 命中偏移规则: 钢铁侠2@bilibili%:270'),
+      '命中规则时记录日志');
+
+    const cached = await parseResponse(await handleRequest(request(), env, undefined, 'offset-rule-test'));
+    assert.equal(cached.videoDuration, 7443, '缓存命中时同样返回偏移后的时长');
+    assert.equal(commentFetches, 1, '第二次请求命中缓存，未重新拉取弹幕');
+
+    addAnime({
+      animeId: 5030999, bangumiId: 'ss46059', animeTitle: '钢铁侠3(2013)【电影】from bilibili',
+      type: 'movie', typeDescription: '电影', source: 'bilibili',
+      links: [{ title: '【bilibili1】 原版', url: 'https://www.bilibili.com/bangumi/play/ep888' }],
+    });
+    const otherEpisode = Globals.animes.find(anime => anime.animeId === 5030999).links[0];
+    Globals.logBuffer.length = 0;
+    const miss = await parseResponse(await handleRequest(new MockRequest(
+      urlPrefix + '/api/v2/comment/' + otherEpisode.id + '?format=json&duration=true',
+      { method: 'GET' }
+    ), env, undefined, 'offset-rule-test'));
+    assert.equal(miss.videoDuration, 7173, '未命中规则时时长保持原值');
+    assert.ok(Globals.logBuffer.some(entry => entry.message === '[system] [offset] 钢铁侠3 未命中偏移规则'),
+      '未命中规则时记录日志');
+  } finally {
+    BilibiliSource.prototype.getComments = originalBilibiliGetComments;
+    Globals.init({});
+    Globals.episodeIds = [];
+    Globals.commentCache = new Map();
+    Globals.requestHistory = new Map();
+    Globals.logBuffer.length = 0;
+  }
+});
+
+test('GET /api/v2/comment/:id applies link offset to videoDuration', async () => {
+  Globals.init({});
+  Globals.animes = [];
+  Globals.episodeIds = [];
+  Globals.episodeNum = 10001;
+  Globals.commentCache = new Map();
+  Globals.requestHistory = new Map();
+
+  const originalBilibiliGetComments = BilibiliSource.prototype.getComments;
+  let commentFetches = 0;
+  BilibiliSource.prototype.getComments = async function(url, plat, segmentFlag) {
+    if (segmentFlag) {
+      return new SegmentListResponse({
+        type: 'bilibili1',
+        duration: 1000,
+        segmentList: [{ type: 'bilibili1', segment_start: 0, segment_end: 1000, url: 'mock-bili-1' }]
+      });
+    }
+    commentFetches += 1;
+    return Array.from({ length: 120 }, () => ({ p: '500.0,1,16777215,bilibili1', m: '一半' }));
+  };
+
+  try {
+    const episode = addEpisode('https://www.bilibili.com/bangumi/play/ep_link.html@%100', '【bilibili1】 链接偏移');
+    const request = () => new MockRequest(
+      urlPrefix + '/api/v2/comment/' + episode.id + '?format=json&duration=true',
+      { method: 'GET' }
+    );
+
+    const first = await parseResponse(await handleRequest(request(), undefined, undefined, 'offset-link-test'));
+    assert.equal(first.videoDuration, 1100, '链接百分比偏移换算进总时长');
+    assert.equal(first.comments[0].p.split(',')[0], '600.00');
+
+    const cached = await parseResponse(await handleRequest(request(), undefined, undefined, 'offset-link-test'));
+    assert.equal(cached.videoDuration, 1100, '缓存命中时同样返回偏移后的时长');
+    assert.equal(commentFetches, 1, '第二次请求命中缓存，未重新拉取弹幕');
+  } finally {
+    BilibiliSource.prototype.getComments = originalBilibiliGetComments;
+    Globals.episodeIds = [];
+    Globals.commentCache = new Map();
+    Globals.requestHistory = new Map();
+  }
+});
+
+test('GET /api/v2/comment/:id applies link and rule offsets to videoDuration', async () => {
+  Globals.init({});
+  Globals.animes = [];
+  Globals.episodeIds = [];
+  Globals.episodeNum = 10001;
+  Globals.commentCache = new Map();
+  Globals.requestHistory = new Map();
+
+  const env = { DANMU_OFFSET: '钢铁侠2@bilibili%:270' };
+  const originalBilibiliGetComments = BilibiliSource.prototype.getComments;
+  BilibiliSource.prototype.getComments = async function(url, plat, segmentFlag) {
+    if (segmentFlag) {
+      return new SegmentListResponse({
+        type: 'bilibili1',
+        duration: 7173,
+        segmentList: [{ type: 'bilibili1', segment_start: 0, segment_end: 7173, url: 'mock-bili-1' }]
+      });
+    }
+    return Array.from({ length: 120 }, () => ({ p: '500.0,1,16777215,bilibili1', m: '弹幕' }));
+  };
+
+  try {
+    addAnime({
+      animeId: 5030376, bangumiId: 'ss46058', animeTitle: '钢铁侠2(2010)【电影】from bilibili',
+      type: 'movie', typeDescription: '电影', source: 'bilibili',
+      links: [{ title: '【bilibili1】 原版', url: 'https://www.bilibili.com/bangumi/play/ep777132@%100' }],
+    });
+    const episode = Globals.animes.find(anime => anime.animeId === 5030376).links[0];
+    const body = await parseResponse(await handleRequest(new MockRequest(
+      urlPrefix + '/api/v2/comment/' + episode.id + '?format=json&duration=true',
+      { method: 'GET' }
+    ), env, undefined, 'offset-combined-test'));
+
+    assert.equal(body.videoDuration, 7543, '链接偏移与规则偏移依次叠加进总时长');
+    assert.equal(body.comments[0].p.split(',')[0], '622.58', '规则百分比以原始片长为基准');
+  } finally {
+    BilibiliSource.prototype.getComments = originalBilibiliGetComments;
+    Globals.episodeIds = [];
+    Globals.commentCache = new Map();
+    Globals.requestHistory = new Map();
   }
 });
 

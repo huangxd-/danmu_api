@@ -1,5 +1,5 @@
 // 通用工具：季号标记识别
-// 由原单文件测试 worker.test.js 机械拆分而来，用例名与断言未做改动。
+// 由原单文件测试 worker.test.js 机械拆分而来；季号解析与组合解析用例覆盖剥去年份的完整标题。
 // 追加部分为标题/集数解析、标题匹配与平台顺序的离线回归用例。
 
 import dotenv from 'dotenv';
@@ -37,6 +37,16 @@ test('season extraction recognizes season markers', () => {
 
   // 季号剥离后余下部分作为 baseTitle
   assert.equal(extractSeasonNumberFromAnimeTitle('無職転生Ⅲ ～異世界行ったら本気だす～').baseTitle, '無職転生異世界行ったら本気だす');
+
+  // 完整标题剥去年份后保留季号与片名尾数，供按完整片名参与匹配
+  assert.deepStrictEqual(extractSeasonNumberFromAnimeTitle('钢铁侠2(2010)【电影】from bilibili'), {
+    season: 2, baseTitle: '钢铁侠', fullTitle: '钢铁侠2',
+  });
+  assert.equal(extractSeasonNumberFromAnimeTitle('无职转生 第三季').fullTitle, '无职转生第三季');
+  assert.equal(extractSeasonNumberFromAnimeTitle('咒术回战 S2').fullTitle, '咒术回战S2');
+  assert.equal(extractSeasonNumberFromAnimeTitle('赛马娘2').fullTitle, '赛马娘2');
+  assert.equal(extractSeasonNumberFromAnimeTitle('OVERLORD Ⅳ').fullTitle, 'OVERLORDⅣ');
+  assert.equal(extractSeasonNumberFromAnimeTitle('').fullTitle, null);
 });
 
 // 静默日志级别：仅在断言日志缓冲的用例里临时改成 info
@@ -109,9 +119,9 @@ test('common-util extractAnimeTitle/extractEpisodeTitle/extractAnimeInfo 组合�
   assert.strictEqual(extractEpisodeTitle('【】'), '', '空方括号返回空串');
 
   assert.deepStrictEqual(extractAnimeInfo('剧名 第二季', '【qq】 第3集'),
-    { baseTitle: '剧名', season: 2, episode: 3 });
+    { baseTitle: '剧名', fullTitle: '剧名第二季', season: 2, episode: 3 });
   assert.deepStrictEqual(extractAnimeInfo('剧名(2024)', 'EP12'),
-    { baseTitle: '剧名', season: null, episode: 12 });
+    { baseTitle: '剧名', fullTitle: '剧名', season: null, episode: 12 });
 });
 
 test('common-util getExplicitSeasonNumber 只认显式季标记', () => {
