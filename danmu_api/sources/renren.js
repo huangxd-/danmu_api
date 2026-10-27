@@ -30,6 +30,42 @@ const API_HEALTH = {
   danmu: 'TV'
 };
 
+// 封面 CDN 域名别名：网页版域名对无 Referer 的直连返回 403，其余域名同路径可直接访问
+const COVER_HOST_ALIASES = {
+  'img.bwcgee.cn': 'img.duoduoshipin.vip'
+};
+
+/**
+ * 将封面地址的域名替换为可直接访问的 CDN 域名
+ * @param {string} url 原始封面地址
+ * @returns {string} 规范化后的封面地址
+ */
+export function normalizeCoverUrl(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    const host = COVER_HOST_ALIASES[parsed.hostname];
+    if (!host) return url;
+    parsed.hostname = host;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * 依据详情响应的播出状态判断无分集的原因
+ * @param {Object} data 详情响应的 data 字段
+ * @returns {string} 原因文本
+ */
+export function getUnavailableReason(data) {
+  const dramaInfo = data?.dramaInfo || {};
+  const playStatus = String(dramaInfo.playStatus || '');
+  if (dramaInfo.serialStatus === 'NOT_BROADCAST' || playStatus.includes('即将开播')) return '尚未开播';
+  if (!dramaInfo.serialStatus && !playStatus) return '尚未上线';
+  return '无播放资源';
+}
+
 /**
  * 人人视频弹幕源
  * 集成 TV, Mac, Win 端 API 协议，保留网页版接口作为降级容灾策略。
@@ -420,7 +456,7 @@ export default class RenrenSource extends BaseSource {
           type: item.classify || "Renren",
           season: null,
           year: item.year,
-          imageUrl: item.cover,
+          imageUrl: normalizeCoverUrl(item.cover),
           episodeCount: null, // 列表页不返回总集数
           currentEpisodeIndex: null,
         };
@@ -472,7 +508,7 @@ export default class RenrenSource extends BaseSource {
           type: item.classify || item.cat || "Renren",
           season: null,
           year: item.year || null,
-          imageUrl: item.cover || item.cover3 || "",
+          imageUrl: normalizeCoverUrl(item.cover || item.cover3 || ""),
           episodeCount: null,
           currentEpisodeIndex: null,
         };
@@ -530,7 +566,7 @@ export default class RenrenSource extends BaseSource {
           type: item.classify || item.cat || "Renren",
           season: null,
           year: item.year || null,
-          imageUrl: item.cover || item.coverUrl,
+          imageUrl: normalizeCoverUrl(item.cover || item.coverUrl),
           episodeCount: null,
           currentEpisodeIndex: null,
         };
@@ -611,7 +647,7 @@ export default class RenrenSource extends BaseSource {
           type: item.classify || "Renren",
           season: null,
           year: item.year,
-          imageUrl: item.cover,
+          imageUrl: normalizeCoverUrl(item.cover),
           episodeCount: item.episodeTotal,
           currentEpisodeIndex: null,
         };
@@ -771,9 +807,10 @@ export default class RenrenSource extends BaseSource {
    * 获取剧集详情 (TV API)
    * @param {string} dramaId 剧集ID
    * @param {string} episodeSid 单集ID (可选)
+   * @param {Object} diagnostics 无分集原因收集对象 (可选)
    * @returns {Object} 详情数据对象
    */
-  async getAppDramaDetail(dramaId, episodeSid = "", signal) {
+  async getAppDramaDetail(dramaId, episodeSid = "", diagnostics = null, signal) {
     try {
       const timestamp = Date.now();
       const path = "/qwtv/drama/details";
@@ -821,6 +858,9 @@ export default class RenrenSource extends BaseSource {
 
       // 4. 检测分集数据完整性，过滤“即将开播”
       if (!resData.data || !resData.data.episodeList || resData.data.episodeList.length === 0) {
+        if (diagnostics && resData.data && !diagnostics.reason) {
+          diagnostics.reason = getUnavailableReason(resData.data);
+        }
         if (resData.data?.dramaInfo?.playStatus?.includes("即将开播")) {
             log("info", `[renren] TV详情接口提示'即将开播' (ID=${dramaId})，视为空结果`);
             if (!resData.data.episodeList) resData.data.episodeList = [];
@@ -844,9 +884,10 @@ export default class RenrenSource extends BaseSource {
    * @param {string} targetHost 目标网关域名 (Mac 或 Win)
    * @param {string} dramaId 剧集ID
    * @param {string} episodeSid 单集ID (可选)
+   * @param {Object} diagnostics 无分集原因收集对象 (可选)
    * @returns {Object} 详情数据对象
    */
-  async getGatewayDramaDetail(targetHost, dramaId, episodeSid = "", signal) {
+  async getGatewayDramaDetail(targetHost, dramaId, episodeSid = "", diagnostics = null, signal) {
     try {
       const timestamp = Date.now();
       // 使用 TV 端的接口路径，避开对目标端独立签名的依赖
@@ -897,6 +938,9 @@ export default class RenrenSource extends BaseSource {
 
       // 4. 检测分集数据完整性，过滤“即将开播”
       if (!resData.data || !resData.data.episodeList || resData.data.episodeList.length === 0) {
+        if (diagnostics && resData.data && !diagnostics.reason) {
+          diagnostics.reason = getUnavailableReason(resData.data);
+        }
         if (resData.data?.dramaInfo?.playStatus?.includes("即将开播")) {
             log("info", `[renren] 详情接口提示'即将开播' (${targetHost}) (ID=${dramaId})，视为空结果`);
             if (!resData.data.episodeList) resData.data.episodeList = [];
@@ -917,7 +961,7 @@ export default class RenrenSource extends BaseSource {
   /**
    * 详情获取 (网页端降级)
    */
-  async getWebDramaDetailFallback(dramaId, signal) {
+  async getWebDramaDetailFallback(dramaId, diagnostics = null, signal) {
     const url = `https://${this.API_CONFIG.WEB_HOST}/m-station/drama/page`;
     const params = { hsdrOpen: 0, isAgeLimit: 0, dramaId: String(dramaId), hevcOpen: 1 };
 
@@ -930,6 +974,9 @@ export default class RenrenSource extends BaseSource {
          log("info", `[renren] 网页版详情获取与分集解析成功: ID=${dramaId}, 包含集数=${decoded.data.episodeList.length}`);
          return decoded.data;
       }
+      if (diagnostics && decoded?.data && !diagnostics.reason) {
+        diagnostics.reason = getUnavailableReason(decoded.data);
+      }
       return null;
     } catch (e) {
       log("info", `[renren] 网页版详情请求失败: ${e.message}`);
@@ -937,17 +984,17 @@ export default class RenrenSource extends BaseSource {
     }
   }
 
-  async getDetail(id, episodeSid = "") {
+  async getDetail(id, episodeSid = "", diagnostics = null) {
     const isCloud = globals.deployPlatform && globals.deployPlatform !== 'node';
-    if (isCloud) return this._getDetailCloud(id, episodeSid);
-    return this._getDetailLocal(id, episodeSid);
+    if (isCloud) return this._getDetailCloud(id, episodeSid, diagnostics);
+    return this._getDetailLocal(id, episodeSid, diagnostics);
   }
 
   /**
    * 云环境详情：根据搜索阶段连通性跳过已知超时的 tier。
    * 优先级 WEB/TV > MAC/WIN。搜索阶段已验证工作的 tier 优先使用。
    */
-  async _getDetailCloud(id, episodeSid) {
+  async _getDetailCloud(id, episodeSid, diagnostics = null) {
     const did = String(id), sid = String(episodeSid);
     const conn = this._searchConnectivity || {};
     log("info", `[renren] 详情读取连通性: ${JSON.stringify(conn)}`, true);
@@ -960,31 +1007,31 @@ export default class RenrenSource extends BaseSource {
       if (isKnownWorking('TV') && !isKnownWorking('WEB')) {
         log("info", `[renren] 详情策略: TV已知连通, WEB未知, TV优先`, true);
         // TV 在搜索阶段已连通，WEB 未被验证 → 优先 TV，失败时回退 WEB
-        result = await this.getAppDramaDetail(did, sid).catch(() => null);
+        result = await this.getAppDramaDetail(did, sid, diagnostics).catch(() => null);
         if (result) { API_HEALTH.detail = 'TV'; return result; }
         if (conn.WEB !== 'timeout') {
-          result = await this.getWebDramaDetailFallback(did).catch(() => null);
+          result = await this.getWebDramaDetailFallback(did, diagnostics).catch(() => null);
           if (result) { API_HEALTH.detail = 'WEB'; return result; }
         }
       } else {
         log("info", `[renren] 详情策略: 正常并行 WEBTV={${!isDead('WEB')}/${isKnownWorking('WEB')}} TV={${!isDead('TV')}/${isKnownWorking('TV')}}`, true);
         const cancel = new AbortController();
         const s = cancel.signal;
-        const webP = this.getWebDramaDetailFallback(did, s).then(v => { if (v) cancel.abort(); return v; });
-        const tvP = this.getAppDramaDetail(did, sid, s);
+        const webP = this.getWebDramaDetailFallback(did, diagnostics, s).then(v => { if (v) cancel.abort(); return v; });
+        const tvP = this.getAppDramaDetail(did, sid, diagnostics, s);
         try { result = await webP; } catch (_) {}
         if (result) { API_HEALTH.detail = 'WEB'; return result; }
         try { result = await tvP; } catch (_) {}
         if (result) { API_HEALTH.detail = 'TV'; return result; }
       }
     } else if (!isDead('WEB')) {
-      result = await this.getWebDramaDetailFallback(did).catch(() => null);
+      result = await this.getWebDramaDetailFallback(did, diagnostics).catch(() => null);
       if (result) { API_HEALTH.detail = 'WEB'; return result; }
     } else if (!isDead('TV')) {
-      result = await this.getAppDramaDetail(did, sid).catch(() => null);
+      result = await this.getAppDramaDetail(did, sid, diagnostics).catch(() => null);
       if (result) { API_HEALTH.detail = 'TV'; return result; }
       if (!isDead('WEB')) {
-        result = await this.getWebDramaDetailFallback(did).catch(() => null);
+        result = await this.getWebDramaDetailFallback(did, diagnostics).catch(() => null);
         if (result) { API_HEALTH.detail = 'WEB'; return result; }
       }
     }
@@ -994,27 +1041,27 @@ export default class RenrenSource extends BaseSource {
     // Phase 2: MAC(主) + WIN(次)
     if (!isDead('MAC') && !isDead('WIN')) {
       if (isKnownWorking('WIN') && !isKnownWorking('MAC')) {
-        result = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid).catch(() => null);
+        result = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid, diagnostics).catch(() => null);
         if (result) { API_HEALTH.detail = 'WIN'; return result; }
         if (conn.MAC !== 'timeout') {
-          result = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid).catch(() => null);
+          result = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid, diagnostics).catch(() => null);
           if (result) { API_HEALTH.detail = 'MAC'; return result; }
         }
       } else {
         const cancel = new AbortController();
         const s = cancel.signal;
-        const macP = this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid, s).then(v => { if (v) cancel.abort(); return v; });
-        const winP = this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid, s);
+        const macP = this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid, diagnostics, s).then(v => { if (v) cancel.abort(); return v; });
+        const winP = this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid, diagnostics, s);
         try { result = await macP; } catch (_) {}
         if (result) { API_HEALTH.detail = 'MAC'; return result; }
         try { result = await winP; } catch (_) {}
         if (result) { API_HEALTH.detail = 'WIN'; return result; }
       }
     } else if (!isDead('MAC')) {
-      result = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid).catch(() => null);
+      result = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, did, sid, diagnostics).catch(() => null);
       if (result) { API_HEALTH.detail = 'MAC'; return result; }
     } else if (!isDead('WIN')) {
-      result = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid).catch(() => null);
+      result = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, did, sid, diagnostics).catch(() => null);
       if (result) { API_HEALTH.detail = 'WIN'; return result; }
     }
 
@@ -1022,7 +1069,7 @@ export default class RenrenSource extends BaseSource {
     return null;
   }
 
-  async _getDetailLocal(id, episodeSid) {
+  async _getDetailLocal(id, episodeSid, diagnostics = null) {
     let detail = null;
     const tiers = ['WEB', 'TV', 'MAC', 'WIN'];
 
@@ -1036,13 +1083,13 @@ export default class RenrenSource extends BaseSource {
 
         try {
             if (tier === 'TV') {
-                detail = await this.getAppDramaDetail(String(id), String(episodeSid));
+                detail = await this.getAppDramaDetail(String(id), String(episodeSid), diagnostics);
             } else if (tier === 'MAC') {
-                detail = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, String(id), String(episodeSid));
+                detail = await this.getGatewayDramaDetail(this.API_CONFIG.MAC_HOST, String(id), String(episodeSid), diagnostics);
             } else if (tier === 'WIN') {
-                detail = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, String(id), String(episodeSid));
+                detail = await this.getGatewayDramaDetail(this.API_CONFIG.WIN_HOST, String(id), String(episodeSid), diagnostics);
             } else if (tier === 'WEB') {
-                detail = await this.getWebDramaDetailFallback(String(id));
+                detail = await this.getWebDramaDetailFallback(String(id), diagnostics);
             }
 
             if (detail) {
@@ -1067,10 +1114,12 @@ export default class RenrenSource extends BaseSource {
   }
 
   async getEpisodes(id) {
-    const detail = await this.getDetail(id);
+    const diagnostics = {};
+    const detail = await this.getDetail(id, "", diagnostics);
 
     if (!detail) {
-      log("info", `[renren] 获取分集失败: 详情对象为空 ID=${id}`);
+      const reasonText = diagnostics.reason ? ` 接口返回：“${diagnostics.reason}”` : "";
+      log("info", `[renren] 获取分集失败: 详情对象为空 ID=${id}${reasonText}`);
       return [];
     }
 
@@ -1184,7 +1233,7 @@ export default class RenrenSource extends BaseSource {
     // 打印过滤合并后的结果日志
     const tierNameMap = { 'TV': 'TV', 'MAC': 'Mac', 'WIN': 'Win', 'WEB': '网页' };
     const currentTierName = tierNameMap[API_HEALTH.search] || '未知';
-    log("info", `[renren] ${currentTierName}端搜索提取结果数量: ${sourceAnimes.length} 有效结果数量：${filteredAnimes.length}`);
+    log("info", `[renren] ${currentTierName}端搜索提取结果数量: ${sourceAnimes.length} 过滤无关结果后数量：${filteredAnimes.length}`);
 
     // [标记开始] 进入批量处理模式
     // 注意：此处不再输出冗余日志，也不扣费。开启静默模式。
