@@ -39,6 +39,13 @@ test('season extraction recognizes season markers', () => {
   assert.equal(extractSeasonNumberFromAnimeTitle('無職転生Ⅲ ～異世界行ったら本気だす～').baseTitle, '無職転生異世界行ったら本気だす');
 });
 
+test('common-util extractSeasonNumberFromAnimeTitle 尾部全零数字不识别为季号', () => {
+  // 尾部「00」属于作品名的一部分（如「机动战士高达00」），parseInt 为 0 时不视为季号且保留完整标题
+  assert.deepStrictEqual(extractSeasonNumberFromAnimeTitle('机动战士高达00'), { season: null, baseTitle: '机动战士高达00' });
+  // 尾部多位数字（如「0079」）不构成 1-2 位季号，标题同样保持完整
+  assert.strictEqual(extractSeasonNumberFromAnimeTitle('机动战士高达0079').season, null);
+});
+
 // 静默日志级别：仅在断言日志缓冲的用例里临时改成 info
 const quietEnv = { LOG_LEVEL: 'error', TITLE_NOISE_FILTER: '', STRICT_TITLE_MATCH: 'false' };
 
