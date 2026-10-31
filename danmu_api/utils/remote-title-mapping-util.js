@@ -345,13 +345,11 @@ export async function ensureRemoteTitleMapping() {
   mergeRemoteMappingsIntoTitleTable();
 
   // Long-running runtimes can reuse a disk snapshot and maintain the daily
-  // refresh timer. Serverless runtimes must not add a remote fetch to cold
-  // start latency; they load explicitly through the admin refresh endpoint.
+  // refresh timer. Serverless runtimes explicitly opted into the remote table,
+  // so their first matching request loads it into the current warm instance.
   if (isLongRunningRuntime()) {
     await loadDiskRemoteMapping(url);
     scheduleRemoteRefresh(url);
-  } else {
-    return;
   }
 
   if (remoteState.mappings.size) return;

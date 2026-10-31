@@ -1237,7 +1237,7 @@ test('远程映射表：Node 手动刷新下载、生效并写入磁盘缓存', 
   }
 });
 
-test('远程映射表：Serverless 默认不等待下载，手动刷新后复用实例内存', async () => {
+test('远程映射表：Serverless 冷启动同步下载一次并复用实例内存', async () => {
   const sourceUrl = 'https://maps.example.test/serverless.txt';
   Globals.deployPlatform = 'vercel';
   Globals.init({ TITLE_MAPPING_TABLE_URL: sourceUrl });
@@ -1247,12 +1247,7 @@ test('远程映射表：Serverless 默认不等待下载，手动刷新后复用
     requests++;
     return new Response('冷启动剧->远程映射剧', { status: 200 });
   }, async () => {
-    await ensureRemoteTitleMapping();
-    assert.strictEqual(requests, 0, 'Serverless 冷启动不应主动下载');
-    assert.strictEqual(Globals.envs.titleMappingTable.has('冷启动剧'), false);
-
-    const refreshed = await refreshRemoteTitleMappingNow();
-    assert.deepStrictEqual(refreshed, { success: true, count: 1, status: 200 });
+    await Promise.all([ensureRemoteTitleMapping(), ensureRemoteTitleMapping()]);
     assert.strictEqual(requests, 1);
     assert.strictEqual(Globals.envs.titleMappingTable.get('冷启动剧'), '远程映射剧');
 

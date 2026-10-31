@@ -1178,7 +1178,7 @@ function renderValueInput(item) {
             container.innerHTML = \`
                 <label>变量值</label>
                 <input type="url" id="text-value" placeholder="https://example.com/title-mapping.txt" value="\${escapeHtml(value || '')}">
-                <div class="form-help">修改地址后请先保存；再次打开本页面即可手动下载并立即应用，失败时保留旧缓存。</div>
+                <div class="form-help">修改地址后请先保存。Serverless 冷启动后的首次标题匹配会同步下载远端映射，最长约等待 5 秒；配置本地址即表示接受该延迟。也可点击下方按钮立即更新。</div>
                 <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="refreshRemoteMapping(this)">立即更新</button>
                     <span class="remote-refresh-status text-gray font-size-12" aria-live="polite"></span>
