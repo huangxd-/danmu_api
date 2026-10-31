@@ -82,6 +82,34 @@ test('aiyifan App chain keeps years and accepts legacy segment links', async t =
   });
 });
 
+test('aiyifan 年份补全与网页搜索日志使用源标签', async t => {
+  const captured = [];
+  const original = { info: console.info, warn: console.warn };
+  const originalLevel = Globals.envs.logLevel;
+  for (const level of ['info', 'warn']) console[level] = (...args) => { captured.push(args.join(' ')); };
+  Globals.envs.logLevel = 'info';
+  t.after(() => {
+    for (const level of ['info', 'warn']) console[level] = original[level];
+    Globals.envs.logLevel = originalLevel;
+  });
+
+  const provider = new AiyifanAppSigningProvider();
+  provider.signedWebGetJson = async () => ({ data: { data: { info: [] } } });
+  await provider.lookupYears('标签测试');
+  assert.deepEqual(captured, ['[Aiyifan] 年份查询命中 0 条: 标签测试']);
+
+  // 省略 logPrefix 的网页搜索调用同样落到源标签
+  captured.length = 0;
+  const bare = new AiyifanAppSigningProvider();
+  bare.getSigningConfig = async () => ({ publicKey: 'test-public', privateKey: 'test-private' });
+  await withMockFetch(
+    async (url) => mockJsonResponse({ ret: 500, msg: '签名错误' }, url),
+    async () => { await assert.rejects(() => bare.signedWebGetJson(bare.webSearchApi, { tags: 'x' })); }
+  );
+  const webFailureTags = captured.filter(line => line.includes('网页搜索失败')).map(line => line.split(' ')[0]);
+  assert.deepEqual(webFailureTags, ['[Aiyifan]']);
+});
+
 test('aiyifan 配置、搜索、选集、详情、弹幕及年份请求复用统一代理入口', async t => {
   const original = Globals.envs;
   Globals.envs = { proxyUrl: 'http://127.0.0.1:7890,@https://universal.example,aiyifan@https://proxy.example/aiyifan' };

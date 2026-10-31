@@ -1,4 +1,4 @@
-// 系统接口：缓存清理
+// 系统接口：缓存清理与日志文本输出
 // 由原单文件测试 worker.test.js 机械拆分而来，用例名与断言未做改动。
 
 import dotenv from 'dotenv';
@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { handleClearCache } from '../../apis/system-api.js';
+import { handleClearCache, handleLogs } from '../../apis/system-api.js';
 import { Globals } from '../../configs/globals.js';
 import { addFavorite, resolveFavoriteForKeyword } from '../../utils/favorite-util.js';
 import { parseResponse } from '../helpers/context.js';
@@ -177,3 +177,32 @@ test('handleClearCache clears only the selected cache items', async t => {
       assert.equal(Globals.commentCache.size, 1);
     });
   });
+
+test('handleLogs renders each log entry as "[timestamp] level: message"', async t => {
+  const saved = Globals.logBuffer;
+  t.after(() => { Globals.logBuffer = saved; });
+  Globals.logBuffer = [
+    { timestamp: '2026-10-31T08:00:00.000+08:00', level: 'info', message: '[system] [tmdb] 中文标题' },
+    { timestamp: '2026-10-31T08:00:01.000+08:00', level: 'error', message: '[tencent] 请求失败' },
+  ];
+  const response = handleLogs();
+  assert.equal(await response.text(), [
+    '[2026-10-31T08:00:00.000+08:00] info: [system] [tmdb] 中文标题',
+    '[2026-10-31T08:00:01.000+08:00] error: [tencent] 请求失败',
+  ].join('\n'));
+});
+
+test('handleLogs keeps newlines and indentation of multi-line messages', async t => {
+  const saved = Globals.logBuffer;
+  t.after(() => { Globals.logBuffer = saved; });
+  Globals.logBuffer = [{
+    timestamp: '2026-10-31T08:00:00.000+08:00',
+    level: 'info',
+    message: '[merge][Phase 2: Standard] [tencent] 映射详情:\n   [已路由映射] 第1集 <-> 第1集',
+  }];
+  const response = handleLogs();
+  assert.deepEqual((await response.text()).split('\n'), [
+    '[2026-10-31T08:00:00.000+08:00] info: [merge][Phase 2: Standard] [tencent] 映射详情:',
+    '   [已路由映射] 第1集 <-> 第1集',
+  ]);
+});

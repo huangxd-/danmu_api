@@ -40,7 +40,7 @@ function toFavoriteMap(value) {
 // 从持久化快照恢复收藏。serverless 环境可不调用，继续使用实例内存。
 export function loadFavorites(value = {}) {
   globals.favoriteCache = toFavoriteMap(value);
-  log('info', `[favorite] Restored ${globals.favoriteCache.size} favorite entries`);
+  log('info', `[system] [favorite] Restored ${globals.favoriteCache.size} favorite entries`);
   return globals.favoriteCache;
 }
 
@@ -114,7 +114,7 @@ export function addFavorite(keyword, results, details = []) {
   const now = Date.now();
   const entry = normalizeEntry({ results, details, timestamp: now, lastRefreshAt: now });
   globals.favoriteCache.set(key, entry);
-  log('info', `[favorite] Added favorite "${key}" with ${entry.results.length} results`);
+  log('info', `[system] [favorite] Added favorite "${key}" with ${entry.results.length} results`);
   return entry;
 }
 
@@ -123,7 +123,7 @@ export function removeFavorite(keyword) {
   if (!resolved) return false;
 
   globals.favoriteCache.delete(resolved.keyword);
-  log('info', `[favorite] Removed favorite "${resolved.keyword}"`);
+  log('info', `[system] [favorite] Removed favorite "${resolved.keyword}"`);
   return true;
 }
 
@@ -143,7 +143,7 @@ export function refreshFavorite(keyword, results, details = []) {
   });
   if (!(globals.favoriteCache instanceof Map)) globals.favoriteCache = new Map();
   globals.favoriteCache.set(key, entry);
-  log('info', `[favorite] Refreshed favorite "${key}" with ${entry.results.length} results`);
+  log('info', `[system] [favorite] Refreshed favorite "${key}" with ${entry.results.length} results`);
   return entry;
 }
 

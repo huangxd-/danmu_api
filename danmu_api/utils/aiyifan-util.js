@@ -278,6 +278,7 @@ export class AiyifanAppSigningProvider {
   }
 
   async signedWebGetJson(api, params, logPrefix, forceRefresh) {
+    logPrefix = logPrefix || "Aiyifan";
     const signingConfig = await this.getSigningConfig(forceRefresh);
     const requestUrl = this.proxyUrlBuilder(api + "?" + this.buildWebSignedQuery(params || {}, signingConfig));
 

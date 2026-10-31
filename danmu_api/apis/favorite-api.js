@@ -122,7 +122,7 @@ export async function handleFavoriteAdd(req, url) {
       isFavorite: true
     });
   } catch (error) {
-    log('error', `[favorite] add failed: ${error.message}`);
+    log('error', `[system] [favorite] add failed: ${error.message}`);
     return jsonResponse({ success: false, message: `收藏失败: ${error.message}` }, 500);
   }
 }
@@ -171,7 +171,7 @@ export async function handleFavoriteSchedule(req) {
       refreshSchedule: created.value
     });
   } catch (error) {
-    log('error', `[favorite] schedule failed: ${error.message}`);
+    log('error', `[system] [favorite] schedule failed: ${error.message}`);
     return jsonResponse({ success: false, message: `设置定时刷新失败: ${error.message}` }, 500);
   }
 }
@@ -196,7 +196,7 @@ export async function handleFavoriteRemove(req) {
     await persistFavorites();
     return jsonResponse({ success: true, message: '已删除收藏' });
   } catch (error) {
-    log('error', `[favorite] remove failed: ${error.message}`);
+    log('error', `[system] [favorite] remove failed: ${error.message}`);
     return jsonResponse({ success: false, message: `删除收藏失败: ${error.message}` }, 500);
   }
 }
@@ -284,7 +284,7 @@ export async function handleFavoriteRefresh(req, url) {
     }
     return jsonResponse({ success: true, message: `已刷新收藏「${result.animeTitle}」` });
   } catch (error) {
-    log('error', `[favorite] refresh failed: ${error.message}`);
+    log('error', `[system] [favorite] refresh failed: ${error.message}`);
     return jsonResponse({ success: false, message: `刷新收藏失败: ${error.message}` }, error.status || 500);
   }
 }

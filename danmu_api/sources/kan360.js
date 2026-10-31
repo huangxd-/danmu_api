@@ -136,7 +136,7 @@ export default class Kan360Source extends BaseSource {
       }
       return episodes;
     } catch (e) {
-      log('error', `getEpisodesV1 error: ${e && e.message ? e.message : e}`);
+      log('error', `[360kan] getEpisodesV1 error: ${e && e.message ? e.message : e}`);
       return [];
     }
   }

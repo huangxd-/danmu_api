@@ -234,7 +234,7 @@ export default class AiyifanSource extends BaseSource {
     // 旧网页搜索接口补真实年份；该接口取不到时保留未知年份。
     // lookupYears 内部已兜底，不会 reject。
     const yearPromise = this.waitYearMap(
-      this.signingProvider.lookupYears(keyword, "年份"), AIYIFAN_WEB_YEAR_MAX_WAIT_MS
+      this.signingProvider.lookupYears(keyword), AIYIFAN_WEB_YEAR_MAX_WAIT_MS
     );
 
     // Step 1: 搜索，拿到剧目列表
