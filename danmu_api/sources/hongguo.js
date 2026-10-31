@@ -97,6 +97,38 @@ function parseWebSearchResults(html) {
   try { return JSON.parse(html.slice(i, end + 1)); } catch { return []; }
 }
 
+// 归一化网页搜索接口（/api/search/result/）返回的单条结果
+function normalizeWebSearchItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const data = item.video_data || {};
+  const seriesId = String(data.series_id || item.keyword || "");
+  const name = String(data.series_name || data.series_title || item.name || "").trim();
+  const episodeCount = Number(data.episode_cnt) || 0;
+  if (!seriesId || !name || episodeCount <= 0) return null;
+  return {
+    seriesId,
+    name,
+    episodeCount,
+    score: "",
+    year: extractYearFromTimestamp(data.create_time),
+    imageUrl: extractImageUrl(data.series_cover),
+  };
+}
+
+// 解析网页搜索接口（/api/search/result/）的响应，兼容对象与字符串（HTML/文本）两种入参
+function parseWebSearchApi(payload) {
+  let result = payload;
+  if (typeof result === "string") {
+    const text = result.trim();
+    if (!text) return [];
+    try { result = JSON.parse(text); } catch { return []; }
+  }
+  const list = result && Array.isArray(result.searchList)
+    ? result.searchList
+    : (Array.isArray(result) ? result : []);
+  return list.map(normalizeWebSearchItem).filter(Boolean);
+}
+
 function parseWebSeriesDetail(html) {
   const marker = '"seriesDetail":';
   const start = html.indexOf(marker);
@@ -836,13 +868,30 @@ export default class HongguoSource extends BaseSource {
 
   async search(keyword) {
     try {
-      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { accept: "text/html" }, timeout: 30000 });
-      const items = parseWebSearchResults(typeof response.data === "string" ? response.data : "");
-      if (items.length) return items.map((item) => {
-        const data = item.video_data || {};
-        return { seriesId: String(data.series_id || item.keyword || ""), name: String(data.series_name || data.series_title || item.name || ""), episodeCount: Number(data.episode_cnt) || 0, score: "", year: extractYearFromTimestamp(data.create_time), imageUrl: extractImageUrl(data.series_cover) };
-      }).filter((item) => item.seriesId && item.name && item.episodeCount > 0).slice(0, MAX_SEARCH_ITEMS);
+      // 官网已改为客户端渲染，搜索页 HTML 不再内嵌 searchList，需直接调用其搜索接口
+      const results = [];
+      const seen = new Set();
+      for (let page = 1; page <= 3 && results.length < MAX_SEARCH_ITEMS; page++) {
+        const url = `${WEB_ORIGIN}/api/search/result/?query=${encodeURIComponent(keyword)}&page=${page}`;
+        const response = await httpGet(url, { headers: { accept: "application/json" }, timeout: 30000 });
+        const items = parseWebSearchApi(response.data);
+        for (const item of items) {
+          if (seen.has(item.seriesId)) continue;
+          seen.add(item.seriesId);
+          results.push(item);
+          if (results.length >= MAX_SEARCH_ITEMS) break;
+        }
+        if (items.length === 0) break;
+      }
+      if (results.length) return results;
     } catch (error) { log("warn", `[Hongguo] web search unavailable: ${error.message}`); }
+    try {
+      // 兜底：部分环境下搜索页仍以 SSR 形式内嵌 searchList
+      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { accept: "text/html" }, timeout: 30000 });
+      const items = parseWebSearchResults(typeof response.data === "string" ? response.data : "")
+        .map(normalizeWebSearchItem).filter(Boolean);
+      if (items.length) return items.slice(0, MAX_SEARCH_ITEMS);
+    } catch (error) { log("warn", `[Hongguo] web search SSR unavailable: ${error.message}`); }
     try {
       const results = [];
       const seen = new Set();

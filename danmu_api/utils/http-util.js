@@ -469,20 +469,23 @@ export async function httpPost(url, body, options = {}) {
  * @param {object} [options] - 选项
  * @param {object} [options.headers] - 请求头
  * @param {object} [options.params] - 查询参数（暂未实现）
- * @param {boolean} [options.allow_redirects=true] - 是否允许重定向（暂未实现）
+ * @param {boolean} [options.allow_redirects=true] - 是否允许重定向（与 GET/POST 行为一致，false 时禁止以截获 3xx Location）
  * @returns {Promise<{data: any, status: number, headers: Record<string, string>}>}
  */
 async function httpRequestMethod(method, url, body, options = {}) {
   const currentSource = sourceLogContext.getStore() || "system";
   log("info", `[${currentSource}] [请求模拟] HTTP ${method}: ${url}`);
 
-  const { headers = {} } = options;
+  const { headers = {}, allow_redirects = true } = options;
   const validStatusCodes = Array.isArray(options.validStatusCodes) ? options.validStatusCodes : [];
 
   const fetchOptions = {
     method,
     headers: { ...headers },
   };
+
+  // 与 GET/POST 行为一致：默认跟随重定向，allow_redirects 为 false 时禁止（用于截获 3xx Location）
+  fetchOptions.redirect = allow_redirects ? 'follow' : 'manual';
 
   // 只有在 body 存在时才设置（DELETE 通常无 body）
   if (body !== undefined && body !== null) {

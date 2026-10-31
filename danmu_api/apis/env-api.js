@@ -5,6 +5,7 @@ import { globals } from '../configs/globals.js';
 import { syncBangumiDataLifecycleOnConfigChange } from '../utils/bangumi-data-util.js';
 import { syncRemoteTitleMappingConfig } from '../utils/remote-title-mapping-util.js';
 import AIClient from '../utils/ai-util.js';
+import { verifyNipaplayAccount } from '../utils/nipaplay-util.js';
 
 /**
  * 处理设置环境变量的请求
@@ -164,6 +165,33 @@ export async function handleAiVerify(request) {
       success: false, 
       ok: false,
       message: `AI 连通性验证失败: ${error.message}` 
+    }, 500);
+  }
+}
+
+/**
+ * 处理弹弹play账号连通性验证请求
+ */
+export async function handleDandanplayVerify(request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+
+    // 从请求体获取配置，如果没有则使用全局配置
+    const account = body.dandanplayAccount || globals.dandanplayAccount;
+    const password = body.dandanplayPassword || globals.dandanplayPassword;
+
+    const result = await verifyNipaplayAccount(account, password);
+
+    if (result.ok) {
+      return jsonResponse({ success: true, ok: true, message: result.message });
+    }
+    return jsonResponse({ success: false, ok: false, message: result.message }, 200);
+  } catch (error) {
+    log("error", "[system] [server] 弹弹play账号连通性验证失败:", error);
+    return jsonResponse({
+      success: false,
+      ok: false,
+      message: `弹弹play账号连通性验证失败: ${error.message}`
     }, 500);
   }
 }

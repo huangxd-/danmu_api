@@ -2,7 +2,7 @@ import { globals } from "../../configs/globals.js";
 import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
-import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, normalizeSpaces } from "../../utils/common-util.js";
+import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripNonTitleChars } from "../../utils/common-util.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 
 // =====================
@@ -63,7 +63,7 @@ function normalizeFongmiText(value) {
       // 保底忽略简繁转换异常，继续使用原始文本
     }
   }
-  return normalizeSpaces(text.toLowerCase());
+  return stripNonTitleChars(text.toLowerCase());
 }
 
 /**
@@ -189,19 +189,19 @@ function buildFongmiSearchKeywords(name) {
 
   const keywords = [];
   const pushKeyword = (value) => {
-    const keyword = normalizeSpaces(String(value || "").trim());
+    const keyword = stripNonTitleChars(String(value || "").trim());
     if (!keyword || keywords.includes(keyword)) return;
     keywords.push(keyword);
   };
 
   pushKeyword(rawName);
 
-  const cleanedName = normalizeSpaces(normalizeFongmiTitleByRegex(rawName)).trim();
+  const cleanedName = stripNonTitleChars(normalizeFongmiTitleByRegex(rawName)).trim();
   if (cleanedName && cleanedName !== rawName) {
     pushKeyword(cleanedName);
   }
 
-  const plainBracketName = normalizeSpaces(rawName.replace(/[\(\[（【].*$/, "")).trim();
+  const plainBracketName = stripNonTitleChars(rawName.replace(/[\(\[（【].*$/, "")).trim();
   if (plainBracketName && plainBracketName !== rawName) {
     pushKeyword(plainBracketName);
   }
@@ -217,24 +217,23 @@ function buildFongmiSearchKeywords(name) {
  */
 function buildFongmiApiBase(req) {
   const reqUrl = new URL(req.url);
-  const path = reqUrl.pathname.replace(/\/+$/, "");
-  const apiMarker = "/api/v2/";
-  const danmakuMarker = "/danmaku";
+  const path = reqUrl.pathname.replace(/\/{2,}/g, "/");
+  const parts = path.split("/").filter(Boolean);
+  const firstPart = parts[0] || "";
+  const isExplicitToken = !!firstPart && (
+    firstPart === globals.token ||
+    (!!globals.adminToken && firstPart === globals.adminToken)
+  );
+  const tokenPrefix = isExplicitToken ? `/${firstPart}` : "";
 
-  let prefix = "";
-  const apiMarkerIndex = path.indexOf(apiMarker);
-  if (apiMarkerIndex >= 0) {
-    prefix = path.slice(0, apiMarkerIndex);
-  } else {
-    const danmakuIndex = path.indexOf(danmakuMarker);
-    if (danmakuIndex >= 0) {
-      prefix = path.slice(0, danmakuIndex);
-    } else {
-      prefix = path;
-    }
-  }
+  let routePath = isExplicitToken
+    ? `/${parts.slice(1).join("/")}`
+    : path;
+  routePath = routePath.replace(/\/+$/, "");
+  routePath = routePath.replace(/\/api\/v2\/fongmi\/danmaku$/, "");
+  routePath = routePath.replace(/\/danmaku$/, "");
 
-  return `${reqUrl.origin}${prefix}`;
+  return `${reqUrl.origin}${tokenPrefix}${routePath}`;
 }
 
 /**
@@ -448,4 +447,4 @@ export async function getFongmiDanmaku(url, req) {
   return jsonResponse(items, 200);
 }
 
-export { extractFongmiEpisodeNumber, extractFongmiSeasonNumber, scoreFongmiEpisodeMatch };
+export { buildFongmiApiBase, extractFongmiEpisodeNumber, extractFongmiSeasonNumber, scoreFongmiEpisodeMatch };

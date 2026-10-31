@@ -1,4 +1,4 @@
-import { normalizeSpaces } from './common-util.js';
+import { normalizeTitleForMatch } from './common-util.js';
 
 // 弹幕时间偏移独立模块
 // 职责：解析链接 @偏移 与偏移规则、匹配偏移量、应用偏移到弹幕
@@ -130,8 +130,8 @@ export function resolveOffsetRule(rules, { anime, season, episode, source }) {
     let genericMatch = null;
 
     for (const rule of rules) {
-      // 匹配剧名（归一化后比较，消除 / 等非白名单字符带来的格式差异）
-      if (normalizeSpaces(rule.anime) !== normalizeSpaces(anime)) continue;
+      // 匹配剧名（归一化后比较，消除繁简与 / 等非白名单字符带来的格式差异）
+      if (normalizeTitleForMatch(rule.anime) !== normalizeTitleForMatch(anime)) continue;
 
       // 匹配路径级别
       if (level.matchEpisode) {

@@ -19,6 +19,12 @@ export const componentsCssContent = /* css */ `
     vertical-align: -0.125em;
 }
 
+/* GitHub 标识：官方实心图形，固定 14px 显示 */
+.ui-icon.github-icon {
+    width: 14px;
+    height: 14px;
+}
+
 /* 图标与文字成对出现时的对齐容器（flex 居中） */
 .ui-icon-label {
     display: inline-flex;
@@ -201,8 +207,8 @@ export const componentsCssContent = /* css */ `
 
 .favorite-action-btn:disabled,
 .favorite-action-btn:disabled:hover,
-body[data-theme] .favorite-action-btn:disabled,
-body[data-theme] .favorite-action-btn:disabled:hover {
+:is(html, body)[data-theme] .favorite-action-btn:disabled,
+:is(html, body)[data-theme] .favorite-action-btn:disabled:hover {
     background: #d1d5db !important;
     color: #6b7280 !important;
     border-color: #d1d5db !important;
@@ -252,8 +258,8 @@ body[data-theme] .favorite-action-btn:disabled:hover {
 
 .favorite-schedule-btn:disabled,
 .favorite-schedule-btn:disabled:hover,
-body[data-theme] .favorite-schedule-btn:disabled,
-body[data-theme] .favorite-schedule-btn:disabled:hover {
+:is(html, body)[data-theme] .favorite-schedule-btn:disabled,
+:is(html, body)[data-theme] .favorite-schedule-btn:disabled:hover {
     background: #d1d5db !important;
     color: #6b7280 !important;
     border-color: #d1d5db !important;
@@ -1234,8 +1240,39 @@ body.modal-open {
     font-size: 13px;
 }
 
-/* 通用复选框：appearance 自绘控制勾选色；body[data-theme] 前缀将特异性提至 3002，压过 .form-group input 的背景/边框(2002)与尺寸/内边距(1001) */
-body[data-theme] input[type="checkbox"].app-checkbox {
+/* ============ 首屏占位骨架 ============ */
+/* 数据未就绪时以扫光条占位，避免内容由空到满的跳动 */
+.skeleton-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.skeleton-line {
+    height: 12px;
+    border-radius: var(--app-radius-card-sm);
+    background: linear-gradient(90deg, var(--theme-panel-bg) 25%, var(--theme-panel-strong) 37%, var(--theme-panel-bg) 63%);
+    background-size: 400% 100%;
+    animation: skeletonSweep 1.4s ease-in-out infinite;
+}
+
+.skeleton-stack .skeleton-line:nth-child(2) { width: 88%; }
+.skeleton-stack .skeleton-line:nth-child(3) { width: 72%; }
+
+@keyframes skeletonSweep {
+    from { background-position: 100% 50%; }
+    to { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-line {
+        animation: none;
+    }
+}
+
+/* 通用复选框：appearance 自绘控制勾选色；:is(html, body)[data-theme] 前缀将特异性提至 3002，压过 .form-group input 的背景/边框(2002)与尺寸/内边距(1001) */
+:is(html, body)[data-theme] input[type="checkbox"].app-checkbox {
     width: 16px;
     height: 16px;
     margin: 0;
@@ -1251,12 +1288,12 @@ body[data-theme] input[type="checkbox"].app-checkbox {
     border-radius: 3px;
 }
 
-body[data-theme] input[type="checkbox"].app-checkbox:checked {
+:is(html, body)[data-theme] input[type="checkbox"].app-checkbox:checked {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
 }
 
-body[data-theme] input[type="checkbox"].app-checkbox:checked::after {
+:is(html, body)[data-theme] input[type="checkbox"].app-checkbox:checked::after {
     content: "";
     position: absolute;
     left: 5px;
@@ -1268,7 +1305,7 @@ body[data-theme] input[type="checkbox"].app-checkbox:checked::after {
     transform: rotate(45deg);
 }
 
-body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
+:is(html, body)[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     outline: 2px solid var(--theme-accent-soft);
     outline-offset: 1px;
 }
@@ -1604,50 +1641,18 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     justify-content: center;
 }
 
-/* ============ Bilibili Cookie ============ */
-.bili-cookie-editor {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.bili-cookie-status {
-    background: var(--theme-panel-bg);
-    padding: 12px;
-    border-radius: var(--app-radius-card-sm);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border-left: 3px solid var(--theme-accent);
-}
-
-.bili-status-icon {
-    font-size: 18px;
-}
-
-.bili-status-text {
-    flex: 1;
-    font-weight: 500;
-    font-size: 13px;
-}
-
-.bili-cookie-actions {
-    display: flex;
-    gap: 8px;
-}
-
 /* ============ 多选标签 & 合并模式 ============ */
 .selected-tag {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     background: linear-gradient(135deg, var(--theme-accent), var(--theme-accent-hover));
     color: #ffffff;
-    padding: 6px 12px;
-    border-radius: 999px;
+    padding: 8px 12px;
+    border-radius: 20px;
     cursor: move;
     user-select: none;
-    transition: all 0.22s var(--app-ease-smooth);
+    transition: all 0.3s;
     font-size: 13px;
     font-weight: 500;
     max-width: 100%;
@@ -1655,16 +1660,17 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     white-space: normal;
     word-break: break-all;
     line-height: 1.4;
+    touch-action: none;
 }
 
 .selected-tag:hover {
     filter: brightness(1.05);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
 }
 
 .selected-tag.dragging {
     opacity: 0.5;
-    transform: rotate(3deg);
+    transform: rotate(5deg);
 }
 
 .selected-tag .tag-text {
@@ -1672,8 +1678,8 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
 }
 
 .selected-tag .remove-btn {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     background: rgba(255, 255, 255, 0.3);
     border: none;
     border-radius: 50%;
@@ -1682,34 +1688,35 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: bold;
     transition: all 0.2s;
+    touch-action: manipulation;
 }
 
 .selected-tag .remove-btn:hover {
     background: rgba(255, 255, 255, 0.5);
-    transform: scale(1.1) rotate(90deg);
+    transform: scale(1.1);
 }
 
 .merge-mode-controls {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 8px 0;
+    gap: 10px;
+    margin: 10px 0;
 }
 
 .merge-mode-btn {
-    padding: 5px 12px;
+    padding: 6px 12px;
     background: var(--theme-panel-strong);
     border: 1px solid var(--theme-border);
-    border-radius: 999px;
+    border-radius: 20px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    transition: all 0.22s var(--app-ease-smooth);
+    gap: 5px;
+    transition: all 0.3s;
     color: var(--theme-muted);
     font-weight: 500;
 }
@@ -1718,7 +1725,7 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     background: var(--theme-accent-soft);
     border-color: var(--theme-accent);
     color: var(--theme-accent);
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .merge-mode-btn:hover {
@@ -1729,15 +1736,15 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     display: none;
     background: var(--theme-accent-soft);
     border: 2px dashed rgba(var(--app-primary-rgb), 0.25);
-    border-radius: var(--app-radius-card-sm);
+    border-radius: 8px;
     padding: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 15px;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
-    min-height: 48px;
+    min-height: 52px;
     position: relative;
-    transition: all 0.22s var(--app-ease-smooth);
+    transition: all 0.3s;
 }
 
 .staging-area.active {
@@ -1751,23 +1758,23 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
 }
 
 .staging-area::before {
-    content: '合并组暂存区';
+    content: '合并组暂存区:';
     color: var(--theme-accent);
-    font-size: 11px;
-    font-weight: 700;
-    margin-right: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 5px;
 }
 
 .staging-tag {
-    background: var(--theme-container-bg);
+    background: var(--theme-input-bg);
     color: var(--theme-accent);
     border: 1px solid rgba(var(--app-primary-rgb), 0.2);
     padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 12px;
+    border-radius: 15px;
+    font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     cursor: move;
     user-select: none;
     max-width: 100%;
@@ -1792,8 +1799,8 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
 .staging-tag .remove-btn {
     color: #e0707a;
     cursor: pointer;
-    font-weight: 700;
-    font-size: 13px;
+    font-weight: bold;
+    font-size: 14px;
     display: inline-block;
     transition: transform 0.22s var(--app-ease-smooth);
 }
@@ -1804,7 +1811,7 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
 
 .staging-separator {
     color: var(--theme-muted);
-    font-weight: 700;
+    font-weight: bold;
 }
 
 .confirm-merge-btn {
@@ -1819,13 +1826,14 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(82, 166, 125, 0.25);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     transition: box-shadow 0.22s var(--app-ease-smooth), filter 0.22s var(--app-ease-smooth), transform 0.22s var(--app-ease-smooth) !important;
 }
 
 .confirm-merge-btn:hover {
     filter: brightness(1.1);
     transform: scale(1.1);
+    background: #459670;
 }
 
 .confirm-merge-btn:disabled {
@@ -1833,34 +1841,36 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     color: var(--theme-muted);
     cursor: not-allowed;
     box-shadow: none;
+    transform: none;
 }
 
 .available-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     margin-top: 8px;
 }
 
 .available-tag {
-    padding: 5px 12px;
-    background: var(--theme-input-bg);
-    border: 1px solid var(--theme-border);
-    border-radius: 999px;
+    padding: 8px 16px;
+    background: var(--theme-panel-strong);
+    border: 2px solid transparent;
+    border-radius: 20px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.3s;
     user-select: none;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
 }
 
 .available-tag:hover {
     border-color: var(--theme-accent);
-    background: var(--theme-accent-soft);
+    background: var(--theme-panel-bg);
+    transform: translateY(-2px);
 }
 
 .available-tag.disabled {
-    opacity: 0.4;
+    opacity: 0.5;
     cursor: not-allowed;
     pointer-events: none;
 }
@@ -1971,11 +1981,6 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
     display: flex;
     align-items: center;
     gap: 6px;
-}
-
-.record-params-title::before {
-    content: '\\1F4CB';
-    font-size: 14px;
 }
 
 .record-params pre {
@@ -2824,7 +2829,7 @@ body[data-theme] input[type="checkbox"].app-checkbox:focus-visible {
 }
 
 /* ============ 暗色模式特殊处理 ============ */
-body[data-theme$="-dark"] .heatmap-bar {
+:is(html, body)[data-theme$="-dark"] .heatmap-bar {
     filter: brightness(0.9);
 }
 
@@ -3087,14 +3092,18 @@ body[data-theme$="-dark"] .heatmap-bar {
     border-radius: 8px;
 }
 
-/* ============ AI API Key 编辑器 ============ */
-.ai-apikey-editor {
+/* ============ 凭证编辑器（AI API Key / 弹弹play密码 / B站 Cookie 共用） ============ */
+.ai-apikey-editor,
+.dandanplay-editor,
+.bili-cookie-editor {
     display: flex;
     flex-direction: column;
     gap: 14px;
 }
 
-.ai-apikey-status {
+.ai-apikey-status,
+.dandanplay-status,
+.bili-cookie-status {
     background: var(--theme-panel-bg);
     padding: 12px;
     border-radius: var(--app-radius-card-sm);
@@ -3104,17 +3113,23 @@ body[data-theme$="-dark"] .heatmap-bar {
     border-left: 3px solid var(--theme-accent);
 }
 
-.ai-status-icon {
+.ai-status-icon,
+.dandanplay-status-icon,
+.bili-status-icon {
     font-size: 18px;
 }
 
-.ai-status-text {
+.ai-status-text,
+.dandanplay-status-text,
+.bili-status-text {
     flex: 1;
     font-weight: 500;
     font-size: 13px;
 }
 
-.ai-apikey-actions {
+.ai-apikey-actions,
+.dandanplay-actions,
+.bili-cookie-actions {
     display: flex;
     gap: 8px;
 }

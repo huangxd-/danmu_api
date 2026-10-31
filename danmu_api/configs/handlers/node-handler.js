@@ -1,5 +1,6 @@
 import BaseHandler from "./base-handler.js";
 import { log } from "../../utils/log-util.js";
+import { Envs } from "../envs.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -64,6 +65,10 @@ export class NodeHandler extends BaseHandler {
         }
 
         fs.writeFileSync(envPath, lines.join('\n'), 'utf8');
+        // 同步 .env 原始解析结果，使绕过 dotenv 截断读取的变量即时取到刚写入的值
+        if (Envs.rawEnvValues) {
+          Envs.rawEnvValues = Envs.parseRawEnvText(lines.join('\n'));
+        }
         log("info", `[system] [server] Updated ${key} in .env`);
         updated = true;
       }
@@ -79,7 +84,9 @@ export class NodeHandler extends BaseHandler {
    * 设置环境变量并重新初始化全局配置
    */
   async setEnv(key, value) {
-    log("info", '[system] [server] Setting environment variable:', key, '=', value);
+    // sensitiveKeys 为按 encrypt 读取的凭据类变量，其值仅在运行期使用，不在日志以明文呈现
+    const isSensitive = Envs.sensitiveKeys.has(key);
+    log("info", '[system] [server] Setting environment variable:', key, '=', isSensitive ? '***' : value);
 
     try {
       // 更新配置文件
@@ -127,6 +134,10 @@ export class NodeHandler extends BaseHandler {
         });
 
         fs.writeFileSync(envPath, filteredLines.join('\n'), 'utf8');
+        // 同步 .env 原始解析结果，使被删除的变量不残留于原始值中
+        if (Envs.rawEnvValues) {
+          Envs.rawEnvValues = Envs.parseRawEnvText(filteredLines.join('\n'));
+        }
         log("info", `[system] [server] Deleted ${key} from .env`);
         deleted = true;
       }

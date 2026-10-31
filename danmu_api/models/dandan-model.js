@@ -4,25 +4,28 @@ import { validateType } from "../utils/common-util.js";
 // 数据模型：Anime
 // =====================
 export class Anime {
-  constructor({ animeId = 111, bangumiId = "", animeTitle = "", type = "",
-                typeDescription = "", imageUrl = "", startDate = "", episodeCount = 1,
-                rating = 0, isFavorited = true, source = "", links = [],
-                mergedChildren = [], isHiddenChild = false } = {}) {
+  constructor(rawJson = {}) {
+    const {
+      animeId = 111, bangumiId = "", animeTitle = "", type = "",
+      typeDescription = "", imageUrl = "", startDate = "", episodeCount = 1,
+      rating = 0, isFavorited = true, source = "", links = [],
+      mergedChildren = [], isHiddenChild = false
+    } = nullToUndefined(rawJson);
     // ---- 类型检查 ----
-    validateType(animeId, "number");
-    validateType(bangumiId, "string");
-    validateType(animeTitle, "string");
+    validateType(animeId, "number", "animeId");
+    validateType(bangumiId, "string", "bangumiId");
+    validateType(animeTitle, "string", "animeTitle");
     validateType(type, "string", "type");
-    validateType(typeDescription, "string");
-    validateType(imageUrl, "string");
-    validateType(startDate, "string");
-    validateType(episodeCount, "number");
-    validateType(rating, "number");
-    validateType(isFavorited, "boolean");
-    validateType(source, "string");
-    validateType(links, "array");
-    validateType(mergedChildren, "array");
-    validateType(isHiddenChild, "boolean");
+    validateType(typeDescription, "string", "typeDescription");
+    validateType(imageUrl, "string", "imageUrl");
+    validateType(startDate, "string", "startDate");
+    validateType(episodeCount, "number", "episodeCount");
+    validateType(rating, "number", "rating");
+    validateType(isFavorited, "boolean", "isFavorited");
+    validateType(source, "string", "source");
+    validateType(links, "array", "links");
+    validateType(mergedChildren, "array", "mergedChildren");
+    validateType(isHiddenChild, "boolean", "isHiddenChild");
 
     // 将 links 转换为 Link 实例数组
     this.links = links.map(linkData => Link.fromJson(linkData));
@@ -53,11 +56,14 @@ export class Anime {
 
 // 定义 Link 模型
 class Link {
-  constructor({ name = "", url = "", title = "", id = 10001 } = {}) {
-    validateType(name, "string");
-    validateType(url, "string");
-    validateType(title, "string");
-    validateType(id, "number");
+  constructor(rawJson = {}) {
+    const {
+      name = "", url = "", title = "", id = 10001
+    } = nullToUndefined(rawJson);
+    validateType(name, "string", "name");
+    validateType(url, "string", "url");
+    validateType(title, "string", "title");
+    validateType(id, "number", "id");
 
     // 直接解构并赋值给 this
     Object.assign(this, { name, url, title, id });
@@ -81,18 +87,21 @@ class Link {
 // 数据模型：AnimeMatch
 // =====================
 export class AnimeMatch {
-  constructor({ episodeId = 10001, animeId = 111, animeTitle = "", episodeTitle = "",
-                type = "", typeDescription = "", shift = 1, imageUrl = "", url = "" } = {}) {
+  constructor(rawJson = {}) {
+    const {
+      episodeId = 10001, animeId = 111, animeTitle = "", episodeTitle = "",
+      type = "", typeDescription = "", shift = 1, imageUrl = "", url = ""
+    } = nullToUndefined(rawJson);
     // ---- 类型检查 ----
-    validateType(episodeId, "number");
-    validateType(animeId, "number");
-    validateType(animeTitle, "string");
-    validateType(episodeTitle, "string");
+    validateType(episodeId, "number", "episodeId");
+    validateType(animeId, "number", "animeId");
+    validateType(animeTitle, "string", "animeTitle");
+    validateType(episodeTitle, "string", "episodeTitle");
     validateType(type, "string", "type");
-    validateType(typeDescription, "string");
-    validateType(shift, "number");
-    validateType(imageUrl, "string");
-    validateType(url, "string");
+    validateType(typeDescription, "string", "typeDescription");
+    validateType(shift, "number", "shift");
+    validateType(imageUrl, "string", "imageUrl");
+    validateType(url, "string", "url");
 
     // 直接解构并赋值给 this
     Object.assign(this, { episodeId, animeId, animeTitle, episodeTitle, type, typeDescription, shift, imageUrl, url });
@@ -116,7 +125,10 @@ export class AnimeMatch {
 // 数据模型：Episode
 // =====================
 export class Episode {
-  constructor({ episodeId = "", episodeTitle = "", url = "" } = {}) {
+  constructor(rawJson = {}) {
+    const {
+      episodeId = "", episodeTitle = "", url = ""
+    } = nullToUndefined(rawJson);
     this.episodeId = episodeId;
     this.episodeTitle = episodeTitle;
     this.url = url;
@@ -136,14 +148,17 @@ Episode.prototype.toJson = function () {
 // 数据模型：Episodes
 // =====================
 export class Episodes {
-  constructor({ animeId = 111, animeTitle = "", type = "", typeDescription = "",
-                episodes = [] } = {}) {
+  constructor(rawJson = {}) {
+    const {
+      animeId = 111, animeTitle = "", type = "", typeDescription = "",
+      episodes = []
+    } = nullToUndefined(rawJson);
     // ---- 类型检查 ----
-    validateType(animeId, "number");
-    validateType(animeTitle, "string");
-    validateType(type, "string");
-    validateType(typeDescription, "string");
-    validateType(episodes, "array");
+    validateType(animeId, "number", "animeId");
+    validateType(animeTitle, "string", "animeTitle");
+    validateType(type, "string", "type");
+    validateType(typeDescription, "string", "typeDescription");
+    validateType(episodes, "array", "episodes");
 
     // 直接解构并赋值给 this
     Object.assign(this, { animeId, animeTitle, type, typeDescription,
@@ -171,11 +186,14 @@ export class Episodes {
 // 数据模型：Season
 // =====================
 export class Season {
-  constructor({ id = "", airDate = "", name = "", episodeCount = 0 } = {}) {
-    validateType(id, "string");
-    validateType(airDate, "string");
-    validateType(name, "string");
-    validateType(episodeCount, "number");
+  constructor(rawJson = {}) {
+    const {
+      id = "", airDate = "", name = "", episodeCount = 0
+    } = nullToUndefined(rawJson);
+    validateType(id, "string", "id");
+    validateType(airDate, "string", "airDate");
+    validateType(name, "string", "name");
+    validateType(episodeCount, "number", "episodeCount");
 
     // 直接解构并赋值给 this
     Object.assign(this, { id, airDate, name, episodeCount });
@@ -199,14 +217,17 @@ export class Season {
 // 数据模型：BangumiEpisode
 // =====================
 export class BangumiEpisode {
-  constructor({ seasonId = "", episodeId = 10001, episodeTitle = "", episodeNumber = "",
-                airDate = "", url = "" } = {}) {
-    validateType(seasonId, "string");
-    validateType(episodeId, "number");
-    validateType(episodeTitle, "string");
-    validateType(episodeNumber, "string");
-    validateType(airDate, "string");
-    validateType(url, "string");
+  constructor(rawJson = {}) {
+    const {
+      seasonId = "", episodeId = 10001, episodeTitle = "", episodeNumber = "",
+      airDate = "", url = ""
+    } = nullToUndefined(rawJson);
+    validateType(seasonId, "string", "seasonId");
+    validateType(episodeId, "number", "episodeId");
+    validateType(episodeTitle, "string", "episodeTitle");
+    validateType(episodeNumber, "string", "episodeNumber");
+    validateType(airDate, "string", "airDate");
+    validateType(url, "string", "url");
 
     // 直接解构并赋值给 this
     Object.assign(this, { seasonId, episodeId, episodeTitle, episodeNumber, airDate, url });
@@ -230,21 +251,24 @@ export class BangumiEpisode {
 // 数据模型：Bangumi
 // =====================
 export class Bangumi {
-  constructor({ animeId = 111, bangumiId = "", animeTitle = "", imageUrl = "",
-                isOnAir = true, airDay = 1, isFavorited = true, rating = 0,
-                type = "", typeDescription = "", seasons = [], episodes = [] } = {}) {
-    validateType(animeId, "number");
-    validateType(bangumiId, "string");
-    validateType(animeTitle, "string");
-    validateType(imageUrl, "string");
-    validateType(isOnAir, "boolean");
-    validateType(airDay, "number");
-    validateType(isFavorited, "boolean");
-    validateType(rating, "number");
-    validateType(type, "string");
-    validateType(typeDescription, "string");
-    validateType(seasons, "array");
-    validateType(episodes, "array");
+  constructor(rawJson = {}) {
+    const {
+      animeId = 111, bangumiId = "", animeTitle = "", imageUrl = "",
+      isOnAir = true, airDay = 1, isFavorited = true, rating = 0,
+      type = "", typeDescription = "", seasons = [], episodes = []
+    } = nullToUndefined(rawJson);
+    validateType(animeId, "number", "animeId");
+    validateType(bangumiId, "string", "bangumiId");
+    validateType(animeTitle, "string", "animeTitle");
+    validateType(imageUrl, "string", "imageUrl");
+    validateType(isOnAir, "boolean", "isOnAir");
+    validateType(airDay, "number", "airDay");
+    validateType(isFavorited, "boolean", "isFavorited");
+    validateType(rating, "number", "rating");
+    validateType(type, "string", "type");
+    validateType(typeDescription, "string", "typeDescription");
+    validateType(seasons, "array", "seasons");
+    validateType(episodes, "array", "episodes");
 
     // 将 seasons 转换为 Season 实例数组
     const seasonInstances = seasons.map(seasonData => Season.fromJson(seasonData));
@@ -281,10 +305,13 @@ export class Bangumi {
 // 数据模型：SegmentListResponse
 // =====================
 export class SegmentListResponse {
-  constructor({ type = "", segmentList = [], duration = 0 } = {}) {
-    validateType(type, "string");
-    validateType(segmentList, "array");
-    validateType(duration, "number");
+  constructor(rawJson = {}) {
+    const {
+      type = "", segmentList = [], duration = 0
+    } = nullToUndefined(rawJson);
+    validateType(type, "string", "type");
+    validateType(segmentList, "array", "segmentList");
+    validateType(duration, "number", "duration");
 
     // 将 segmentList 转换为 Segment 实例数组
     this.segmentList = segmentList.map(segmentData => Segment.fromJson(segmentData));
@@ -344,4 +371,16 @@ export class Segment {
   toJson() {
     return { ...this };
   }
+}
+
+// 数据源的缺省值可能写成 null，而解构默认值只在 undefined 时生效；把 null 归一为 undefined，
+// 使模型中已声明默认值的字段对 null 与缺省两种写法都取到默认值（客户端请求模型 Segment 不做归一，保持字段校验的严格性）。
+function nullToUndefined(json) {
+  const source = json || {};
+  // 以无原型对象承载归一结果：外部数据中的 __proto__ 键不被当作原型写入
+  const normalized = Object.create(null);
+  for (const key in source) {
+    normalized[key] = source[key] === null ? undefined : source[key];
+  }
+  return normalized;
 }

@@ -1,0 +1,43 @@
+name: Tests
+
+# PR 与推送到 main 时自动跑测试用例：node --test --test-concurrency=1（即 package.json 的 npm test）
+#
+# 说明：
+# - 不依赖任何 secrets / 外网 / Redis：整套用例只用打桩的源实例与本地缓存，
+#   在 fetch 与 node-fetch 均不可用的环境下也能全绿，因此 fork PR 同样可以运行。
+# - 必须使用 Node >= 22.3：configs/cache-persistence.test.js 与 configs/cache-backends.test.js
+#   的子进程依赖 --experimental-test-module-mocks（mock.module），该 flag 自 Node 22.3 起提供。
+# - 仓库未提交 lockfile（package-lock.json 在 .gitignore 中），因此使用 npm install；
+#   也因为没有 lockfile，setup-node 的 cache: npm 会因找不到依赖文件而失败，故不启用缓存。
+# - 测试文件必须串行执行（用例会读写仓库根目录的 .cache/），串行参数已写在 npm test 里，不要改成裸 node --test。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test

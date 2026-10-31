@@ -231,7 +231,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
       const jaOriginalTitle = m.title; // Bangumi Data 的主标题就是原名
 
       log("info", `[system] [tmdb] Bangumi-Data 本地命中，提取原名成功: 原名=${jaOriginalTitle}, 别名=${displayTitle}（检索词：${cleanTitle}）`);
-      return { title: jaOriginalTitle, cnAlias: displayTitle };
+      return { title: stripSeasonMarker(jaOriginalTitle), cnAlias: displayTitle };
     }
   }
 
@@ -487,7 +487,7 @@ export async function getTmdbJaOriginalTitle(title, signal = null, sourceLabel =
         }
 
         // 返回对象，包含原名和别名
-        return { title: jaOriginalTitle, cnAlias: bestMatchChineseTitle };
+        return { title: stripSeasonMarker(jaOriginalTitle), cnAlias: bestMatchChineseTitle };
 
       } catch (error) {
          if (error.name === 'AbortError') {
@@ -650,10 +650,22 @@ export async function getTMDBChineseTitle(title, season = null, episode = null) 
 // 智能标题替换相关函数
 // =====================
 
-// 识别季度、剧场版、外传、副标题等后缀信息的正则白名单
-const SUFFIX_PATTERN = /(?:\s+|^)(?:第?\s*(?:\d+|[一二三四五六七八九十]+)\s*[季期部]|season\s*\d+|s\d+|part\s*\d+|act\s*\d+|phase\s*\d+|the\s+final\s+season|(?:movie|film|ova|oad|sp|剧场版|劇場版|续[篇集]|外传)(?![a-z]))|[:：~～]|\s+.*?篇|(?<=\s|^)\d+$/i
+// 季与分部标记：第X季/期/部、第X赛段、2nd Season、1st STAGE、season N、sN、part/act/phase N、the final season
+const SEASON_MARKER_SOURCE = '第?\\s*(?:\\d+|[一二三四五六七八九十]+)\\s*(?:[季期部]|赛段)|\\d+(?:st|nd|rd|th)\\s+(?:season|stage)|season\\s*\\d+|s\\d+|part\\s*\\d+|act\\s*\\d+|phase\\s*\\d+|the\\s+final\\s+season';
 
-const SEPARATOR_REGEX = /[ :：~～]/;
+// 假名范围：波浪号两侧同为假名时属词内长音符（如「も～っと」「地獄先生ぬ～べ～」），不构成副标题分隔
+const KANA_SOURCE = '\\u3041-\\u3096\\u30A1-\\u30FA\\u30FC';
+
+// 副标题分隔：冒号后须有空白；波浪号至少一侧非假名；半角、全角与 U+301C 波浪号一并识别
+const SUBTITLE_SEPARATOR_SOURCE = `[:：]\\s|[~～\\u301C](?![${KANA_SOURCE}]|$)|(?<![${KANA_SOURCE}])[~～\\u301C]`;
+
+// 识别季度、赛段、剧场版、外传、副标题等后缀信息的正则白名单
+const SUFFIX_PATTERN = new RegExp(`(?:\\s+|^)(?:${SEASON_MARKER_SOURCE}|(?:movie|film|ova|oad|sp|剧场版|劇場版|续[篇集]|外传)(?![a-z]))|${SUBTITLE_SEPARATOR_SOURCE}|\\s+.*?篇|(?<=\\s|^)\\d+$`, 'i');
+
+// 出站检索词只剥离季与分部标记，分隔符与影片类型词属于标题本身
+const SEASON_MARKER_PATTERN = new RegExp(`(?:\\s+|^)(?:${SEASON_MARKER_SOURCE})`, 'i');
+
+const SEPARATOR_REGEX = new RegExp(` |${SUBTITLE_SEPARATOR_SOURCE}`);
 
 /**
  * 寻找标题中属于后缀或季度信息的起始位置
@@ -676,6 +688,17 @@ export function cleanSearchQuery(title) {
     return title.substring(0, limit).trim();
   }
   return title;
+}
+
+/**
+ * 剥离标题中的季与分部标记，得到适合作为检索关键词的标题主体
+ * 标记出现在标题开头或剥离后为空时保留原标题，避免检索关键词被清空
+ * @param {string} title 原始标题
+ * @returns {string} 去除季与分部标记的标题
+ */
+export function stripSeasonMarker(title) {
+  const match = title.match(SEASON_MARKER_PATTERN);
+  return match ? title.substring(0, match.index).trim() || title : title;
 }
 
 /**

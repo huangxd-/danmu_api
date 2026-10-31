@@ -217,10 +217,10 @@ async function testNewFlow() {
       episode: 1,
       airDate: '2025-07-18',
       episodeName: '第2期上：首次大约会！温柔医生为爱冲锋',
-      sourceOrder: 'hongguo',
+      sourceOrder: 'douban',
       otherServer: 'https://api.danmu.icu',
       customSourceApiUrl: '',
-      vodServers: '金蝉@https://zy.jinchancaiji.com,789@https://www.caiji.cyou,听风@https://gctf.tfdh.top',
+      vodServers: '', // 默认无上游，跳过 VOD；不访问关停采集站
       vodReturnMode: 'fastest',
       vodRequestTimeout: 10000,
       bilibiliCookie: '',
@@ -261,7 +261,7 @@ async function testNewFlow() {
       // title: "https://www.bilibili.com/bangumi/play/ep1231564",
       // title: "https://www.bilibili.com/video/av170001?p=2",
       // title: "https://www.bilibili.com/video/BV17x411w7KC?p=3",
-      title: '装穷回家',
+      title: '早春晴朗',
       ...commonParams,
     });
     if (verbose) {
