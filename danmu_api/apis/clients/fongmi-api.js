@@ -3,7 +3,6 @@ import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
 import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripNonTitleChars } from "../../utils/common-util.js";
-import { resolveTitleMapping } from "../../utils/title-mapping-index.js";
 import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 
 // =====================
@@ -393,7 +392,7 @@ export async function getFongmiDanmaku(url, req) {
   if (!name) {
     return jsonResponse([], 200);
   }
-  const mappedTitle = resolveTitleMapping(name);
+  const mappedTitle = globals.resolveTitleMapping(name);
   if (mappedTitle) {
     log("info", `[system] [fongmi] Title mapped from original: ${name} to: ${mappedTitle}`);
     name = mappedTitle;

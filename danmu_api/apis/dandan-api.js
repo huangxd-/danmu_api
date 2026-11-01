@@ -12,7 +12,6 @@ import {
 import { resolveFavoriteForSearchKeyword } from "../utils/favorite-util.js";
 import { formatDanmuResponse, convertToDanmakuJson } from "../utils/danmu-util.js";
 import { resolveOffset, resolveOffsetRule, applyOffset, stripLinkOffset } from "../utils/offset-util.js";
-import { resolveTitleMapping } from "../utils/title-mapping-index.js";
 import { filterMappingQualifierCandidates, filterMappingTargetCandidates, resolveAutoMatchMapping } from "../utils/auto-match-mapping-util.js";
 import { 
   extractEpisodeTitle, convertChineseNumber, parseFileName, createDynamicPlatformOrder, normalizeTitleForMatch,
@@ -1901,7 +1900,7 @@ function prepareQueryTitle(title) {
 }
 
 function resolveLegacyMatchTitle(title) {
-  const mapped = resolveTitleMapping(title);
+  const mapped = globals.resolveTitleMapping(title);
   if (mapped) log("info", `[system] [match] Title mapped from original: ${title} to: ${mapped}`);
   return prepareQueryTitle(mapped || title);
 }

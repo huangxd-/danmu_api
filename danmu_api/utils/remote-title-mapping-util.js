@@ -1,10 +1,6 @@
-import { globals } from '../configs/globals.js';
+import { Globals, globals } from '../configs/globals.js';
 import { httpGet } from './http-util.js';
 import { log } from './log-util.js';
-import {
-  resetRemoteTitleMappingIndex,
-  setRemoteTitleMappings,
-} from './title-mapping-index.js';
 
 const CACHE_FILE = 'title-mapping-remote.json';
 const FETCH_TIMEOUT_MS = 5000;
@@ -40,7 +36,7 @@ function resetForConfiguredUrl(url) {
   cancelScheduler();
   remoteState.configuredUrl = url;
   remoteState.mappings = new Map();
-  resetRemoteTitleMappingIndex();
+  Globals.remoteTitleMappingTable = new Map();
   remoteState.diskAttempted = false;
   remoteState.nextInitialRetryAt = 0;
 }
@@ -53,7 +49,7 @@ function activateRemoteMappings(url, mappings) {
   if (remoteState.configuredUrl && remoteState.configuredUrl !== url) return false;
   remoteState.mappings = mappings;
   remoteState.nextInitialRetryAt = 0;
-  setRemoteTitleMappings(mappings);
+  Globals.remoteTitleMappingTable = mappings;
   return true;
 }
 
@@ -302,14 +298,14 @@ export async function ensureRemoteTitleMapping() {
     url = currentConfiguredUrl();
   } catch (error) {
     resetForConfiguredUrl('');
-    resetRemoteTitleMappingIndex();
+    Globals.remoteTitleMappingTable = new Map();
     remoteLog('warn', error.message);
     return;
   }
 
   resetForConfiguredUrl(url);
   if (!url) {
-    resetRemoteTitleMappingIndex();
+    Globals.remoteTitleMappingTable = new Map();
     return;
   }
   // Long-running runtimes can reuse a disk snapshot and maintain the daily
