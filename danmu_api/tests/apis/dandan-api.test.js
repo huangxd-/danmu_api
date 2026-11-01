@@ -6,7 +6,7 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp } from '../../apis/dandan-api.js';
+import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp, filterSameEpisodeTitle } from '../../apis/dandan-api.js';
 import { Globals } from '../../configs/globals.js';
 import { normalizeTitleForMatch } from '../../utils/common-util.js';
 import { urlPrefix } from '../helpers/context.js';
@@ -136,4 +136,57 @@ test('fallback matching prefers the candidate of the target season', async () =>
   // 无同季候选或未指定季号时保持原有取值顺序
   assert.equal(await matchFallback([secondSeason], 3), 2001);
   assert.equal(await matchFallback([secondSeason, thirdSeason], null), 2001);
+});
+
+test('episode-number deduplication prefers the requested platform', () => {
+  const episodes = [
+    { episodeId: 'imgo-1', episodeTitle: '【imgo】第1集 初遇' },
+    { episodeId: 'qq-1', episodeTitle: '【qq】第1集 重逢' },
+    { episodeId: 'qq-1-copy', episodeTitle: '【qq】第1集 重逢' },
+    { episodeId: 'imgo-2', episodeTitle: '【imgo】第2集' }
+  ];
+
+  assert.deepEqual(
+    filterSameEpisodeTitle(episodes).map(item => item.episodeId),
+    ['imgo-1', 'imgo-2']
+  );
+  assert.deepEqual(
+    filterSameEpisodeTitle(episodes, { preferredPlatform: 'qq' }).map(item => item.episodeId),
+    ['qq-1', 'imgo-2']
+  );
+});
+
+test('normal matching keeps the requested platform and exact episode', async () => {
+  Globals.init({ REMEMBER_LAST_SELECT: 'false', LOG_LEVEL: 'error' });
+
+  const anime = {
+    animeId: 7781,
+    bangumiId: '7781',
+    animeTitle: '平台测试',
+    source: '360',
+    type: 'tvseries',
+    episodeCount: 2,
+    links: [
+      { id: 11, title: '【imgo】 第1集', url: 'https://www.mgtv.com/b/test/1.html' },
+      { id: 12, title: '【qq】 第1集', url: 'https://v.qq.com/x/cover/test/1.html' },
+      { id: 13, title: '【qq】 第2集', url: 'https://v.qq.com/x/cover/test/2.html' }
+    ]
+  };
+
+  const result = await matchAniAndEp(
+    1,
+    1,
+    null,
+    { animes: [anime] },
+    '平台测试',
+    new Request('http://localhost/api/v2/match'),
+    'qq',
+    null,
+    null,
+    new Map([['7781', anime]])
+  );
+
+  assert.equal(result.resAnime?.animeId, 7781);
+  assert.equal(result.resEpisode?.episodeId, 12);
+  assert.equal(result.resEpisode?.episodeTitle, '【qq】 第1集');
 });
