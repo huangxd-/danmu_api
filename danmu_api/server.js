@@ -529,8 +529,8 @@ async function startServer() {
   });
   console.log(`Server running on http://${formatHostForUrl(mainBinding.address)}:${mainBinding.port}`);
   if (detectNodeDeployPlatform() === 'node') {
-    initializeFavoriteScheduler(mainPort).catch(error => {
-      console.error('[server] Favorite scheduler initialization failed:', error.message);
+    initializeNodeServices(mainPort).catch(error => {
+      console.error('[server] Node background services initialization failed:', error.message);
     });
   }
 
@@ -545,9 +545,13 @@ async function startServer() {
   setTimeout(() => initBangumiData('node', true).catch(console.error), 1000);
 }
 
-async function initializeFavoriteScheduler(mainPort) {
+async function initializeNodeServices(mainPort) {
   Globals.deployPlatform = 'node';
   await ensureRemoteTitleMapping();
+  await initializeFavoriteScheduler(mainPort);
+}
+
+async function initializeFavoriteScheduler(mainPort) {
   await judgeRedisValid('/api/v2/favorite/list');
   await initializePersistentCaches('node');
 

@@ -1,9 +1,12 @@
 import { globals } from '../configs/globals.js';
 import { httpGet } from './http-util.js';
 import { log } from './log-util.js';
+import {
+  resetRemoteTitleMappingIndex,
+  setRemoteTitleMappings,
+} from './title-mapping-index.js';
 
-const CACHE_TEXT_FILE = 'title-mapping-remote.txt';
-const CACHE_META_FILE = 'title-mapping-remote.json';
+const CACHE_FILE = 'title-mapping-remote.json';
 const FETCH_TIMEOUT_MS = 5000;
 const MAX_REMOTE_TEXT_BYTES = 2 * 1024 * 1024;
 const INITIAL_RETRY_BACKOFF_MS = 10 * 60 * 1000;
@@ -21,38 +24,10 @@ const remoteState = {
   nextInitialRetryAt: 0,
   schedulerTimer: null,
   fetches: new Map(),
-  mergedTable: null,
-  mergedKeys: new Set(),
 };
 
 function remoteLog(level, message) {
   log(level, `[system] [remote-mapping] ${message}`);
-}
-
-function getTitleMappingTable() {
-  return globals.envs?.titleMappingTable instanceof Map ? globals.envs.titleMappingTable : null;
-}
-
-function removeMergedRemoteMappings() {
-  const table = remoteState.mergedTable;
-  if (table instanceof Map) {
-    for (const key of remoteState.mergedKeys) table.delete(key);
-  }
-  remoteState.mergedTable = null;
-  remoteState.mergedKeys = new Set();
-}
-
-function mergeRemoteMappingsIntoTitleTable() {
-  const table = getTitleMappingTable();
-  if (table === null || remoteState.mergedTable === table) return;
-
-  remoteState.mergedTable = table;
-  remoteState.mergedKeys = new Set();
-  for (const [key, value] of remoteState.mappings) {
-    if (table.has(key)) continue;
-    table.set(key, value);
-    remoteState.mergedKeys.add(key);
-  }
 }
 
 function cancelScheduler() {
@@ -63,9 +38,9 @@ function cancelScheduler() {
 function resetForConfiguredUrl(url) {
   if (remoteState.configuredUrl === url) return;
   cancelScheduler();
-  removeMergedRemoteMappings();
   remoteState.configuredUrl = url;
   remoteState.mappings = new Map();
+  resetRemoteTitleMappingIndex();
   remoteState.diskAttempted = false;
   remoteState.nextInitialRetryAt = 0;
 }
@@ -76,10 +51,9 @@ function currentConfiguredUrl() {
 
 function activateRemoteMappings(url, mappings) {
   if (remoteState.configuredUrl && remoteState.configuredUrl !== url) return false;
-  removeMergedRemoteMappings();
   remoteState.mappings = mappings;
   remoteState.nextInitialRetryAt = 0;
-  mergeRemoteMappingsIntoTitleTable();
+  setRemoteTitleMappings(mappings);
   return true;
 }
 
@@ -89,8 +63,7 @@ async function remoteCachePaths() {
   const dir = path.join(process.cwd(), '.cache');
   return {
     dir,
-    text: path.join(dir, CACHE_TEXT_FILE),
-    meta: path.join(dir, CACHE_META_FILE),
+    file: path.join(dir, CACHE_FILE),
   };
 }
 
@@ -101,10 +74,9 @@ async function loadDiskRemoteMapping(url) {
     const paths = await remoteCachePaths();
     if (!paths) return false;
     const { default: fs } = await import('node:fs/promises');
-    const meta = JSON.parse(await fs.readFile(paths.meta, 'utf8'));
-    if (meta.url !== url) return false;
-    const text = await fs.readFile(paths.text, 'utf8');
-    const mappings = parseRemoteTitleMappings(text);
+    const cache = JSON.parse(await fs.readFile(paths.file, 'utf8'));
+    if (cache.url !== url || typeof cache.text !== 'string') return false;
+    const mappings = parseRemoteTitleMappings(cache.text);
     if (!mappings.size || remoteState.configuredUrl !== url) return false;
     activateRemoteMappings(url, mappings);
     remoteLog('info', `已加载本地缓存: ${mappings.size} 条规则`);
@@ -115,28 +87,22 @@ async function loadDiskRemoteMapping(url) {
 }
 
 async function saveDiskRemoteMapping(url, text) {
-  let textTemp = '';
-  let metaTemp = '';
+  let tempFile = '';
   try {
     const paths = await remoteCachePaths();
     if (!paths) return;
     const { default: fs } = await import('node:fs/promises');
     await fs.mkdir(paths.dir, { recursive: true });
     const suffix = `${process.pid || 'current'}.${Date.now()}.tmp`;
-    textTemp = `${paths.text}.${suffix}`;
-    metaTemp = `${paths.meta}.${suffix}`;
-    await fs.writeFile(textTemp, text, 'utf8');
-    await fs.writeFile(metaTemp, JSON.stringify({ url }), 'utf8');
-    await replaceCacheFile(fs, textTemp, paths.text);
-    textTemp = '';
-    await replaceCacheFile(fs, metaTemp, paths.meta);
-    metaTemp = '';
+    tempFile = `${paths.file}.${suffix}`;
+    await fs.writeFile(tempFile, JSON.stringify({ url, text }), 'utf8');
+    await replaceCacheFile(fs, tempFile, paths.file);
+    tempFile = '';
   } catch (error) {
     remoteLog('warn', `写入磁盘缓存失败（当前内存规则仍有效）: ${error?.message || error}`);
     try {
       const { default: fs } = await import('node:fs/promises');
-      if (textTemp) await fs.unlink(textTemp);
-      if (metaTemp) await fs.unlink(metaTemp);
+      if (tempFile) await fs.unlink(tempFile);
     } catch {
       // Best-effort cache cleanup.
     }
@@ -336,14 +302,16 @@ export async function ensureRemoteTitleMapping() {
     url = currentConfiguredUrl();
   } catch (error) {
     resetForConfiguredUrl('');
+    resetRemoteTitleMappingIndex();
     remoteLog('warn', error.message);
     return;
   }
 
   resetForConfiguredUrl(url);
-  if (!url) return;
-  mergeRemoteMappingsIntoTitleTable();
-
+  if (!url) {
+    resetRemoteTitleMappingIndex();
+    return;
+  }
   // Long-running runtimes can reuse a disk snapshot and maintain the daily
   // refresh timer. Serverless runtimes explicitly opted into the remote table,
   // so their first matching request loads it into the current warm instance.

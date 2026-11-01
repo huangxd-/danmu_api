@@ -30,6 +30,16 @@ const FONGMI_DANMAKU_PATHS = new Set([
   "/api/v2/fongmi/danmaku"
 ]);
 
+const TITLE_MAPPING_PATHS = new Set([
+  "/api/v2/match",
+  "/api/v2/favorite/add",
+  "/api/favorite/add",
+  "/api/v2/favorite/refresh",
+  "/api/favorite/refresh",
+  "/api/v2/favorite/remove",
+  "/api/favorite/remove",
+]);
+
 function isFongmiDanmakuRequest(path, method, url) {
   if (method !== "GET" && method !== "POST") return false;
   if (path === "/") {
@@ -400,13 +410,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
 
   const needsTitleMapping = isFongmiDanmakuRequest(path, method, url)
-    || path === "/api/v2/match"
-    || path === "/api/v2/favorite/add"
-    || path === "/api/favorite/add"
-    || path === "/api/v2/favorite/refresh"
-    || path === "/api/favorite/refresh"
-    || path === "/api/v2/favorite/remove"
-    || path === "/api/favorite/remove";
+    || TITLE_MAPPING_PATHS.has(path);
   if (needsTitleMapping) await ensureRemoteTitleMapping();
 
   // GET /api/v2/search/anime

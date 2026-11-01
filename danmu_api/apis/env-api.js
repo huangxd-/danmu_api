@@ -7,6 +7,11 @@ import { syncRemoteTitleMappingConfig } from '../utils/remote-title-mapping-util
 import AIClient from '../utils/ai-util.js';
 import { verifyNipaplayAccount } from '../utils/nipaplay-util.js';
 
+function syncIntegrationsAfterEnvChange(key, deployPlatform) {
+  if (key === 'USE_BANGUMI_DATA') syncBangumiDataLifecycleOnConfigChange(deployPlatform);
+  if (key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
+}
+
 /**
  * 处理设置环境变量的请求
  */
@@ -27,10 +32,7 @@ export async function handleSetEnv(request) {
     // 调用handler的setEnv方法
     const result = await handler.setEnv(key, value);
     
-    if (result && key === 'USE_BANGUMI_DATA') {
-      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
-    }
-    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
+    if (result) syncIntegrationsAfterEnvChange(key, deployPlatform);
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 设置成功` });
@@ -63,10 +65,7 @@ export async function handleAddEnv(request) {
     // 调用handler的addEnv方法
     const result = await handler.addEnv(key, value);
     
-    if (result && key === 'USE_BANGUMI_DATA') {
-      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
-    }
-    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
+    if (result) syncIntegrationsAfterEnvChange(key, deployPlatform);
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 添加成功` });
@@ -99,10 +98,7 @@ export async function handleDelEnv(request) {
     // 调用handler的delEnv方法
     const result = await handler.delEnv(key);
     
-    if (result && key === 'USE_BANGUMI_DATA') {
-      syncBangumiDataLifecycleOnConfigChange(deployPlatform);
-    }
-    if (result && key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
+    if (result) syncIntegrationsAfterEnvChange(key, deployPlatform);
 
     if (result) {
       return jsonResponse({ success: true, message: `环境变量 ${key} 删除成功` });

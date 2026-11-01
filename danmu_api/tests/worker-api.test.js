@@ -32,6 +32,7 @@ import {
   parseRemoteTitleMappings,
   refreshRemoteTitleMappingNow,
 } from '../utils/remote-title-mapping-util.js';
+import { resolveTitleMapping } from '../utils/title-mapping-index.js';
 
 test('GET / should return welcome message', async () => {
     const req = new MockRequest(urlPrefix, { method: 'GET' });
@@ -1158,15 +1159,16 @@ test('远程映射表：本机规则优先，禁用或切换地址后清理旧�
     '本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y',
   );
 
-  assert.strictEqual(Globals.envs.titleMappingTable.get('本地剧A'), '本地映射A');
-  assert.strictEqual(Globals.envs.titleMappingTable.get('本地剧B'), '本地映射B');
-  assert.strictEqual(Globals.envs.titleMappingTable.get('远程剧X'), '远程映射X');
-  assert.strictEqual(Globals.envs.titleMappingTable.get('远程剧Y'), '远程映射Y');
+  assert.strictEqual(resolveTitleMapping('本地剧A'), '本地映射A');
+  assert.strictEqual(resolveTitleMapping('本地剧B'), '本地映射B');
+  assert.strictEqual(resolveTitleMapping('远程剧X'), '远程映射X');
+  assert.strictEqual(resolveTitleMapping('远程剧Y'), '远程映射Y');
+  assert.strictEqual(Globals.envs.titleMappingTable.has('远程剧X'), false, '不应复制远端规则到本机表');
 
   Globals.envs.titleMappingTableUrl = '';
   await ensureRemoteTitleMapping();
-  assert.strictEqual(Globals.envs.titleMappingTable.has('远程剧X'), false);
-  assert.strictEqual(Globals.envs.titleMappingTable.get('本地剧A'), '本地映射A');
+  assert.strictEqual(resolveTitleMapping('远程剧X'), null);
+  assert.strictEqual(resolveTitleMapping('本地剧A'), '本地映射A');
 });
 
 test('远程映射表：Node 启动复用磁盘缓存且不发起网络请求', async () => {
@@ -1176,10 +1178,9 @@ test('远程映射表：Node 启动复用磁盘缓存且不发起网络请求', 
   try {
     process.chdir(cacheRoot);
     await fs.mkdir(path.join(cacheRoot, '.cache'), { recursive: true });
-    await fs.writeFile(path.join(cacheRoot, '.cache', 'title-mapping-remote.txt'), '缓存剧->缓存映射', 'utf8');
     await fs.writeFile(
       path.join(cacheRoot, '.cache', 'title-mapping-remote.json'),
-      JSON.stringify({ url: sourceUrl }),
+      JSON.stringify({ url: sourceUrl, text: '缓存剧->缓存映射' }),
       'utf8',
     );
 
@@ -1195,8 +1196,8 @@ test('远程映射表：Node 启动复用磁盘缓存且不发起网络请求', 
     }, () => ensureRemoteTitleMapping());
 
     assert.strictEqual(requests, 0);
-    assert.strictEqual(Globals.envs.titleMappingTable.get('缓存剧'), '缓存映射');
-    assert.strictEqual(Globals.envs.titleMappingTable.get('本地剧'), '本地值');
+    assert.strictEqual(resolveTitleMapping('缓存剧'), '缓存映射');
+    assert.strictEqual(resolveTitleMapping('本地剧'), '本地值');
   } finally {
     process.chdir(originalCwd);
     await fs.rm(cacheRoot, { recursive: true, force: true });
@@ -1225,12 +1226,13 @@ test('远程映射表：Node 手动刷新下载、生效并写入磁盘缓存', 
 
     assert.deepStrictEqual(result, { success: true, count: 2, status: 200 });
     assert.strictEqual(requestedUrl, sourceUrl);
-    assert.strictEqual(Globals.envs.titleMappingTable.get('本地剧'), '本地优先');
-    assert.strictEqual(Globals.envs.titleMappingTable.get('下载剧'), '下载映射');
-    assert.match(
-      await fs.readFile(path.join(cacheRoot, '.cache', 'title-mapping-remote.txt'), 'utf8'),
-      /下载剧->下载映射/,
+    assert.strictEqual(resolveTitleMapping('本地剧'), '本地优先');
+    assert.strictEqual(resolveTitleMapping('下载剧'), '下载映射');
+    const cache = JSON.parse(
+      await fs.readFile(path.join(cacheRoot, '.cache', 'title-mapping-remote.json'), 'utf8'),
     );
+    assert.strictEqual(cache.url, sourceUrl);
+    assert.match(cache.text, /下载剧->下载映射/);
   } finally {
     process.chdir(originalCwd);
     await fs.rm(cacheRoot, { recursive: true, force: true });
@@ -1249,7 +1251,7 @@ test('远程映射表：Serverless 冷启动同步下载一次并复用实例内
   }, async () => {
     await Promise.all([ensureRemoteTitleMapping(), ensureRemoteTitleMapping()]);
     assert.strictEqual(requests, 1);
-    assert.strictEqual(Globals.envs.titleMappingTable.get('冷启动剧'), '远程映射剧');
+    assert.strictEqual(resolveTitleMapping('冷启动剧'), '远程映射剧');
 
     await ensureRemoteTitleMapping();
     assert.strictEqual(requests, 1, '已加载到实例内存后不应重复下载');

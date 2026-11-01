@@ -14,6 +14,7 @@ import {
 } from '../utils/favorite-util.js';
 import { extractTitleSeasonEpisode, searchAnime } from './dandan-api.js';
 import { createFavoriteSchedule } from '../utils/favorite-schedule-util.js';
+import { resolveTitleMapping } from '../utils/title-mapping-index.js';
 
 const favoriteRefreshLocks = new Set();
 
@@ -21,9 +22,7 @@ async function resolveTitleForFavorite(fileName) {
   const { cleanFileName } = parseFileName(fileName);
   let { title, season, episode, year } = await extractTitleSeasonEpisode(cleanFileName);
 
-  if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
-    title = globals.titleMappingTable.get(title) || title;
-  }
+  title = resolveTitleMapping(title) || title;
   if (globals.animeTitleSimplified) title = simplized(title);
   if (globals.titleNoiseFilter) title = title.replace(globals.titleNoiseFilter, '').trim();
 
