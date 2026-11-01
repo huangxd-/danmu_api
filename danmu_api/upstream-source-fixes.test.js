@@ -10,6 +10,12 @@ import IqiyiSource from './sources/iqiyi.js';
 import YoukuSource from './sources/youku.js';
 import SohuSource from './sources/sohu.js';
 import HongguoSource from './sources/hongguo.js';
+import { normalizeCoverUrl, getUnavailableReason } from './sources/renren.js';
+import { extractAnimeInfo } from './utils/common-util.js';
+import { parseOffsetRules, resolveOffsetRule, offsetDuration } from './utils/offset-util.js';
+import { findSecondaryMatches, applyMergeLogic } from './utils/merge-util.js';
+import { getSourceByKey } from './sources/registry.js';
+import { getComment, getCommentByUrl } from './apis/player-api.js';
 import { convertToDanmakuJson, groupDanmusByMinute } from './utils/danmu-util.js';
 import { isCommentCacheValid, setCommentCache } from './utils/cache-util.js';
 import { runWithCommentTransform } from './utils/comment-context.js';
@@ -553,4 +559,121 @@ test('Hongguo App host fallback stops when its search deadline expires', async t
   });
   await assert.rejects(source.request('GET', '/reading/bookapi/search/tab/v', { deadline: now + 10000 }), /红果搜索超时/);
   assert.equal(calls, 1);
+});
+
+
+test('红果搜索和 SSR 兜底均发送浏览器头，仍遵守共享搜索预算', async t => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const source = new HongguoSource();
+  const seen = [];
+  t.mock.method(globalThis, 'fetch', async (input, options) => {
+    const url = new URL(input); const h = new Headers(options.headers);
+    seen.push({ path: url.pathname, ua: h.get('user-agent'), referer: h.get('referer'), accept: h.get('accept') });
+    return mockResponse(url.pathname.includes('/api/search/') ? { searchList: [] } : `<script>{"searchList":${JSON.stringify([webSeries('ssr')])}}</script>`);
+  });
+  assert.equal((await source.search('测试'))[0].seriesId, 'ssr');
+  assert.equal(seen.length, 2);
+  assert.ok(seen.every(row => row.ua.includes('Mozilla') && row.referer === 'https://hongguoduanju.com/'));
+  assert.match(seen[0].accept, /application\/json/); assert.match(seen[1].accept, /text\/html/);
+});
+
+test('腾讯搜索补全相关分区的多季并排除无关和重复候选', async t => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const source = new TencentSource();
+  const item = (id, title) => ({ doc: { id }, videoInfo: { title } });
+  const box = (name, items) => ({ boxTitle: { boxTitles: [name] }, itemList: items });
+  t.mock.method(source, 'filterTencentSearchItem', x => ({ mediaId: x.doc.id, title: x.videoInfo.title }));
+  t.mock.method(source, 'extractChapterContexts', () => []);
+  t.mock.method(globalThis, 'fetch', async () => mockResponse({ ret: 0, data: { normalList: { itemList: [item('3', '一念永恒 完结季')] }, areaBoxList: [
+    box('与一念永恒相关', [item('1', '一念永恒 第一季'), item('3', '一念永恒 完结季')]),
+    box('一念永恒', [item('2', '一念永恒 第二季'), item('z', '无关作品')]),
+    box('相关短视频', [item('bad', '一念永恒 片段')])
+  ] } }));
+  assert.deepEqual((await source.search('一念永恒')).map(row => row.mediaId), ['3','1','2']);
+});
+
+test('人人视频封面直连与无分集原因', () => {
+  assert.equal(normalizeCoverUrl('https://img.bwcgee.cn/a.webp'), 'https://img.duoduoshipin.vip/a.webp');
+  assert.equal(normalizeCoverUrl('https://example.com/a.webp'), 'https://example.com/a.webp');
+  assert.equal(getUnavailableReason({ dramaInfo: { serialStatus: 'NOT_BROADCAST' } }), '尚未开播');
+  assert.equal(getUnavailableReason({ dramaInfo: {} }), '尚未上线');
+  assert.equal(getUnavailableReason({ dramaInfo: { serialStatus: 'FINISH' } }), '无播放资源');
+});
+
+test('完整标题偏移规则匹配及不同时间轴端点', () => {
+  const context = extractAnimeInfo('钢铁侠2(2010)【电影】from tencent', '【tencent】 正片');
+  const rules = parseOffsetRules('钢铁侠2:10');
+  assert.equal(resolveOffsetRule(rules, { anime: context.baseTitle, fullTitle: context.fullTitle, source: 'tencent' })?.offset, 10);
+  assert.equal(offsetDuration(100, 10, false), 110);
+  assert.equal(offsetDuration(120, 10, true, 100), 132);
+  assert.equal(offsetDuration(100, -150, false), 0);
+  assert.equal(offsetDuration(0, 20, false, 100), 20);
+});
+
+test('合并拒绝电影和共享别名的动画季，并更新合并目录集数', async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'tencent&youku' });
+  const make = (id, title, source, type, n, aliases = []) => ({ animeId: id, bangumiId: String(id),
+    animeTitle: `${title}(2026)【${type}】from ${source}`, aliases, source, type, typeDescription: type,
+    startDate: '2026-01-01', episodeCount: n, links: Array.from({ length:n }, (_,i) => ({ title:`【${source}】 第${i+1}集`, url:`${source}:${id}:${i}` })) });
+  const movie = make(1, '银河护卫队', 'tencent', '电影', 1);
+  const series = make(2, '银河守护者 第一季', 'youku', 'TV动画', 12, ['银河护卫队']);
+  assert.deepEqual(findSecondaryMatches(movie, [series], new Set(), ['youku']), []);
+  const primary = make(3, '目录测试作品', 'tencent', '动漫', 2);
+  const secondary = make(4, '目录测试作品', 'youku', '动漫', 5);
+  Globals.animes = [primary, secondary];
+  const details = new Map();
+  await applyMergeLogic([primary, secondary], details);
+  const all = [...Globals.animes, ...details.values()];
+  const merged = all.find(x => x.animeTitle?.includes('from tencent&youku'));
+  assert.ok(merged); assert.ok(merged.links.length > 2); assert.equal(merged.episodeCount, merged.links.length);
+});
+
+test('偏移后的单源与多源时长在冷缓存和热缓存均与弹幕时间一致', async t => {
+  Globals.init({ LOG_LEVEL:'error', SOURCE_ORDER:'tencent,youku', MERGE_SOURCE_PAIRS:'tencent&youku',
+    LOCAL_CACHE_ENABLED:'false', LOCAL_REDIS_URL:'', BILIBILI_UGC_ENABLED:'false', BLOCK_DOMESTIC_CELEBRITIES:'false',
+    GROUP_MINUTE:'0', COMMENT_CACHE_MINUTES:'30', COMMENT_CACHE_MIN_COUNT:'0', DANMU_OFFSET:'钢铁侠2@tencent:10,钢铁侠2@youku:-20' });
+  Globals.animes=[]; Globals.episodeIds=[]; Globals.episodeNum=10001; Globals.commentCache=new Map(); Globals.searchCache=new Map();
+  const tx=getSourceByKey('tencent'), yk=getSourceByKey('youku');
+  for (const [src,duration] of [[tx,100],[yk,120]]) {
+    t.mock.method(src,'getComments', async (_url,_label,segment) => segment ? {duration,segmentList:[]} : [{p:'90,1,16777215,[tencent]',m:'弹幕'}]);
+    t.mock.method(src,'getEpisodeDanmu', async () => [{p:'90,1,25,16777215,0,0,0,1',m:'弹幕'}]);
+    t.mock.method(src,'formatComments', rows => rows);
+  }
+  const single='https://v.qq.com/x/cover/a/b.html@5';
+  const merged='tencent:https://v.qq.com/x/cover/a/b.html@5$$$youku:https://v.youku.com/v_show/id_c.html@10';
+  Globals.animes=[{animeId:101,bangumiId:'a',animeTitle:'钢铁侠2(2010)【电影】from tencent',source:'tencent',type:'电影',links:[
+    {id:10001,url:single,title:'【tencent】 正片'}, {id:10002,url:merged,title:'【tencent＆youku】 正片'}]}];
+  for(const [id,expected] of [[10001,115],[10002,115]]) {
+    for(let i=0;i<2;i++) {
+      const reply=await (await getComment(`/api/v2/comment/${id}`,'json',false,'',true)).json();
+      assert.equal(reply.videoDuration,expected,`id ${id} request ${i}`);
+      const times=reply.comments.map(row => Number(row.p.split(',')[0]));
+      assert.ok(times.includes(id === 10001 ? 105 : 80), `id ${id}: ${times}`);
+    }
+  }
+  const byUrl=await (await getCommentByUrl(single,'json',false,true)).json();
+  assert.equal(byUrl.videoDuration,105);
+  const byUrlPercent=await (await getCommentByUrl('https://v.qq.com/x/cover/a/b.html@%10','json',false,true)).json();
+  assert.equal(byUrlPercent.videoDuration,110);
+  assert.equal(Number(byUrlPercent.comments[0].p.split(',')[0]),99);
+});
+
+
+test('百分比链接和规则连续偏移复用时长，冷暖缓存端点一致', async t => {
+  Globals.init({ LOG_LEVEL:'error', SOURCE_ORDER:'tencent', MERGE_SOURCE_PAIRS:'',
+    LOCAL_CACHE_ENABLED:'false', LOCAL_REDIS_URL:'', BILIBILI_UGC_ENABLED:'false', BLOCK_DOMESTIC_CELEBRITIES:'false',
+    GROUP_MINUTE:'0', COMMENT_CACHE_MINUTES:'30', COMMENT_CACHE_MIN_COUNT:'0', DANMU_OFFSET:'钢铁侠2@tencent%:10' });
+  Globals.animes=[]; Globals.episodeIds=[]; Globals.commentCache=new Map(); Globals.searchCache=new Map();
+  const tx=getSourceByKey('tencent'); let durationCalls=0;
+  t.mock.method(tx,'getComments',async (_url,_label,segment) => {
+    if (segment) { durationCalls++; return {duration:100,segmentList:[]}; }
+    return [{p:'90,1,16777215,[tencent]',m:'弹幕'}];
+  });
+  Globals.animes=[{animeId:111,bangumiId:'a',animeTitle:'钢铁侠2(2010)【电影】from tencent',source:'tencent',type:'电影',links:[
+    {id:10005,url:'https://v.qq.com/x/cover/a/b.html@%10',title:'【tencent】 正片'}]}];
+  for(let i=1;i<=2;i++) {
+    const reply=await (await getComment('/api/v2/comment/10005','json',false,'',true)).json();
+    assert.equal(reply.videoDuration,121); assert.equal(Number(reply.comments[0].p.split(',')[0]),108.9);
+    assert.equal(durationCalls,i,'单次请求只读取一次时长');
+  }
 });

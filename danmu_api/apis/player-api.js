@@ -18,7 +18,7 @@ import {
 } from "../utils/cache-util.js";
 
 import { formatDanmuResponse, convertToDanmakuJson, filterDanmusByBlockedWords, filterDanmusByBlockedNames } from "../utils/danmu-util.js";
-import { resolveOffset, resolveOffsetRule, applyOffset, stripLinkOffset } from "../utils/offset-util.js";
+import { resolveOffsetRule, applyOffset, stripLinkOffset, offsetDuration } from "../utils/offset-util.js";
 import { applySearchKeywordMapping, ensureRemoteTitleMapping, ensureCachedRemoteTitleMapping, resolveLocalTitleMapping, resolveCachedRemoteTitleMapping } from "../utils/title-mapping-url-util.js";
 import { filterMappingQualifierCandidates, filterMappingTargetCandidates, collectAutoMatchCandidates } from "../utils/auto-match-mapping-util.js";
 import { ensureRemoteAutoMatchMapping, getCachedRemoteAutoMatchMappingRules } from "../utils/auto-match-mapping-url-util.js";
@@ -174,7 +174,11 @@ function extractDurationFromSegments(segmentResult) {
   return duration > 0 ? duration : 0;
 }
 
-async function resolveUrlDuration(url) {
+async function resolveUrlDuration(url, cache = null) {
+  if (cache) {
+    if (!cache.has(url)) cache.set(url, resolveUrlDuration(url));
+    return cache.get(url);
+  }
   if (String(url || '').startsWith('hongguo:') || isHongguoPlayerUrl(url)) {
     const segmentResult = await sourceLogContext.run('hongguo', () => hongguoSource.getComments(url, 'hongguo', true));
     return extractDurationFromSegments(segmentResult);
@@ -212,35 +216,34 @@ async function resolveUrlDuration(url) {
   }
 }
 
-function extractMergedUrls(url) {
-  return String(url || '')
-    .split(MERGE_DELIMITER)
-    .map((part) => {
-      const firstColonIndex = part.indexOf(':');
-      if (firstColonIndex === -1) return part.trim();
-      return part.slice(firstColonIndex + 1).trim();
-    })
-    .filter(Boolean);
+// Resolve the same rule for comment transformation and reported duration.
+function resolveCommentOffsetRule(animeTitle, episodeTitle, commentId, source) {
+  if (!animeTitle || !episodeTitle || !globals.danmuOffsetRules?.length) return null;
+  const { baseTitle, fullTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+  return resolveOffsetRule(globals.danmuOffsetRules, {
+    anime: baseTitle, fullTitle,
+    season: `S${String(season || 1).padStart(2, '0')}`,
+    episode: `E${String(episode || findIndexById(commentId) + 1).padStart(2, '0')}`,
+    source
+  });
 }
 
-async function resolveMergedDuration(url) {
+async function resolveMergedDuration(url, context = null, durationCache = null) {
   if (!url) return 0;
-
   try {
-    // 单链接直接返回其时长
-    if (!url.includes(MERGE_DELIMITER)) {
-      return await resolveUrlDuration(url);
-    }
-
-    // 合并链接的时长取各子链接偏移后时间轴末端的最大值，而非各子链接时长的简单取大
-    const linkMetas = extractMergedUrls(url).map(stripLinkOffset);
-    const durations = await Promise.all(linkMetas.map((meta) => resolveUrlDuration(meta.cleanUrl)));
-    // 复用 applyOffset 的偏移语义计算各子链接末端，确保返回的合并时长与弹幕实际落点完全一致
-    return linkMetas.reduce((maxEnd, meta, index) => {
-      const sourceDuration = durations[index];
-      if (!(sourceDuration > 0)) return maxEnd;
-      const end = applyOffset([{ t: sourceDuration }], meta.offset, { usePercent: meta.percent, videoDuration: sourceDuration })[0].t;
-      return end > maxEnd ? end : maxEnd;
+    const merged = url.includes(MERGE_DELIMITER);
+    const parts = merged ? url.split(MERGE_DELIMITER).map(part => {
+      const split = part.indexOf(':');
+      return { source: split < 0 ? '' : part.slice(0, split), ...stripLinkOffset(split < 0 ? part : part.slice(split + 1)) };
+    }) : [{ source: context?.source || '', ...stripLinkOffset(url) }];
+    const durations = await Promise.all(parts.map(part => resolveUrlDuration(part.cleanUrl, durationCache)));
+    return parts.reduce((longest, part, index) => {
+      const original = durations[index];
+      if (!(original > 0)) return longest;
+      let end = offsetDuration(original, part.offset, part.percent);
+      const rule = context && resolveCommentOffsetRule(context.animeTitle, context.episodeTitle, context.commentId, part.source);
+      if (rule) end = offsetDuration(end, rule.offset, rule.usePercent, original);
+      return Math.max(longest, end);
     }, 0);
   } catch (error) {
     log('warn', `[system] [duration] 获取时长失败: ${error.message}`);
@@ -2939,7 +2942,7 @@ function buildBangumiData(anime, idParam = "") {
  * @param {string} url 聚合URL
  * @returns {Promise<Array>} 合并后的弹幕列表
  */
-async function fetchMergedComments(url, animeTitle, commentId) {
+async function fetchMergedComments(url, animeTitle, commentId, durationCache = null) {
   const parts = url.split(MERGE_DELIMITER);
   const partMetas = parts.map((part) => {
     const firstColonIndex = part.indexOf(':');
@@ -3028,8 +3031,9 @@ async function fetchMergedComments(url, animeTitle, commentId) {
             if (meta.manualOffset && formatted && Array.isArray(formatted)) {
               if (meta.manualOffsetPercent) {
                 const maxTime = Math.max(...formatted.map(d => parseFloat(String(d.p).split(',')[0]) || 0), 0);
-                formatted = applyOffset(formatted, meta.manualOffset, { usePercent: true, videoDuration: maxTime || 1 });
-                log("info", `[${sourceLabel}] 应用百分比偏移 ${meta.manualOffset}s (时长=${maxTime}s)`);
+                const sourceDuration = await resolveUrlDuration(realId, durationCache);
+                formatted = applyOffset(formatted, meta.manualOffset, { usePercent: true, videoDuration: sourceDuration || maxTime || 1 });
+                log("info", `[${sourceLabel}] 应用百分比偏移 ${meta.manualOffset}s (时长=${sourceDuration || maxTime || 1}s)`);
               } else {
                 formatted = applyOffset(formatted, meta.manualOffset);
                 log("info", `[${sourceLabel}] 应用手动偏移 ${meta.manualOffset}s`);
@@ -3091,7 +3095,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
   if (globals.danmuOffsetRules?.length > 0 && animeTitle && commentId) {
     const [, , episodeTitle] = findAnimeIdByCommentId(commentId);
     if (episodeTitle) {
-      let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+      let { baseTitle, fullTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
       season ||= 1;
       episode ||= findIndexById(commentId) + 1;
       const seasonStr = `S${season.toString().padStart(2, '0')}`;
@@ -3100,6 +3104,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
         const list = results[idx];
         const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
           anime: baseTitle,
+          fullTitle,
           season: seasonStr,
           episode: episodeStr,
           source: sourceNames[idx]
@@ -3107,7 +3112,7 @@ async function fetchMergedComments(url, animeTitle, commentId) {
         const offset = offsetRule?.offset || 0;
         if (offset !== 0) {
           const targetUrl = realIds[idx];
-          const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(targetUrl) : 0;
+          const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(targetUrl, durationCache) : 0;
           const offsetMode = offsetRule?.usePercent ? '%' : 's';
           log("info", `[merge] 应用偏移 ${offset}${offsetMode} -> ${sourceNames[idx]} (${baseTitle}/${seasonStr}/${episodeStr})${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
           results[idx] = applyOffset(list, offset, {
@@ -3238,6 +3243,11 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
   const pendingMetadata = !segmentFlag && animeTitle && await shouldBlockDomesticCelebrities(animeTitle)
     ? getDomesticPersonMetadataForTitle(animeTitle) : null;
 
+  // Duration must use the same per-source rules on cold and cached requests.
+  const [, offsetSource, offsetEpisodeTitle] = shouldAttachDuration ? findAnimeIdByCommentId(commentId) : [];
+  const durationContext = { animeTitle, episodeTitle: offsetEpisodeTitle, commentId, source: offsetSource };
+  const durationCache = new Map();
+
   // 检查弹幕缓存
   const cacheKey = resolveCommentCacheKey(url);
   const cachedComments = segmentFlag ? null : getCommentCache(cacheKey);
@@ -3247,7 +3257,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
     const filteredCachedComments = await supplementAndFilterForEpisode(commentId, url, cachedComments, animeTitle, pendingMetadata);
     const responseData = buildDanmuResponse(
       { count: filteredCachedComments.length, comments: filteredCachedComments },
-      shouldAttachDuration ? await resolveMergedDuration(url) : null
+      shouldAttachDuration ? await resolveMergedDuration(url, durationContext, durationCache) : null
     );
     return formatDanmuResponse(responseData, queryFormat);
   }
@@ -3255,7 +3265,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
   log("info", "[system] [LogVar-API] 开始从本地请求弹幕...", url);
   let danmus = [];
   const upstreamStarted = performance.now();
-  const durationPromise = shouldAttachDuration ? resolveMergedDuration(url) : null;
+  const durationPromise = shouldAttachDuration ? resolveMergedDuration(url, durationContext, durationCache) : null;
 
   // 提取单链接偏移值（@秒数 / @%百分比）
   const linkMeta = stripLinkOffset(url);
@@ -3267,7 +3277,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
   }
 
   if (url && url.includes(MERGE_DELIMITER)) {
-    danmus = await fetchMergedComments(url, animeTitle, commentId);
+    danmus = await fetchMergedComments(url, animeTitle, commentId, durationCache);
   } else {
     const commentUrl = cleanUrl;
     const isHongguoUrl = isHongguoPlayerUrl(commentUrl);
@@ -3324,8 +3334,9 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
   if (!(url && url.includes(MERGE_DELIMITER)) && singleUrlOffset !== 0 && danmus && Array.isArray(danmus) && danmus.length > 0) {
     if (singleUrlOffsetPercent) {
       const maxTime = Math.max(...danmus.map(d => parseFloat(String(d.p).split(',')[0]) || 0), 0);
-      danmus = applyOffset(danmus, singleUrlOffset, { usePercent: true, videoDuration: maxTime || 1 });
-      log("info", `[system] [LogVar-API] 应用链接百分比偏移 ${singleUrlOffset}s (时长=${maxTime}s)`);
+      const sourceDuration = await resolveUrlDuration(cleanUrl, durationCache);
+      danmus = applyOffset(danmus, singleUrlOffset, { usePercent: true, videoDuration: sourceDuration || maxTime || 1 });
+      log("info", `[system] [LogVar-API] 应用链接百分比偏移 ${singleUrlOffset}s (时长=${sourceDuration || maxTime || 1}s)`);
     } else {
       danmus = applyOffset(danmus, singleUrlOffset);
       log("info", `[system] [LogVar-API] 应用链接偏移 ${singleUrlOffset}s`);
@@ -3392,17 +3403,17 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
 
   // 应用弹幕时间偏移（合并源已在 fetchMergedComments 中按来源分别应用）
   if (animeTitle && episodeTitle && globals.danmuOffsetRules?.length > 0 && !(url && url.includes(MERGE_DELIMITER))) {
-    let { baseTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
+    let { baseTitle, fullTitle, season, episode } = extractAnimeInfo(animeTitle, episodeTitle);
     season ||= 1;
     episode ||= findIndexById(commentId) + 1;
     const seasonStr = `S${season.toString().padStart(2, '0')}`;
     const episodeStr = `E${episode.toString().padStart(2, '0')}`;
     const offsetRule = resolveOffsetRule(globals.danmuOffsetRules, {
-      anime: baseTitle, season: seasonStr, episode: episodeStr, source
+      anime: baseTitle, fullTitle, season: seasonStr, episode: episodeStr, source
     });
     const offset = offsetRule?.offset || 0;
     if (offset !== 0) {
-      const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(url) : 0;
+      const videoDuration = offsetRule?.usePercent ? await resolveUrlDuration(cleanUrl, durationCache) : 0;
       log("info", `[system] [LogVar-API] Applying danmu offset: ${offset}${offsetRule?.usePercent ? '%' : 's'} for ${baseTitle}/${seasonStr}/${episodeStr}${offsetRule?.usePercent ? `, duration=${videoDuration}s` : ''}`);
       danmus = applyOffset(danmus, offset, {
         usePercent: offsetRule?.usePercent,
@@ -3467,6 +3478,7 @@ async function getCommentByUrlResponse(videoUrl, queryFormat, segmentFlag, inclu
     let url = videoUrl;
     const shouldAttachDuration = shouldIncludeVideoDuration(queryFormat, includeDuration);
     // 检查弹幕缓存
+    const durationCache = new Map();
     const cacheKey = resolveCommentCacheKey(url);
     const cachedComments = segmentFlag ? null : getCommentCache(cacheKey);
     if (cachedComments !== null) {
@@ -3477,13 +3489,13 @@ async function getCommentByUrlResponse(videoUrl, queryFormat, segmentFlag, inclu
         errorMessage: "",
         count: filteredCachedComments.length,
         comments: filteredCachedComments
-      }, shouldAttachDuration ? await resolveMergedDuration(url) : null);
+      }, shouldAttachDuration ? await resolveMergedDuration(url, null, durationCache) : null);
       return formatDanmuResponse(responseData, queryFormat);
     }
 
     log("info", "[system] [LogVar-API] 开始从本地请求弹幕...", url);
     let danmus = [];
-    const durationPromise = shouldAttachDuration ? resolveMergedDuration(url) : null;
+    const durationPromise = shouldAttachDuration ? resolveMergedDuration(url, null, durationCache) : null;
 
     // 提取单链接偏移值（@秒数 / @%百分比）
     const linkMeta = stripLinkOffset(url);
@@ -3531,8 +3543,9 @@ async function getCommentByUrlResponse(videoUrl, queryFormat, segmentFlag, inclu
     if (singleUrlOffset !== 0 && danmus && Array.isArray(danmus) && danmus.length > 0) {
       if (singleUrlOffsetPercent) {
         const maxTime = Math.max(...danmus.map(d => parseFloat(String(d.p).split(',')[0]) || 0), 0);
-        danmus = applyOffset(danmus, singleUrlOffset, { usePercent: true, videoDuration: maxTime || 1 });
-        log("info", `[system] [LogVar-API] 应用链接百分比偏移 ${singleUrlOffset}s (时长=${maxTime}s)`);
+        const sourceDuration = await resolveUrlDuration(cleanUrl, durationCache);
+        danmus = applyOffset(danmus, singleUrlOffset, { usePercent: true, videoDuration: sourceDuration || maxTime || 1 });
+        log("info", `[system] [LogVar-API] 应用链接百分比偏移 ${singleUrlOffset}s (时长=${sourceDuration || maxTime || 1}s)`);
       } else {
         danmus = applyOffset(danmus, singleUrlOffset);
         log("info", `[system] [LogVar-API] 应用链接偏移 ${singleUrlOffset}s`);

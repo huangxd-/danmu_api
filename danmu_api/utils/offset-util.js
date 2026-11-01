@@ -86,8 +86,8 @@ export function parseOffsetRules(env) {
  * @param {string} ctx.source 来源（如 'bilibili' 或合并来源 'youku&bilibili'）
  * @returns {number} 偏移秒数，无匹配返回 0
  */
-export function resolveOffset(rules, { anime, season, episode, source }) {
-  const matchedRule = resolveOffsetRule(rules, { anime, season, episode, source });
+export function resolveOffset(rules, { anime, fullTitle, season, episode, source }) {
+  const matchedRule = resolveOffsetRule(rules, { anime, fullTitle, season, episode, source });
   return matchedRule ? matchedRule.offset : 0;
 }
 
@@ -97,7 +97,7 @@ export function resolveOffset(rules, { anime, season, episode, source }) {
  * @param {Object} ctx 匹配上下文
  * @returns {Object|null} 匹配到的规则对象，无匹配返回 null
  */
-export function resolveOffsetRule(rules, { anime, season, episode, source }) {
+export function resolveOffsetRule(rules, { anime, fullTitle, season, episode, source }) {
   if (!Array.isArray(rules) || rules.length === 0 || !anime) return null;
 
   // 拆分合并来源，将旧别名规范化为统一名称
@@ -126,7 +126,8 @@ export function resolveOffsetRule(rules, { anime, season, episode, source }) {
 
     for (const rule of rules) {
       // 匹配剧名（归一化后比较，消除繁简与 / 等非白名单字符带来的格式差异）
-      if (normalizeTitleForMatch(rule.anime) !== normalizeTitleForMatch(anime)) continue;
+      if (normalizeTitleForMatch(rule.anime) !== normalizeTitleForMatch(anime) &&
+          (!fullTitle || normalizeTitleForMatch(rule.anime) !== normalizeTitleForMatch(fullTitle))) continue;
 
       // 匹配路径级别
       if (level.matchEpisode) {
@@ -257,6 +258,12 @@ export function applyOffset(danmus, offsetSeconds, options = {}) {
 
     return updated;
   });
+}
+
+// Map a media endpoint with the same transformation used for its comments.
+export function offsetDuration(duration, offset, usePercent, referenceDuration = duration) {
+  if (!(referenceDuration > 0) || duration < 0 || !offset) return duration;
+  return applyOffset([{ t: duration }], offset, { usePercent, videoDuration: referenceDuration })[0].t;
 }
 
 /**
