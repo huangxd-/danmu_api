@@ -2,7 +2,7 @@
   <img src="https://i.mji.rip/2025/09/27/eedc7b701c0fa5c1f7c175b22f441ad9.jpeg" alt="Clash" width="128" style="border-radius: 16px;" />
 </div>
 
-<h2 align="center">
+<h2   align="center">
 LogVar 弹幕 API 服务器
 </h2>
 
