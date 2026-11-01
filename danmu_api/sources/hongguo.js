@@ -70,6 +70,11 @@ const CLIENT_CONFIG = {
 };
 
 const WEB_ORIGIN = "https://hongguoduanju.com";
+const WEB_BROWSER_HEADERS = Object.freeze({
+  "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+  referer: `${WEB_ORIGIN}/`,
+  "accept-language": "zh-CN,zh;q=0.9",
+});
 
 function parseWebSearchResults(html) {
   const marker = '"searchList":';
@@ -884,7 +889,7 @@ export default class HongguoSource extends BaseSource {
       for (let page = 1; page <= 3 && results.length < MAX_SEARCH_ITEMS && Date.now() < deadline; page++) {
         const url = `${WEB_ORIGIN}/api/search/result/?query=${encodeURIComponent(keyword)}&page=${page}`;
         const timeout = Math.max(1, Math.min(3000, deadline - Date.now()));
-        const response = await httpGet(url, { headers: { accept: "application/json" }, timeout, signal: AbortSignal.timeout(timeout) });
+        const response = await httpGet(url, { headers: { ...WEB_BROWSER_HEADERS, accept: "application/json, text/plain, */*" }, timeout, signal: AbortSignal.timeout(timeout) });
         const items = parseWebSearchApi(response.data);
         for (const item of items) {
           if (seen.has(item.seriesId)) continue;
@@ -900,7 +905,7 @@ export default class HongguoSource extends BaseSource {
     try {
       // 兜底：部分环境下搜索页仍以 SSR 形式内嵌 searchList
       const timeout = Math.max(1, Math.min(2000, deadline - Date.now()));
-      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { accept: "text/html" }, timeout, signal: AbortSignal.timeout(timeout) });
+      const response = await httpGet(`${WEB_ORIGIN}/search/${encodeURIComponent(keyword)}`, { headers: { ...WEB_BROWSER_HEADERS, accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" }, timeout, signal: AbortSignal.timeout(timeout) });
       const items = parseWebSearchResults(typeof response.data === "string" ? response.data : "")
         .map(normalizeWebSearchItem).filter(Boolean);
       if (items.length) return items.slice(0, MAX_SEARCH_ITEMS);
