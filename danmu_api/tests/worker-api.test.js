@@ -25,7 +25,6 @@ import { addAnime, addEpisode, setSearchCache } from '../utils/cache-util.js';
 import { createSearchResult, resetSearchState } from './helpers/context.js';
 import { createFavoriteAnime, favoriteSearchResult } from './helpers/favorites.js';
 import {
-  applyRemoteTitleMappingText,
   ensureRemoteTitleMapping,
   millisecondsUntilNextShanghaiRefresh,
   normalizeMappingSourceUrl,
@@ -1153,9 +1152,12 @@ test('远程映射表：本机规则优先，禁用或切换地址后清理旧�
     TITLE_MAPPING_TABLE: '本地剧A->本地映射A;本地剧B->本地映射B',
     TITLE_MAPPING_TABLE_URL: configuredUrl,
   });
-  applyRemoteTitleMappingText(
-    configuredUrl,
-    '本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y',
+  await withMockFetch(
+    async () => new Response('本地剧A->远程覆盖A;远程剧X->远程映射X;远程剧Y->远程映射Y', {
+      status: 200,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    }),
+    () => ensureRemoteTitleMapping(),
   );
 
   assert.strictEqual(Globals.resolveTitleMapping('本地剧A'), '本地映射A');

@@ -15,7 +15,6 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const remoteState = {
   configuredUrl: '',
-  mappings: new Map(),
   diskAttempted: false,
   nextInitialRetryAt: 0,
   schedulerTimer: null,
@@ -35,7 +34,6 @@ function resetForConfiguredUrl(url) {
   if (remoteState.configuredUrl === url) return;
   cancelScheduler();
   remoteState.configuredUrl = url;
-  remoteState.mappings = new Map();
   Globals.remoteTitleMappingTable = new Map();
   remoteState.diskAttempted = false;
   remoteState.nextInitialRetryAt = 0;
@@ -47,7 +45,6 @@ function currentConfiguredUrl() {
 
 function activateRemoteMappings(url, mappings) {
   if (remoteState.configuredUrl && remoteState.configuredUrl !== url) return false;
-  remoteState.mappings = mappings;
   remoteState.nextInitialRetryAt = 0;
   Globals.remoteTitleMappingTable = mappings;
   return true;
@@ -159,24 +156,6 @@ export function parseRemoteTitleMappings(text) {
   return table;
 }
 
-export function applyRemoteTitleMappingText(url, text) {
-  const normalizedUrl = normalizeMappingSourceUrl(url);
-  const mappings = parseRemoteTitleMappings(text);
-  if (!mappings.size) {
-    throw new Error('远程映射表未解析到有效规则（每条需为 原始标题->映射标题 格式）');
-  }
-  let configuredUrl = '';
-  try {
-    configuredUrl = currentConfiguredUrl();
-  } catch {
-    configuredUrl = '';
-  }
-  resetForConfiguredUrl(configuredUrl || normalizedUrl);
-  if (!activateRemoteMappings(normalizedUrl, mappings)) return false;
-  remoteLog('info', `远程映射表已更新: ${mappings.size} 条规则`);
-  return true;
-}
-
 async function fetchRemoteMappingText(url) {
   const response = await httpGet(url, { timeout: FETCH_TIMEOUT_MS, retries: 0 });
   const text = typeof response?.data === 'string'
@@ -261,7 +240,7 @@ export async function refreshRemoteTitleMappingNow() {
     url = currentConfiguredUrl();
   } catch (error) {
     resetForConfiguredUrl('');
-    return { success: false, count: remoteState.mappings.size, errorMessage: error.message, status: 400 };
+    return { success: false, count: Globals.remoteTitleMappingTable.size, errorMessage: error.message, status: 400 };
   }
   if (!url) {
     resetForConfiguredUrl('');
@@ -270,7 +249,7 @@ export async function refreshRemoteTitleMappingNow() {
 
   resetForConfiguredUrl(url);
   if (remoteState.fetches.has(url)) {
-    return { success: false, count: remoteState.mappings.size, errorMessage: '远程映射表更新任务正在进行中', status: 409 };
+    return { success: false, count: Globals.remoteTitleMappingTable.size, errorMessage: '远程映射表更新任务正在进行中', status: 409 };
   }
 
   try {
@@ -281,7 +260,7 @@ export async function refreshRemoteTitleMappingNow() {
     remoteLog('error', `管理员手动更新失败: ${error?.message || error}`);
     return {
       success: false,
-      count: remoteState.mappings.size,
+      count: Globals.remoteTitleMappingTable.size,
       errorMessage: error?.message || String(error),
       status: 502,
     };
@@ -316,7 +295,7 @@ export async function ensureRemoteTitleMapping() {
     scheduleRemoteRefresh(url);
   }
 
-  if (remoteState.mappings.size) return;
+  if (Globals.remoteTitleMappingTable.size) return;
   if (Date.now() < remoteState.nextInitialRetryAt) return;
 
   try {

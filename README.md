@@ -786,6 +786,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── nipaplay-util.js    # NipaPlay 中转弹弹play服务端工具
 │       ├── offset-util.js      # 弹幕偏移工具
 │       ├── redis-util.js       # redis工具
+│       ├── remote-title-mapping-util.js # 远程剧名映射下载、缓存与定时刷新工具
 │       ├── server-listen-util.js # IPv4/IPv6 双栈监听与 IPv4 回退工具
 │       ├── time-util.js        # 时间日期工具
 │       ├── tmdb-util.js        # TMDB API请求处理工具
