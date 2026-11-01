@@ -21,9 +21,7 @@ async function resolveTitleForFavorite(fileName) {
   const { cleanFileName } = parseFileName(fileName);
   let { title, season, episode, year } = await extractTitleSeasonEpisode(cleanFileName);
 
-  if (globals.titleMappingTable && globals.titleMappingTable.size > 0) {
-    title = globals.titleMappingTable.get(title) || title;
-  }
+  title = globals.resolveTitleMapping(title) || title;
   if (globals.animeTitleSimplified) title = simplized(title);
   if (globals.titleNoiseFilter) title = title.replace(globals.titleNoiseFilter, '').trim();
 

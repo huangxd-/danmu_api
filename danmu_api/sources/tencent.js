@@ -5,7 +5,7 @@ import { httpGet, httpPost } from "../utils/http-util.js";
 import { convertToAsciiSum } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, normalizeTitleForMatch } from "../utils/common-util.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 
 // =====================
@@ -34,6 +34,26 @@ export default class TencentSource extends BaseSource {
   titleOrAliasMatches(anime, queryTitle, querySeason = null) {
     if (titleMatches(anime.title, queryTitle, querySeason)) return true;
     return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason));
+  }
+
+  // 搜索结果中用于补充同题材作品的分区：相关影视、与 X 相关、与关键词同名
+  isRelatedBoxTitle(boxTitle, keyword) {
+    const title = normalizeTitleForMatch(String(boxTitle || "").replace(/<[^>]+>/g, ""));
+    if (!title) return false;
+    const query = normalizeTitleForMatch(keyword);
+    return title.includes(normalizeTitleForMatch("相关影视"))
+      || /^与.*相关$/.test(title)
+      || (query.length > 0 && title === query);
+  }
+
+  // 分区内标题包含关键词的条目才作为候选，避免带入同系列无关条目
+  filterRelatedItems(box, keyword) {
+    const query = normalizeTitleForMatch(keyword);
+    if (!query) return [];
+    const items = Array.isArray(box?.itemList) ? box.itemList : [];
+    return items.filter(item =>
+      normalizeTitleForMatch(String(item?.videoInfo?.title || "").replace(/<[^>]+>/g, "")).includes(query)
+    );
   }
 
   /**
@@ -209,27 +229,29 @@ export default class TencentSource extends BaseSource {
         itemList = data.data.normalList.itemList;
       }
 
-      // 追加「相关影视」box 中 title 包含 keyword 的 itemList
-      if (data.data && data.data.areaBoxList) {
+      // 追加相关分区(相关影视 / 与 X 相关 / 与关键词同名)中标题包含关键词的作品，按 cid 去重
+      if (data.data && Array.isArray(data.data.areaBoxList)) {
+        const seenIds = new Set(itemList.map(item => item?.doc?.id).filter(Boolean));
         for (const box of data.data.areaBoxList) {
-          if (
-            box.itemList &&
-            box.boxTitle &&
-            Array.isArray(box.boxTitle.boxTitles) &&
-            box.boxTitle.boxTitles.includes("相关影视")
-          ) {
-            const relatedItems = box.itemList.filter(item =>
-              item.videoInfo &&
-              item.videoInfo.title &&
-              item.videoInfo.title.includes(keyword)
-            );
-            if (relatedItems.length > 0) {
-              log("info", `[tencent] 追加「相关影视」box 中匹配 "${keyword}" 的 ${relatedItems.length} 个项目`);
-              itemList = [...itemList, ...relatedItems];
-            } else {
-              log("info", `[tencent] 「相关影视」box 中无匹配 "${keyword}" 的项目`);
-            }
-            break;
+          const boxTitles = Array.isArray(box?.boxTitle?.boxTitles) ? box.boxTitle.boxTitles : [];
+          const boxTitle = boxTitles
+            .map(title => String(title).replace(/<[^>]+>/g, "").trim())
+            .find(title => this.isRelatedBoxTitle(title, keyword));
+          if (!boxTitle) continue;
+          const matchedItems = this.filterRelatedItems(box, keyword);
+          const relatedItems = matchedItems.filter(item => {
+            const id = item?.doc?.id;
+            if (!id || seenIds.has(id)) return false;
+            seenIds.add(id);
+            return true;
+          });
+          if (relatedItems.length > 0) {
+            log("info", `[tencent] 追加「${boxTitle}」分区中匹配 "${keyword}" 的 ${relatedItems.length} 个项目`);
+            itemList = [...itemList, ...relatedItems];
+          } else if (matchedItems.length > 0) {
+            log("info", `[tencent] 「${boxTitle}」分区中匹配 "${keyword}" 的项目均已存在于搜索结果`);
+          } else {
+            log("info", `[tencent] 「${boxTitle}」分区中无匹配 "${keyword}" 的项目`);
           }
         }
       }

@@ -1,7 +1,7 @@
 import { normalizeTitleForMatch } from './common-util.js';
 
 // 弹幕时间偏移独立模块
-// 职责：解析链接 @偏移 与偏移规则、匹配偏移量、应用偏移到弹幕
+// 职责：解析链接 @偏移 与偏移规则、匹配偏移量、应用偏移到弹幕、按偏移换算时间轴时长
 
 // 来源→平台别名映射（source 名和 platform 名不一致时扩展匹配）
 const SOURCE_ALIASES = {
@@ -22,7 +22,7 @@ function normalizeSegment(segment) {
 /**
  * 解析 DANMU_OFFSET 环境变量为结构化规则数组（启动时调用一次，缓存到 globals）
  * @param {string} env 环境变量值
- * @returns {Array} 规则数组
+ * @returns {Array} 规则数组（raw 保留原始配置文本）
  */
 export function parseOffsetRules(env) {
   if (!env || typeof env !== 'string') return [];
@@ -76,33 +76,26 @@ export function parseOffsetRules(env) {
     const season = seMatch ? normalizeSegment(seMatch[2]) : null;
     const episode = seMatch && seMatch[3] ? normalizeSegment(seMatch[3]) : null;
 
-    return { anime, season, episode, sources, all, offset, usePercent };
+    return { anime, season, episode, sources, all, offset, usePercent, raw: trimmed };
   }).filter(Boolean);
-}
-
-/**
- * 根据规则查找匹配的偏移量
- * @param {Array} rules parseOffsetRules 返回的规则数组
- * @param {Object} ctx 匹配上下文
- * @param {string} ctx.anime 剧名
- * @param {string} ctx.season 季（如 S01）
- * @param {string} ctx.episode 集（如 E03）
- * @param {string} ctx.source 来源（如 'bilibili' 或合并来源 'dandan&bilibili1'）
- * @returns {number} 偏移秒数，无匹配返回 0
- */
-export function resolveOffset(rules, { anime, season, episode, source }) {
-  const matchedRule = resolveOffsetRule(rules, { anime, season, episode, source });
-  return matchedRule ? matchedRule.offset : 0;
 }
 
 /**
  * 根据规则查找匹配的偏移规则
  * @param {Array} rules parseOffsetRules 返回的规则数组
  * @param {Object} ctx 匹配上下文
+ * @param {string} ctx.anime 剧名（剥除季号的基础名）
+ * @param {string} ctx.fullTitle 剥去年份的完整剧名（保留季号）；规则剧名与 anime 或 fullTitle 任一相等即视为同一剧名
+ * @param {string} ctx.season 季（如 S01）
+ * @param {string} ctx.episode 集（如 E03）
+ * @param {string} ctx.source 来源（如 'bilibili' 或合并来源 'dandan&bilibili1'）
  * @returns {Object|null} 匹配到的规则对象，无匹配返回 null
  */
-export function resolveOffsetRule(rules, { anime, season, episode, source }) {
+export function resolveOffsetRule(rules, { anime, fullTitle, season, episode, source }) {
   if (!Array.isArray(rules) || rules.length === 0 || !anime) return null;
+
+  const animeKey = normalizeTitleForMatch(anime);
+  const fullTitleKey = fullTitle ? normalizeTitleForMatch(fullTitle) : '';
 
   // 拆分合并来源，并展开别名
   const sourceKeys = new Set();
@@ -131,7 +124,10 @@ export function resolveOffsetRule(rules, { anime, season, episode, source }) {
 
     for (const rule of rules) {
       // 匹配剧名（归一化后比较，消除繁简与 / 等非白名单字符带来的格式差异）
-      if (normalizeTitleForMatch(rule.anime) !== normalizeTitleForMatch(anime)) continue;
+      // 完整剧名与基础名任一相等即命中：剧名以数字结尾（如 钢铁侠2）时季号解析会剥离尾数，
+      // 规则按完整片名书写仍需可匹配
+      const ruleTitle = normalizeTitleForMatch(rule.anime);
+      if (ruleTitle !== animeKey && !(fullTitleKey && ruleTitle === fullTitleKey)) continue;
 
       // 匹配路径级别
       if (level.matchEpisode) {
@@ -262,6 +258,18 @@ export function applyOffset(danmus, offsetSeconds, options = {}) {
 
     return updated;
   });
+}
+
+/**
+ * 按 applyOffset 的端点语义换算时间轴时长，时长端点在百分比与绝对偏移下均落到 duration + offset（下限 0）
+ * @param {number} duration 偏移前的时长（秒）
+ * @param {number} offset 偏移量（秒）
+ * @param {boolean} usePercent 是否百分比模式
+ * @returns {number} 偏移后的时长
+ */
+export function offsetDuration(duration, offset, usePercent) {
+  if (!(duration > 0) || !offset) return duration;
+  return applyOffset([{ t: duration }], offset, { usePercent, videoDuration: duration })[0].t;
 }
 
 /**

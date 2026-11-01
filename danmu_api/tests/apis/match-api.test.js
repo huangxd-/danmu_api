@@ -31,6 +31,23 @@ test('POST /api/v2/match 自动匹配接口（离线）', async t => {
     details.set(String(anime.animeId), anime);
   };
 
+  const createAggregatedAnime = (animeId, animeTitle, entries) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle,
+    aliases: [],
+    source: '360',
+    type: 'tvseries',
+    typeDescription: 'TV',
+    startDate: '2026-01-01T00:00:00.000Z',
+    episodeCount: entries.length,
+    links: entries.map((entry, index) => ({
+      id: animeId * 10 + index + 1,
+      title: entry.title,
+      url: entry.url
+    }))
+  });
+
   TencentSource.prototype.search = async (keyword, preferAnimeId, preferSource) => {
     searchCalls.push({ keyword, preferAnimeId, preferSource });
     return [{ keyword }];
@@ -50,6 +67,35 @@ test('POST /api/v2/match 自动匹配接口（离线）', async t => {
       qiyiAnime.links.forEach(link => { link.title = link.title.replace('【qq】', '【qiyi】'); });
       addCandidate(results, details, qqAnime);
       addCandidate(results, details, qiyiAnime);
+      return;
+    }
+    if (scenario === 'aggregatedPlatform') {
+      addCandidate(results, details, createAggregatedAnime(930070, '平台测试', [
+        { title: '【imgo】 第1集', url: 'https://www.mgtv.com/b/test/1.html' },
+        { title: '【qq】 第1集', url: 'https://v.qq.com/x/cover/test/1.html' },
+        { title: '【qq】 第2集', url: 'https://v.qq.com/x/cover/test/2.html' }
+      ]));
+      return;
+    }
+    if (scenario === 'aggregatedMissingPlatform') {
+      addCandidate(results, details, createAggregatedAnime(930071, '平台测试', [
+        { title: '【imgo】 第1集', url: 'https://www.mgtv.com/b/test/1.html' },
+        { title: '【qq】 第2集', url: 'https://v.qq.com/x/cover/test/2.html' }
+      ]));
+      return;
+    }
+    if (scenario === 'aggregatedSpillover') {
+      addCandidate(results, details, createAggregatedAnime(930080, '平台测试(2026)【TV动画】from 360',
+        Array.from({ length: 13 }, (_, index) => ({
+          title: `【imgo】 第${index + 1}集`,
+          url: `https://www.mgtv.com/b/test/s1-${index + 1}.html`
+        }))
+      ));
+      addCandidate(results, details, createAggregatedAnime(930081, '平台测试 第二季(2026)【TV动画】from 360', [
+        { title: '【imgo】 第1集', url: 'https://www.mgtv.com/b/test/s2-1.html' },
+        { title: '【qq】 第1集', url: 'https://v.qq.com/x/cover/test/s2-1.html' },
+        { title: '【qq】 第2集', url: 'https://v.qq.com/x/cover/test/s2-2.html' }
+      ]));
       return;
     }
     if (scenario === 'year') {
@@ -252,6 +298,40 @@ test('POST /api/v2/match 自动匹配接口（离线）', async t => {
       assert.equal(noPreference.body.matches[0].episodeTitle, '【qq】 第1集');
     });
 
+    await t.test('C/G 聚合源平台去重：保留目标平台且命中精确集号', async () => {
+      const preferred = await runMatch({
+        body: { fileName: '平台测试 S01E01 @qq' },
+        clientIp: 'c2a-ip',
+        scn: 'aggregatedPlatform'
+      });
+      assert.equal(preferred.body.isMatched, true);
+      assert.equal(preferred.body.matches[0].episodeId, 9300702);
+      assert.equal(preferred.body.matches[0].episodeTitle, '【qq】 第1集');
+      assert.equal(preferred.body.matches[0].url, 'https://v.qq.com/x/cover/test/1.html');
+
+      const noPreference = await runMatch({
+        body: { fileName: '平台测试 S01E01' },
+        clientIp: 'c2b-ip',
+        scn: 'aggregatedPlatform'
+      });
+      assert.equal(noPreference.body.isMatched, true);
+      assert.equal(noPreference.body.matches[0].episodeId, 9300701);
+      assert.equal(noPreference.body.matches[0].episodeTitle, '【imgo】 第1集');
+    });
+
+    await t.test('C/G 目标平台缺少目标集时不按数组位置错配', async () => {
+      const { body } = await runMatch({
+        body: { fileName: '平台测试 S01E01 @qq' },
+        clientIp: 'c2c-ip',
+        scn: 'aggregatedMissingPlatform'
+      });
+
+      assert.equal(body.isMatched, true);
+      assert.equal(body.matches[0].episodeId, 9300711);
+      assert.equal(body.matches[0].episodeTitle, '【imgo】 第1集');
+      assert.notEqual(body.matches[0].episodeId, 9300712);
+    });
+
     await t.test('C 只有标题：季集为 null 且仍能命中', async () => {
       const { body } = await runMatch({ body: { fileName: '无忧渡' }, clientIp: 'c3-ip' });
 
@@ -361,6 +441,20 @@ test('POST /api/v2/match 自动匹配接口（离线）', async t => {
       assert.equal('autoMatchMappingApplied' in lastSearch, false);
     });
 
+    await t.test('D 跨季顺延保留目标平台条目', async () => {
+      const { status, body } = await runMatch({
+        body: { fileName: '平台测试 S01E14 @qq' },
+        clientIp: 'd4a-ip',
+        scn: 'aggregatedSpillover'
+      });
+
+      assert.equal(status, 200);
+      assert.equal(body.isMatched, true);
+      assert.equal(body.matches[0].animeId, 930081);
+      assert.equal(body.matches[0].episodeId, 9300812);
+      assert.equal(body.matches[0].episodeTitle, '【qq】 第1集');
+    });
+
     await t.test('E 缓存写入告警：未命中时经 errorMessage 暴露', async () => {
       const { body } = await runMatch({
         body: { fileName: '无忧渡 S01E01' },
@@ -413,6 +507,23 @@ test('POST /api/v2/match 自动匹配接口（离线）', async t => {
       assert.equal(aiCalls, 1);
       assert.deepStrictEqual(withAi.body.matches, normal.body.matches);
       assert.equal(withAi.body.matches[0].episodeId, 9300031);
+    });
+
+    await t.test('F AI 分支保留聚合源的目标平台条目', async () => {
+      let aiCalls = 0;
+      AIClient.prototype.ask = async () => { aiCalls++; return JSON.stringify({ animeIndex: 0 }); };
+
+      const { body } = await runMatch({
+        body: { fileName: '平台测试 S01E01 @qq' },
+        clientIp: 'f2c-ip',
+        scn: 'aggregatedPlatform',
+        ai: '你是匹配专家'
+      });
+
+      assert.equal(aiCalls, 1);
+      assert.equal(body.isMatched, true);
+      assert.equal(body.matches[0].episodeId, 9300702);
+      assert.equal(body.matches[0].episodeTitle, '【qq】 第1集');
     });
 
     await t.test('F AI 分支：模型抛错时回落普通匹配', async () => {

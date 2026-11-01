@@ -2211,16 +2211,25 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
         const isSeasonExactMatch = hasSameSeasonMarker(primaryTitleForSim, secTitleForSim, primaryAnime.typeDescription, secAnime.typeDescription, primaryAnime.aliases, secAnime.aliases);
         const contentProbe       = probeContentMatch(primaryAnime, secAnime);
 
+        // ── 主副别名交叉比对 ─────────────────────────────────────────────
+        const primaryCandidates = Array.from(new Set([primaryTitleForSim, ...(primaryAnime.aliases || [])].map(titleForSimilarity).filter(Boolean)));
+        const secCandidates     = Array.from(new Set([secTitleForSim,     ...(secAnime.aliases     || [])].map(titleForSimilarity).filter(Boolean)));
+
         // ── 剧场版标题阻断 ───────────────────────────────────────────────
         // 防止 "Title Movie" 与 "Title (TV)" 因高相似度而误合并
         const hasMovieA = rawPrimaryTitle.search(RegexStore.Clean.MOVIE_KEYWORDS) !== -1;
         const hasMovieB = rawSecTitle.search(RegexStore.Clean.MOVIE_KEYWORDS) !== -1;
         if (hasMovieA !== hasMovieB) {
             const markersB  = extractSeasonMarkers(rawSecTitle, secAnime.typeDescription, secAnime.aliases);
+            // 在「标题 + 别名」候选集上比对，与相似度评分保持同一候选集，避免别名命中绕过阻断
             const stripMovie = (t) => cleanTitleForSimilarity(t.replace(RegexStore.Clean.MOVIE_KEYWORDS, ''));
-            const cleanA    = stripMovie(rawPrimaryTitle);
-            const cleanB    = stripMovie(rawSecTitle);
-            if (calculateSimilarity(cleanA, cleanB) > 0.9) {
+            let bestMovieSim = 0;
+            for (const pCand of primaryCandidates) {
+                for (const sCand of secCandidates) {
+                    bestMovieSim = Math.max(bestMovieSim, calculateSimilarity(stripMovie(pCand), stripMovie(sCand)));
+                }
+            }
+            if (bestMovieSim > 0.9) {
                 if (!markersP.has('SEQUEL') && !markersB.has('SEQUEL')) {
                     logReason(rawSecTitle, `剧场版标题阻断: [${hasMovieA ? 'Movie' : 'TV'}] vs [${hasMovieB ? 'Movie' : 'TV'}] (无续篇标识)`);
                     continue;
@@ -2248,10 +2257,6 @@ export function findSecondaryMatches(primaryAnime, secondaryList, collectionAnim
                 continue;
             }
         }
-
-        // ── 主副别名交叉比对 ─────────────────────────────────────────────
-        const primaryCandidates = Array.from(new Set([primaryTitleForSim, ...(primaryAnime.aliases || [])].map(titleForSimilarity).filter(Boolean)));
-        const secCandidates     = Array.from(new Set([secTitleForSim,     ...(secAnime.aliases     || [])].map(titleForSimilarity).filter(Boolean)));
 
         // 主源候选池 × 副源候选池 全量交叉，取最高相似度
         let bestScoreFull = 0, bestScoreBase = 0;
@@ -3251,6 +3256,8 @@ async function processMergeTask(params) {
             `from ${currentPrimarySource}${DISPLAY_CONNECTOR}${joinedSources}`
         );
         derivedAnime.source = currentPrimarySource;
+        // 合并后总集数以最终 links 为准，与详情页展示的集数保持一致
+        derivedAnime.episodeCount = derivedAnime.links.length;
         return derivedAnime;
     }
     return null;

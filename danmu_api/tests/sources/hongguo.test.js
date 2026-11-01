@@ -21,6 +21,92 @@ test('GET hongguo danmu segments', async () => {
   assert.notEqual(res.segmentList[0].url, res.segmentList[1].url);
 });
 
+test('hongguo web search sends browser headers and parses results', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), headers: { ...options.headers } });
+    return {
+      ok: true,
+      status: 200,
+      url: String(url),
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({
+        searchList: [{
+          video_data: {
+            series_id: '7699120345449499672',
+            series_title: '全员请长假，我反手注销了公司',
+            episode_cnt: 95,
+            create_time: '1792591145',
+          },
+        }],
+      }),
+    };
+  };
+
+  try {
+    const results = await hongguoSource.search('逆转');
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].seriesId, '7699120345449499672');
+    assert.strictEqual(results[0].name, '全员请长假，我反手注销了公司');
+    assert.strictEqual(results[0].episodeCount, 95);
+
+    assert.ok(calls.length > 0);
+    for (const call of calls) {
+      assert.match(call.url, /^https:\/\/hongguoduanju\.com\/api\/search\/result\//);
+      assert.match(call.headers['user-agent'], /^Mozilla\/5\.0/);
+      assert.doesNotMatch(call.headers['user-agent'], /com\.phoenix\.read/);
+      assert.strictEqual(call.headers.referer, 'https://hongguoduanju.com/');
+      assert.strictEqual(call.headers.accept, 'application/json, text/plain, */*');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('hongguo SSR search fallback sends browser headers for HTML', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), headers: { ...options.headers } });
+    if (String(url).includes('/api/search/result/')) {
+      return {
+        ok: false,
+        status: 403,
+        url: String(url),
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => JSON.stringify({ code: 'search_rejected' }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      url: String(url),
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<script>{"searchList":[{"video_data":{"series_id":"7450384880434678809",' +
+        '"series_title":"逆转","episode_cnt":100,"create_time":"1734677907"}}]}</script>',
+    };
+  };
+
+  try {
+    const results = await hongguoSource.search('逆转');
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].seriesId, '7450384880434678809');
+    assert.strictEqual(calls.length, 2);
+
+    const fallbackCall = calls[1];
+    assert.match(fallbackCall.url, /^https:\/\/hongguoduanju\.com\/search\//);
+    assert.match(fallbackCall.headers['user-agent'], /^Mozilla\/5\.0/);
+    assert.strictEqual(fallbackCall.headers.referer, 'https://hongguoduanju.com/');
+    assert.strictEqual(
+      fallbackCall.headers.accept,
+      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // 以下为红果源的纯函数用例：签名算法、gorgon 种子与剧集/全集 ID 编解码，全部离线。
 
 test('hongguo createArgus 注入随机数后稳定，随 query/stub/时间戳变化', () => {

@@ -8,7 +8,7 @@ import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes, handleRemoteMappingRefresh } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify, handleDandanplayVerify } from "./apis/env-api.js";
 import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete, handleLocalDanmuUpdate } from "./apis/local-danmu-api.js";
@@ -21,12 +21,23 @@ import {
     handleQRCheck,
     handleCookieSave
 } from "./utils/cookie-util.js";
+import { ensureRemoteTitleMapping } from './utils/remote-title-mapping-util.js';
 
 let globals;
 
 const FONGMI_DANMAKU_PATHS = new Set([
   "/danmaku",
   "/api/v2/fongmi/danmaku"
+]);
+
+const TITLE_MAPPING_PATHS = new Set([
+  "/api/v2/match",
+  "/api/v2/favorite/add",
+  "/api/favorite/add",
+  "/api/v2/favorite/refresh",
+  "/api/favorite/refresh",
+  "/api/v2/favorite/remove",
+  "/api/favorite/remove",
 ]);
 
 function isFongmiDanmakuRequest(path, method, url) {
@@ -46,6 +57,7 @@ const ADMIN_ONLY_PATH_PATTERNS = [
   /^\/api\/cookie\/(?:status|save|verify|qr\/generate|qr\/check)\/?$/,
   /^\/api\/ai\/verify\/?$/,
   /^\/api\/nipaplay\/verify\/?$/,
+  /^\/api\/title-mapping\/refresh\/?$/,
 ];
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
@@ -343,7 +355,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
     && !path.startsWith('/api/favorite')
     && !path.startsWith('/api/ai') && !path.startsWith('/api/nipaplay')
-    && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
+    && !path.startsWith('/api/debug') && !path.startsWith('/api/title-mapping')
+    && !path.startsWith('/api/local-danmu')) {
       log("info", `[system] [path check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
 
@@ -369,7 +382,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
         && !path.startsWith('/api/cookie') && !path.startsWith('/api/config')
         && !path.startsWith('/api/favorite')
         && !path.startsWith('/api/ai') && !path.startsWith('/api/nipaplay')
-        && !path.startsWith('/api/debug') && !path.startsWith('/api/local-danmu')) {
+        && !path.startsWith('/api/debug') && !path.startsWith('/api/title-mapping')
+        && !path.startsWith('/api/local-danmu')) {
           if (path.startsWith('/v2/') || path === '/v2') {
               log("info", `[system] [path check] Path is missing /api prefix. Adding /api...`);
               path = '/api' + path;
@@ -394,6 +408,10 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (path === "/" && method === "GET" && !isFongmiDanmakuRequest(path, method, url)) {
     return handleUI();
   }
+
+  const needsTitleMapping = isFongmiDanmakuRequest(path, method, url)
+    || TITLE_MAPPING_PATHS.has(path);
+  if (needsTitleMapping) await ensureRemoteTitleMapping();
 
   // GET /api/v2/search/anime
   if (path === "/api/v2/search/anime" && method === "GET") {
@@ -595,6 +613,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // GET /api/logs
   if (path === "/api/logs" && method === "GET") {
     return handleLogs();
+  }
+
+  // POST /api/title-mapping/refresh - 管理员手动刷新远程映射表
+  if (path === "/api/title-mapping/refresh" && method === "POST") {
+    return handleRemoteMappingRefresh();
   }
 
   if (path === '/api/debug/forward-trace') {

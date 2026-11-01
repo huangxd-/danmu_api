@@ -13,7 +13,7 @@ export const Globals = {
   accessedEnvVars: {},
 
   // 静态常量
-  VERSION: '1.21.7',
+  VERSION: '1.21.8',
   MAX_LOGS: 1000, // 日志存储，最多保存 1000 行
   MAX_RECORDS: 100, // 请求记录最大数量
 
@@ -43,6 +43,7 @@ export const Globals = {
   searchCache: new Map(), // 搜索结果缓存，存储格式：{ keyword: { results, timestamp } }
   commentCache: new Map(), // 弹幕缓存，存储格式：{ videoUrl: { comments, timestamp } }
   favoriteCache: new Map(), // 收藏剧集永久缓存，存储格式：{ keyword: { results, details, timestamp } }，无 TTL、无数量上限
+  remoteTitleMappingTable: new Map(), // 远端剧名映射，查询时由本机映射优先兜底
   deployPlatform: '', // 部署平台配置
   currentToken: '', // 标识当前可用token
 
@@ -148,6 +149,13 @@ export const Globals = {
     }
 
     return targetUrl;
+  },
+
+  resolveTitleMapping(title) {
+    const key = String(title ?? '');
+    const localMappings = this.envs?.titleMappingTable;
+    if (localMappings?.has(key)) return localMappings.get(key);
+    return this.remoteTitleMappingTable.get(key) ?? null;
   },
 
   /**
