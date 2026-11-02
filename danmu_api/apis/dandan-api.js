@@ -22,7 +22,7 @@ import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, alignSourceTimeline
 import { getHanjutvSourceLabel } from "../utils/hanjutv-util.js";
 import AIClient from '../utils/ai-util.js';
 import { getSourceByKey, getSourceMetaByKey, getLogNameByKey } from "../sources/registry.js";
-import { isHongguoPlayerUrl } from "../sources/hongguo.js";
+import { isHongguoPlayerUrl, isHongguoSeriesId } from "../sources/hongguo.js";
 import BilibiliSource from "../sources/bilibili.js"; // resolveB23Link 为 BilibiliSource 实例方法，单测中仍需直接 new
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
 
@@ -2631,7 +2631,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     danmus = await fetchMergedComments(url, animeTitle, commentId);
   } else {
     const commentUrl = cleanUrl;
-    const isHongguoUrl = isHongguoPlayerUrl(commentUrl);
+    const isHongguoUrl = isHongguoPlayerUrl(commentUrl) || isHongguoSeriesId(commentUrl);
 
     if (url.includes('.qq.com')) {
       danmus = await sourceLogContext.run('tencent', () => tencentSource.getComments(commentUrl, plat, segmentFlag));
