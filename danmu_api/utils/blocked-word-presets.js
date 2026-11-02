@@ -44,6 +44,10 @@ function wideDigits(pattern) {
 }
 
 export const BLOCKED_WORD_PRESETS = Object.freeze({
+  content: Object.freeze([
+    String.raw`/^\s*\p{N}+(?:\s+\p{N}+)*\s*$/u`,
+    String.raw`/^[\s\p{P}\p{S}\uFE0E\uFE0F\u200D]+$/u`
+  ]),
   regions: Object.freeze([regionBlockedWord([...DOMESTIC_REGION_NAMES, ...BLOCKED_REGION_PRESET_NAMES])]),
   dates: Object.freeze([
     `/${wideDigits(`${dateStart}(?:${numericDates}|${chineseDates})${dateEnd}|${yearlessMonthDay}|${abbreviated}`)}/u`,

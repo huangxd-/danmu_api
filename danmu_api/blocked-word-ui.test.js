@@ -17,6 +17,7 @@ test('generated settings script is executable and classifies only exact presets'
   assert.equal(classify('打卡'), '普通词');
   assert.equal(classify('/foo{1,3}/i'), '其他正则');
   assert.equal(classify('/时间|地区/u'), '其他正则');
+  for (const value of BLOCKED_WORD_PRESETS.content) assert.equal(classify(value), '纯数字/符号正则');
   for (const value of BLOCKED_WORD_PRESETS.dates) assert.equal(classify(value), '日期时间正则');
   for (const value of BLOCKED_WORD_PRESETS.regions) assert.equal(classify(value), '地区正则');
   assert.equal(classify(BLOCKED_WORD_PRESETS.dates[0].replace('/u', '/i')), '其他正则');

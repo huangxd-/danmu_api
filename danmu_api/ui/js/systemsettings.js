@@ -1035,6 +1035,7 @@ function renderValueInput(item) {
 }
 
 function blockedWordKind(value) {
+    if (blockedWordPresets.content.includes(value)) return '纯数字/符号正则';
     if (blockedWordPresets.regions.includes(value)) return '地区正则';
     if (blockedWordPresets.dates.includes(value)) return '日期时间正则';
     if (/^\\/[\\s\\S]+\\/[a-z]*$/.test(value)) return '其他正则';
@@ -1042,7 +1043,7 @@ function blockedWordKind(value) {
 }
 
 function groupBlockedWords(rows) {
-    const kinds = ['普通词', '日期时间正则', '地区正则', '其他正则'];
+    const kinds = ['普通词', '纯数字/符号正则', '日期时间正则', '地区正则', '其他正则'];
     return kinds.map(function(kind) {
         return { kind: kind, entries: rows.map(function(value, index) {
             return { value: value, index: index };

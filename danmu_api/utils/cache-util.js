@@ -539,6 +539,8 @@ export function findTitleById(id) {
 
 // 根据 ID 查找 animeTitle
 export function findAnimeTitleById(id) {
+    const savedTitle = globals.episodeIds.find(episode => episode.id === Number(id))?.animeTitle;
+    if (savedTitle) return savedTitle;
     const resolved = resolveEpisodeContextById(id);
     if (resolved?.anime?.animeTitle) {
         log("info", `[cache] Found animeTitle for ID ${id}: ${resolved.anime.animeTitle}`);

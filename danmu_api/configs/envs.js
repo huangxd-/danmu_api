@@ -1,4 +1,4 @@
-import { migrateLegacyBlockedWords, LEGACY_BLOCKED_WORD_KEYS } from '../utils/blocked-word-presets.js';
+import { BLOCKED_WORD_PRESETS, migrateLegacyBlockedWords, LEGACY_BLOCKED_WORD_KEYS } from '../utils/blocked-word-presets.js';
 import { canonicalPlatformGroup, canonicalPlatformName } from '../utils/platform-util.js';
 /**
  * 环境变量管理模块
@@ -520,7 +520,9 @@ export class Envs {
   }
 
   static resolveBlockedWords() {
-    const raw = this.get('BLOCKED_WORDS', '', 'string');
+    const configured = [this.env, this.systemEnvBackup, this.rawEnvValues,
+      typeof process === 'undefined' ? null : process.env].some(env => env && Object.hasOwn(env, 'BLOCKED_WORDS'));
+    const raw = this.get('BLOCKED_WORDS', configured ? '' : BLOCKED_WORD_PRESETS.content.join(','), 'string');
     const legacy = {};
     for (const key of LEGACY_BLOCKED_WORD_KEYS) {
       if (Object.hasOwn(this.env || {}, key)) legacy[key] = this.env[key];
@@ -577,7 +579,7 @@ export class Envs {
       'USE_BANGUMI_DATA': { category: 'match', type: 'boolean', description: 'Bangumi Data 加速匹配开关，开启后将动画元数据缓存至本地或内存中给源调用，提升动画源的检索与匹配速度并解锁隐藏/区域番剧。\n本地和Docker部署使用时请先挂载.cache目录获得最佳体验，云部署使用时会将数据缓存至临时内存中如果体验不佳请关闭。' },
 
       // 弹幕配置
-      'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表：仅支持普通词（字面包含匹配）和 /正则/flags。配置页按分类单行摘要显示；编辑器各分类默认单行折叠，点击分类展开，再点击编辑修改完整条目；支持逐条添加、修改和删除，点击保存后生效。内置日期时间、地区预设正则单独分类，自定义正则归为其他正则。底层仍用逗号分隔，命中任意规则即屏蔽整条弹幕。' },
+      'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表：仅支持普通词（字面包含匹配）和 /正则/flags。配置页按分类单行摘要显示；编辑器各分类默认单行折叠，点击分类展开，再点击编辑修改完整条目；支持逐条添加、修改和删除，点击保存后生效。内置纯数字/符号、日期时间、地区预设正则单独分类，自定义正则归为其他正则。底层仍用逗号分隔，命中任意规则即屏蔽整条弹幕。' },
       'BLOCK_DOMESTIC_CELEBRITIES': { category: 'danmu', type: 'boolean', description: '当前作品人物与作品名屏蔽开关，默认关闭。开启后同时屏蔽当前作品完整名称及已有别名（兼容简繁、大小写、空格及标点差异，不派生作品简称）；与人物过滤共用免屏蔽名单，人物资料查询失败时仍按已知作品名称过滤。开启后通过 TMDB 获取当前国产/港台作品的中文演员名和角色名；当前作品演员表和角色表的完整姓名及派生称呼直接包含匹配：识别复姓，派生二字及以上去姓称呼及名字中相邻二字简称（如热巴、千玺）；全名、姓、名字及名字中的单字组合小/老/阿/大前缀、儿/子/哥姐/叔姨/老师/总/导/宝/崽等亲昵称谓、身份称谓和单字叠称。单字本身不屏蔽，同名普通词及更长词也会命中。需要可用的 TMDB_API_KEY，或能够代为认证的 TMDB 反代；动画角色名单同时合并 Bangumi 当前条目及动画前传、续集的角色资料；维基百科补充当前作品演员、角色及表中化名，校验作品名称与首播/上映年份，不遍历演员作品表。各资料源与弹幕拉取并行，返回前完成过滤，匹配兼容简繁中文；查询失败或名单不完整时五分钟后允许重试，完整名单缓存一天。' },
       'PERSON_FILTER_EXCLUDED_TITLES': { category: 'danmu', type: 'text', description: '不屏蔽人物和作品名的动漫/作品名单，支持逗号、分号或换行分隔。可填写实际作品名或已有别名，例如“诛仙4”；系统通过现有名称对应关系取得实际作品名后判断是否免屏蔽，名单里只填名字。同时跳过自动演员/角色及当前作品名屏蔽，其他屏蔽词、地区和日期规则继续生效。' },
       'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0表示不去重），默认1', min: 0, max: 30 },
