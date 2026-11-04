@@ -48,6 +48,11 @@ test('frontend bundle contains working favorite controls', () => {
       assert.match(apitestJsContent, /\/api\/v2\/favorite\/refresh/);
       assert.match(apitestJsContent, /\/api\/v2\/favorite\/remove/);
       assert.match(apitestJsContent, /最近刷新时间：/);
+      assert.match(apitestJsContent, /确认下载红果合集/);
+      assert.match(apitestJsContent, /fetchHongguoCollectionDanmu/);
+      assert.match(apitestJsContent, /segmentflag=true/);
+      assert.match(apitestJsContent, /currentCollectionEpisodeCount/);
+      assert.match(apitestJsContent, /获取全集弹幕（/);
       assert.doesNotMatch(systemSettingsJsContent, /switchCategory\('favorite'\)/);
       assert.match(systemSettingsJsContent, /const isMergeSourcePairs = currentKey === 'MERGE_SOURCE_PAIRS'/);
       // 合并模式只禁止同一合并组内重复，已选源需保持可选取才能组合成合并组

@@ -68,6 +68,7 @@ let danmuTestState = {
     currentEpisodeId: null,
     currentTitle: '',
     currentDuration: 0,
+    currentCollectionEpisodeCount: 0,
     currentSourceUrl: '',
     currentSearchQuery: '',
     currentCallTrace: null,
@@ -1189,7 +1190,9 @@ async function autoMatchTest() {
             });
             addLog('自动匹配命中: ' + title + ' (共' + data.matches.length + '个结果，取第1个)', 'success');
             setDanmuFlowButtonLoading(btn, flowRequestId, false);
-            fetchDanmuForTest(best.episodeId, title, 'auto', trace, best.url);
+            const collectionMatch = String(best.episodeTitle || '').match(/(?:全集|合集).*?共\\s*(\\d+)\\s*集/);
+            const collectionEpisodeCount = collectionMatch ? Number(collectionMatch[1]) : 0;
+            fetchDanmuForTest(best.episodeId, title, 'auto', trace, best.url, collectionEpisodeCount);
             return;
         } else {
             finishDanmuCallEmpty(trace, matchStartedAt, {
@@ -1339,8 +1342,12 @@ async function manualGetBangumi(animeId) {
                 result: '获取到 ' + episodes.length + ' 个剧集'
             });
             danmuTestState.currentManualEpisodeCallTraceBase = cloneDanmuCallTrace(requestTrace);
-            displayManualEpisodeList(data.bangumi.animeTitle, episodes);
-            addLog('获取到 ' + episodes.length + ' 个剧集', 'success');
+            const declaredEpisodeCount = Math.max(
+                episodes.length,
+                Number(data.bangumi.seasons && data.bangumi.seasons[0] && data.bangumi.seasons[0].episodeCount) || 0
+            );
+            displayManualEpisodeList(data.bangumi.animeTitle, episodes, declaredEpisodeCount);
+            addLog('获取到 ' + episodes.length + ' 个入口，实际共 ' + declaredEpisodeCount + ' 集', 'success');
         } else {
             finishDanmuCallEmpty(requestTrace, bangumiStartedAt, {
                 name: '番剧详情',
@@ -1368,31 +1375,41 @@ async function manualGetBangumi(animeId) {
     }
 }
 
-function displayManualEpisodeList(animeTitle, episodes) {
+function displayManualEpisodeList(animeTitle, episodes, declaredEpisodeCount) {
     const container = document.getElementById('manual-episode-list');
+    const totalEpisodeCount = Math.max(episodes.length, Number(declaredEpisodeCount) || 0);
+    const isCollection = episodes.length === 1 && totalEpisodeCount > 1 && /全集|合集/.test(String(episodes[0].episodeTitle || ''));
     let html = backBtnHtml('返回搜索结果', 'backToManualSearch()');
     html += '<h3 class="danmu-section-title danmu-section-title-spaced">剧集列表</h3>';
     html += '<h4 class="text-yellow-gold">' + escapeHtml(animeTitle) + '</h4>';
-    
-    // 添加跳转到指定集数的功能
-    html += \`
-    <div class="jump-to-episode">
-        <span>跳转到第</span>
-        <input type="number" id="jump-episode-input" class="jump-episode-input" placeholder="输入集数" min="1">
-        <span>集</span>
-        <button class="btn btn-primary btn-sm jump-episode-btn" onclick="jumpToEpisode()">跳转</button>
-        <span class="jump-episode-total">共\${episodes.length}集</span>
-    </div>\`;
-    
+
+    if (isCollection) {
+        html += '<div class="jump-to-episode"><strong>红果合集：共 ' + totalEpisodeCount + ' 集</strong>' +
+            '<span>获取时会请求整套弹幕，请确认集数无误后再继续。</span></div>';
+    } else {
+        html += \`
+        <div class="jump-to-episode">
+            <span>跳转到第</span>
+            <input type="number" id="jump-episode-input" class="jump-episode-input" placeholder="输入集数" min="1">
+            <span>集</span>
+            <button class="btn btn-primary btn-sm jump-episode-btn" onclick="jumpToEpisode()">跳转</button>
+            <span class="jump-episode-total">共\${totalEpisodeCount}集</span>
+        </div>\`;
+    }
+
     html += '<div class="episode-list-container">';
     episodes.forEach(ep => {
         const episodeId = Number.parseInt(ep.episodeId, 10);
         const episodeNumber = Number.parseInt(ep.episodeNumber, 10);
         if (!Number.isFinite(episodeId) || !Number.isFinite(episodeNumber)) return;
-        const title = String(animeTitle || '') + ' 第' + episodeNumber + '集';
+        const collectionEpisodeCount = isCollection ? totalEpisodeCount : 0;
+        const title = collectionEpisodeCount > 0
+            ? String(animeTitle || '') + ' 全集（共' + collectionEpisodeCount + '集）'
+            : String(animeTitle || '') + ' 第' + episodeNumber + '集';
         html += '<div class="episode-item" id="episode-item-' + episodeNumber + '">';
-        html += '<div class="episode-item-content"><strong>第' + episodeNumber + '集</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
-        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + episodeId + ', ' + inlineJsString(title) + ', \\'manual\\', null, ' + inlineJsString(ep.url) + ')">获取弹幕</button>';
+        html += '<div class="episode-item-content"><strong>' + (collectionEpisodeCount > 0 ? '全集' : '第' + episodeNumber + '集') + '</strong> - ' + escapeHtml(ep.episodeTitle || '无标题') + '</div>';
+        html += '<button class="btn btn-success btn-sm" onclick="fetchDanmuForTest(' + episodeId + ', ' + inlineJsString(title) + ', \\'manual\\', null, ' + inlineJsString(ep.url) + ', ' + collectionEpisodeCount + ')">' +
+            (collectionEpisodeCount > 0 ? '获取全集弹幕（' + collectionEpisodeCount + '集）' : '获取弹幕') + '</button>';
         html += '</div>';
     });
     html += '</div>';
@@ -1443,7 +1460,83 @@ function isCurrentDanmuRequest(requestId) {
 // =====================
 // 获取弹幕并展示结果
 // =====================
-async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl) {
+async function fetchHongguoCollectionDanmu(episodeId, resultArea, requestId) {
+    const segmentListUrl = '/api/v2/comment/' + episodeId + '?format=json&segmentflag=true';
+    const segmentListResponse = await fetch(buildApiUrl(segmentListUrl));
+    if (!segmentListResponse.ok) throw new Error('获取合集分片失败: HTTP ' + segmentListResponse.status);
+    const segmentPayload = await segmentListResponse.json();
+    const segmentData = segmentPayload && segmentPayload.comments;
+    const segments = segmentData && Array.isArray(segmentData.segmentList) ? segmentData.segmentList : [];
+    if (segments.length === 0) throw new Error('合集没有可下载的弹幕分片');
+
+    const groupedComments = new Array(segments.length);
+    let nextIndex = 0;
+    let completed = 0;
+    let firstError = null;
+    const workerCount = Math.min(4, segments.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < segments.length) {
+            const index = nextIndex++;
+            let error = null;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const response = await fetch(buildApiUrl('/api/v2/segmentcomment?format=json'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(segments[index])
+                    });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    const data = await response.json();
+                    groupedComments[index] = Array.isArray(data.comments) ? data.comments : [];
+                    error = null;
+                    break;
+                } catch (e) {
+                    error = e;
+                }
+            }
+            if (error && !firstError) firstError = new Error('第 ' + (index + 1) + '/' + segments.length + ' 个分片下载失败: ' + error.message);
+            completed++;
+            if (isCurrentDanmuRequest(requestId)) {
+                const loadingText = resultArea.querySelector('.loading-text');
+                if (loadingText) loadingText.textContent = '正在分片下载合集弹幕... ' + completed + '/' + segments.length;
+            }
+        }
+    });
+    await Promise.all(workers);
+    if (firstError) throw firstError;
+
+    const comments = [];
+    const seen = new Set();
+    groupedComments.flat().forEach(comment => {
+        const key = String(comment.p || '') + '\\u0000' + String(comment.m || '');
+        if (seen.has(key)) return;
+        seen.add(key);
+        comments.push(comment);
+    });
+    comments.sort((left, right) => {
+        const leftTime = Number(left.t !== undefined ? left.t : String(left.p || '').split(',')[0]) || 0;
+        const rightTime = Number(right.t !== undefined ? right.t : String(right.p || '').split(',')[0]) || 0;
+        return leftTime - rightTime;
+    });
+    return {
+        errorCode: 0,
+        success: true,
+        errorMessage: '',
+        count: comments.length,
+        comments,
+        videoDuration: Number(segmentData.duration) || 0
+    };
+}
+
+async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl, collectionEpisodeCount) {
+    const normalizedCollectionCount = Math.max(0, Number(collectionEpisodeCount) || 0);
+    if (normalizedCollectionCount > 1) {
+        const confirmed = await customConfirm(
+            '这是红果合集，共 ' + normalizedCollectionCount + ' 集。\\n\\n获取时会下载整套弹幕，耗时和上游请求量都明显高于单集。请确认集数无误后再继续。',
+            '确认下载红果合集'
+        );
+        if (!confirmed) return;
+    }
     addLog('获取弹幕: ' + episodeId + ' (' + title + ')', 'info');
     const requestId = ++danmuTestState.nextDanmuRequestId;
     danmuTestState.activeDanmuRequestId = requestId;
@@ -1461,6 +1554,7 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl)
     danmuTestState.currentEpisodeId = episodeId;
     danmuTestState.currentTitle = title;
     danmuTestState.currentDuration = 0;
+    danmuTestState.currentCollectionEpisodeCount = normalizedCollectionCount;
     danmuTestState.currentSourceUrl = getDanmuSourceUrl(sourceUrl);
     danmuTestState.currentSearchQuery = '';
 
@@ -1479,11 +1573,15 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl)
     const startTime = performance.now();
     try {
         const commentUrl = '/api/v2/comment/' + episodeId + '?format=json&duration=true';
-        const data = await fetch(buildApiUrl(commentUrl))
-            .then(resp => {
+        const data = normalizedCollectionCount > 1
+            ? await fetchHongguoCollectionDanmu(episodeId, resultArea, requestId)
+            : await fetch(buildApiUrl(commentUrl)).then(resp => {
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 return resp.json();
             });
+        const requestParams = normalizedCollectionCount > 1
+            ? 'episodeId: ' + episodeId + '，红果合集分片下载，共' + normalizedCollectionCount + '集'
+            : 'episodeId: ' + episodeId + '，format=json，duration=true';
         if (!isCurrentDanmuRequest(requestId)) return;
         const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
         const durationSeconds = Number((data && data.videoDuration) || 0);
@@ -1493,7 +1591,7 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl)
                 name: '弹幕',
                 method: 'GET',
                 url: commentUrl,
-                params: 'episodeId: ' + episodeId + '，format=json，duration=true'
+                params: requestParams
             }, '该剧集暂无弹幕数据');
             customAlert('该剧集暂无弹幕数据');
             addLog('无弹幕数据', 'warn');
@@ -1507,7 +1605,7 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl)
             name: '弹幕',
             method: 'GET',
             url: commentUrl,
-            params: 'episodeId: ' + episodeId + '，format=json，duration=true',
+            params: requestParams,
             result: data.comments.length + ' 条弹幕'
         });
 
@@ -1591,6 +1689,50 @@ async function fetchDanmuForTest(episodeId, title, source, traceBase, sourceUrl)
 // =====================
 // 导出弹幕（直接请求后端获取格式化数据）
 // =====================
+function escapeDanmuXml(value, attribute) {
+    let text = String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    if (attribute) text = text.replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    return text;
+}
+
+function downloadDanmuBlob(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function exportLoadedCollection(format, safeTitle) {
+    if (format === 'json') {
+        const payload = {
+            errorCode: 0,
+            success: true,
+            errorMessage: '',
+            count: danmuTestState.allComments.length,
+            comments: danmuTestState.allComments,
+            videoDuration: danmuTestState.currentDuration
+        };
+        downloadDanmuBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), safeTitle + '.json');
+        return true;
+    }
+    if (format === 'xml') {
+        const items = danmuTestState.allComments.map(comment =>
+            '<d p="' + escapeDanmuXml(comment.p || '', true) + '">' + escapeDanmuXml(comment.m || '', false) + '</d>'
+        ).join('');
+        const xml = '<?xml version="1.0" encoding="UTF-8"?><i>' + items + '</i>';
+        downloadDanmuBlob(new Blob([xml], { type: 'application/xml;charset=utf-8' }), safeTitle + '.xml');
+        return true;
+    }
+    return false;
+}
+
 async function exportDanmu() {
     const id = danmuTestState.currentEpisodeId;
     if (!id) { customAlert('无弹幕数据可导出'); return; }
@@ -1604,6 +1746,10 @@ async function exportDanmu() {
 
     addLog('导出弹幕 ' + format + '...', 'info');
     try {
+        if (danmuTestState.currentCollectionEpisodeCount > 1 && exportLoadedCollection(format, safeTitle)) {
+            addLog('导出合集弹幕 ' + format + ' 成功（复用已下载数据）', 'success');
+            return;
+        }
         const resp = await fetch(buildApiUrl('/api/v2/comment/' + id + '?format=' + encodeURIComponent(format)));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
@@ -1611,14 +1757,7 @@ async function exportDanmu() {
         const blob = contentType.includes('json')
             ? new Blob([JSON.stringify(await resp.json(), null, 2)], { type: 'application/json' })
             : new Blob([await resp.arrayBuffer()], { type: contentType || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = safeTitle + '.' + format;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        downloadDanmuBlob(blob, safeTitle + '.' + format);
         addLog('导出弹幕 ' + format + ' 成功', 'success');
     } catch (e) {
         customAlert('导出失败: ' + e.message);

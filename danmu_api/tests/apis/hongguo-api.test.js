@@ -37,6 +37,7 @@ for (const scenario of [
 
     const source = getSourceByKey('hongguo');
     source.playerEpisodeResolutions.clear();
+    source.seriesDanmuCache.clear();
     t.mock.method(source, 'getEpisodes', async (id) => {
       assert.equal(id, seriesId);
       return { episodes: [

@@ -160,6 +160,8 @@ const SERVER_CHANNEL = 1000;
 const COMMENT_WINDOW_MS = 30_000;
 const COMMENT_COUNT = 90;
 const COMMENT_CONCURRENCY = 3;
+const COMMENT_WINDOW_CACHE_MAX = 2000;
+const SERIES_DANMU_CACHE_MAX = 50;
 // 弹幕请求的最小节流间隔（毫秒），随机抖动避免固定节律被平台识别
 const COMMENT_THROTTLE_MS = 180;
 const COMMENT_THROTTLE_JITTER_MS = 240;
@@ -738,6 +740,10 @@ export default class HongguoSource extends BaseSource {
     this.lastDanmu = [];
     this.durationCache = new Map();
     this.pendingEpisodeDanmu = new Map();
+    this.commentWindowCache = new Map();
+    this.pendingCommentWindows = new Map();
+    this.pendingSeriesDanmu = new Map();
+    this.seriesDanmuCache = new Map();
   }
 
   buildUrl(path, extraQuery = {}, apiHost = this.preferredApiHost) {
@@ -974,7 +980,7 @@ export default class HongguoSource extends BaseSource {
         vid: String(item.vid || ""),
         title: String(item.episode_title || "").trim().slice(0, 30),
         duration: Math.max(0, Number(item.duration) || 0),
-        commentCount: Math.max(0, Number(item.comment_count) || 0),
+        commentCount: item.comment_count == null ? null : Math.max(0, Number(item.comment_count) || 0),
         imageUrl: extractImageUrl(item.episode_cover || item.cover),
       })).filter((item) => item.vid).sort((a, b) => a.index - b.index);
       if (!episodes.length) return null;
@@ -1011,7 +1017,7 @@ export default class HongguoSource extends BaseSource {
               vid: String(vid),
               title: String(value.episode_title || value.title || `第${index + 1}集`).trim().slice(0, 30),
               duration: Math.max(0, Number(value.duration || value.video_duration) || 0),
-              commentCount: Math.max(0, Number(value.comment_count) || 0),
+              commentCount: value.comment_count == null ? null : Math.max(0, Number(value.comment_count) || 0),
               imageUrl: extractImageUrl(value.episode_cover || value.cover),
             };
           }).filter(Boolean),
@@ -1113,9 +1119,9 @@ export default class HongguoSource extends BaseSource {
       const episodes = details.episodes;
       const links = globals.hongguoMergeAllEpisodes && episodes.length
         ? [{
-            name: "全集",
+            name: `全集（共${episodes.length}集）`,
             url: createHongguoSeriesId(anime.seriesId),
-            title: "【hongguo】 全集",
+            title: `【hongguo】 全集（共${episodes.length}集）`,
           }]
         : episodes.map((episode) => {
             const episodeTitle = `第${episode.index}集${episode.title ? ` ${episode.title}` : ""}`;
@@ -1137,7 +1143,7 @@ export default class HongguoSource extends BaseSource {
         typeDescription: "短剧",
         imageUrl: anime.imageUrl || details.imageUrl || "",
         startDate: generateValidStartDate(year),
-        episodeCount: links.length,
+        episodeCount: episodes.length,
         rating: Number(anime.score) || 0,
         isFavorited: true,
         source: "hongguo",
@@ -1172,23 +1178,44 @@ export default class HongguoSource extends BaseSource {
   }
 
   async fetchCommentWindow(info, startMs, cursor = "") {
-    const path = `/novel/commentapi/comment/list/${encodeURIComponent(info.vid)}/v1/`;
-    const payload = await this.request("POST", path, {
-      body: this.buildCommentBody(info, startMs, cursor),
-      comment: true,
+    const cacheKey = `${info.seriesId}:${info.vid}:${Math.max(0, Math.trunc(startMs))}:${String(cursor || "")}`;
+    const cached = this.commentWindowCache.get(cacheKey);
+    if (cached) {
+      this.commentWindowCache.delete(cacheKey);
+      this.commentWindowCache.set(cacheKey, cached);
+      return cached;
+    }
+    const pending = this.pendingCommentWindows.get(cacheKey);
+    if (pending) return pending;
+
+    const task = (async () => {
+      const path = `/novel/commentapi/comment/list/${encodeURIComponent(info.vid)}/v1/`;
+      const payload = await this.request("POST", path, {
+        body: this.buildCommentBody(info, startMs, cursor),
+        comment: true,
+      });
+      const data = payload.data || {};
+      const listInfo = data.common_list_info || {};
+      const extra = data.extra || {};
+      let nextStart = Number(extra.next_query_danmaku_list_time);
+      if (!Number.isFinite(nextStart)) nextStart = startMs + COMMENT_WINDOW_MS;
+      if (nextStart <= startMs) nextStart = startMs + COMMENT_WINDOW_MS;
+      const result = {
+        comments: parseDanmuResponse(payload),
+        nextStart,
+        cursor: String(listInfo.cursor || ""),
+        hasMore: Boolean(listInfo.has_more),
+      };
+      this.commentWindowCache.set(cacheKey, result);
+      while (this.commentWindowCache.size > COMMENT_WINDOW_CACHE_MAX) {
+        this.commentWindowCache.delete(this.commentWindowCache.keys().next().value);
+      }
+      return result;
+    })().finally(() => {
+      this.pendingCommentWindows.delete(cacheKey);
     });
-    const data = payload.data || {};
-    const listInfo = data.common_list_info || {};
-    const extra = data.extra || {};
-    let nextStart = Number(extra.next_query_danmaku_list_time);
-    if (!Number.isFinite(nextStart)) nextStart = startMs + COMMENT_WINDOW_MS;
-    if (nextStart <= startMs) nextStart = startMs + COMMENT_WINDOW_MS;
-    return {
-      comments: parseDanmuResponse(payload),
-      nextStart,
-      cursor: String(listInfo.cursor || ""),
-      hasMore: Boolean(listInfo.has_more),
-    };
+    this.pendingCommentWindows.set(cacheKey, task);
+    return task;
   }
 
   async getDanmuForEpisode(info) {
@@ -1213,29 +1240,78 @@ export default class HongguoSource extends BaseSource {
   }
 
   async getSeriesDanmu(seriesId) {
-    const details = await this.getEpisodes(seriesId);
-    let cumulativeMs = 0;
-    const episodeTasks = details.episodes.map((episode) => {
-      const task = { episode, offsetMs: cumulativeMs };
-      cumulativeMs += Math.max(0, Number(episode.duration) || 0) * 1000;
-      return task;
-    });
-    const groupedComments = await mapWithConcurrency(episodeTasks, COMMENT_CONCURRENCY, async ({ episode, offsetMs }) => {
-      const episodeComments = await this.getDanmuForEpisode({
-        seriesId: String(seriesId),
-        vid: episode.vid,
-        duration: episode.duration,
-      });
-      return episodeComments.map((comment) => ({
-        ...comment,
-        offsetMs: comment.offsetMs + offsetMs,
-      }));
-    });
-    const comments = [];
-    for (const episodeComments of groupedComments) {
-      comments.push(...episodeComments);
+    const normalizedSeriesId = String(seriesId);
+    const cached = this.seriesDanmuCache.get(normalizedSeriesId);
+    const cacheTtlMs = Math.max(1, Number(globals.commentCacheMinutes) || 3) * 60_000;
+    if (cached && Date.now() - cached.timestamp <= cacheTtlMs) {
+      this.seriesDanmuCache.delete(normalizedSeriesId);
+      this.seriesDanmuCache.set(normalizedSeriesId, cached);
+      log("info", `[Hongguo] 使用全集弹幕缓存: ${normalizedSeriesId} (${cached.comments.length} 条)`);
+      return cached.comments;
     }
-    return dedupeDanmus(comments);
+    if (cached) this.seriesDanmuCache.delete(normalizedSeriesId);
+    const pending = this.pendingSeriesDanmu.get(normalizedSeriesId);
+    if (pending) {
+      log("info", `[Hongguo] 复用进行中的全集弹幕请求: ${normalizedSeriesId}`);
+      return pending;
+    }
+
+    const task = (async () => {
+      const details = await this.getEpisodes(normalizedSeriesId);
+      let cumulativeMs = 0;
+      const episodeTasks = details.episodes.map((episode) => {
+        const episodeTask = { episode, offsetMs: cumulativeMs };
+        cumulativeMs += Math.max(0, Number(episode.duration) || 0) * 1000;
+        return episodeTask;
+      });
+      let completed = 0;
+      const groupedResults = await mapWithConcurrency(episodeTasks, COMMENT_CONCURRENCY, async ({ episode, offsetMs }) => {
+        if (episode.commentCount === 0) {
+          completed++;
+          log("info", `[Hongguo] 全集弹幕进度 ${completed}/${episodeTasks.length}: 第${episode.index || completed}集明确无弹幕，已跳过`);
+          return { comments: [], error: null, skipped: true };
+        }
+        try {
+          const episodeComments = await this.getDanmuForEpisode({
+            seriesId: normalizedSeriesId,
+            vid: episode.vid,
+            duration: episode.duration,
+          });
+          return {
+            comments: episodeComments.map((comment) => ({
+              ...comment,
+              offsetMs: comment.offsetMs + offsetMs,
+            })),
+            error: null,
+            skipped: false,
+          };
+        } catch (error) {
+          log("warn", `[Hongguo] 全集第${episode.index || "?"}集弹幕抓取失败，继续其余剧集: ${error.message}`);
+          return { comments: [], error, skipped: false };
+        } finally {
+          completed++;
+          if (completed === episodeTasks.length || completed % 10 === 0) {
+            log("info", `[Hongguo] 全集弹幕进度 ${completed}/${episodeTasks.length}`);
+          }
+        }
+      });
+      const attempted = groupedResults.filter((result) => !result.skipped);
+      const failed = attempted.filter((result) => result.error);
+      if (attempted.length > 0 && failed.length === attempted.length) throw failed[0].error;
+      if (failed.length > 0) {
+        log("warn", `[Hongguo] 全集弹幕部分完成: ${failed.length}/${attempted.length} 集抓取失败`);
+      }
+      const comments = dedupeDanmus(groupedResults.flatMap((result) => result.comments));
+      this.seriesDanmuCache.set(normalizedSeriesId, { comments, timestamp: Date.now() });
+      while (this.seriesDanmuCache.size > SERIES_DANMU_CACHE_MAX) {
+        this.seriesDanmuCache.delete(this.seriesDanmuCache.keys().next().value);
+      }
+      return comments;
+    })().finally(() => {
+      this.pendingSeriesDanmu.delete(normalizedSeriesId);
+    });
+    this.pendingSeriesDanmu.set(normalizedSeriesId, task);
+    return task;
   }
 
   async getEpisodeDanmu(id) {
@@ -1315,15 +1391,17 @@ export default class HongguoSource extends BaseSource {
     let cumulativeSeconds = 0;
     for (const episode of details.episodes) {
       const duration = Math.max(0, Number(episode.duration) || 600);
-      const episodeId = createHongguoEpisodeId(seriesId, episode.vid, duration);
-      for (let start = 0; start < duration; start += COMMENT_WINDOW_MS / 1000) {
-        const end = Math.min(start + COMMENT_WINDOW_MS / 1000, duration);
-        segmentList.push({
-          type: "hongguo",
-          segment_start: cumulativeSeconds + start,
-          segment_end: cumulativeSeconds + end,
-          url: `${episodeId}#segment=${start}&offset=${cumulativeSeconds}`,
-        });
+      if (episode.commentCount !== 0) {
+        const episodeId = createHongguoEpisodeId(seriesId, episode.vid, duration);
+        for (let start = 0; start < duration; start += COMMENT_WINDOW_MS / 1000) {
+          const end = Math.min(start + COMMENT_WINDOW_MS / 1000, duration);
+          segmentList.push({
+            type: "hongguo",
+            segment_start: cumulativeSeconds + start,
+            segment_end: cumulativeSeconds + end,
+            url: `${episodeId}#segment=${start}&offset=${cumulativeSeconds}`,
+          });
+        }
       }
       cumulativeSeconds += duration;
     }
