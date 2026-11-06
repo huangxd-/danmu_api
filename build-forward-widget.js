@@ -160,7 +160,7 @@ const forwardRuntimeCompatPlugin = {
       target: 'es2020',
       outfile: outputFile,
       format: 'esm', // 保持ES模块格式
-      external: ['redis', 'fs', 'path', 'stream/promises', 'node-fetch'],
+      external: ['redis', 'fs', 'path', 'stream/promises', 'node-fetch', 'node:path', 'node:fs/promises'],
       plugins: [
         forwardRuntimeCompatPlugin,
         // 插件：排除UI相关模块

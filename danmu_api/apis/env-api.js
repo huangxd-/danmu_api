@@ -4,12 +4,14 @@ import { HandlerFactory } from '../configs/handlers/handler-factory.js';
 import { globals } from '../configs/globals.js';
 import { syncBangumiDataLifecycleOnConfigChange } from '../utils/bangumi-data-util.js';
 import { syncRemoteTitleMappingConfig } from '../utils/remote-title-mapping-util.js';
+import { syncRemoteAutoMatchMappingConfig } from '../utils/auto-match-mapping-url-util.js';
 import AIClient from '../utils/ai-util.js';
 import { verifyNipaplayAccount } from '../utils/nipaplay-util.js';
 
 function syncIntegrationsAfterEnvChange(key, deployPlatform) {
   if (key === 'USE_BANGUMI_DATA') syncBangumiDataLifecycleOnConfigChange(deployPlatform);
   if (key === 'TITLE_MAPPING_TABLE_URL') syncRemoteTitleMappingConfig();
+  if (key === 'AUTO_MATCH_MAPPING_TABLE_URL') syncRemoteAutoMatchMappingConfig();
 }
 
 /**
