@@ -727,6 +727,7 @@ export class Envs {
       'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '本机剧名映射表，用于自动匹配时替换标题进行搜索。本机规则优先于远程规则。格式：原始标题->映射标题;原始标题->映射标题;...，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
       'TITLE_MAPPING_TABLE_URL': { category: 'match', type: 'text', description: '远程剧名映射表（默认关闭，填写后启用）。示例：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。本机 TITLE_MAPPING_TABLE 优先；Node/Docker 会缓存到 .cache 并在每天北京时间05:30后台更新；Serverless 冷启动后的首次标题匹配会同步下载，最长约等待5秒，配置本变量即表示接受该延迟。支持 GitHub 文件页、Gist、jsDelivr 和 HTTP/HTTPS TXT 直链；内容格式为每行 原始标题->映射标题，# 或 // 开头为注释' },
       'AUTO_MATCH_MAPPING_TABLE': { category: 'match', type: 'map', description: '自动匹配映射表，仅作用于 POST /api/v2/match。多个规则使用分号分隔。\n开放映射：永生 S05E02 -> 永生 S01E58\n有限范围：永生 S05E02~03 -> 永生 S01E58~59\n指定结果：海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62\n指定平台：航海王 S01E01 -> 航海王 S01E01 @qiyi' },
+      'AUTO_MATCH_MAPPING_TABLE_URL': { category: 'match', type: 'text', description: '远程季集映射表（默认关闭，填写后启用）。本机 AUTO_MATCH_MAPPING_TABLE 优先；支持 GitHub 文件页、Gist、jsDelivr 和 HTTP/HTTPS TXT 直链，内容格式与本机映射表一致，每行可写多条规则，# 或 // 开头为注释。Node/Docker 会缓存到 .cache 并在每天北京时间05:30后台更新；Serverless 首次匹配会后台下载，不阻塞当前请求，后续请求生效。管理员可通过 POST /api/auto-match-mapping/refresh 立即刷新当前实例。' },
       'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。\n默认值：[（(\\[［](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）］]，中英文圆方括号均匹配。\n设为空值可禁用' },
       'AI_BASE_URL': { category: 'match', type: 'text', description: 'AI服务基础URL，不填默认为https://api.openai.com/v1' },
       'AI_MODEL': { category: 'match', type: 'text', description: 'AI模型名称，不填默认为gpt-4o' },
@@ -835,6 +836,7 @@ export class Envs {
       titleMappingTable: this.resolveTitleMappingTable(), // 剧名映射表，用于自动匹配时替换标题进行搜索
       titleMappingTableUrl: this.get('TITLE_MAPPING_TABLE_URL', '', 'string'), // 远程剧名映射表地址（由用户托管维护，自动拉取生效）
       autoMatchMappingTable: this.resolveAutoMatchMappingTable(), // 自动匹配标题/季度/集数映射规则
+      autoMatchMappingTableUrl: this.get('AUTO_MATCH_MAPPING_TABLE_URL', '', 'string'), // 远程季集映射表地址
       ipBlacklist: this.resolveIpBlacklist(), // IP 黑名单（支持正则）
       aiBaseUrl: this.get('AI_BASE_URL', 'https://api.openai.com/v1', 'string'), // AI服务基础URL
       aiModel: this.get('AI_MODEL', 'gpt-4o', 'string'), // AI模型名称

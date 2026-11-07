@@ -8,7 +8,7 @@ import AIClient from './utils/ai-util.js';
 import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/dandan-api.js";
 import { handleFavoriteAdd, handleFavoriteList, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from "./apis/favorite-api.js";
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
-import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes, handleRemoteMappingRefresh } from "./apis/system-api.js";
+import { handleConfig, handleUI, handleLogs, handleClearLogs, handleDeploy, handleClearCache, handleReqRecords, handleCacheAnimes, handleRemoteMappingRefresh, handleRemoteAutoMatchMappingRefresh } from "./apis/system-api.js";
 import { handleForwardTrace } from "./apis/forward-trace-api.js";
 import { handleSetEnv, handleAddEnv, handleDelEnv, handleAiVerify, handleDandanplayVerify } from "./apis/env-api.js";
 import { handleLocalDanmuUpload, handleLocalDanmuList, handleLocalDanmuGet, handleLocalDanmuDelete, handleLocalDanmuUpdate } from "./apis/local-danmu-api.js";
@@ -58,6 +58,7 @@ const ADMIN_ONLY_PATH_PATTERNS = [
   /^\/api\/ai\/verify\/?$/,
   /^\/api\/nipaplay\/verify\/?$/,
   /^\/api\/title-mapping\/refresh\/?$/,
+  /^\/api\/auto-match-mapping\/refresh\/?$/,
 ];
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
@@ -356,6 +357,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     && !path.startsWith('/api/favorite')
     && !path.startsWith('/api/ai') && !path.startsWith('/api/nipaplay')
     && !path.startsWith('/api/debug') && !path.startsWith('/api/title-mapping')
+    && !path.startsWith('/api/auto-match-mapping')
     && !path.startsWith('/api/local-danmu')) {
       log("info", `[system] [path check] Starting path normalization for: "${path}"`);
       const pathBeforeCleanup = path; // 保存清理前的路径检查是否修改
@@ -383,6 +385,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
         && !path.startsWith('/api/favorite')
         && !path.startsWith('/api/ai') && !path.startsWith('/api/nipaplay')
         && !path.startsWith('/api/debug') && !path.startsWith('/api/title-mapping')
+        && !path.startsWith('/api/auto-match-mapping')
         && !path.startsWith('/api/local-danmu')) {
           if (path.startsWith('/v2/') || path === '/v2') {
               log("info", `[system] [path check] Path is missing /api prefix. Adding /api...`);
@@ -618,6 +621,11 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   // POST /api/title-mapping/refresh - 管理员手动刷新远程映射表
   if (path === "/api/title-mapping/refresh" && method === "POST") {
     return handleRemoteMappingRefresh();
+  }
+
+  // POST /api/auto-match-mapping/refresh - 管理员手动刷新远程季集映射表
+  if (path === "/api/auto-match-mapping/refresh" && method === "POST") {
+    return handleRemoteAutoMatchMappingRefresh();
   }
 
   if (path === '/api/debug/forward-trace') {

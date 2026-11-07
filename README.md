@@ -52,7 +52,7 @@ LogVar 弹幕 API 服务器
 ## 功能
 - **API 接口**：
   - `GET /api/v2/search/anime?keyword=${queryTitle}`：根据关键字搜索动漫。
-  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；可通过 `AUTO_MATCH_MAPPING_TABLE` 配置跨标题、跨季和集数范围映射；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
+  - `POST /api/v2/match`：根据关键字匹配动漫，用于自动匹配。（已支持在match接口中通过@语法动态指定平台优先级，如`赴山海 S01E28 @qiyi`；已支持从网盘资源命名，如`无忧渡.S01E01.2160p.WEB-DL.H265.DDP.5.1`中提取 title/season/episode）；可通过 `AUTO_MATCH_MAPPING_TABLE` 配置跨标题、跨季和集数范围映射，也可通过 `AUTO_MATCH_MAPPING_TABLE_URL` 订阅远程规则；已支持外语标题匹配，如`Blood.River.S01E05`，需配置环境变量`TITLE_TO_CHINESE`使用；已适配该格式`爱情公寓.ipartment.2009.S03E05.H.265.25fps.mkv`标题；已支持AI自动匹配，需配合AI相关环境变量使用
   - `GET /api/v2/search/episodes`：根据关键词搜索所有匹配的剧集信息。
   - `GET /api/v2/bangumi/:animeId`：获取指定动漫的详细信息。
   - `GET /api/v2/comment/:commentId?format=json&duration=true`：获取指定弹幕评论；当 `duration=true` 且返回 JSON 时，会额外附带 `videoDuration` 字段，优先返回源站时长，拿不到时返回 `0`。
@@ -501,6 +501,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | TITLE_MAPPING_TABLE    | 【可选】本机剧名映射表（优先级高于远程表），用于自动匹配、FongMi、收藏时替换标题进行搜索（对解析出的剧名做全名精确匹配），手动搜索保持原始关键词。格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
 | TITLE_MAPPING_TABLE_URL | 【可选，默认关闭】远程剧名映射表 TXT 地址。本机 `TITLE_MAPPING_TABLE` 优先；Node/Docker 首次使用后缓存到 `.cache/title-mapping-remote.json`，每天北京时间 05:30 后台更新；Serverless 冷启动后的首次标题匹配会同步下载，最长约等待 5 秒，成功后复用当前实例内存。示例：`https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt`       |
 | AUTO_MATCH_MAPPING_TABLE    | 【可选】自动匹配映射表，仅作用于 `POST /api/v2/match`，多条规则用分号分隔。开放映射 `永生 S05E02 -> 永生 S01E58` 会在源第 5 季内按集数递增映射；同标题同季度可配置多个开放规则，后面起始集数的规则会从该集开始覆盖前面的规则，例如 `一念永恒 S01E53 -> 一念永恒 S02E01;一念永恒 S01E107 -> 一念永恒 S03E01`；有限范围 `永生 S05E02~03 -> 永生 S01E58~59` 只映射包含两端的等长范围。支持目标结果优选 `海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62` 和平台优选 `航海王 S01E01 -> 航海王 S01E01 @qiyi`。同一输入优先采用有限范围规则，规则起始集数相同按配置顺序；整体优先级为当前源季手动偏好 > 本映射表 > `TITLE_MAPPING_TABLE` > 普通匹配，`default` 偏好不阻断映射。限定候选不可用时回退同目标标题，映射目标失败时按原始请求重新匹配。普通搜索、收藏缓存和弹幕时间偏移不受影响。       |
+| AUTO_MATCH_MAPPING_TABLE_URL | 【可选，默认关闭】远程季集映射表 TXT 地址。本机 `AUTO_MATCH_MAPPING_TABLE` 优先；支持 GitHub 文件页、Gist、jsDelivr 和 HTTP/HTTPS 直链，内容格式与本机映射表一致。Node/Docker 会缓存到 `.cache/auto-match-mapping-remote.json`，每天北京时间 05:30 后台更新；Serverless 首次匹配会在后台下载，不阻塞当前请求，下载完成后由后续请求使用，仅保存在当前实例内存中。管理员可携带 `ADMIN_TOKEN` 调用 `POST /api/auto-match-mapping/refresh` 立即刷新当前实例。       |
 | TITLE_NOISE_FILTER    | 【可选】剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`），默认值如下，设为空值可禁用      |
 | ANIME_TITLE_SIMPLIFIED    | 【可选】是否在搜索时将繁体剧名标题自动转换为简体，适用于繁体标题搜索，默认值：false（不转换），可选值：`true`、`false`       |
 | BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，多条规则用逗号分隔（中英文逗号均可，逗号前后空格会自动忽略）。每条规则支持两种写法：正则 `/正则/` 或 `/正则/i`（可带 i/m/s/u 等标志），或直接写纯文本词（按字面匹配）。示例如下       |

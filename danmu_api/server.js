@@ -17,6 +17,7 @@ import { persistFavorites, refreshFavoriteByKeyword } from './apis/favorite-api.
 import { startFavoriteScheduler, stopFavoriteScheduler } from './utils/favorite-schedule-util.js';
 import { formatHostForUrl, listenOnAllInterfaces } from './utils/server-listen-util.js';
 import { ensureRemoteTitleMapping } from './utils/remote-title-mapping-util.js';
+import { ensureRemoteAutoMatchMapping } from './utils/auto-match-mapping-url-util.js';
 
 // 读取 Node HTTP 请求体的原始字节，避免多字节字符和上传文件在分块读取时被破坏。
 async function readRequestBody(req) {
@@ -240,6 +241,9 @@ async function setupEnvWatcher() {
 
           console.log('[server] Environment variables reloaded successfully');
           console.log('[server] Updated keys:', Array.from(newEnvKeys).join(', '));
+
+          globals.reInit();
+          void ensureRemoteAutoMatchMapping();
 
           // 配置变更后同步 Bangumi Data 生命周期：开启则立即确保缓存就绪（缺失则下载），
           // 关闭则释放缓存；先按真实配置同步内存开关，避免重载未刷新 globals 时状态滞后
@@ -548,6 +552,7 @@ async function startServer() {
 async function initializeNodeServices(mainPort) {
   Globals.deployPlatform = 'node';
   await ensureRemoteTitleMapping();
+  await ensureRemoteAutoMatchMapping();
   await initializeFavoriteScheduler(mainPort);
 }
 

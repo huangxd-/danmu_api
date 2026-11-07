@@ -11,8 +11,9 @@ import { Globals } from '../../configs/globals.js';
 import TencentSource from '../../sources/tencent.js';
 import AIClient from '../../utils/ai-util.js';
 import { candidateMatchesMappingQualifiers, candidateMatchesMappingTitle, parseAutoMatchMappingRules, resolveAutoMatchMapping } from '../../utils/auto-match-mapping-util.js';
+import { refreshRemoteAutoMatchMappingNow, resetRemoteAutoMatchMappingForTests } from '../../utils/auto-match-mapping-url-util.js';
 import { hasSeasonSpecificPreference } from '../../utils/cache-util.js';
-import { parseResponse } from '../helpers/context.js';
+import { parseResponse, withMockFetch } from '../helpers/context.js';
 import { createFavoriteAnime, resetFavoriteState } from '../helpers/favorites.js';
 
 test('auto match mapping table', async t => {
@@ -172,7 +173,18 @@ test('auto match mapping table', async t => {
       try {
         searchKeywords = [];
         scenario = 'open';
-        let body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S05E03');
+        const remoteUrl = 'https://maps.example.test/season-match.txt';
+        resetFavoriteState({ AUTO_MATCH_MAPPING_TABLE_URL: remoteUrl });
+        await withMockFetch(
+          async () => new Response('一念永恒 S01E53->一念永恒 S02E01', { status: 200 }),
+          () => refreshRemoteAutoMatchMappingNow(),
+        );
+        let body = await runMatch({ AUTO_MATCH_MAPPING_TABLE_URL: remoteUrl }, '一念永恒 S01E54');
+        assert.equal(body.matches[0].episodeId, 9300030 + 2);
+        resetRemoteAutoMatchMappingForTests();
+        searchKeywords = [];
+
+        body = await runMatch({ AUTO_MATCH_MAPPING_TABLE: '永生 S05E02->永生 S01E58' }, '永生 S05E03');
         assert.equal(body.matches[0].episodeId, 9300030 + 59);
         assert.deepEqual(searchKeywords, ['永生']);
         await getComment(`/api/v2/comment/${body.matches[0].episodeId}`, 'json', false, '127.0.0.1');

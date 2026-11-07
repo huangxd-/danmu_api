@@ -4,6 +4,7 @@ import { jsonResponse } from "../utils/http-util.js";
 import { HTML_TEMPLATE } from "../ui/template.js";
 import { formatLogMessage, log } from "../utils/log-util.js";
 import { refreshRemoteTitleMappingNow } from "../utils/remote-title-mapping-util.js";
+import { refreshRemoteAutoMatchMappingNow } from "../utils/auto-match-mapping-url-util.js";
 import { HandlerFactory } from "../configs/handlers/handler-factory.js";
 import { clearBangumiDataCache, initBangumiData } from "../utils/bangumi-data-util.js";
 
@@ -168,6 +169,13 @@ export function handleLogs() {
 /** 管理员手动刷新远程映射表 */
 export async function handleRemoteMappingRefresh() {
   const result = await refreshRemoteTitleMappingNow();
+  const { status, ...body } = result;
+  return jsonResponse(body, status);
+}
+
+/** 管理员手动刷新远程季集映射表 */
+export async function handleRemoteAutoMatchMappingRefresh() {
+  const result = await refreshRemoteAutoMatchMappingNow();
   const { status, ...body } = result;
   return jsonResponse(body, status);
 }
