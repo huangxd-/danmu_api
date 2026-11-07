@@ -1,22 +1,31 @@
 name: PR Agent
 
 on:
+  # 同仓库 PR 用 pull_request；fork PR 的 pull_request 拿不到 secrets/vars，
+  # 改用 pull_request_target。pr-agent 只通过 API 读取 PR 数据，不 checkout 或执行 fork 代码
   pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created, edited]
 
 jobs:
   pr_agent_job:
-    # 只在主仓库运行，Fork 仓库直接跳过
+    # 只在主仓库运行；同仓库 PR 走 pull_request，fork PR 走 pull_request_target，避免重复运行
     if: |
       github.repository == 'huangxd-/danmu_api' &&
-      github.event.sender.type != 'Bot'
+      github.event.sender.type != 'Bot' &&
+      (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) ||
+        (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.fork == true) ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+      )
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
       pull-requests: write
-      contents: write
     steps:
       - name: PR Agent action step
         uses: the-pr-agent/pr-agent@main
