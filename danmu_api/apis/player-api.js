@@ -30,12 +30,12 @@ import {
 } from "../utils/common-util.js";
 import { getDomesticPersonMetadataForTitle, mergePersonMetadata, getTmdbMediaTitleById, getTmdbSeasonBoundaries } from "../utils/tmdb-util.js";
 import { shouldBlockDomesticCelebrities, getCurrentWorkFilterTitles } from '../utils/person-filter-exclusion-util.js';
-import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, sanitizeUrl } from "../utils/merge-util.js";
+import { applyMergeLogic, mergeDanmakuList, MERGE_DELIMITER, sanitizeUrl, normalizeMergedSourceUrl } from "../utils/merge-util.js";
 
 
 import { getSourceByKey, getSourceMetaByKey, getLogNameByKey } from "../sources/registry.js";
 import { getHanjutvSourceLabel } from '../utils/hanjutv-util.js';
-import { isHongguoPlayerUrl } from "../sources/hongguo.js";
+import { isHongguoPlayerUrl, isHongguoSeriesId } from "../sources/hongguo.js";
 import BilibiliSource from "../sources/bilibili.js"; // resolveB23Link 为 BilibiliSource 实例方法，单测中仍需直接 new
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/player-model.js";
 
@@ -2975,6 +2975,7 @@ function buildBangumiData(anime, idParam = "") {
  * @returns {Promise<Array>} 合并后的弹幕列表
  */
 async function fetchMergedComments(url, animeTitle, commentId, durationCache = null) {
+  url = normalizeMergedSourceUrl(url);
   const parts = url.split(MERGE_DELIMITER);
   const partMetas = parts.map((part) => {
     const firstColonIndex = part.indexOf(':');
@@ -2988,6 +2989,7 @@ async function fetchMergedComments(url, animeTitle, commentId, durationCache = n
 
     const sourceName = part.substring(0, firstColonIndex);
     let realId = part.substring(firstColonIndex + 1);
+    if (sourceName === 'hongguo' && /^(?:series:)?v1:/.test(realId)) realId = part;
 
     // 提取链接尾部偏移值（@100/@-50 秒数偏移，@%30/@%-11 百分比偏移）
     const linkMeta = stripLinkOffset(realId);
@@ -3251,6 +3253,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
   const commentId = parseInt(path.split('/').pop());
   let animeTitle = findAnimeTitleById(commentId);
   let url = findUrlById(commentId);
+  if (url?.includes(MERGE_DELIMITER)) url = normalizeMergedSourceUrl(url);
   let title = findTitleById(commentId);
   let plat = title ? extractEpisodeTitle(title) : null;
 
@@ -3312,7 +3315,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
     danmus = await fetchMergedComments(url, animeTitle, commentId, durationCache);
   } else {
     const commentUrl = cleanUrl;
-    const isHongguoUrl = isHongguoPlayerUrl(commentUrl);
+    const isHongguoUrl = isHongguoPlayerUrl(commentUrl) || isHongguoSeriesId(commentUrl);
 
     if (url.includes('.qq.com')) {
       danmus = await sourceLogContext.run('tencent', () => tencentSource.getComments(commentUrl, plat, segmentFlag));
