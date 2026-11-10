@@ -6,8 +6,10 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp, filterSameEpisodeTitle } from '../../apis/dandan-api.js';
-import { Globals } from '../../configs/globals.js';
+import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp, filterSameEpisodeTitle, buildBangumiData, resolveEpisodeCount, applyEpisodeTitleFilter, filterEpisodesByTitle, withAvailableEpisodeCount } from '../../apis/dandan-api.js';
+import { getSearchCache, setSearchCache } from '../../utils/cache-util.js';
+import { addFavorite, removeFavorite, saveFavorites } from '../../utils/favorite-util.js';
+import { Globals, globals } from '../../configs/globals.js';
 import { normalizeTitleForMatch } from '../../utils/common-util.js';
 import { urlPrefix } from '../helpers/context.js';
 
@@ -189,4 +191,170 @@ test('normal matching keeps the requested platform and exact episode', async () 
   assert.equal(result.resAnime?.animeId, 7781);
   assert.equal(result.resEpisode?.episodeId, 12);
   assert.equal(result.resEpisode?.episodeTitle, '【qq】 第1集');
+});
+
+// 真实数据样本：腾讯《现在就出发 第4季》第5话，21 集里 11 集是「先导片」「加更」，过滤后剩 10 集正片
+const episodeFilterSample = () => {
+  const titles = [
+    '第1期上：出发团变落汤鸡', '第1期下：目击狼人杀升级',
+    '第2期上：腾腾公主飙戏', '第2期下：编瞎话大赏爆笑来袭',
+    '第3期上：小白安宇笨狼合体', '第3期下：空降龙餐馆',
+    '第4期上：现发KTV全员唱到发了狠', '第4期下：全员黑脸',
+    '第5期上：沈腾踩着范丞丞起飞', '第5期下：沈腾满地滚',
+    '先导片上：沈腾沙滩十八滚', '先导片下：贾冰爆炒沈腾',
+    '第1期加更：王楚然猜词', '第1期还有加更：王安宇脑力下线',
+    '第2期加更：沈腾胡先煦范丞丞', '第2期还有加更：沈腾陷入跳舞循环',
+    '第3期加更：王安宇被打开心扉', '第3期还有加更：沈腾范丞丞炫酒瓶',
+    '第4期加更：沈腾黄景瑜双簧帮唱', '第4期还有加更：白敬亭林一雷霆',
+    '第5期加更：王楚然山东话表白',
+  ];
+  return {
+    animeId: 6568352,
+    bangumiId: 'mzc002001bk7moh',
+    animeTitle: '现在就出发 第4季(2026)【综艺】',
+    startDate: '2026-01-01T00:00:00Z',
+    type: '综艺',
+    typeDescription: '综艺',
+    isFavorited: true,
+    rating: 0,
+    source: 'tencent',
+    episodeCount: 21,
+    links: titles.map((title, index) => ({ id: 41021 + index, title: `【qq】${title}`, url: `https://v.qq.com/x/cover/mzc002001bk7moh/ep${index + 1}.html` })),
+  };
+};
+
+test('buildBangumiData 过滤开启时按过滤后的可用集数上报总集数', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const result = buildBangumiData(episodeFilterSample());
+
+  assert.equal(result.bangumi.episodes.length, 10, '过滤后只剩 10 集正片');
+  assert.equal(result.bangumi.seasons[0].episodeCount, 10, '总集数应与实际返回的集数一致');
+});
+
+test('buildBangumiData 过滤关闭时保持平台声明的总集数', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'false', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const result = buildBangumiData(episodeFilterSample());
+
+  assert.equal(result.bangumi.episodes.length, 21, '未开启过滤时返回全部集数');
+  assert.equal(result.bangumi.seasons[0].episodeCount, 21, '未开启过滤时保持平台声明值');
+});
+
+test('buildBangumiData 过滤开启时声明集数更小则以声明值为准', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  anime.episodeCount = 1;
+  anime.links = anime.links.slice(0, 3);
+  const result = buildBangumiData(anime);
+
+  assert.equal(result.bangumi.seasons[0].episodeCount, 1, '声明值更小时以声明值为准');
+});
+
+test('resolveEpisodeCount 取声明值与可用集数中的较小值', () => {
+  assert.equal(resolveEpisodeCount(21, 10), 10);
+  assert.equal(resolveEpisodeCount(21, 21), 21);
+  assert.equal(resolveEpisodeCount(1, 3), 1);
+  assert.equal(resolveEpisodeCount(0, 5), 5);
+  assert.equal(resolveEpisodeCount(21, 0), 21);
+});
+
+test('applyEpisodeTitleFilter 过滤剧集并把可用集数写回动漫', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  const episodes = applyEpisodeTitleFilter(anime, anime.links);
+
+  assert.equal(episodes.length, 10, '过滤后只剩 10 集正片');
+  assert.equal(anime.episodeCount, 10, '动漫的集数写回为过滤后的可用集数');
+});
+
+test('filterEpisodesByTitle 按集标题过滤剧集', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const episodes = [{ episodeTitle: '第1期上：正片' }, { episodeTitle: '第1期加更：加更' }, { episodeTitle: '先导片上：先导' }];
+  const filtered = filterEpisodesByTitle(episodes);
+
+  assert.deepStrictEqual(filtered.map(ep => ep.episodeTitle), ['第1期上：正片'], '加更与先导片按集标题过滤规则被剔除');
+});
+
+test('withAvailableEpisodeCount 为缓存命中的动漫上报过滤后的可用集数', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  const reported = withAvailableEpisodeCount([anime], () => ({ links: anime.links }));
+
+  assert.strictEqual(reported.length, 1, '不改变动漫数量');
+  assert.strictEqual(reported[0].episodeCount, 10, '缓存命中的动漫上报过滤后的可用集数');
+  assert.strictEqual(anime.episodeCount, 21, '不改写缓存里的动漫对象');
+});
+
+test('withAvailableEpisodeCount 过滤关闭时保持平台声明的集数', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'false', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  const reported = withAvailableEpisodeCount([anime], () => ({ links: anime.links }));
+
+  assert.strictEqual(reported[0].episodeCount, 21, '过滤关闭时保持平台声明值');
+});
+
+test('withAvailableEpisodeCount 不改写搜索缓存里的动漫对象', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  const detailsMap = new Map();
+  setSearchCache('集过滤缓存用例', [anime], detailsMap);
+  const cached = getSearchCache('集过滤缓存用例', detailsMap);
+  assert.strictEqual(cached[0], anime, '搜索缓存返回的是缓存里的同一批对象');
+
+  const reported = withAvailableEpisodeCount(cached, () => ({ links: anime.links }));
+
+  assert.strictEqual(reported[0].episodeCount, 10, '上报的是过滤后的可用集数');
+  assert.strictEqual(cached[0].episodeCount, 21, '缓存里的动漫对象不被改写');
+
+  globals.searchCache.delete('集过滤缓存用例');
+});
+
+test('withAvailableEpisodeCount 返回的副本保留动漫的其余字段', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  const reported = withAvailableEpisodeCount([anime], () => ({ links: anime.links }));
+
+  assert.notStrictEqual(reported[0], anime, '返回的是副本而不是原对象');
+  assert.strictEqual(reported[0].animeId, anime.animeId);
+  assert.strictEqual(reported[0].animeTitle, anime.animeTitle);
+  assert.strictEqual(reported[0].source, anime.source);
+});
+
+test('withAvailableEpisodeCount 不改写收藏缓存的持久化内容', () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', GROUP_MINUTE: '0', DANMU_LIMIT: '0', CONVERT_COLOR: 'default', BLOCKED_WORDS: '' });
+  const anime = episodeFilterSample();
+  addFavorite('集过滤收藏用例', [anime], []);
+  const persistedBefore = JSON.stringify(saveFavorites());
+
+  withAvailableEpisodeCount([anime], () => ({ links: anime.links }));
+
+  assert.strictEqual(JSON.stringify(saveFavorites()), persistedBefore, '收藏缓存的持久化内容不被改写');
+
+  removeFavorite('集过滤收藏用例');
+});
+
+test('回填可用集数后匹配到的剧集与平台声明集数时一致', async () => {
+  Globals.init({ ENABLE_ANIME_EPISODE_FILTER: 'true', LOG_LEVEL: 'error' });
+  const buildAnime = (episodeCount) => ({
+    animeId: 4001,
+    bangumiId: '4001',
+    animeTitle: '某测试剧集(2026)【TV动画】from dandan',
+    aliases: [],
+    source: 'dandan',
+    type: 'TV动画',
+    typeDescription: 'TV动画',
+    episodeCount,
+    startDate: '2026-01-01T00:00:00.000Z',
+    links: Array.from({ length: 10 }, (_, i) => ({ id: 40010 + i, title: `【测试源】 第${i + 1}话`, url: `test-${i + 1}` }))
+  });
+  const matchWith = async (anime) => {
+    const detailStore = new Map([[4001, anime]]);
+    const result = await matchAniAndEp(1, 3, 2026, { animes: [anime] }, '某测试剧集', null, null, null, null, detailStore);
+    return { animeId: result.resAnime?.animeId, episodeId: result.resEpisode?.episodeId };
+  };
+
+  const withDeclaredCount = await matchWith(buildAnime(21));
+  const withAvailableCount = await matchWith(buildAnime(10));
+
+  assert.equal(withDeclaredCount.episodeId, 40012, '声明集数为 21 时匹配到第 3 话');
+  assert.deepStrictEqual(withAvailableCount, withDeclaredCount, '可用集数为 10 时匹配结果不变');
 });
