@@ -96,7 +96,7 @@ async function selectTheme(theme) {
 
 applyTheme(getStoredTheme() || document.body.dataset.theme || 'lavender');
 
-// 导出当前管理员可见的环境变量配置
+// 导出当前可见的环境变量配置
 async function exportSystemConfig() {
     try {
         const response = await fetch(buildApiUrl('/api/config', true));
@@ -111,7 +111,7 @@ async function exportSystemConfig() {
             .map(([key]) => key);
 
         if (maskedKeys.length > 0) {
-            customAlert('当前页面没有权限读取完整配置，无法导出脱敏配置。请使用 ADMIN_TOKEN 访问系统配置。');
+            customAlert('当前页面没有权限读取完整配置，无法导出脱敏配置。请使用 TOKEN 访问系统配置。');
             return;
         }
 
@@ -207,8 +207,7 @@ function normalizeImportedConfig(data) {
 
     // 令牌最后更新，避免导入过程中提前失去当前页面权限。
     const importPriority = {
-        TOKEN: 20,
-        ADMIN_TOKEN: 30
+        TOKEN: 20
     };
     entries.sort((a, b) => (importPriority[a.key] || 0) - (importPriority[b.key] || 0));
 
@@ -303,8 +302,8 @@ async function importSystemConfigFile(file) {
             successMessage = '配置导入成功，共导入 ' + entries.length + ' 项配置。';
         }
 
-        if (entries.some(entry => entry.key === 'TOKEN' || entry.key === 'ADMIN_TOKEN')) {
-            successMessage += '\\n访问令牌已更新，请使用新 TOKEN 或 ADMIN_TOKEN 地址重新打开管理页面。';
+        if (entries.some(entry => entry.key === 'TOKEN')) {
+            successMessage += '\\n访问令牌已更新，请使用新 TOKEN 地址重新打开管理页面。';
         }
         customAlert(successMessage);
     } catch (error) {
@@ -508,8 +507,8 @@ function confirmDeploymentByLogs() {
     }, 5000); // 每5秒检查一次，用于确认部署完成
 }
 
-// 检查URL中的token是否与currentAdminToken匹配
-function checkAdminToken() {
+// 检查当前 TOKEN 是否有效
+function checkAccessToken() {
     let _reverseProxy = customBaseUrl; // 使用全局变量 customBaseUrl
 
     // 获取URL路径并提取token
@@ -540,12 +539,6 @@ function checkAdminToken() {
     const pathParts = urlPath.split('/').filter(part => part !== '');
     const urlToken = pathParts.length > 0 ? pathParts[0] : currentToken; // 如果没有路径段，使用默认token
 
-    // 配置了 ADMIN_TOKEN 时必须使用它；未配置时，普通 TOKEN（默认值也包括）
-    // 直接承担配置管理权限。
-    if (currentAdminToken && currentAdminToken.trim() !== '') {
-        return urlToken === currentAdminToken;
-    }
-
     const ordinaryToken = String(originalToken || currentToken || '').trim();
     if (tokenAuthDisabled) return true;
     if (!ordinaryToken || /^\\*+$/.test(ordinaryToken)) return false;
@@ -553,23 +546,21 @@ function checkAdminToken() {
 }
 
 // 检查部署平台相关配置
-async function checkConfigPermission() { return checkAdminToken() ? {success:true} : {success:false,message:'请使用管理令牌访问系统配置。'}; }
+async function checkConfigPermission() { return checkAccessToken() ? {success:true} : {success:false,message:'请使用 TOKEN 访问系统配置。'}; }
 
 // 获取并设置配置信息
 async function fetchAndSetConfig() {
     const config = await fetch(buildApiUrl('/api/config', true)).then(response => response.json());
-    const hasAdminToken = config.hasAdminToken;
     tokenAuthDisabled = config.envs?.TOKEN_AUTH_DISABLED === true || config.envs?.TOKEN_AUTH_DISABLED === 'true' || config.tokenAuthDisabled === true;
-    currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
-    // 首次配置请求即可确定普通 TOKEN，避免 loadEnvVariables 尚未完成时
+    // 首次配置请求即可确定TOKEN，避免 loadEnvVariables 尚未完成时
     // 外部浏览器点击“系统配置”被误判为没有管理权限。
     originalToken = config.originalEnvVars?.TOKEN || originalToken;
     return config;
 }
 
-// 检查并处理管理员令牌
-function checkAndHandleAdminToken() {
-    if (!checkAdminToken()) {
+// 检查并处理访问令牌
+function checkAndHandleToken() {
+    if (!checkAccessToken()) {
         // 禁用系统配置按钮并添加提示
         const envNavBtn = document.getElementById('env-nav-btn');
         if (envNavBtn) {

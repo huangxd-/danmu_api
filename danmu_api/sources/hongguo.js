@@ -738,7 +738,6 @@ export default class HongguoSource extends BaseSource {
     this.playerEpisodeResolutions = new Map();
     this.activeCommentRequests = 0;
     this.commentRequestWaiters = [];
-    this.lastDanmu = [];
     this.durationCache = new Map();
     this.pendingEpisodeDanmu = new Map();
     this.commentWindowCache = new Map();
@@ -1328,7 +1327,7 @@ export default class HongguoSource extends BaseSource {
       const pending = this.pendingEpisodeDanmu.get(cacheKey);
       if (pending) {
         log("info", `[Hongguo] 复用进行中的整段弹幕请求: ${cacheKey}`);
-        return pending;
+        return await pending;
       }
       const task = (async () => {
         const comments = dedupeDanmus(await this.getDanmuForEpisode(info));
@@ -1336,22 +1335,14 @@ export default class HongguoSource extends BaseSource {
           const maxOffset = Math.max(...comments.map((item) => Number(item.offsetMs) || 0));
           if (maxOffset > 0) this.durationCache.set(cacheKey, Math.ceil(maxOffset / 1000) + 30);
         }
-        this.lastDanmu = comments;
         return comments;
-      })().catch((error) => {
-        // 仅网络/风控等抓取阶段失败才允许回退 lastDanmu
-        const fetchError = new Error(`弹幕抓取失败: ${error.message}`);
-        fetchError.danmuFetchFailed = true;
-        throw fetchError;
-      }).finally(() => {
+      })().finally(() => {
         this.pendingEpisodeDanmu.delete(cacheKey);
       });
       this.pendingEpisodeDanmu.set(cacheKey, task);
-      return task;
+      return await task;
     } catch (error) {
       log("error", `[Hongguo] 获取弹幕失败(${String(id).slice(0, 80)}): ${error.message}`);
-      // 链接/ID 解析失败等不应回退旧数据，避免误报并重复输出；仅抓取失败时回退最近一次成功结果
-      if (error.danmuFetchFailed && this.lastDanmu && this.lastDanmu.length) return this.lastDanmu;
       return [];
     }
   }

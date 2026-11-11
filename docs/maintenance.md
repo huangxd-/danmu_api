@@ -40,6 +40,20 @@
 
 默认 GITHUB_TOKEN 创建 PR 不一定触发独立 PR 工作流，因此同步工作流自身会先执行回归测试；PR 中应查看该次 Fork Sync 日志。权限开通后，应手动运行一次验证，才能确认 PR 创建链路实际可用。
 
+## 核心模块职责
+
+| 模块 | 职责 |
+| --- | --- |
+| `worker.js` | 鉴权后的路由和请求限流 |
+| `utils/request-auth.js`、`utils/request-context.js` | 单一 TOKEN 规则和请求身份隔离 |
+| `apis/player-api.js` | 搜索、季集匹配、目录和匹配阶段预取 |
+| `apis/comment-api.js` | 弹幕下载、缓存键、偏移、UGC 补充及最终过滤 |
+| `sources/location.js` | URL 域名与原生来源 ID 解析 |
+| `sources/registry.js` | 来源实例与元数据注册 |
+| `utils/danmu-util.js` | 弹幕规范化及返回前的去重、数量限制和显示处理 |
+
+弹幕缓存保存规范化数据，屏蔽词和人物过滤在每次返回时执行，显示处理排在过滤之后。并发来源下载只共享格式化原始数据，不共享请求的偏移。分段与整集使用不同缓存键；有作品偏移的整集还区分剧集上下文。`player-api.js` 保留弹幕接口导出以兼容现有调用，新调用可直接使用 `comment-api.js`。
+
 ## 自用发布流程
 
 ### 一个版本号，三个对应位置

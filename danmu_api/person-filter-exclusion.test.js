@@ -1,3 +1,4 @@
+import { resolveSegmentCacheKey } from './apis/comment-api.js';
 import { BLOCKED_WORD_PRESETS } from './utils/blocked-word-presets.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -151,7 +152,7 @@ test('同一弹幕缓存随人物名单热更新，其他作品仍屏蔽角色',
     const filtered = await (await getCommentByUrl(url, 'json', false)).json();
     assert.deepEqual(filtered.comments.map(item => item.m), ['剧情很好看']);
     const segment = { type: 'tencent', url: 'nickname-cache-segment', animeTitle: title, sourceUrl: url };
-    setCommentCache(segment.url, texts.map((m, i) => ({ p: `${i + 1},1,16777215,[test]`, m })));
+    setCommentCache(resolveSegmentCacheKey(segment), texts.map((m, i) => ({ p: `${i + 1},1,16777215,[test]`, m })));
     assert.deepEqual((await (await getComment('/api/v2/comment/990099', 'json', false)).json()).comments.map(item => item.m), ['剧情很好看']);
     assert.deepEqual((await (await getSegmentComment(segment, 'json')).json()).comments.map(item => item.m), ['剧情很好看']);
     Globals.init({ ...enabled, PERSON_FILTER_EXCLUDED_TITLES: title, COMMENT_CACHE_MIN_COUNT: '0' });
@@ -204,7 +205,7 @@ test('普通、URL、缓存及分段弹幕入口跳过人物查询，保留其�
     await assertComments(await getComment('/api/v2/comment/990001', 'json', false));
     const segment = { type: 'tencent', url: 'person-exclusion-segment', animeTitle, sourceUrl: url };
     await assertComments(await getSegmentComment(segment, 'json'));
-    setCommentCache(segment.url, convertToDanmakuJson(comments, 'test'));
+    setCommentCache(resolveSegmentCacheKey(segment), convertToDanmakuJson(comments, 'test'));
     await assertComments(await getSegmentComment(segment, 'json'));
     assert.equal(metadataRequests, 0);
   } finally {
@@ -235,7 +236,7 @@ test('已缓存的普通、URL和分段弹幕按当前正则列表过滤，删�
     Globals.episodeIds = [{ id: 990002, url, title: '第1集' }];
     Globals.commentCache = new Map();
     setCommentCache(url, comments);
-    setCommentCache(segment.url, comments);
+    setCommentCache(resolveSegmentCacheKey(segment), comments);
     for (const [rules, expected] of [['', comments.map(x => x.m)], [[...BLOCKED_WORD_PRESETS.regions, ...BLOCKED_WORD_PRESETS.dates].join(','), ['普通弹幕']], ['', comments.map(x => x.m)]]) {
       Globals.init({ ...config, BLOCKED_WORDS: rules });
       for (const response of [await getCommentByUrl(url, 'json', false), await getComment('/api/v2/comment/990002', 'json', false), await getSegmentComment(segment, 'json')]) {

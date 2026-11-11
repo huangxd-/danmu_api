@@ -1,4 +1,5 @@
 import { Envs } from './envs.js';
+import { requestContext } from '../utils/request-context.js';
 
 /**
  * 全局变量管理模块
@@ -69,6 +70,9 @@ export const Globals = {
       this.envs.gradientEnabled, this.envs.gradientChance,
       this.envs.convertColor, this.envs.colorPool,
       this.envs.convertTopBottomToScroll,
+      this.envs.danmuOffsetRules,
+      this.envs.danmuSimplifiedTraditional, this.envs.groupMinute,
+      this.envs.danmuLimit, this.envs.likeSwitch,
     ]);
     if (key !== this._commentTransformKey) {
       this._commentTransformKey = key;
@@ -166,6 +170,8 @@ export const Globals = {
     const self = this;
     this._configProxy = new Proxy({}, {
       get(target, prop) {
+        const request = requestContext.getStore();
+        if (request && Object.hasOwn(request, prop)) return request[prop];
         // 优先返回 envs 中的属性（保持原有的平铺效果）
         if (prop in self.envs) {
           return self.envs[prop];
@@ -184,6 +190,11 @@ export const Globals = {
         return self[prop];
       },
       set(target, prop, value) {
+        const request = requestContext.getStore();
+        if (request && Object.hasOwn(request, prop)) {
+          request[prop] = value;
+          return true;
+        }
         // 写操作同步到 Globals
         if (prop in self.envs) {
           self.envs[prop] = value;

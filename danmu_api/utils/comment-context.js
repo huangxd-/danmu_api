@@ -11,11 +11,18 @@ export function getCommentTransformConfig() {
     convertColor: globals.convertColor,
     colorPool: globals.colorPool,
     convertTopBottomToScroll: globals.convertTopBottomToScroll,
+    danmuOffsetRules: globals.danmuOffsetRules,
+    blockedWords: globals.blockedWords,
+    danmuSimplifiedTraditional: globals.danmuSimplifiedTraditional,
+    groupMinute: globals.groupMinute,
+    danmuLimit: globals.danmuLimit,
+    likeSwitch: globals.likeSwitch,
+    deferProcessing: false,
     revision: globals.commentTransformRevision,
   });
 }
 
-export function runWithCommentTransform(task) {
+export function runWithCommentTransform(task, { deferProcessing = false } = {}) {
   if (commentContext.getStore()) return task();
-  return commentContext.run(getCommentTransformConfig(), task);
+  return commentContext.run(Object.freeze({ ...getCommentTransformConfig(), deferProcessing }), task);
 }

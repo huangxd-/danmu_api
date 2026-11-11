@@ -23,7 +23,7 @@ export class Envs {
   static sensitiveKeys = new Set();
 
   // 允许在值中写入 # 等 dotenv 视为注释字符的变量；读取时绕过 dotenv 截断以保留完整内容。加密变量按掩码写入预览集合，原始值仅供运行期使用与日志脱敏。
-  static RAW_ENV_KEYS = new Set(['ADMIN_TOKEN', 'ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'BILIBILI_COOKIE', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'DANMU_OFFSET', 'EPISODE_TITLE_FILTER', 'LOCAL_REDIS_URL', 'PROXY_URL', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'TMDB_API_KEY', 'TOKEN', ]);
+  static RAW_ENV_KEYS = new Set(['ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'BILIBILI_COOKIE', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'DANMU_OFFSET', 'EPISODE_TITLE_FILTER', 'LOCAL_REDIS_URL', 'PROXY_URL', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'TMDB_API_KEY', 'TOKEN', ]);
 
   static ALLOWED_PLATFORMS = ["tencent","youku","iqiyi","imgo","bilibili","migu","sohu","leshi","hongguo","hanjutv","renren","bahamut"];
   static ALLOWED_SOURCES = ["tencent","youku","iqiyi","imgo","bilibili","migu","sohu","leshi","hongguo","hanjutv","renren","bahamut"];
@@ -552,7 +552,6 @@ export class Envs {
       // API配置
       'TOKEN': { category: 'api', type: 'text', description: 'API访问令牌' },
       'TOKEN_AUTH_DISABLED': { category: 'api', type: 'boolean', description: '关闭 API 和管理界面的 TOKEN 鉴权（仅建议在受信任的内网环境使用）' },
-      'ADMIN_TOKEN': { category: 'api', type: 'text', description: '系统管理访问令牌' },
       'RATE_LIMIT_MAX_REQUESTS': { category: 'api', type: 'number', description: '限流配置：1分钟内最大请求次数，0表示不限流，默认3', min: 0, max: 50 },
 
       // 源配置
@@ -619,7 +618,6 @@ export class Envs {
       allowedPlatforms: this.ALLOWED_PLATFORMS,
       token: this.get('TOKEN', '87654321', 'string', true), // token，默认为87654321
       tokenAuthDisabled: this.get('TOKEN_AUTH_DISABLED', false, 'boolean'), // 是否关闭 TOKEN 鉴权
-      adminToken: this.get('ADMIN_TOKEN', '', 'string', true), // admin token，用于系统管理访问控制
       sourceOrderArr: this.resolveSourceOrder(), // 源排序
       mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
       customMergeRules: this.resolveCustomMergeRules(), // 合并映射表，用于自定义源合并行为。

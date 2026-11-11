@@ -1,3 +1,4 @@
+import { resolveSegmentCacheKey } from './apis/comment-api.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Globals } from './configs/globals.js';
@@ -346,7 +347,7 @@ test('百度补充的角色经普通、URL和分段弹幕入口实际过滤，�
   const comments=['宁长樾出场','原演员来了','剧情很好看'].map((m,i)=>({p:`${i+1},1,16777215,[test]`,m}));
   setCommentCache(url,comments);
   const segment={type:'tencent',url:'baidu-test-segment',animeTitle:`${title}(2026)`,sourceUrl:url};
-  setCommentCache(segment.url,comments);
+  setCommentCache(resolveSegmentCacheKey(segment),comments);
   const original=globalThis.fetch; let calls=0;
   globalThis.fetch=async request=>{
     assert.equal(new URL(request).hostname,'bkso.baidu.com'); calls++;

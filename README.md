@@ -48,7 +48,7 @@
 > **已有部署请跳到下方迁移章节，不要用新模板覆盖原配置。** 以下均为通用示例，不包含真实主机地址、账号或宿主机路径。
 
 1. 在 NAS 选择项目目录，保存 [compose.nas.yml](compose.nas.yml)。模板使用相对此文件的 `./data/config` 和 `./data/.cache`，分别挂载到 `/app/config` 和 `/app/.cache`。
-2. 创建上述目录，将 [配置示例](config/.env.example) 保存为 `data/config/.env`。**启动前**设置自己的 `TOKEN` 和独立的 `ADMIN_TOKEN`，不要使用默认令牌，也不要把真实配置提交到 Git。
+2. 创建上述目录，将 [配置示例](config/.env.example) 保存为 `data/config/.env`。**启动前**设置自己的 `TOKEN`，不要使用默认令牌，也不要把真实配置提交到 Git。
 3. 模板已设置 latest 镜像，不需要 `DANMU_API_IMAGE`。默认宿主端口为 `9321`；需要修改时，可在项目目录创建供 Compose 使用的 `.env`（与 `data/config/.env` 不是同一个文件）：
 
 ```dotenv
@@ -64,18 +64,18 @@ docker compose -f compose.nas.yml up -d
 docker compose -f compose.nas.yml logs --tail=100
 ```
 
-用 NAS 图形化项目管理时，导入同一模板并提供上述变量，确认相对挂载目录的实际解析位置。访问 `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>`，管理操作使用 `ADMIN_TOKEN`。容器默认端口为 `9321`；如设置了 `DANMU_API_PORT`，需相应调整映射。
+用 NAS 图形化项目管理时，导入同一模板并提供上述变量，确认相对挂载目录的实际解析位置。访问 `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>`，播放器和管理操作统一使用 `TOKEN`。容器默认端口为 `9321`；如设置了 `DANMU_API_PORT`，需相应调整映射。
 
 保持鉴权开启，不要直接将 API 端口暴露到公网。配置、缓存数据和备份应仅保存在自己的设备上。
 
 ## 播放器接入
 
-将下列占位内容替换为自己的 NAS 地址、宿主端口和令牌。播放器使用 `TOKEN`；配置修改、缓存清理和 Cookie 保存使用独立的 `ADMIN_TOKEN`。
+将下列占位内容替换为自己的 NAS 地址、宿主端口和令牌。播放器、配置修改、缓存清理和 Cookie 保存统一使用 `TOKEN`。
 
 | 用途 | 地址 |
 | --- | --- |
 | 查看管理界面 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>` |
-| 管理操作入口 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<ADMIN_TOKEN>` |
+| 管理操作入口 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>` |
 | 弹幕服务基础地址 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>` |
 | 完整 API 前缀 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>/api/v2` |
 | FongMi 兼容接口 | `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>/api/v2/fongmi/danmaku` |
@@ -101,7 +101,7 @@ curl 'http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>/api/v2/match' \
 
 ## 常用配置
 
-首次启动以 [config/.env.example](config/.env.example) 为模板，后续可通过管理员入口调整配置。下面只列常用入口，完整格式见 [配置参考](docs/configuration.md)。
+首次启动以 [config/.env.example](config/.env.example) 为模板，后续可通过同一 TOKEN 入口调整配置。下面只列常用入口，完整格式见 [配置参考](docs/configuration.md)。
 
 | 需求 | 配置项与说明 |
 | --- | --- |
@@ -143,7 +143,7 @@ docker compose -f compose.nas.yml logs --tail=100 danmu-api
 
 ## 常见问题
 
-**页面打不开或接口提示鉴权失败？** 先检查容器日志、端口映射和网络连通性，再确认 URL 第一段使用自己的 `TOKEN`。查看页面与执行管理操作使用的令牌不同；提示需要管理员权限时，从 `ADMIN_TOKEN` 入口访问。
+**页面打不开或接口提示鉴权失败？** 先检查容器日志、端口映射和网络连通性，再确认 URL 第一段使用自己的 `TOKEN`。查看页面、执行管理操作与播放器请求使用同一个令牌。
 
 **搜索有结果，自动匹配却失败？** 核对播放器实际提交的文件名、年份、季号和集号，以及来源是否启用。自动匹配会校验作品和分集身份，不能确认时会保持未匹配；可先手动选择，再按需添加标题或季集映射。匹配追踪与 `debug` 日志可帮助定位。
 

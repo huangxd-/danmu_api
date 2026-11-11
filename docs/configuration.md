@@ -15,7 +15,7 @@
 | POST | /api/v2/segmentcomment | 下载源站分片 |
 | GET/POST | /api/v2/fongmi/danmaku 或 /danmaku | 播放器兼容接口 |
 
-以上接口按原 TOKEN 路径鉴权。配置管理、日志与缓存管理入口保留，接口调试和弹幕测试页面已移除。配置 ADMIN_TOKEN 后，配置修改、缓存清理和 Cookie 保存需管理员权限。
+以上接口按原 TOKEN 路径鉴权。配置管理、日志与缓存管理入口保留，接口调试和弹幕测试页面已移除。所有配置与播放器接口统一使用 TOKEN；未通过鉴权的请求不能读取配置。旧 ADMIN_TOKEN 不再生效，升级后使用原 TOKEN 访问。
 
 ## 首次匹配与 TMDB 辅助识别
 
@@ -77,7 +77,6 @@ TMDB 身份为 tv:ID 或 movie:ID，随匹配成功的目录保存；失败候�
 |---|---|---|
 | TOKEN | text | API访问令牌 |
 | TOKEN_AUTH_DISABLED | boolean | 关闭 API 和管理界面的 TOKEN 鉴权（仅建议在受信任的内网环境使用） |
-| ADMIN_TOKEN | text | 系统管理访问令牌 |
 | RATE_LIMIT_MAX_REQUESTS | number | 限流配置：1分钟内最大请求次数，0表示不限流，默认3 |
 | SOURCE_ORDER | multi-select | 启用的来源及组内/手动搜索结果顺序。手动搜索全源并发，自动匹配的组间搜索顺序由 PLATFORM_ORDER 决定。 |
 | MERGE_SOURCE_PAIRS | multi-select | 实际合并返回的弹幕来源；第一个为主源，主源无结果时轮替下一源。自动匹配只合并当前平台组已搜索的来源，需要一起合并的源应放在同一 PLATFORM_ORDER 组。格式：源1&源2&源3，多组逗号分隔，单源表示保留原结果。 |

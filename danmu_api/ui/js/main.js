@@ -117,7 +117,6 @@ let logs = []; // 保留本地日志数组，用于UI显示
 let currentVersion = '';
 let latestVersion = '';
 let currentToken = 'globals.currentToken';
-let currentAdminToken = ''; // admin token，用于系统管理
 let originalToken = '';
 let tokenAuthDisabled = false;
 
@@ -153,14 +152,7 @@ function saveBaseUrl() {
 
 // 构建带token的API请求路径
 function buildApiUrl(path, isSystemPath = false) {
-    let res;
-    // 如果是系统管理路径且有admin token,则使用admin token
-    if (isSystemPath && currentAdminToken && currentAdminToken.trim() !== '' && currentAdminToken.trim() !== '*'.repeat(currentAdminToken.length)) {
-        res = '/' + currentAdminToken + path;
-    } else {
-        // 否则使用普通token
-        res = (currentToken ? '/' + currentToken : "") + path;
-    }
+    const res = (currentToken ? '/' + currentToken : '') + path;
 
     // 如果配置了自定义基础URL (解决反代问题)
     if (customBaseUrl) {
@@ -174,12 +166,11 @@ function buildApiUrl(path, isSystemPath = false) {
 
 // 从API加载真实环境变量数据
 function loadEnvVariables() {
-    // 从API获取真实配置数据
+    // 所有配置操作使用统一 TOKEN
     fetch(buildApiUrl('/api/config', true))
         .then(response => response.json())
         .then(config => {
-            // 从配置中获取admin token
-            currentAdminToken = config.originalEnvVars?.ADMIN_TOKEN || '';
+            // 读取鉴权开关
             tokenAuthDisabled = config.envs?.TOKEN_AUTH_DISABLED === true || config.envs?.TOKEN_AUTH_DISABLED === 'true' || config.tokenAuthDisabled === true;
 
             originalToken = config.originalEnvVars?.TOKEN || '';
@@ -263,7 +254,6 @@ function updateApiEndpoint() {
       const host = window.location.host;
       const authDisabled = config.envs?.TOKEN_AUTH_DISABLED === true || config.envs?.TOKEN_AUTH_DISABLED === 'true' || config.tokenAuthDisabled === true;
       const token = config.originalEnvVars?.TOKEN || '87654321'; // 默认token值
-      const adminToken = config.originalEnvVars?.ADMIN_TOKEN;
 
       // 获取URL路径并提取token
       let urlPath = window.location.pathname;
@@ -294,7 +284,7 @@ function updateApiEndpoint() {
         apiToken = token;
       } else {
         // 如果不是默认token，则检查URL中的token是否匹配，匹配则显示真实token，否则显示星号
-        if (urlToken === token || (adminToken !== "" && urlToken === adminToken)) {
+        if (urlToken === token) {
           apiToken = token; // 更新全局token变量
         }
       }
@@ -477,13 +467,13 @@ function switchSection(section, event = null) {
                 }
 
                 // 根据section类型显示不同的token提示
-                const tokenType = section === 'env' ? 'ADMIN_TOKEN' : 'TOKEN';
+                const tokenType = 'TOKEN';
                 customAlert('请在URL中配置相应的' + tokenType + '以访问此功能！\\n\\n访问方式：' + displayBase + '/{' + tokenType + '}');
             }, 100);
             return;
         }
 
-        // 如果是系统配置页面，还需要检查是否配置了ADMIN_TOKEN且URL中的token等于currentAdminToken
+        // 系统配置和播放器使用同一个 TOKEN。
         if (section === 'env') {
             // 检查部署平台配置
             checkConfigPermission().then(result => {
@@ -593,13 +583,13 @@ async function init() {
     try {
         await updateApiEndpoint(); // 等待API端点更新完成
         checkLatestVersion();
-        // 从API获取配置信息，包括检查是否有admin token
+        // 从API获取配置信息
         const config = await fetchAndSetConfig();
 
 
 
-        // 检查并处理管理员令牌
-        checkAndHandleAdminToken();
+        // 检查访问令牌
+        checkAndHandleToken();
 
         loadEnvVariables(); // 从API加载真实环境变量数据
         renderEnvList();

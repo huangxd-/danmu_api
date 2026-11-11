@@ -76,7 +76,7 @@ test('UGC JSON and legacy text logs appear in matching filter without a fake sou
 });
 
 test('真实日志接口兼容文本，JSON保留结构与脱敏，未授权请求被拒绝', async () => {
-  const env = { TOKEN: 'test-log-user', ADMIN_TOKEN: 'test-log-admin', USE_BANGUMI_DATA: 'false', LOG_LEVEL: 'debug' };
+  const env = { TOKEN: 'test-log-user', USE_BANGUMI_DATA: 'false', LOG_LEVEL: 'debug' };
   Globals.init(env); Globals.logBuffer = [];
   Globals.originalEnvVars = { API_KEY: 'sensitive-test-key' };
   Globals.accessedEnvVars = { API_KEY: '******************' };
@@ -90,7 +90,7 @@ test('真实日志接口兼容文本，JSON保留结构与脱敏，未授权请�
   assert.equal(json.status, 200);
   const text = await json.text();
   assert.ok(!text.includes('sensitive-test-key'));
-  assert.ok(!text.includes('192.168.1.9'));
+  assert.ok(text.includes('192.168.1.9'));
   const payload = JSON.parse(text);
   const event = payload.entries.find(e => e.event === 'match.identity');
   assert.equal(event.data.title, '******************');
@@ -108,8 +108,6 @@ test('真实日志接口兼容文本，JSON保留结构与脱敏，未授权请�
   const plain = await request('test-log-user/api/logs');
   assert.match(plain.headers.get('content-type'), /text\/plain/);
   assert.ok((await plain.text()).includes('[match-id='));
-  const admin = await request('test-log-admin/api/logs?format=json');
-  assert.ok((await admin.text()).includes('192.168.1.9'));
   const denied = await request('wrong-token/api/logs?format=json');
   assert.ok([401,403].includes(denied.status));
 });

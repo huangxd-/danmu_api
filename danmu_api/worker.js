@@ -1,13 +1,15 @@
+import { getComment, getCommentByUrl, getSegmentComment, resolveCommentCacheKey } from './apis/comment-api.js';
+import { resolveRequestAuth } from './utils/request-auth.js';
 import { handleMappingShare } from './utils/mapping-share-util.js';
 import { initializePersistentCaches } from './utils/persistent-cache-util.js';
 import { Globals } from './configs/globals.js';
+import { runWithRequestContext } from './utils/request-context.js';
 import { jsonResponse } from './utils/http-util.js';
-import { log, formatLogMessage } from './utils/log-util.js'
+import { log } from './utils/log-util.js';
 
-import { cleanupExpiredIPs, findUrlById, getCommentCache, judgeLocalCacheValid } from "./utils/cache-util.js";
-import { formatDanmuResponse } from "./utils/danmu-util.js";
+import { cleanupExpiredIPs, findUrlById, getCommentCache } from "./utils/cache-util.js";
 
-import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime, searchEpisodes } from "./apis/player-api.js";
+import { getBangumi, matchAnime, searchAnime, searchEpisodes } from "./apis/player-api.js";
 
 import { getFongmiDanmaku } from "./apis/clients/fongmi-api.js";
 import { handleConfig, handleUI, handleLogs, handleClearLogs, handleClearCache, handleCacheAnimes, handleRemoteMappingLogs, handleRemoteMappingRefresh, handleRemoteAutoMatchMappingRefresh } from "./apis/system-api.js";
@@ -15,18 +17,16 @@ import { handleConfig, handleUI, handleLogs, handleClearLogs, handleClearCache, 
 import { handleSetEnv, handleAddEnv, handleDelEnv } from './apis/env-api.js';
 
 
-import { Segment } from "./models/player-model.js"
-import {
-    handleCookieStatus,
-    handleCookieVerify,
-    handleQRGenerate,
-    handleQRCheck,
-    handleCookieSave
-} from "./utils/cookie-util.js";
+import { Segment } from "./models/player-model.js";
+import { handleCookieStatus, handleCookieVerify, handleQRGenerate, handleQRCheck, handleCookieSave } from "./utils/cookie-util.js";
 
 let globals;
 
 async function handleRequest(req, env, deployPlatform, clientIp) {
+  return runWithRequestContext(() => handleRequestBody(req, env, deployPlatform, clientIp));
+}
+
+async function handleRequestBody(req, env, deployPlatform, clientIp) {
   // 加载全局变量和环境变量配置
   globals = Globals.init(env);
 
@@ -44,96 +44,22 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   }
 
 
+  const auth = resolveRequestAuth(path, globals.token, globals.tokenAuthDisabled);
+  globals.currentToken = auth.currentToken;
 
-  // --- 校验 token ---
-  const parts = path.split("/").filter(Boolean); // 去掉空段
-
-  const knownApiPaths = ["api", "v1", "v2", "search", "match", "bangumi", "comment", "danmaku"];
-
-  const firstPart = parts[0] || "";
-  const tokenAuthDisabled = globals.tokenAuthDisabled === true;
-  const isDefaultToken = globals.token === "87654321";
-  const isValidToken = tokenAuthDisabled || firstPart === globals.token || firstPart === globals.adminToken;
-  const explicitToken = tokenAuthDisabled ? "" : (firstPart === globals.token || (globals.adminToken && firstPart === globals.adminToken)
-    ? firstPart
-    : "");
-
-  globals.currentToken = tokenAuthDisabled ? "" : (
-    isValidToken ? firstPart :
-    isDefaultToken && (firstPart === "87654321" || knownApiPaths.includes(firstPart)) ?
-      (firstPart === "87654321" ? firstPart : "87654321") :
-    "");
-
-
+  if (path === '/' && method === 'GET') return handleUI();
+  if (path === '/favicon.ico' || path === '/robots.txt' || method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, User-Agent',
+    } });
+  }
+  if (!auth.authorized) {
+    return jsonResponse({ errorCode: 401, success: false, errorMessage: 'Unauthorized' }, 401);
+  }
+  path = auth.path;
   await initializePersistentCaches();
-
-  // 检查路径是否包含指定的接口关键字
-  
-
-  
-
-  // GET /
-  if (path === "/" && method === "GET") {
-    return handleUI();
-  }
-
-  if (path === "/favicon.ico" || path === "/robots.txt" || method === "OPTIONS") {
-    return new Response(null, {
-        status: 204,
-        headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, User-Agent"
-        }
-    });
-  }
-
-  // 关闭 TOKEN 鉴权时允许直接访问所有路径；仍兼容携带 token 的旧入口。
-  if (tokenAuthDisabled) {
-    if (firstPart === globals.token || (globals.adminToken && firstPart === globals.adminToken)) {
-      path = "/" + parts.slice(1).join("/");
-    }
-  // 如果 token 是默认值 87654321
-  } else if (globals.token === "87654321") {
-    if (parts.length > 0) {
-      // 如果第一段是正确的默认 token
-      if (parts[0] === "87654321" || parts[0] === globals.adminToken) {
-        // 移除 token，继续处理
-        path = "/" + parts.slice(1).join("/");
-      } else if (!knownApiPaths.includes(parts[0])) {
-        // 对于 /api/config 路径，我们允许无 token 访问，但返回有限信息
-        if (path === "/api/config" && method === "GET") {
-          return handleConfig(false); // 无权限
-        }
-        // 第一段不是已知的 API 路径，可能是错误的 token
-        // 返回 401
-        log("error", `[system] [server] Invalid token in path: ${path}`);
-        return jsonResponse(
-          { errorCode: 401, success: false, errorMessage: "Unauthorized" },
-          401
-        );
-      }
-      // 如果第一段是已知的 API 路径（如 "api"），允许直接访问
-    }
-  } else {
-    // token 不是默认值，必须严格校验
-    if (parts.length < 1 || (parts[0] !== globals.token && parts[0] !== globals.adminToken)) {
-      // 对于 /api/config 路径，如果使用默认 token，我们允许无 token 访问，但返回有限信息
-      if (path === "/api/config" && method === "GET") {
-        return handleConfig(false); // 无权限
-      }
-      {
-        log("error", `[system] [server] Invalid or missing token in path: ${path}`);
-        return jsonResponse(
-          { errorCode: 401, success: false, errorMessage: "Unauthorized" },
-          401
-        );
-      }
-    } else {
-      // 移除 token 部分，剩下的才是真正的路径
-      path = "/" + parts.slice(1).join("/");
-    }
-  }
 
   // 兼容部分客户端将自定义弹幕短地址再次拼接官方完整路径的情况
   // 例如: /danmaku/api/v2/fongmi/danmaku?name=...&episode=...
@@ -144,17 +70,8 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
 
   // GET /api/config - 获取配置信息 (需要 token)
   if (path === "/api/config" && method === "GET") {
-    return handleConfig(true); // 有权限
+    return handleConfig();
   }
-
-  if (method === 'POST' && (path.startsWith('/api/env/') || path === '/api/cache/clear' || path === '/api/cookie/save' || path === '/api/title-mapping/share')) {
-    const configAdmin = tokenAuthDisabled || (globals.adminToken
-      ? explicitToken === globals.adminToken
-      : (explicitToken === globals.token || isDefaultToken));
-    if (!configAdmin) return jsonResponse({ success: false, message: '需要 ADMIN_TOKEN 权限' }, 403);
-  }
-
-  
 
   if (!isLogReadRequest) log("debug", `[system] [server] ${path}`);
 
@@ -266,112 +183,25 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
       commentId: videoUrl ? null : path.split('/').pop(), byUrl: Boolean(videoUrl), format: queryFormat,
       segmentFlag, userAgent: req.headers.get('user-agent'), clientIp }));
 
-    // ⚠️ 限流设计说明：
-    // 1. 先检查缓存，缓存命中时直接返回，不计入限流次数
-    // 2. 只有缓存未命中时才执行限流检查和网络请求
-    // 3. 这样可以避免频繁访问同一弹幕时被限流，提高用户体验
-
-    // 如果有url参数，则通过URL获取弹幕
-    if (videoUrl) {
-      // 先检查缓存
-      const cachedComments = getCommentCache(videoUrl);
-      if (cachedComments !== null) {
-        log("info", `[system] [Rate Limit] Cache hit for URL: ${videoUrl}, skipping rate limit check`);
-        return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration, url.searchParams.get('animeTitle') || '');
-      }
-
-      // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
-      if (globals.rateLimitMaxRequests > 0) {
-        const currentTime = Date.now();
-        const oneMinute = 60 * 1000;
-
-        // 清理所有过期的 IP 记录
-        cleanupExpiredIPs(currentTime);
-
-        // 检查该 IP 地址的历史请求
-        if (!globals.requestHistory.has(clientIp)) {
-          globals.requestHistory.set(clientIp, []);
-        }
-
-        const history = globals.requestHistory.get(clientIp);
-        const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
-
-        // 如果最近 1 分钟内的请求次数超过限制，返回 429 错误
-        if (recentRequests.length >= globals.rateLimitMaxRequests) {
-          log("warn", `[system] [Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
-          return jsonResponse(
-            { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
-            429
-          );
-        }
-
-        // 记录本次请求时间戳
-        recentRequests.push(currentTime);
-        globals.requestHistory.set(clientIp, recentRequests);
-        log("info", `[system] [Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
-      }
-
-      // 通过URL获取弹幕
-      return getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration, url.searchParams.get('animeTitle') || '');
+    if (!videoUrl && !path.startsWith('/api/v2/comment/')) {
+      return jsonResponse({ errorCode: 400, success: false, errorMessage: 'Missing commentId or url parameter' }, 400);
     }
-
-    // 否则通过commentId获取弹幕
-    if (!path.startsWith("/api/v2/comment/")) {
-      log("error", "[system] [server] Missing commentId or url parameter");
-      return jsonResponse(
-        { errorCode: 400, success: false, errorMessage: "Missing commentId or url parameter" },
-        400
-      );
-    }
-
-    const commentId = parseInt(path.split("/").pop());
-    const urlForComment = findUrlById(commentId);
-
-    if (urlForComment) {
-      // 检查弹幕缓存 - 缓存命中时直接返回，不计入限流
-      const cachedComments = getCommentCache(urlForComment);
-      if (cachedComments !== null) {
-        log("info", `[system] [Rate Limit] Cache hit for URL: ${urlForComment}, skipping rate limit check`);
-        return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
+    const commentId = videoUrl ? null : Number(path.split('/').pop());
+    const location = videoUrl || findUrlById(commentId);
+    const cached = !segmentFlag && location && getCommentCache(resolveCommentCacheKey(location, commentId)) !== null;
+    if (!cached && globals.rateLimitMaxRequests > 0) {
+      const now = Date.now();
+      cleanupExpiredIPs(now);
+      const recent = (globals.requestHistory.get(clientIp) || []).filter(time => now - time <= 60000);
+      if (recent.length >= globals.rateLimitMaxRequests) {
+        return jsonResponse({ errorCode: 429, success: false, errorMessage: 'Too many requests, please try again later' }, 429);
       }
+      recent.push(now);
+      globals.requestHistory.set(clientIp, recent);
     }
-
-    // 缓存未命中，执行限流检查（如果 rateLimitMaxRequests > 0 则启用限流）
-    if (globals.rateLimitMaxRequests > 0) {
-      // 获取当前时间戳（单位：毫秒）
-      const currentTime = Date.now();
-      const oneMinute = 60 * 1000;  // 1分钟 = 60000 毫秒
-
-      // 清理所有过期的 IP 记录
-      cleanupExpiredIPs(currentTime);
-
-      // 检查该 IP 地址的历史请求
-      if (!globals.requestHistory.has(clientIp)) {
-        // 如果该 IP 地址没有请求历史，初始化一个空队列
-        globals.requestHistory.set(clientIp, []);
-      }
-
-      const history = globals.requestHistory.get(clientIp);
-
-      // 过滤掉已经超出 1 分钟的请求
-      const recentRequests = history.filter(timestamp => currentTime - timestamp <= oneMinute);
-
-      // 如果最近的请求数量大于等于配置的限制次数，则限制请求
-      if (recentRequests.length >= globals.rateLimitMaxRequests) {
-        log("warn", `[system] [Rate Limit] IP ${clientIp} exceeded rate limit (${recentRequests.length}/${globals.rateLimitMaxRequests} requests in 1 minute)`);
-        return jsonResponse(
-          { errorCode: 429, success: false, errorMessage: "Too many requests, please try again later" },
-          429
-        );
-      }
-
-      // 记录本次请求时间戳
-      recentRequests.push(currentTime);
-      globals.requestHistory.set(clientIp, recentRequests);
-      log("info", `[system] [Rate Limit] IP ${clientIp} request count: ${recentRequests.length}/${globals.rateLimitMaxRequests}`);
-    }
-
-    return getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
+    return videoUrl
+      ? getCommentByUrl(videoUrl, queryFormat, segmentFlag, includeDuration, url.searchParams.get('animeTitle') || '')
+      : getComment(path, queryFormat, segmentFlag, clientIp, includeDuration);
   }
 
   // POST /api/v2/segmentcomment - 接收segment类的JSON请求体
@@ -414,30 +244,18 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
     return handleRemoteMappingLogs();
   }
 
-  // POST /api/title-mapping/share: protected by the same admin gate as config writes.
+  // POST /api/title-mapping/share: uses the same TOKEN as other configuration operations.
   if (path === '/api/title-mapping/share' && method === 'POST') {
     return handleMappingShare(req);
   }
 
-  // POST /api/title-mapping/refresh - 管理员手动刷新远程映射表
+  // POST /api/title-mapping/refresh - 手动刷新远程映射表
   if (path === "/api/title-mapping/refresh" && method === "POST") {
-    const configAdmin = tokenAuthDisabled || (globals.adminToken
-      ? explicitToken === globals.adminToken
-      : (explicitToken === globals.token || (isDefaultToken && knownApiPaths.includes(firstPart))));
-    if (!configAdmin) {
-      return jsonResponse({ success: false, errorMessage: "需要 ADMIN_TOKEN 权限" }, 403);
-    }
     return handleRemoteMappingRefresh();
   }
 
-  // POST /api/auto-match-mapping/refresh - 管理员手动刷新远程季集映射表
+  // POST /api/auto-match-mapping/refresh - 手动刷新远程季集映射表
   if (path === "/api/auto-match-mapping/refresh" && method === "POST") {
-    const configAdmin = tokenAuthDisabled || (globals.adminToken
-      ? explicitToken === globals.adminToken
-      : (explicitToken === globals.token || (isDefaultToken && knownApiPaths.includes(firstPart))));
-    if (!configAdmin) {
-      return jsonResponse({ success: false, errorMessage: "需要 ADMIN_TOKEN 权限" }, 403);
-    }
     return handleRemoteAutoMatchMappingRefresh();
   }
 
@@ -500,9 +318,6 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   if (path === "/api/cookie/save" && method === "POST") {
     return handleCookieSave(req);
   }
-
-
-
 
 
   return jsonResponse({ message: "Not found" }, 404);

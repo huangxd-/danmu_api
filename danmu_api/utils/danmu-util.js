@@ -59,7 +59,7 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
     // 添加到对应分组
     acc[groupKey].push({ ...danmu, t: time });
     return acc;
-  }, {});
+  }, Object.create(null));
 
   // 处理每组的弹幕
   const result = Object.keys(groupedByTime).map(key => {
@@ -100,7 +100,7 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
         }
       }
       return acc;
-    }, {});
+    }, Object.create(null));
 
     // 转换为结果格式
     return Object.keys(groupedByMessage).map(message => {
@@ -137,8 +137,8 @@ export function groupDanmusByMinute(filteredDanmus, n, isMultiSource = false) {
  * @param {Array} groupedDanmus 弹幕列表
  * @returns {Array} 处理后的弹幕列表
  */
-export function handleDanmusLike(groupedDanmus) {
-  if (!globals.likeSwitch) {
+export function handleDanmusLike(groupedDanmus, enabled = globals.likeSwitch) {
+  if (!enabled) {
     return groupedDanmus;
   }
   const lowThresholdSources = new Set([
@@ -467,18 +467,18 @@ export function filterDanmusByBlockedNames(danmus, names, options = {}) {
   };
 }
 
-export function filterDanmusByBlockedWords(danmus) {
+export function filterDanmusByBlockedWords(danmus, blockedWords = globals.blockedWords) {
   if (!Array.isArray(danmus) || !danmus.length) return Array.isArray(danmus) ? danmus : [];
   // =====================
   // 屏蔽词过滤（含生效诊断日志）
   // =====================
   // 屏蔽词仅支持纯文本词与 /regex/flags，不再解析人名或地区前缀。
-  const regexArray = splitBlockedWords(globals.blockedWords).map(parseBlockedWord);
+  const regexArray = splitBlockedWords(blockedWords).map(parseBlockedWord);
 
   // [诊断1] 解析阶段：确认规则是否正确加载
   if (regexArray.length === 0) {
-    if (globals.blockedWords && globals.blockedWords.trim() !== '') {
-      log("warn", `[system] [danmu] [blocked-words] ❌ 已配置屏蔽词但未解析出有效规则，本次不会过滤任何弹幕！原始配置: ${JSON.stringify(globals.blockedWords)}`);
+    if (blockedWords && blockedWords.trim() !== '') {
+      log("warn", `[system] [danmu] [blocked-words] ❌ 已配置屏蔽词但未解析出有效规则，本次不会过滤任何弹幕！原始配置: ${JSON.stringify(blockedWords)}`);
     } else {
       log("info", `[system] [danmu] [blocked-words] 未配置屏蔽词(BLOCKED_WORDS 为空)，跳过过滤`);
     }
@@ -533,8 +533,6 @@ const DANMU_MODE_FALLBACK = 1;
 export function convertToDanmakuJson(contents, platform, commentConfig = getCommentTransformConfig()) {
   let danmus = [];
   let cidCounter = 1;
-  let isMultiSource = false;
-  const sourceLabels = new Set();
   let colorV2Count = 0; // 源渐变色弹幕（B站 color_v2）识别计数；DanmuX 不输出原生纹理
   let unsupportedModeCount = 0; // 降级为滚动弹幕的高级/代码/BAS 弹幕计数
 
@@ -625,12 +623,6 @@ export function convertToDanmakuJson(contents, platform, commentConfig = getComm
       currentPlatform = `${currentPlatform}＆${realTimeSource}`;
     }
 
-    // 合并结果可能逐条携带单源标签，也可能统一携带组合标签。
-    sourceLabels.add(currentPlatform);
-    if (!isMultiSource && /[&＆]/.test(currentPlatform)) {
-      isMultiSource = true;
-    }
-
     attributes = [
       time,
       mode,
@@ -655,9 +647,9 @@ export function convertToDanmakuJson(contents, platform, commentConfig = getComm
   }
 
   // 文本字段归一化为 m 后统一转换，确保所有来源及输入格式行为一致。
-  const textConverter = globals.danmuSimplifiedTraditional === 'simplified'
+  const textConverter = commentConfig.danmuSimplifiedTraditional === 'simplified'
     ? simplized
-    : globals.danmuSimplifiedTraditional === 'traditional'
+    : commentConfig.danmuSimplifiedTraditional === 'traditional'
       ? traditionalized
       : null;
 
@@ -666,21 +658,28 @@ export function convertToDanmakuJson(contents, platform, commentConfig = getComm
       ...danmu,
       m: typeof danmu.m === 'string' ? textConverter(danmu.m) : danmu.m
     }));
-    const targetLabel = globals.danmuSimplifiedTraditional === 'simplified' ? '简体字' : '繁体字';
+    const targetLabel = commentConfig.danmuSimplifiedTraditional === 'simplified' ? '简体字' : '繁体字';
     log("info", `[system] [danmu] [danmu convert] 转换了 ${danmus.length} 条弹幕为${targetLabel}`);
   }
 
-  const filteredDanmus = filterDanmusByBlockedWords(danmus);
+  return commentConfig.deferProcessing ? danmus : renderDanmakuComments(danmus, commentConfig);
+}
+
+// Display transforms run after dynamic text/person filtering; cached input stays lossless.
+export function renderDanmakuComments(danmus, commentConfig = getCommentTransformConfig()) {
+  const sourceLabels = new Set(danmus.map(item => item.p.match(/\[([^\]]*)\]$/)?.[1] || ''));
+  const isMultiSource = [...sourceLabels].some(label => /[&＆]/.test(label));
+  const filteredDanmus = filterDanmusByBlockedWords(danmus, commentConfig.blockedWords);
 
   // 按n分钟内去重
-  log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}`);
-  const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource || sourceLabels.size > 1);
+  log("info", `[system] [danmu] 去重分钟数: ${commentConfig.groupMinute}`);
+  const groupedDanmus = groupDanmusByMinute(filteredDanmus, commentConfig.groupMinute, isMultiSource || sourceLabels.size > 1);
 
   // 处理点赞数
-  const likeDanmus = handleDanmusLike(groupedDanmus);
+  const likeDanmus = handleDanmusLike(groupedDanmus, commentConfig.likeSwitch);
 
   // 应用弹幕转换规则（在去重和限制弹幕数之后）
-  let convertedDanmus = limitDanmusByCount(likeDanmus, globals.danmuLimit);
+  let convertedDanmus = limitDanmusByCount(likeDanmus, commentConfig.danmuLimit);
   if (commentConfig.convertTopBottomToScroll || commentConfig.convertColor === 'white' || commentConfig.convertColor === 'color' || commentConfig.gradientEnabled) {
     let topBottomCount = 0;
     let colorCount = 0;

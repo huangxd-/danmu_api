@@ -76,8 +76,8 @@ test('custom token protects player APIs; deleted settings cannot be revived',asy
   assert.equal((await request('/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/wrong/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/user-token/api/v2/search/anime?keyword=')).status,200);
-  assert.equal((await request('/user-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,403);
-  assert.equal((await request('/admin-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,400);
+  assert.equal((await request('/user-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,400);
+  assert.equal((await request('/admin-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,401);
   reset({AI_API_KEY:'obsolete',UPSTASH_REDIS_REST_URL:'https://never-request.test',IP_BLACKLIST:'127.0.0.1'});
   const config=await(await request('/api/config')).json();
   for(const key of ['TMDB_MATCH_ASSIST','TITLE_TO_CHINESE','AI_API_KEY','AI_BASE_URL','AI_MODEL','AI_MATCH_PROMPT','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN','IP_BLACKLIST','NODE_TLS_REJECT_UNAUTHORIZED','DEPLOY_PLATFROM_ACCOUNT','DEPLOY_PLATFROM_PROJECT','DEPLOY_PLATFROM_TOKEN','FAVORITE_REQUIRE_ADMIN','OTHER_SERVER','VOD_SERVERS']){

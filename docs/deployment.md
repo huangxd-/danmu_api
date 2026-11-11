@@ -10,7 +10,7 @@
 docker build -t danmu-api-nas-slim:local .
 ```
 
-测试 Compose 使用 `image: danmu-api-nas-slim:local`，并保留模板中的端口和配置、缓存目录挂载。配置文件从 `config/.env.example` 复制，填入自己的 TOKEN 和 ADMIN_TOKEN。Node.js 22 回归测试及本地管理页面已验证；Docker 构建、NAS 启动和真实上游弹幕获取待部署验收。下文远程镜像升级流程仅适用于后续已发布的版本。
+测试 Compose 使用 `image: danmu-api-nas-slim:local`，并保留模板中的端口和配置、缓存目录挂载。配置文件从 `config/.env.example` 复制，填入自己的 TOKEN。本地镜像仍需按下文完成 NAS 启动和真实请求验收。
 
 ## 选择镜像
 
@@ -29,7 +29,9 @@ docker build -t danmu-api-nas-slim:local .
 3. 存在 Redis 或其他外置持久化时另行备份，确认恢复方法。备份放在项目之外并限制读取权限。
 4. 测试期间如恢复旧服务供日常使用，正式切换前再次停止写入并做最终备份，避免丢失测试期间新增的数据。
 
-**不要用配置示例覆盖原 `config/.env`。保留 TOKEN、ADMIN_TOKEN 及来源配置，不把关闭鉴权作为迁移步骤。** 不要把备份、令牌、实际部署路径上传到公开 Git/Release。
+升级后播放器与管理页面统一使用原 `TOKEN`；旧 `ADMIN_TOKEN` 不再提供访问权限。
+
+**不要用配置示例覆盖原 `config/.env`。保留 TOKEN 及来源配置，不把关闭鉴权作为迁移步骤。** 不要把备份、令牌、实际部署路径上传到公开 Git/Release。
 
 ## 2. 独立测试
 

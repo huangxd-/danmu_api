@@ -33,7 +33,7 @@ function renderCategoryHeading(category) {
 
 const previewGroupDefinitions = {
     api: [
-        { name: '访问认证', keys: ['TOKEN', 'ADMIN_TOKEN', 'FAVORITE_REQUIRE_ADMIN'] },
+        { name: '访问认证', keys: ['TOKEN', 'TOKEN_AUTH_DISABLED'] },
         { name: '请求控制', keys: ['RATE_LIMIT_MAX_REQUESTS'] }
     ],
     source: [

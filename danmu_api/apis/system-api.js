@@ -24,7 +24,7 @@ export function handleUI() {
   const currentVersion = `v${selfVersion ? selfVersion.replace(/^xdanmu-v/i, '') : globals.version}`;
 
   const html = HTML_TEMPLATE
-    .replace("globals.currentToken", () => globals.currentToken)
+    .replace("'globals.currentToken'", () => JSON.stringify(globals.currentToken).replaceAll('<', '\\u003c'))
     .replace("globals.uiTheme", resolveUiTheme(globals.uiTheme))
     .replace("globals.currentVersion", () => currentVersion);
 
@@ -36,7 +36,7 @@ export function handleUI() {
   });
 }
 
-export function handleConfig(hasPermission = false) {
+export function handleConfig() {
   // 获取环境变量配置
   const envVarConfig = globals.envVarConfig;
 
@@ -74,31 +74,9 @@ export function handleConfig(hasPermission = false) {
     });
   });
 
-  // 检查是否配置了ADMIN_TOKEN
-  const adminToken = globals.adminToken || '';
-  const hasAdminToken = adminToken.trim() !== '';
-
-  // 准备原始环境变量，无权限时也需要脱敏。
-  // 未配置 ADMIN_TOKEN 时，普通 TOKEN 就是配置管理令牌；只有明确配置
-  // ADMIN_TOKEN 后，才要求使用 ADMIN_TOKEN 才能读取完整配置。
-  let originalEnvVars = { ...globals.originalEnvVars };
+  const originalEnvVars = { ...globals.originalEnvVars };
   delete originalEnvVars.BILIBILI_UGC_BUDGET_MS;
   delete originalEnvVars.XDANMU_VERSION;
-  const hasAdminTokenConfigured = adminToken.trim() !== '';
-  const hasConfigPermission = globals.tokenAuthDisabled
-    ? true
-    : hasAdminTokenConfigured
-    ? globals.currentToken === adminToken
-    : globals.currentToken === globals.token;
-  if (!hasPermission || !hasConfigPermission) {
-    Object.keys(originalEnvVars).forEach(key => {
-      if (globals.currentToken !== globals.token || key !== "TOKEN") {
-        if (key in previewEnvVars && /^\*+$/.test(previewEnvVars[key])) {
-          originalEnvVars[key] = previewEnvVars[key];
-        }
-      }
-    });
-  }
 
   return jsonResponse({
     message: "Welcome to the Xdanmu Danmu API server",
@@ -106,8 +84,7 @@ export function handleConfig(hasPermission = false) {
     envs: previewEnvVars, // 配置预览使用
     categorizedEnvVars: categorizedVars,
     envVarConfig: envVarConfig,
-    originalEnvVars: originalEnvVars, // 系统设置使用原始环境变量（已脱敏）
-    hasAdminToken: hasAdminToken, // 添加admin token配置状态
+    originalEnvVars: originalEnvVars, // 通过 TOKEN 验证后提供完整配置供编辑。
     description: "基于上游 danmu_api 的个人自用弹幕 API，保留自用映射、过滤与日志功能，兼容弹弹play接口；仅维护 NAS Docker Compose 部署，镜像由本仓库 GitHub Actions 发布到 GHCR。"
   });
 }
@@ -124,13 +101,10 @@ export function handleConfig(hasPermission = false) {
  */
 export function handleLogs(format = 'text') {
   if (format === 'json') {
-    // 所有字段均取自已脱敏缓冲区；普通用户保持旧文本接口的 IP 遮蔽约定。
+    // 所有字段均取自已脱敏缓冲区。
     const entries = globals.logBuffer.map(entry => ({ ...entry }));
     const raw = JSON.stringify({ entries, capacity: globals.MAX_LOGS, logLevel: globals.logLevel });
-    const masked = globals.currentToken !== globals.adminToken
-      ? raw.replace(/(client\s+ip:\s*)([^"\\\n\r]*)/gi, (match, prefix, ip) => prefix + ip.replace(/[^.\s]/g, '*'))
-      : raw;
-    return new Response(masked, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
+    return new Response(raw, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
   }
   const logText = globals.logBuffer
     .map(
@@ -139,18 +113,7 @@ export function handleLogs(format = 'text') {
     )
     .join("\n");
 
-  // 检查当前 token 是否为 admin_token
-  let processedLogText = logText;
-  if (globals.currentToken !== globals.adminToken) {
-    // 隐藏 client ip 地址，将 "client ip: 127.0.0.1" 中的 IP 地址部分替换为相同长度的 *，但保留 .
-    processedLogText = logText.replace(/(client\s+ip:\s*)([^\n\r]*)/gi, (match, prefix, ipPart) => {
-      // 将 IP 地址中的每个字符（除了 . 和空格）替换为 *
-      const maskedIp = ipPart.replace(/[^.\s\n\r]/g, '*');
-      return prefix + maskedIp;
-    });
-  }
-
-  return new Response(processedLogText, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  return new Response(logText, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 /**
@@ -161,13 +124,13 @@ export function handleRemoteMappingLogs() {
   return new Response(getRemoteMappingLogText(), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
 
-/** 管理员手动刷新远程映射表 */
+/** 手动刷新远程映射表 */
 export async function handleRemoteMappingRefresh() {
   const result = await refreshRemoteTitleMappingNow();
   return jsonResponse(result, result.success ? 200 : 502);
 }
 
-/** 管理员手动刷新远程季集映射表 */
+/** 手动刷新远程季集映射表 */
 export async function handleRemoteAutoMatchMappingRefresh() {
   const result = await refreshRemoteAutoMatchMappingNow();
   return jsonResponse(result, result.success ? 200 : 502);
