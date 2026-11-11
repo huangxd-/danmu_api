@@ -3,6 +3,7 @@ import { runWithCommentTransform } from '../utils/comment-context.js';
 import { resolveTmdbMatchIdentity, filterTmdbMatchCandidates, findSavedTmdbIdentity, resolveTmdbEpisodeMetadata, selectTmdbEpisode, selectVarietyEpisodeByKey, varietyKey } from '../utils/tmdb-match-util.js';
 import { SUPPORTED_SOURCES, isSupportedSource, sourceForUrl } from '../sources/policy.js';
 import { movieAudioVersion, stripMovieAudioTags, selectMovieVersions } from '../utils/movie-version-util.js';
+import { askAi, extractJsonObject } from '../utils/ai-util.js';
 import { canonicalPlatformName } from '../utils/platform-util.js';
 import { runWithMatchTrace, traceMatchStep, getMatchTracePrefix } from '../utils/match-trace-util.js';
 import { globals } from '../configs/globals.js';
@@ -1564,6 +1565,11 @@ async function selectReadyMatch({ animes, details, title, season, episode, year,
   return { ...selected, spilloverMatched: false, title, season, episode };
 }
 
+// 电影模式不把剧集类型候选交给模型，避免只有“第1集”的剧集被当成电影正片。
+function isSeriesType(anime) {
+  return /tvseries|tv_series|电视剧|综艺|纪录片|紀錄片|documentary/i.test(String(anime.type || '') + String(anime.typeDescription || ''));
+}
+
 function confidentCandidates(animes, { title, season, episode, year, mapping, tmdbIdentity, details, mediaType, decision, mappedTitleSeason = false }) {
   const guard = mapping || { targetTitle: title };
   let candidates = tmdbIdentity
@@ -1582,7 +1588,7 @@ function confidentCandidates(animes, { title, season, episode, year, mapping, tm
       return [anime.animeTitle, ...(anime.aliases || [])].some(candidate =>
         matchSeason({ ...anime, animeTitle: candidate }, title, season)) || matchEpisodeSeason(anime, title, season, details, mappedTitleSeason);
     }
-    return !/tvseries|tv_series|电视剧|综艺|纪录片|紀錄片|documentary/i.test(String(anime.type || '') + String(anime.typeDescription || ''));
+    return !isSeriesType(anime);
   });
   if (!year) {
     const years = new Set(candidates.map(anime => extractYear(anime.animeTitle) || Number(String(anime.startDate || '').slice(0, 4))).filter(Boolean));
@@ -1641,7 +1647,93 @@ function needsGroupMerge(sources) {
     rule.secondary.source.split('&').some(source => active.has(source)));
 }
 
-async function executeMatchAttemptBody({ req, title, season, episode, year, mediaType = null, preferredPlatform, secondaryPreferredPlatform, preferAnimeId, preferSource, offsets, mapping, strictTargetTitle = false, mappedTitleSeason = false, tmdbIdentity = null, tmdbEpisode = null, tmdbEpisodeHint = null, fileNameVarietyKey = null, movieVersion = null, collectionContext = null, sourceSearches = null, searchSources = null, stagePlatform }) {
+// ===== AI 兜底匹配 =====
+// 常规的标题、季号与分集都没命中时，让模型在已通过年份/类型过滤的候选里再判一次。
+// 模型只负责“选作品 + 选分集”，取到的条目仍然是候选目录里的真实分集。
+const AI_CANDIDATE_LIMIT = 10;
+const AI_EPISODE_LIMIT = 30;
+
+function aiEpisodeCandidates(anime, detailStore) {
+  const episodes = getBangumiDataForMatch(anime, detailStore)?.bangumi?.episodes || [];
+  return episodes.filter(ep => ep.episodeTitle && !globals.episodeTitleFilter.test(ep.episodeTitle));
+}
+
+function buildAiMatchMessages({ title, season, episode, year, pools }) {
+  const candidates = pools.map((pool, index) => ({
+    anime: index + 1,
+    title: String(pool.anime.animeTitle || '').slice(0, 60),
+    aliases: (pool.anime.aliases || []).slice(0, 3).map(alias => String(alias).slice(0, 60)),
+    episodes: pool.episodes.slice(0, AI_EPISODE_LIMIT).map((item, epIndex) => ({
+      episode: epIndex + 1, title: String(item.episodeTitle).slice(0, 40)
+    }))
+  }));
+  const query = { title, season: season || null, episode: episode || null, year: year || null };
+  return [
+    { role: 'system', content: '你是番剧目录核对器。只输出一个 JSON 对象，不写解释。' },
+    { role: 'user', content: `判断搜索词与哪个候选是同一部作品的同一季，并选出搜索词要求的分集。\n搜索词：${JSON.stringify(query)}\n候选：${JSON.stringify(candidates)}\n只输出 {"anime": 候选编号或 0, "episode": 该候选的 episode 编号或 0, "reason": "一句话理由"}。\n不是同一部作品时必须输出 anime=0；不要因为名字相近就选；分集无法确定时输出 episode=0。` }
+  ];
+}
+
+async function aiMatchFallback({ animes, title, season, episode, year, detailStore, movieVersion = null }) {
+  if (!globals.aiApiKey || !Array.isArray(animes) || animes.length === 0) return null;
+
+  const pools = [];
+  for (const anime of animes) {
+    const episodes = aiEpisodeCandidates(anime, detailStore);
+    if (episodes.length === 0) continue;
+    pools.push({ anime, episodes });
+    if (pools.length === AI_CANDIDATE_LIMIT) break;
+  }
+  if (pools.length === 0) return null;
+
+  let answer = null;
+  try {
+    const content = await askAi({
+      baseUrl: globals.aiBaseUrl,
+      apiKey: globals.aiApiKey,
+      model: globals.aiModel,
+      messages: buildAiMatchMessages({ title, season, episode, year, pools })
+    });
+    answer = extractJsonObject(content);
+  } catch (error) {
+    log('warn', `[system] [match-ai] 兜底判定失败，忽略 AI 结果: ${error.message}`);
+    return null;
+  }
+
+  const picked = pools[Math.trunc(Number(answer?.anime)) - 1];
+  if (!picked) {
+    log('info', `[system] [match-ai] AI 未认定同一部作品，跳过兜底: ${answer?.reason || '无理由'}`);
+    return null;
+  }
+
+  const pickedEpisode = season && episode ? picked.episodes[Math.trunc(Number(answer?.episode)) - 1] : null;
+  const matchedEpisode = pickedEpisode
+    || (season && episode ? findEpisodeByNumber(picked.episodes, episode, episode, null) : null)
+    || (season && episode ? null : selectMovieVersions(
+      picked.episodes.filter(ep => isMovieFeatureFilmEpisode(ep, picked.anime)), picked.anime.animeTitle, movieVersion)[0] || null);
+  if (!matchedEpisode) {
+    log('info', `[system] [match-ai] AI 选中 ${picked.anime.animeTitle} 但没有可取分集，忽略本次结果`);
+    return null;
+  }
+  log('info', `[system] [match-ai] AI 兜底命中: ${picked.anime.animeTitle} / ${matchedEpisode.episodeTitle}（${answer?.reason || '无理由'}）`);
+  return { resAnime: picked.anime, resEpisode: matchedEpisode };
+}
+
+// 交给模型的候选池只排除年份、类型和作品身份冲突，不要求标题互相包含：
+// 别名、译名与平台写法差异正是常规匹配失败的主要原因。
+function aiFallbackPool(animes, { season, episode, year, mediaType, tmdbIdentity }) {
+  const target = { year, mediaType: tmdbIdentity?.mediaType || mediaType || (season && episode ? 'tv' : 'movie'), tmdbIdentity };
+  const seen = new Set();
+  return animes.filter(anime => {
+    const key = `${anime.source}:${anime.animeId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    if (workIdentityConflict(anime, target)) return false;
+    return season && episode ? !isMovieMatchCandidate(anime) : !isSeriesType(anime);
+  });
+}
+
+async function executeMatchAttemptBody({ req, title, season, episode, year, mediaType = null, preferredPlatform, secondaryPreferredPlatform, preferAnimeId, preferSource, offsets, mapping, strictTargetTitle = false, mappedTitleSeason = false, tmdbIdentity = null, tmdbEpisode = null, tmdbEpisodeHint = null, fileNameVarietyKey = null, movieVersion = null, collectionContext = null, sourceSearches = null, searchSources = null, stagePlatform, aiContext = null }) {
   if (fileNameVarietyKey && !mediaType) mediaType = 'tv';
   const startedAt = Date.now();
   // A platform-qualified rule describes that platform's numbering. Never
@@ -1727,6 +1819,11 @@ async function executeMatchAttemptBody({ req, title, season, episode, year, medi
   if (outcome.ready) return outcome.ready;
   const searchRes = outcome.response;
   const searchData = await searchRes.json();
+  // 记下本组候选与目录快照，供整次匹配都失败后的 AI 兜底使用（键按加入顺序生成，按作品 ID 查找）。
+  if (aiContext && Array.isArray(searchData?.animes)) {
+    aiContext.animes.push(...searchData.animes);
+    for (const value of detailStore.values()) aiContext.details.set(aiContext.details.size, value);
+  }
   log('info', `[system] [match-timing] 搜索等待结束，耗时 ${Date.now() - startedAt}ms，候选 ${searchData?.animes?.length || 0} 个`);
   log("info", `[system] [match] searchData: ${searchData.animes}`);
   log("info", `[system] [match] Dynamic platformOrder: ${dynamicPlatformOrder}`);
@@ -2018,6 +2115,9 @@ async function matchAnimeWithTrace(url, req, clientIp) {
     let collectionRace = null;
     let ugcAttemptPromise = null;
 
+    // 常规匹配、映射、TMDB 与投稿兜底都失败后，用这次请求搜索到的候选做最后一次 AI 判定。
+    const aiContext = { animes: [], details: new Map() };
+
     const succeeded = value => Boolean(value?.resAnime && value?.resEpisode);
 
     // 同一个 TMDB 分集查询在整次匹配中只执行一次：只有平台组完成搜索且常规季集选择失败时
@@ -2059,7 +2159,7 @@ async function matchAnimeWithTrace(url, req, clientIp) {
         sourceSearches,
         strictTargetTitle, mappedTitleSeason,
         collectionContext: !strictTargetTitle && !preferAnimeId && !offsets ? collectionContext : null,
-        collectionRace
+        collectionRace, aiContext
       }));
       if (!succeeded(result) && !collectionRace?.ugcMatched) log('info', `[system] [match-waterfall] ${stage} 未得到有效作品与分集，继续回退`);
       if (succeeded(result) && !collectionRace?.ugcMatched) {
@@ -2091,7 +2191,7 @@ async function matchAnimeWithTrace(url, req, clientIp) {
         offsets: null,
         mapping: rule,
         tmdbIdentity,
-        sourceSearches
+        sourceSearches, aiContext
       }));
       if (!succeeded(result)) log('info', `[system] [match-waterfall] ${stage} 未得到有效作品与分集，继续回退`);
       if (succeeded(result)) {
@@ -2173,7 +2273,7 @@ async function matchAnimeWithTrace(url, req, clientIp) {
         attempt = await traceMatchStep(log, `${label}对应平台分集`, () => executeMatchAttempt({
           req, title: tmdbIdentity.title, season: metadata.targetSeason, episode: null,
           year: metadata.year, mediaType: requestMediaType, preferredPlatform, tmdbIdentity, tmdbEpisode: metadata,
-          sourceSearches, preferAnimeId: null, preferSource: null, offsets: null, mapping: null
+          sourceSearches, preferAnimeId: null, preferSource: null, offsets: null, mapping: null, aiContext
         }));
         if (succeeded(attempt)) matchStage = `${label}对应平台分集`;
       }
@@ -2368,6 +2468,20 @@ async function matchAnimeWithTrace(url, req, clientIp) {
     if (!succeeded(attempt) && originalSeason !== 0) {
       const ugcAttempt = await (ugcAttemptPromise ||= traceMatchStep(log, 'B站投稿兜底', tryUgcFallback));
       if (ugcAttempt) { attempt = ugcAttempt; matchStage = 'B站投稿兜底'; }
+    }
+
+    // 常规的标题、季号与分集匹配，以及映射、TMDB 和投稿兜底都没结果时，才让模型在本次搜索到的候选里判一次。
+    if (!succeeded(attempt) && !collectionContext && !fileNameVarietyKey && aiContext.animes.length) {
+      const aiMatched = await traceMatchStep(log, 'AI 兜底判定', () => aiMatchFallback({
+        animes: aiFallbackPool(aiContext.animes, { season: originalSeason, episode: originalEpisode,
+          year: originalYear, mediaType: requestMediaType, tmdbIdentity }),
+        title: originalTitle, season: originalSeason, episode: originalEpisode,
+        year: originalYear, detailStore: aiContext.details, movieVersion
+      }));
+      if (aiMatched) {
+        attempt = { ...aiMatched, spilloverMatched: false, title: originalTitle, season: originalSeason, episode: originalEpisode };
+        matchStage = 'AI 兜底判定';
+      }
     }
 
     attempt ||= { resAnime: null, resEpisode: null, spilloverMatched: false, title: originalTitle, season: originalSeason, episode: originalEpisode };

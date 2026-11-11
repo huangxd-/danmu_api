@@ -76,11 +76,11 @@ test('custom token protects player APIs; deleted settings cannot be revived',asy
   assert.equal((await request('/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/wrong/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/user-token/api/v2/search/anime?keyword=')).status,200);
-  assert.equal((await request('/user-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,400);
-  assert.equal((await request('/admin-token/api/env/set','POST',{key:'AI_API_KEY',value:'obsolete'})).status,401);
+  assert.equal((await request('/user-token/api/env/set','POST',{key:'UPSTASH_REDIS_REST_URL',value:'obsolete'})).status,400);
+  assert.equal((await request('/admin-token/api/env/set','POST',{key:'UPSTASH_REDIS_REST_URL',value:'obsolete'})).status,401);
   reset({AI_API_KEY:'obsolete',UPSTASH_REDIS_REST_URL:'https://never-request.test',IP_BLACKLIST:'127.0.0.1'});
   const config=await(await request('/api/config')).json();
-  for(const key of ['TMDB_MATCH_ASSIST','TITLE_TO_CHINESE','AI_API_KEY','AI_BASE_URL','AI_MODEL','AI_MATCH_PROMPT','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN','IP_BLACKLIST','NODE_TLS_REJECT_UNAUTHORIZED','DEPLOY_PLATFROM_ACCOUNT','DEPLOY_PLATFROM_PROJECT','DEPLOY_PLATFROM_TOKEN','FAVORITE_REQUIRE_ADMIN','OTHER_SERVER','VOD_SERVERS']){
+  for(const key of ['TMDB_MATCH_ASSIST','TITLE_TO_CHINESE','AI_MATCH_PROMPT','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN','IP_BLACKLIST','NODE_TLS_REJECT_UNAUTHORIZED','DEPLOY_PLATFROM_ACCOUNT','DEPLOY_PLATFROM_PROJECT','DEPLOY_PLATFROM_TOKEN','FAVORITE_REQUIRE_ADMIN','OTHER_SERVER','VOD_SERVERS']){
     assert.ok(!Object.hasOwn(config.envVarConfig,key),key);assert.ok(!Object.hasOwn(config.originalEnvVars,key),key);
     assert.equal((await request('/api/env/add','POST',{key,value:'obsolete'})).status,400,key);
   }
@@ -128,7 +128,7 @@ test('cache TTL, capacity, disabled cache and manual preference semantics',()=>{
 
 test('management scripts parse and only retained navigation is rendered',async()=>{
   reset();const html=await(await request('/')).text();
-  for(const text of ['请求记录','reqrecords','total-requests-today','接口调试','推送弹幕','本地弹幕','AI_API_KEY','UPSTASH_REDIS_REST_URL','DEPLOY_PLATFROM_ACCOUNT'])assert.ok(!html.includes(text),text);
+  for(const text of ['请求记录','reqrecords','total-requests-today','接口调试','推送弹幕','本地弹幕','UPSTASH_REDIS_REST_URL','DEPLOY_PLATFROM_ACCOUNT'])assert.ok(!html.includes(text),text);
   let scripts=0;function visit(n){if(n.tagName==='script'){new vm.Script((n.childNodes||[]).map(c=>c.value||'').join(''));scripts++;}(n.childNodes||[]).forEach(visit);}visit(parse(html));assert.ok(scripts);
   for(const id of ['preview-section','logs-section','env-section'])assert.ok(html.includes('id="'+id+'"'));
 });

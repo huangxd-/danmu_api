@@ -111,6 +111,7 @@ curl 'http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>/api/v2/match' \
 | 修正作品名、季号和集号 | `TITLE_MAPPING_TABLE` / `AUTO_MATCH_MAPPING_TABLE`：本机规则优先；远程映射默认关闭，填写对应 `_URL` 后启用 |
 | 补充B站投稿弹幕 | `BILIBILI_UGC_ENABLED=true`：启用后检索并校验投稿，主源弹幕充足时跳过补充 |
 | 过滤弹幕内容 | `BLOCKED_WORDS`；人物与作品过滤共用 `BLOCK_DOMESTIC_CELEBRITIES`，可用 `PERSON_FILTER_EXCLUDED_TITLES` 排除指定作品 |
+| 标题或分集匹配失败时兜底 | `AI_API_KEY`：填写 OpenAI 兼容接口的密钥后启用 AI 兜底判定，可配合 `AI_BASE_URL` / `AI_MODEL` 指定接口与模型；留空完全不影响现有匹配 |
 | 修正弹幕时间 | `DANMU_OFFSET`：正数延后、负数提前，可按作品、季、集和来源设置 |
 | 开启渐变扩展 | `GRADIENT_ENABLED` 与 `GRADIENT_CHANCE`：需同时启用并设置概率，播放器绘制方式见接入指南 |
 | 查看详细匹配过程 | `LOG_LEVEL=debug`：排查后可恢复 `info`，减少逐请求日志 |
