@@ -3,6 +3,7 @@ import { log as baseLog } from './log-util.js';
 import { addAnime } from './cache-util.js';
 import { simplized } from '../utils/zh-util.js';
 import { stripNonTitleChars, convertChineseNumber } from '../utils/common-util.js';
+import { isSupportedSource, sourceForUrl } from '../sources/policy.js';
 
 // ==============================================================================
 //  源合并处理工具 (merge-util.js)
@@ -2455,6 +2456,18 @@ function detectCollectionCandidates(curAnimes) {
     return collectionIds;
 }
 
+export function normalizeMergedSourceUrl(value, fallbackSource = '') {
+    return String(value || '').split(MERGE_DELIMITER).map(part => {
+        const raw = sanitizeUrl(part);
+        const actualSource = sourceForUrl(raw);
+        if (actualSource) return `${actualSource}:${raw}`;
+        const prefix = part.match(/^([^:]+):/)?.[1];
+        // 原生 ID（红果全集、韩剧 TV 变体等）保留内部协议，不能用 sanitizeUrl 去掉。
+        if (isSupportedSource(prefix)) return part;
+        return fallbackSource ? `${fallbackSource}:${part}` : part;
+    }).join(MERGE_DELIMITER);
+}
+
 /**
  * 归并一条副源链接到主源链接：拼接复合 URL 并在标题标签中追加来源
  * @param {Object} targetLink           - 主源链接
@@ -2464,11 +2477,10 @@ function detectCollectionCandidates(curAnimes) {
  * @returns {{url:string, title:string}} 归并后的链接字段
  */
 export function mergeLinkEntry(targetLink, sourceLink, secSource, currentPrimarySource) {
-    const secPart = `${secSource}:${sanitizeUrl(sourceLink.url)}`;
-    let url = targetLink.url;
-    if (!url.includes(MERGE_DELIMITER) && !url.startsWith(currentPrimarySource + ':')) {
-        url = `${currentPrimarySource}:${url}`;
-    }
+    const secPart = normalizeMergedSourceUrl(sourceLink.url, secSource);
+    const titleSource = targetLink.title?.match(/^【([^&＆】]+)/)?.[1];
+    const targetSource = isSupportedSource(titleSource) ? titleSource : currentPrimarySource;
+    let url = normalizeMergedSourceUrl(targetLink.url, targetSource);
     url = `${url}${MERGE_DELIMITER}${secPart}`;
 
     let title = targetLink.title;
