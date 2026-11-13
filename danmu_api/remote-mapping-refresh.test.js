@@ -13,6 +13,7 @@ const endpoint = '/api/auto-match-mapping/refresh';
 const remoteUrl = 'https://mapping-test.example/season.txt';
 const env = {
   TOKEN: 'test-user',
+  TOKEN_AUTH_DISABLED: 'false',
   AUTO_MATCH_MAPPING_TABLE_URL: remoteUrl,
 };
 const request = (prefix = '') => new Request('http://localhost' + prefix + endpoint, { method: 'POST' });

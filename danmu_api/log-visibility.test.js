@@ -76,7 +76,7 @@ test('UGC JSON and legacy text logs appear in matching filter without a fake sou
 });
 
 test('真实日志接口兼容文本，JSON保留结构与脱敏，未授权请求被拒绝', async () => {
-  const env = { TOKEN: 'test-log-user', USE_BANGUMI_DATA: 'false', LOG_LEVEL: 'debug' };
+  const env = { TOKEN: 'test-log-user', TOKEN_AUTH_DISABLED: 'false', USE_BANGUMI_DATA: 'false', LOG_LEVEL: 'debug' };
   Globals.init(env); Globals.logBuffer = [];
   Globals.originalEnvVars = { API_KEY: 'sensitive-test-key' };
   Globals.accessedEnvVars = { API_KEY: '******************' };

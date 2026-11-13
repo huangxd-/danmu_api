@@ -26,6 +26,7 @@
 
 ### 变更
 
+- **默认关闭 TOKEN 鉴权**：`TOKEN_AUTH_DISABLED` 默认值由 `false` 改为 `true`，新部署无需令牌即可访问 API 与管理界面；`/<TOKEN>/` 前缀写法和显式令牌访问继续兼容，需要校验时显式设置 `TOKEN_AUTH_DISABLED=false`
 - **移除 `TITLE_MAPPING_TABLE_URL_CACHE_MINUTES` 配置**：不再需要手动配置缓存分钟数
   - 程序首次启动联网下载并保存本地缓存，之后匹配只读内存/磁盘缓存，不因 TTL 联网
   - 每天北京时间 05:30 自动更新远程映射表，单次更新最多重试 5 次（间隔 60 秒），失败保留旧缓存

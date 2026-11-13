@@ -48,7 +48,7 @@
 > **已有部署请跳到下方迁移章节，不要用新模板覆盖原配置。** 以下均为通用示例，不包含真实主机地址、账号或宿主机路径。
 
 1. 在 NAS 选择项目目录，保存 [compose.nas.yml](compose.nas.yml)。模板使用相对此文件的 `./data/config` 和 `./data/.cache`，分别挂载到 `/app/config` 和 `/app/.cache`。
-2. 创建上述目录，将 [配置示例](config/.env.example) 保存为 `data/config/.env`。**启动前**设置自己的 `TOKEN`，不要使用默认令牌，也不要把真实配置提交到 Git。
+2. 创建上述目录，将 [配置示例](config/.env.example) 保存为 `data/config/.env`。`TOKEN_AUTH_DISABLED` 默认 `true`（免令牌访问）；需要鉴权时改为 `false` 并设置自己的 `TOKEN`。不要把真实配置提交到 Git。
 3. 模板已设置 latest 镜像，不需要 `DANMU_API_IMAGE`。默认宿主端口为 `9321`；需要修改时，可在项目目录创建供 Compose 使用的 `.env`（与 `data/config/.env` 不是同一个文件）：
 
 ```dotenv
@@ -64,9 +64,9 @@ docker compose -f compose.nas.yml up -d
 docker compose -f compose.nas.yml logs --tail=100
 ```
 
-用 NAS 图形化项目管理时，导入同一模板并提供上述变量，确认相对挂载目录的实际解析位置。访问 `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>`，播放器和管理操作统一使用 `TOKEN`。容器默认端口为 `9321`；如设置了 `DANMU_API_PORT`，需相应调整映射。
+用 NAS 图形化项目管理时，导入同一模板并提供上述变量，确认相对挂载目录的实际解析位置。默认免令牌，直接访问 `http://<NAS_IP>:<NAS_HTTP_PORT>/`；开启鉴权后沿用 `http://<NAS_IP>:<NAS_HTTP_PORT>/<TOKEN>` 的写法，裸路径请求需带 `TOKEN`。容器默认端口为 `9321`；如设置了 `DANMU_API_PORT`，需相应调整映射。
 
-保持鉴权开启，不要直接将 API 端口暴露到公网。配置、缓存数据和备份应仅保存在自己的设备上。
+默认免令牌只适合受信任内网；需要暴露到公网时请设置 `TOKEN` 并保持 `TOKEN_AUTH_DISABLED=false`。配置、缓存数据和备份应仅保存在自己的设备上。
 
 ## 播放器接入
 

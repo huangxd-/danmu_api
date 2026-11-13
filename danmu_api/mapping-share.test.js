@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {handleRequest} from './worker.js';
 import {systemSettingsJsContent} from './ui/js/systemsettings.js';
 import {Globals} from './configs/globals.js';
-const config={TOKEN:'fixture-user',TITLE_MAPPING_TABLE:'Local -> Target;Another -> Other',AUTO_MATCH_MAPPING_TABLE:'Show S2E1~E2 -> Show S1E11~E12'};
+const config={TOKEN:'fixture-user',TOKEN_AUTH_DISABLED:'false',TITLE_MAPPING_TABLE:'Local -> Target;Another -> Other',AUTO_MATCH_MAPPING_TABLE:'Show S2E1~E2 -> Show S1E11~E12'};
 const req=(token='fixture-user',body={kind:'title',indices:[0],lines:['Local -> Target']})=>new Request('http://localhost/'+token+'/api/title-mapping/share',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const handle=(request,env=config)=>handleRequest(request,env,'cloudflare','127.0.0.1');
 test('real route requires TOKEN, validates current local selection, forwards only selected rules',async()=>{

@@ -72,7 +72,7 @@ test('request records are removed while logging and rate limiting remain active'
 });
 
 test('custom token protects player APIs; deleted settings cannot be revived',async()=>{
-  reset({TOKEN:'user-token',ADMIN_TOKEN:'admin-token'});
+  reset({TOKEN:'user-token',ADMIN_TOKEN:'admin-token',TOKEN_AUTH_DISABLED:'false'});
   assert.equal((await request('/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/wrong/api/v2/search/anime?keyword=')).status,401);
   assert.equal((await request('/user-token/api/v2/search/anime?keyword=')).status,200);
@@ -84,6 +84,17 @@ test('custom token protects player APIs; deleted settings cannot be revived',asy
     assert.ok(!Object.hasOwn(config.envVarConfig,key),key);assert.ok(!Object.hasOwn(config.originalEnvVars,key),key);
     assert.equal((await request('/api/env/add','POST',{key,value:'obsolete'})).status,400,key);
   }
+});
+
+test('TOKEN auth is off unless explicitly enabled',async()=>{
+  reset({TOKEN:'user-token'});
+  assert.equal(Globals.envs.tokenAuthDisabled,true);
+  assert.equal((await request('/api/v2/search/anime?keyword=')).status,200);
+  assert.equal((await request('/wrong/api/v2/search/anime?keyword=')).status,404);
+  assert.equal((await request('/user-token/api/v2/search/anime?keyword=')).status,200);
+  reset({TOKEN:'user-token',TOKEN_AUTH_DISABLED:'false'});
+  assert.equal(Globals.envs.tokenAuthDisabled,false);
+  assert.equal((await request('/api/v2/search/anime?keyword=')).status,401);
 });
 
 test('official empty comments never contact a third-party fallback',async()=>{

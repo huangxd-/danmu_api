@@ -76,7 +76,7 @@ TMDB 身份为 tv:ID 或 movie:ID，随匹配成功的目录保存；失败候�
 | 配置项 | 类型 | 说明 |
 |---|---|---|
 | TOKEN | text | API访问令牌 |
-| TOKEN_AUTH_DISABLED | boolean | 关闭 API 和管理界面的 TOKEN 鉴权（仅建议在受信任的内网环境使用） |
+| TOKEN_AUTH_DISABLED | boolean | 关闭 API 和管理界面的 TOKEN 鉴权，默认 true（免令牌访问）；改为 false 才校验 TOKEN，`/<TOKEN>/` 前缀写法仍兼容 |
 | RATE_LIMIT_MAX_REQUESTS | number | 限流配置：1分钟内最大请求次数，0表示不限流，默认3 |
 | SOURCE_ORDER | multi-select | 启用的来源及组内/手动搜索结果顺序。手动搜索全源并发，自动匹配的组间搜索顺序由 PLATFORM_ORDER 决定。 |
 | MERGE_SOURCE_PAIRS | multi-select | 实际合并返回的弹幕来源；第一个为主源，主源无结果时轮替下一源。自动匹配只合并当前平台组已搜索的来源，需要一起合并的源应放在同一 PLATFORM_ORDER 组。格式：源1&源2&源3，多组逗号分隔，单源表示保留原结果。 |

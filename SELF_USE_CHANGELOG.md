@@ -710,7 +710,7 @@
 | 严格标题/季号保护 | 普通匹配及 FongMi 入口 | 排除无关标题及明确的其他季候选 |
 | 人名、地区与日期时间过滤 | `BLOCKED_WORDS`、`BLOCK_DOMESTIC_CELEBRITIES` | 地区和日期时间由屏蔽词正则控制；当前作品演员/角色按完整名字匹配；名单来自当前作品 TMDB/Bangumi |
 | 渐变弹幕与 danmux 格式 | 自用功能文档中的格式/渐变配置 | 保留服务器转换功能，播放器是否支持需单独验证 |
-| 可选内网免 TOKEN | `TOKEN_AUTH_DISABLED` | 默认仍鉴权；仅受信内网主动开启 |
+| 默认免 TOKEN | `TOKEN_AUTH_DISABLED` | 默认关闭鉴权（免令牌）；需要校验时显式设为 false |
 | 收藏能力检测和独立映射日志 | 管理界面 / API | 保留自用能力检测、刷新与日志入口 |
 
 完整行为及配置见 [自用功能说明](docs/self-use-features.md)。

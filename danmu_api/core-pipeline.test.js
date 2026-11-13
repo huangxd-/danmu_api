@@ -28,7 +28,7 @@ function episode(url, title = '测试作品', source = 'tencent') {
 }
 
 test('统一 TOKEN 读取完整配置，旧管理员令牌与匿名请求不能访问配置', async () => {
-  reset({ TOKEN: 'viewer-token', ADMIN_TOKEN: 'retired-admin', TMDB_API_KEY: 'private-api-key' });
+  reset({ TOKEN: 'viewer-token', TOKEN_AUTH_DISABLED: 'false', ADMIN_TOKEN: 'retired-admin', TMDB_API_KEY: 'private-api-key' });
   const config = await (await request('/viewer-token/api/config')).json();
   assert.equal(config.originalEnvVars.TMDB_API_KEY, 'private-api-key');
   assert.ok(!Object.hasOwn(config.envVarConfig, 'ADMIN_TOKEN'));
