@@ -286,6 +286,42 @@ test('人物别名慢请求不阻塞已取得名单，后续请求复用补齐�
   } finally { release(); globalThis.fetch = original; Globals.init({}); }
 });
 
+test('冷缓存拿到演员表就立即用于过滤，不等别名与百科补齐', async () => {
+  Globals.init({ LOG_LEVEL: 'error', USE_BANGUMI_DATA: 'false' });
+  const original = globalThis.fetch;
+  let releaseAlias, aliasRequests = 0;
+  const aliasHeld = new Promise(resolve => { releaseAlias = resolve; });
+  // 每次用新片名，避免复用磁盘人物缓存而测不到冷缓存路径。
+  const title = `提前返回回归${Date.now()}`;
+  const animeTitle = `${title}(2026)【电视剧】from iqiyi`;
+  globalThis.fetch = async url => {
+    const path = decodeURIComponent(new URL(url).pathname);
+    if (path === '/3/search/multi') return Response.json({ results: [{ id: 990821, media_type: 'tv',
+      name: title, first_air_date: '2026-01-01', genre_ids: [] }] });
+    if (path.endsWith('/aggregate_credits')) return Response.json({ cast: [
+      { id: 990822, name: '演员甲', roles: [{ character: '角色甲' }] }] });
+    if (path === '/3/person/990822') { aliasRequests++; await aliasHeld;
+      return Response.json({ id: 990822, name: '演员甲', also_known_as: ['别名甲'] }); }
+    throw new Error('unexpected request: ' + path);
+  };
+  try {
+    const started = Date.now();
+    const metadata = await getDomesticPersonMetadataForTitle(animeTitle, { awaitNames: true, budgetMs: 4000 });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 2500, `拿到演员表后应立即返回，实际等待 ${elapsed}ms`);
+    assert(metadata.actorNames.includes('演员甲'));
+    assert(metadata.characterNames.includes('角色甲'));
+    assert.equal(metadata.status, 'partial', '别名与百科未补齐时先按部分名单过滤');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(aliasRequests, 1, '返回时别名查询仍在进行');
+    releaseAlias();
+    const settled = await getDomesticPersonMetadataForTitle(animeTitle, { cachedOnly: true });
+    assert.ok(settled.names.length === 0 || settled.names.includes('演员甲'));
+    const complete = await getDomesticPersonMetadataForTitle(animeTitle, { budgetMs: 4000 });
+    assert.ok(complete.actorNames.includes('别名甲'), '补齐后别名进入名单');
+  } finally { releaseAlias(); globalThis.fetch = original; Globals.init({}); }
+});
+
 test('Bangumi角色查询完成后立即提供名单，不等待慢季度关系', async () => {
   Globals.init({ LOG_LEVEL: 'error' });
   const original = globalThis.fetch;

@@ -337,19 +337,26 @@ async function readCachedPersonMetadata(cacheKey, searchTitle) {
   return metadata;
 }
 
-async function waitForPersonMetadata(state, title, budgetMs) {
+// awaitNames: 只要先拿到一批人名就返回，用于弹幕过滤——冷缓存下拿到身份与演员表（约 1~3 秒）即可先拦一轮，
+// 不必等别名、百科等补充来源跑完；其余调用方仍等完整名单或预算耗尽。
+async function waitForPersonMetadata(state, title, budgetMs, awaitNames = false) {
   let timer;
   try {
-    return copyPersonMetadata(await Promise.race([state.task, new Promise(resolve => {
+    const named = awaitNames && state.namesReady.then(() => {
+      log('info', `[system] [person-metadata] 「${title}」先取得演员 ${state.value.actorNames.length} 个、角色 ${state.value.characterNames.length} 个，立即用于本次过滤；剩余来源继续补齐缓存`);
+      return state.value;
+    });
+    const timeout = new Promise(resolve => {
       timer = setTimeout(() => {
         log('warn', `[system] [person-metadata] 「${title}」等待达到 ${budgetMs}ms，先使用演员 ${state.value.actorNames.length} 个、角色 ${state.value.characterNames.length} 个；剩余查询继续补齐缓存`);
         resolve(state.value);
       }, budgetMs);
-    })]));
+    });
+    return copyPersonMetadata(await Promise.race(named ? [state.task, named, timeout] : [state.task, timeout]));
   } finally { clearTimeout(timer); }
 }
 
-export async function getDomesticPersonMetadataForTitle(title, { budgetMs = 1500, cachedOnly = false } = {}) {
+export async function getDomesticPersonMetadataForTitle(title, { budgetMs = 1500, cachedOnly = false, awaitNames = false } = {}) {
   if (!String(title || '').trim()) return emptyPersonMetadata();
 
   const context = personSeasonContext(title);
@@ -364,12 +371,19 @@ export async function getDomesticPersonMetadataForTitle(title, { budgetMs = 1500
     return pending ? copyPersonMetadata(pending.value) : readCachedPersonMetadata(cacheKey, searchTitle);
   }
   if (pending) {
-    return waitForPersonMetadata(pending, title, budgetMs);
+    return waitForPersonMetadata(pending, title, budgetMs, awaitNames);
   }
 
   const state = { value: emptyPersonMetadata(), task: null };
+  let resolveNames = null;
+  // 首个非空名单出现时提前唤醒等待方，避免预算耗尽时仍在用空名单过滤。
+  state.namesReady = new Promise(resolve => { resolveNames = resolve; });
   const publish = (value = {}) => {
     state.value = mergePersonMetadata(state.value, value);
+    if (resolveNames && state.value.names.length > 0) {
+      resolveNames();
+      resolveNames = null;
+    }
   };
   const task = (async () => {
     try {
@@ -533,7 +547,7 @@ export async function getDomesticPersonMetadataForTitle(title, { budgetMs = 1500
   state.task = task;
   TMDB_ACTOR_NAMES_PENDING.set(cacheKey, state);
   task.finally(() => TMDB_ACTOR_NAMES_PENDING.delete(cacheKey)).catch(() => {});
-  return waitForPersonMetadata(state, title, budgetMs);
+  return waitForPersonMetadata(state, title, budgetMs, awaitNames);
 }
 
 export async function getTmdbDomesticCastNamesForTitle(title) {

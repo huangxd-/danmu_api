@@ -760,7 +760,8 @@ export function renderDanmakuComments(danmus, commentConfig = getCommentTransfor
       log("info", `[system] [danmu] [danmu convert] 转换了 ${topBottomCount} 条顶部/底部弹幕为浮动弹幕`);
     }
     if (colorCount > 0) {
-      log("info", `[system] [danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色（其中渐变色弹幕 ${gradientCount} 条）`);
+      const gradientShare = convertedDanmus.length ? Math.round(gradientCount * 100 / convertedDanmus.length) : 0;
+      log("info", `[system] [danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色（其中渐变色弹幕 ${gradientCount} 条，占全部弹幕 ${gradientShare}%）`);
     }
   }
 

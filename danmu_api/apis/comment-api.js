@@ -25,6 +25,8 @@ import { getHanjutvSourceLabel } from '../utils/hanjutv-util.js';
 
 
 const PENDING_DANMAKU_REQUESTS = new Map();
+// 弹幕过滤只等第一批人名：冷缓存下拿到 TMDB 演员表就立刻拦截，剩余来源（别名、百科）继续补齐缓存。
+const PERSON_FILTER_METADATA_OPTIONS = { awaitNames: true, budgetMs: 4000 };
 
 function latestCommentTime(comments) {
   return comments.reduce((max, item) => Math.max(max, parseFloat(item.p) || 0), 0);
@@ -84,7 +86,7 @@ async function filterDomesticComments(danmus, animeTitle, pendingMetadata = null
   if (!blockCelebrities || !Array.isArray(danmus) || danmus.length === 0) return danmus;
   let metadata = { actorNames: [], characterNames: [], names: [], status: 'unavailable' };
   if (blockCelebrities && animeTitle) {
-    metadata = await (pendingMetadata || getDomesticPersonMetadataForTitle(animeTitle));
+    metadata = await (pendingMetadata || getDomesticPersonMetadataForTitle(animeTitle, PERSON_FILTER_METADATA_OPTIONS));
     // 下载/补充弹幕期间名单可能已更新；这里只读最新快照，不再次等待网络。
     metadata = mergePersonMetadata(metadata, await getDomesticPersonMetadataForTitle(animeTitle, { cachedOnly: true }));
   }
@@ -457,7 +459,7 @@ async function getCommentResponse(path, queryFormat, segmentFlag, clientIp, incl
 
   // 提前加载人物资料；最终过滤前读取最新快照，等待预算仍受限。
   const pendingMetadata = !segmentFlag && animeTitle && await shouldBlockDomesticCelebrities(animeTitle)
-    ? getDomesticPersonMetadataForTitle(animeTitle) : null;
+    ? getDomesticPersonMetadataForTitle(animeTitle, PERSON_FILTER_METADATA_OPTIONS) : null;
 
   // Duration must use the same per-source rules on cold and cached requests.
   const [, offsetSource, offsetEpisodeTitle] = shouldAttachDuration ? findAnimeIdByCommentId(commentId) : [];
