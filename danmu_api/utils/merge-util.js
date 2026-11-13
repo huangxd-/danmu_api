@@ -2469,7 +2469,21 @@ export function normalizeMergedSourceUrl(value, fallbackSource = '') {
 }
 
 /**
- * 归并一条副源链接到主源链接：拼接复合 URL 并在标题标签中追加来源
+ * 去掉标题开头只由来源名组成的标签，如「【bilibili&tencent】 原版」→「原版」。
+ * 作品标题已经带 `from 源A&源B`，集标题再列一次来源会和它重复。
+ * @param {string} title - 集标题
+ * @returns {string} 去掉来源标签后的标题
+ */
+function stripSourceTag(title) {
+    const match = String(title || '').match(/^【([^】]+)】\s*/);
+    if (!match) return title;
+    const names = match[1].split(/[&＆]/).map(part => part.trim()).filter(Boolean);
+    if (!names.length || !names.every(isSupportedSource)) return title;
+    return title.slice(match[0].length);
+}
+
+/**
+ * 归并一条副源链接到主源链接：拼接复合 URL 并去掉标题里的来源标签
  * @param {Object} targetLink           - 主源链接
  * @param {Object} sourceLink           - 副源链接
  * @param {string} secSource            - 副源名
@@ -2482,15 +2496,7 @@ export function mergeLinkEntry(targetLink, sourceLink, secSource, currentPrimary
     const targetSource = isSupportedSource(titleSource) ? titleSource : currentPrimarySource;
     let url = normalizeMergedSourceUrl(targetLink.url, targetSource);
     url = `${url}${MERGE_DELIMITER}${secPart}`;
-
-    let title = targetLink.title;
-    if (title) {
-        let sLabel = secSource;
-        const sMatch = String(sourceLink.title || '').match(/^【([^】\d]+)(?:\d*)】/);
-        if (sMatch) sLabel = sMatch[1].trim();
-        title = title.replace(/^【([^】]+)】/, (m, content) => `【${content}${DISPLAY_CONNECTOR}${sLabel}】`);
-    }
-    return { url, title };
+    return { url, title: stripSourceTag(targetLink.title) };
 }
 
 /**

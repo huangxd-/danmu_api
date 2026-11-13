@@ -25,6 +25,7 @@ test('电影链接以配音身份对齐，不把粤语与普通话混合', async
   assert.ok(merged);
   assert.ok(merged.links.find(link => link.title.includes('粤语')).url.includes('tencent:https://tencent.test/902/1'));
   assert.ok(merged.links.find(link => link.title.includes('普通话')).url.includes('tencent:https://tencent.test/902/0'));
+  assert.ok(merged.links.every(link => !/^【[^】]*】/.test(link.title)), '合并后的集标题不再重复列出来源');
 });
 
 test('merge findSecondaryMatches 忽略规则与剧集标题的季度与类型噪声', () => {
@@ -285,23 +286,23 @@ test('merge resolveDubVersionLinkIndex 按配音版本选择主源链接', () =>
     resolveDubVersionLinkIndex([filteredLinks[0]], 0, '倚天屠龙记之九阳神功(粤语)(2022)【电影】from renren', titleOf, 'tencent'),
     0, '主源无同配音版本链接时保持原链接');
 });
-test('merge mergeLinkEntry 拼接复合 URL 并在标题标签中追加来源', () => {
+test('merge mergeLinkEntry 拼接复合 URL 并去掉集标题里的来源标签', () => {
   const target = { url: 'https://v.qq.com/x/cover/abc/1.html', title: '【qq】 倚天屠龙记之九阳神功(普通话版)' };
   const renren = { url: 'https://www.yfsp.tv/play/2hRswEx6yr4?id=x', title: '【renren】 720P' };
 
   const first = mergeLinkEntry(target, renren, 'renren', 'tencent');
   assert.strictEqual(first.url, 'tencent:https://v.qq.com/x/cover/abc/1.html$$$renren:https://www.yfsp.tv/play/2hRswEx6yr4?id=x', '主源 URL 补来源前缀后再追加副源分段');
-  assert.strictEqual(first.title, '【qq&renren】 倚天屠龙记之九阳神功(普通话版)', '标题标签追加副源标签');
+  assert.strictEqual(first.title, '倚天屠龙记之九阳神功(普通话版)', '来源已在作品标题的 from 后缀里，集标题不再重复');
 
   const second = mergeLinkEntry({ url: first.url, title: first.title }, { url: 'u2', title: '【tencent】 1080P' }, 'tencent', 'tencent');
   assert.strictEqual(second.url, first.url + '$$$tencent:u2', '已含复合分隔符时直接追加分段');
-  assert.strictEqual(second.title, '【qq&renren&tencent】 倚天屠龙记之九阳神功(普通话版)', '标题标签继续追加');
+  assert.strictEqual(second.title, '倚天屠龙记之九阳神功(普通话版)', '继续合并时也不会重新拼出标签');
 
   const noTag = mergeLinkEntry(target, { url: 'u3', title: '720P' }, 'migu', 'tencent');
-  assert.strictEqual(noTag.title, '【qq&migu】 倚天屠龙记之九阳神功(普通话版)', '副源标题无标签时使用来源名');
+  assert.strictEqual(noTag.title, '倚天屠龙记之九阳神功(普通话版)', '副源标题无标签时同样不带标签');
 
-  const mismatched = mergeLinkEntry(target, { url: 'u4', title: '【other】 720P' }, 'migu', 'tencent');
-  assert.strictEqual(mismatched.title, '【qq&other】 倚天屠龙记之九阳神功(普通话版)', '标题标签以副源链接自带标签优先');
+  const keepTag = mergeLinkEntry({ url: 'https://v.qq.com/x/cover/abc/2.html', title: '【高清】 第1集' }, { url: 'u5', title: '第1集' }, 'migu', 'tencent');
+  assert.strictEqual(keepTag.title, '【高清】 第1集', '非来源名的标签原样保留');
 });
 test('merge findSecondaryMatches 英文别名中的独立 I 不作季度标记', () => {
   Globals.init({ LOG_LEVEL: 'error' });
@@ -583,7 +584,7 @@ test('merge applyMergeLogic 配音版本副源并入同配音版本链接', asyn
   assert.strictEqual(merged.links.length, 12, '主源 12 条链接全部保留');
   assert.strictEqual(merged.links.filter((link) => String(link.url).includes('$$$')).length, 6, '每集只有一条主源链接并入副源');
   assert.deepStrictEqual(merged.links.filter((link) => String(link.url).includes('$$$')).map((link) => link.title),
-    Array.from({ length: 6 }, (_, i) => `【tencent&renren】 第${i + 1}集 (粤语版)`), '粤语副源并入粤语链接，普通话链接保持独立');
+    Array.from({ length: 6 }, (_, i) => `第${i + 1}集 (粤语版)`), '粤语副源并入粤语链接，普通话链接保持独立');
 });
 test('merge applyMergeLogic 映射表特权通道不受年份判定约束', async () => {
   const rule = '倚天屠龙记(2009)【电视剧】@renren -> 倚天屠龙记(2001)【电视剧】@tencent';
