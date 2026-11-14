@@ -448,7 +448,25 @@ export default class BilibiliSource extends BaseSource {
   }
 
   /**
+   * 按集号升序排列分集：集号全部可提取时按集号排序，否则按备用比较器排列
+   * @param {Array} episodes - 分集数组
+   * @param {Function} getNumber - 取集号来源的函数
+   * @param {Function|null} fallback - 集号无法提取时的备用比较器
+   */
+  _sortEpisodesByNumber(episodes, getNumber, fallback = null) {
+    const numbers = episodes.map(getNumber);
+    if (numbers.every(number => number !== null)) {
+      episodes.forEach((episode, i) => episode._sortKey = numbers[i]);
+      episodes.sort((a, b) => a._sortKey - b._sortKey);
+    } else if (fallback) {
+      episodes.sort(fallback);
+    }
+  }
+
+  /**
    * 获取番剧分集列表
+   * @param {string|number} seasonId - B站 season_id
+   * @returns {Promise<Array>}
    */
   async _getPgcEpisodes(seasonId) {
     let rawEpisodes = [];
@@ -508,6 +526,10 @@ export default class BilibiliSource extends BaseSource {
             link: `https://www.bilibili.com/bangumi/play/ep${ep.id}`
         };
     });
+
+    // 详情接口的分集顺序与底层主键 ep_id 均可能与集号不一致（ep_id 常随集号递减）；
+    // 优先按标题中的集号升序，任一集无法提取集号时保持接口返回顺序
+    this._sortEpisodesByNumber(episodes, episode => extractEpisodeNumberFromTitle(episode.title));
 
     // 将详情接口封面转移到返回数组（.map() 产生新数组，不会继承原数组属性）
     if (rawEpisodes._cover) episodes._cover = rawEpisodes._cover;
@@ -680,13 +702,7 @@ export default class BilibiliSource extends BaseSource {
              });
 
              // 优先从 index_title 提取集号排序，任一无法提取则退回到 ep_id 排序
-             const sortKeys = links.map(l => extractEpisodeNumberFromTitle(l.name));
-             if (sortKeys.every(k => k !== null)) {
-               links.forEach((l, i) => l._sortKey = sortKeys[i]);
-               links.sort((a, b) => a._sortKey - b._sortKey);
-             } else {
-               links.sort((a, b) => a._id - b._id);
-             }
+             this._sortEpisodesByNumber(links, link => extractEpisodeNumberFromTitle(link.name), (a, b) => a._id - b._id);
 
              log("info", `[bilibili] 直接使用搜索结果中的 ${links.length} 集分集`);
           } else {
@@ -704,13 +720,10 @@ export default class BilibiliSource extends BaseSource {
                 return {
                     name: `${index + 1}`,
                     url: linkUrl,
-                    title: `【bilibili1】 ${ep.title}`,
-                    _id: parseInt(ep.id, 10) || 0
+                    title: `【bilibili1】 ${ep.title}`
                 };
              });
-
-             // 依据底层数据主键 ep_id 进行时间序列升序排列
-             links.sort((a, b) => a._id - b._id);
+             // 分集顺序沿用 _getPgcEpisodes 按集号排好的顺序
           }
 
           if (links.length === 0) return;
