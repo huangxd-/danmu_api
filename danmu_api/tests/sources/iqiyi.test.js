@@ -108,6 +108,7 @@ test('iqiyi episode titles share one format across all episodes', () => {
 
 // 分集列表的解析：离线 mock iqiyi 接口响应
 const BASE_INFO_PREFIX = 'https://www.iqiyi.com/prelw/tvg/v2/lw/base_info?';
+const SELECTOR_URL = 'https://mesh.if.iqiyi.com/tvg/v2/selector?album_id=203472101&src=lw';
 
 function baseInfoBody(blocks) {
   return { status_code: 0, data: { template: { tabs: [{ blocks }] } } };
@@ -122,22 +123,27 @@ function videoListBlock(episodes) {
   };
 }
 
-function seasonBlock(group) {
+function seasonBlock(groups) {
+  const list = Array.isArray(groups) ? groups : [groups];
   return {
     bk_type: 'album_episodes',
     bk_id: 'selector_bk',
     tag: ['episodes', 'super_album'],
-    data: { data: [group] },
+    data: { data: list },
   };
 }
 
-function mockBaseInfo(body) {
+function mockRoutes(routes) {
   return async (input) => {
     const url = String(input);
-    if (url.startsWith(BASE_INFO_PREFIX)) return mockJsonResponse(body, url);
+    for (const [prefix, body] of routes) {
+      if (url.startsWith(prefix)) return mockJsonResponse(body, url);
+    }
     throw new Error(`unexpected fetch: ${url}`);
   };
 }
+
+const mockBaseInfo = (body) => mockRoutes([[BASE_INFO_PREFIX, body]]);
 
 test('iqiyi variety episodes keep their own titles when the album declares no episode order', async () => {
   resetSearchState();
@@ -178,6 +184,119 @@ test('iqiyi season episodes are kept when the album order is incomplete', async 
   // 集号为 0 的分集同样进入列表；集数序列不完整时整张专辑按未声明处理
   assert.deepStrictEqual(episodes.map(episode => episode.title), ['自然的馈赠', '主食的故事']);
   assert.deepStrictEqual(episodes.map(episode => episode.order), [null, null]);
+});
+
+test('iqiyi inline season groups are parsed from segment objects', async () => {
+  resetSearchState();
+  // 条目自身的分季组内联返回，按索引给出段对象：{ "0": { title, data, feature_count } }
+  const body = baseInfoBody([seasonBlock({
+    tab_name: '第12季',
+    entity_id: '8772184898375501',
+    videos: {
+      '0': {
+        title: '1-26',
+        feature_count: 26,
+        data: [
+          { content_type: 1, album_order: 1, short_display_name: '小猪佩奇 第12季 第1集 更大的房子', play_url: 'qips://ht=2;tvid=501;', page_url: 'https://www.iqiyi.com/v_501.html' },
+          { content_type: 1, album_order: 2, short_display_name: '小猪佩奇 第12季 第2集 独角兽的节日', play_url: 'qips://ht=2;tvid=502;', page_url: 'https://www.iqiyi.com/v_502.html' },
+        ],
+      },
+    },
+  })]);
+  const episodes = await withMockFetch(mockBaseInfo(body), () => iqiyi.getEpisodes('1hl6toeycak'));
+
+  assert.deepStrictEqual(episodes.map(episode => episode.id), ['501', '502']);
+  assert.deepStrictEqual(episodes.map(episode => episode.order), [1, 2]);
+});
+
+test('iqiyi only requests the season group that belongs to the entry', async () => {
+  resetSearchState();
+  const body = baseInfoBody([seasonBlock([
+    { tab_name: '全集', entity_id: '203472101', videos: SELECTOR_URL },
+    {
+      tab_name: '第12季',
+      entity_id: '8772184898375501',
+      videos: {
+        '0': {
+          title: '1-1',
+          data: [
+            { content_type: 1, album_order: 1, short_display_name: '小猪佩奇 第12季 第1集 更大的房子', play_url: 'qips://ht=2;tvid=601;', page_url: 'https://www.iqiyi.com/v_601.html' },
+          ],
+        },
+      },
+    },
+  ])]);
+  const requested = [];
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.startsWith(BASE_INFO_PREFIX)) return mockJsonResponse(body, url);
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  const episodes = await withMockFetch(fetchImpl, () => iqiyi.getEpisodes('1hl6toeycak'));
+
+  // 同一专辑的其它分季组属于别的搜索结果，不应请求
+  assert.deepStrictEqual(episodes.map(episode => episode.id), ['601']);
+  assert.ok(requested.every(url => url.startsWith(BASE_INFO_PREFIX)), '不应请求其它分季组的 URL');
+});
+
+test('iqiyi season episodes are collected from segmented data', async () => {
+  resetSearchState();
+  // 指定季的分季组按集数区间分段返回 data.videos，逐段的 data 数组都要展开
+  const body = baseInfoBody([seasonBlock({ tab_name: '第一季', entity_id: '3502757444826601', videos: SELECTOR_URL })]);
+  const selectorBody = {
+    status_code: 0,
+    data: {
+      videos: [
+        { title: '1-2', data: [
+          { content_type: 1, album_order: 1, short_display_name: '粉红猪小妹全集 第1集', play_url: 'qips://ht=2;tvid=401;', page_url: 'https://www.iqiyi.com/v_401.html' },
+          { content_type: 1, album_order: 2, short_display_name: '粉红猪小妹全集 第2集', play_url: 'qips://ht=2;tvid=402;', page_url: 'https://www.iqiyi.com/v_402.html' },
+        ] },
+        { title: '3-3', data: [
+          { content_type: 1, album_order: 3, short_display_name: '粉红猪小妹全集 第3集', play_url: 'qips://ht=2;tvid=403;', page_url: 'https://www.iqiyi.com/v_403.html' },
+          { content_type: 2, album_order: 4, short_display_name: '花絮', play_url: 'qips://ht=2;tvid=404;', page_url: 'https://www.iqiyi.com/v_404.html' },
+        ] },
+      ],
+    },
+  };
+  const episodes = await withMockFetch(
+    mockRoutes([[BASE_INFO_PREFIX, body], [SELECTOR_URL, selectorBody]]),
+    () => iqiyi.getEpisodes('2408dc6bmoc', 1)
+  );
+
+  assert.deepStrictEqual(episodes.map(episode => episode.id), ['401', '402', '403']);
+  assert.deepStrictEqual(episodes.map(episode => episode.order), [1, 2, 3]);
+});
+
+test('iqiyi season group selection follows the entry and the target season', () => {
+  const select = (groups, season) => IqiyiSource.prototype._selectSeasonGroup.call({}, groups, season);
+  const groups = [
+    { tab_name: '全集', videos: 'https://example.com/full' },
+    { tab_name: '第12季', videos: { '0': { data: [] } } },
+    { tab_name: '第11季', videos: 'https://example.com/season11' },
+  ];
+  // 未指定季时取条目自身的内联分季组
+  assert.strictEqual(select(groups, null).tab_name, '第12季');
+  // 指定季时改用该季分季组，内联分季组季号一致时优先内联
+  assert.strictEqual(select(groups, 12).tab_name, '第12季');
+  assert.strictEqual(select(groups, 11).tab_name, '第11季');
+  // 目标季没有对应分季组时回退到条目自身的分季组
+  assert.strictEqual(select(groups, 5).tab_name, '第12季');
+});
+
+test('iqiyi season data expands both paged and segmented structures', () => {
+  const collect = (videosData) => iqiyi._collectSeasonEpisodes(videosData);
+  const paged = { feature_paged: { 1: [{ album_order: 1 }], 2: [{ album_order: 2 }, { album_order: 3 }] } };
+  assert.deepStrictEqual(collect(paged).map(episode => episode.album_order), [1, 2, 3]);
+  const segmented = { data: { videos: [{ data: [{ album_order: 1 }] }, { data: [{ album_order: 2 }] }] } };
+  assert.deepStrictEqual(collect(segmented).map(episode => episode.album_order), [1, 2]);
+  const inlineSegments = { '0': { title: '1-2', data: [{ album_order: 1 }, { album_order: 2 }] } };
+  assert.deepStrictEqual(collect(inlineSegments).map(episode => episode.album_order), [1, 2]);
+  // 结构缺失时返回空数组
+  assert.deepStrictEqual(collect(null), []);
+  assert.deepStrictEqual(collect('https://mesh.if.iqiyi.com/tvg/v2/selector'), []);
+  assert.deepStrictEqual(collect({ data: {} }), []);
+  assert.deepStrictEqual(collect({ data: { videos: '1-50' } }), []);
 });
 
 test('iqiyi episodes are numbered when the album declares episode order', async () => {
