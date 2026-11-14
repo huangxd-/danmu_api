@@ -365,24 +365,8 @@ export default class IqiyiSource extends BaseSource {
                 // 只处理正片内容 (content_type === 1)
                 if (epData.content_type !== 1) continue;
 
-                const playUrl = epData.play_url || "";
-                const tvidMatch = playUrl.match(/tvid=(\d+)/);
-                if (!tvidMatch) continue;
-
-                const tvid = tvidMatch[1];
-                const title = this._buildEpisodeTitle(epData);
-
-                const order = epData.album_order;
-                const pageUrl = epData.page_url;
-
-                if (tvid && title && pageUrl) {
-                  allEpisodes.push({
-                    id: tvid,
-                    title: title,
-                    order: order !== undefined ? order : allEpisodes.length,
-                    link: pageUrl
-                  });
-                }
+                const episode = this._buildEpisodeEntry(epData);
+                if (episode) allEpisodes.push(episode);
               }
             }
           }
@@ -439,24 +423,8 @@ export default class IqiyiSource extends BaseSource {
                 for (const epData of pagedList) {
                   if (epData.content_type !== 1) continue;
 
-                  const playUrl = epData.play_url || "";
-                  const tvidMatch = playUrl.match(/tvid=(\d+)/);
-                  if (!tvidMatch) continue;
-
-                  const tvid = tvidMatch[1];
-                  const title = this._buildEpisodeTitle(epData);
-
-                  const order = epData.album_order;
-                  const pageUrl = epData.page_url;
-
-                  if (tvid && title && order && pageUrl) {
-                    allEpisodes.push({
-                      id: tvid,
-                      title: title,
-                      order: order,
-                      link: pageUrl
-                    });
-                  }
+                  const episode = this._buildEpisodeEntry(epData);
+                  if (episode) allEpisodes.push(episode);
                 }
               }
             }
@@ -469,11 +437,21 @@ export default class IqiyiSource extends BaseSource {
         return [];
       }
 
-      // 去重并排序
+      // 去重
       const uniqueEpisodes = Array.from(
         new Map(allEpisodes.map(ep => [ep.id, ep])).values()
       );
-      uniqueEpisodes.sort((a, b) => a.order - b.order);
+
+      // album_order 只有在整张专辑都给出且取值互不重复时才构成集数序列；
+      // 未声明集数顺序的专辑该字段恒为 0，把同一期拆成多段发布的专辑该字段恒为同一值
+      const declaresEpisodeOrder = uniqueEpisodes.every(ep => ep.order !== null)
+        && new Set(uniqueEpisodes.map(ep => ep.order)).size === uniqueEpisodes.length;
+      if (declaresEpisodeOrder) {
+        uniqueEpisodes.sort((a, b) => a.order - b.order);
+      } else {
+        // 该字段不构成集数序列，按未提供集号处理并保持接口返回顺序
+        for (const episode of uniqueEpisodes) episode.order = null;
+      }
 
       log("info", `[iqiyi] 成功获取 ${uniqueEpisodes.length} 个分集`);
       return uniqueEpisodes;
@@ -561,23 +539,52 @@ export default class IqiyiSource extends BaseSource {
   }
 
   /**
-   * 补齐分集标题缺失的集数，集数置于作品名后面，与接口自带集数的分集保持同一格式
+   * 解析接口给出的分集序号；专辑未声明集数顺序时接口把 album_order 置为 0，
+   * 这类分集没有可用的集数信息，按未提供处理
+   * @param {*} albumOrder - 接口的 album_order
+   * @returns {number|null} 正整数序号，未提供时为 null
+   */
+  _resolveEpisodeOrder(albumOrder) {
+    const order = Number(albumOrder);
+    return Number.isInteger(order) && order > 0 ? order : null;
+  }
+
+  /**
+   * 将接口的分集数据转换为内部分集结构，缺少 tvid 或播放页地址时返回 null
+   * @param {object} epData - 分集原始数据
+   * @returns {{id: string, title: string, order: number|null, link: string}|null} 分集结构
+   */
+  _buildEpisodeEntry(epData) {
+    const tvidMatch = (epData.play_url || "").match(/tvid=(\d+)/);
+    const link = epData.page_url;
+    if (!tvidMatch || !link) return null;
+    return {
+      id: tvidMatch[1],
+      title: this._buildEpisodeTitle(epData),
+      order: this._resolveEpisodeOrder(epData.album_order),
+      link: link
+    };
+  }
+
+  /**
+   * 补齐分集标题缺失的集数，集数置于作品名后面，与接口自带集数的分集保持同一格式；
+   * 接口未提供分集序号时不补集数，保持标题原样
    * @param {string} title - 分集标题
    * @param {string} animeTitle - 所属作品名
-   * @param {number} order - 分集序号
+   * @param {number|null} order - 分集序号
    * @returns {string} 含集数的分集标题
    */
   _ensureEpisodeNumber(title, animeTitle, order) {
     if (extractEpisodeNumberFromTitle(title) !== null) return title;
-    // 缺少分集序号时无法补全，保持标题原样
-    if (order === undefined || order === null || order === "") return title;
+    const episodeNumber = this._resolveEpisodeOrder(order);
+    if (episodeNumber === null) return title;
     // 作品名去掉年份与类型后缀后再与分集标题比对，避免拼接出来的名字对不上
     const animeName = extractAnimeTitle(animeTitle || "");
     const prefix = animeName && title.startsWith(animeName) ? animeName : "";
     const rest = prefix ? title.slice(prefix.length).trim() : title;
     return prefix
-      ? `${prefix} 第${order}集 ${rest}`.trim()
-      : `第${order}集 ${rest}`.trim();
+      ? `${prefix} 第${episodeNumber}集 ${rest}`.trim()
+      : `第${episodeNumber}集 ${rest}`.trim();
   }
 
   /**
@@ -822,10 +829,11 @@ export default class IqiyiSource extends BaseSource {
 
           // 格式化分集列表
           const links = [];
-          for (const ep of eps) {
+          for (const [index, ep] of eps.entries()) {
             const fullUrl = ep.link || `https://www.iqiyi.com/v_${anime.mediaId}.html`;
             links.push({
-              "name": ep.order.toString(),
+              // 接口未声明集数顺序时按列表位置编号
+              "name": (ep.order ?? index + 1).toString(),
               "url": fullUrl,
               "title": `【qiyi】 ${this._ensureEpisodeNumber(ep.title, anime.title, ep.order)}`
             });
