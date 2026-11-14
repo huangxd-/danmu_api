@@ -344,6 +344,165 @@ test('iqiyi episodes are not numbered when the album repeats one order', async (
   ]);
 });
 
+// 历史问题回归：接口重试、分季组请求去重、搜索结果过滤与 media_id 转换
+const SEARCH_URL_PREFIX = 'https://mesh.if.iqiyi.com/portal/lw/search/homePageV3?';
+
+test('iqiyi search retries once when the response is rate limited', async () => {
+  let calls = 0;
+  const fetchImpl = async (input) => {
+    calls++;
+    const url = String(input);
+    if (!url.startsWith(SEARCH_URL_PREFIX)) throw new Error(`unexpected fetch: ${url}`);
+    // 首次响应为风控码，重试后返回正常结构
+    const body = calls === 1 ? { code: '-1' } : { code: '0', data: { templates: [] } };
+    return mockJsonResponse(body, url);
+  };
+  const source = new IqiyiSource();
+  const results = await withMockFetch(fetchImpl, () => source.search('奔跑吧'));
+
+  assert.strictEqual(calls, 2, '风控响应后应重试一次');
+  assert.deepStrictEqual(results, []);
+});
+
+test('iqiyi base info retries once when the response is abnormal', async () => {
+  let calls = 0;
+  const fetchImpl = async (input) => {
+    calls++;
+    const url = String(input);
+    const body = calls === 1
+      ? { status_code: -1 }
+      : { status_code: 0, data: { template: { tabs: [] } } };
+    return mockJsonResponse(body, url);
+  };
+  const source = new IqiyiSource();
+  const data = await withMockFetch(fetchImpl, () => source._fetchBaseInfoData('203472101'));
+
+  assert.strictEqual(calls, 2, '异常响应后应重试一次');
+  assert.strictEqual(data.status_code, 0);
+});
+
+test('iqiyi requests the same season group only once across entries', async () => {
+  resetSearchState();
+  const body = baseInfoBody([seasonBlock([
+    {
+      tab_name: '第12季',
+      entity_id: '8772184898375501',
+      videos: {
+        '0': {
+          title: '1-1',
+          data: [
+            { content_type: 1, album_order: 1, short_display_name: '小猪佩奇 第12季 第1集', play_url: 'qips://ht=2;tvid=701;', page_url: 'https://www.iqiyi.com/v_701.html' },
+          ],
+        },
+      },
+    },
+    { tab_name: '第一季', entity_id: '3502757444826601', videos: SELECTOR_URL },
+  ])]);
+  const selectorBody = {
+    status_code: 0,
+    data: {
+      videos: [{
+        title: '1-1',
+        data: [
+          { content_type: 1, album_order: 1, short_display_name: '第一季 第1集', play_url: 'qips://ht=2;tvid=801;', page_url: 'https://www.iqiyi.com/v_801.html' },
+        ],
+      }],
+    },
+  };
+  let seasonRequests = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.startsWith(SELECTOR_URL)) {
+      seasonRequests++;
+      return mockJsonResponse(selectorBody, url);
+    }
+    if (url.startsWith(BASE_INFO_PREFIX)) return mockJsonResponse(body, url);
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  const source = new IqiyiSource();
+  const seasonCache = new Map();
+  // 两个条目都指向同一季分季组，分季组请求在一次搜索内只应发出一次
+  await withMockFetch(fetchImpl, () => source.getEpisodes('1hl6toeycak', 1, seasonCache));
+  await withMockFetch(fetchImpl, () => source.getEpisodes('19rrl6d4as', 1, seasonCache));
+
+  assert.strictEqual(seasonRequests, 1, '同一次搜索内同一分季组只应请求一次');
+});
+
+test('iqiyi does not cache a failed season group request', async () => {
+  resetSearchState();
+  const body = baseInfoBody([seasonBlock([
+    {
+      tab_name: '第12季',
+      entity_id: '8772184898375501',
+      videos: {
+        '0': {
+          title: '1-1',
+          data: [
+            { content_type: 1, album_order: 1, short_display_name: '小猪佩奇 第12季 第1集', play_url: 'qips://ht=2;tvid=901;', page_url: 'https://www.iqiyi.com/v_901.html' },
+          ],
+        },
+      },
+    },
+    { tab_name: '第一季', entity_id: '3502757444826601', videos: SELECTOR_URL },
+  ])]);
+  let seasonRequests = 0;
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    if (url.startsWith(SELECTOR_URL)) {
+      seasonRequests++;
+      throw new Error('season group request failed');
+    }
+    if (url.startsWith(BASE_INFO_PREFIX)) return mockJsonResponse(body, url);
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  const source = new IqiyiSource();
+  const seasonCache = new Map();
+  const episodes = await withMockFetch(fetchImpl, () => source.getEpisodes('1hl6toeycak', 1, seasonCache));
+  await withMockFetch(fetchImpl, () => source.getEpisodes('1hl6toeycak', 1, seasonCache));
+
+  // 分季组请求失败时该条目没有分集，失败结果也不应留在缓存里
+  assert.deepStrictEqual(episodes, []);
+  assert.strictEqual(seasonRequests, 2, '失败的分季组请求不应被缓存');
+});
+
+test('iqiyi movie video id falls back to the entity id when no video link is present', async () => {
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    // share_url 为短链接且不含 v_xxx.html，取不到视频ID时回退 entity_id
+    const body = { status_code: 0, data: { base_data: { share_url: 'https://www.iqiyi.com/s/abc123' } } };
+    return mockJsonResponse(body, url);
+  };
+  const source = new IqiyiSource();
+  const videoId = await withMockFetch(fetchImpl, () => source._getMovieVideoId('203472101'));
+
+  assert.strictEqual(videoId, '203472101');
+});
+
+test('iqiyi search items are filtered by media type and 3d tags', () => {
+  const filter = (album) => IqiyiSource.prototype._filterIqiyiSearchItem.call({}, album, '测试');
+  // 外站付费播放、缺少标题与不支持的频道都不保留
+  assert.strictEqual(filter({ title: '付费内容', btnText: '外站付费播放', channel: '电影' }), null);
+  assert.strictEqual(filter({ channel: '动漫' }), null);
+  assert.strictEqual(filter({ title: '未知频道', channel: '音乐' }), null);
+
+  const anime = filter({
+    title: '太古神尊',
+    channel: '动漫',
+    metaTags: [{ name: '3D' }],
+    pageUrl: 'https://www.iqiyi.com/v_abc123.html',
+    year: { value: '2026' },
+  });
+  assert.strictEqual(anime.type, '3D动漫');
+  assert.strictEqual(anime.mediaId, 'abc123');
+  assert.strictEqual(anime.year, 2026);
+});
+
+test('iqiyi media id is converted to an entity id', () => {
+  const toEntityId = (videoId) => IqiyiSource.prototype._videoIdToEntityId.call(IqiyiSource.prototype, videoId);
+
+  assert.match(toEntityId('1hl6toeycak'), /^\d+$/);
+});
+
 // 并发与失败统计：离线 mock fetch，验证 iqiyi 整集分片分批逻辑
 async function runIqiyiConcurrencyTest({ batchSize, concurrency, failIndex = -1 }) {
   Globals.init({ IQIYI_CONCURRENCY: String(concurrency) });
