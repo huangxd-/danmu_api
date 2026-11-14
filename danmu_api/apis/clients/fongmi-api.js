@@ -3,7 +3,7 @@ import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
 import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripNonTitleChars } from "../../utils/common-util.js";
-import { filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
+import { filterEpisodesByTitle, filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
 
 // =====================
 // FongMi 弹幕接口适配
@@ -361,7 +361,7 @@ function buildFongmiDanmakuItems(animes, detailStore, apiBase) {
 
     let episodes = bangumiData.bangumi.episodes;
     if (globals.enableAnimeEpisodeFilter) {
-      episodes = episodes.filter(item => !globals.episodeTitleFilter.test(item.episodeTitle));
+      episodes = filterEpisodesByTitle(episodes);
     }
     episodes = filterSameEpisodeTitle(episodes);
 
