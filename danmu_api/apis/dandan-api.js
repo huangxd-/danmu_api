@@ -2247,11 +2247,14 @@ export async function searchEpisodes(url) {
             )
           );
         } else if (/^\d+$/.test(episode)) {
-          // 纯数字，仅保留指定集数
+          // 纯数字：集标题中的集号唯一命中时按集号匹配，否则按 episodeNumber 字段匹配
           const targetEpisode = parseInt(episode);
-          filteredEpisodes = bangumiData.bangumi.episodes.filter(ep =>
-            parseInt(ep.episodeNumber) === targetEpisode
+          const episodesByTitleNumber = bangumiData.bangumi.episodes.filter(ep =>
+            extractEpisodeNumberFromTitle(ep.episodeTitle) === targetEpisode
           );
+          filteredEpisodes = episodesByTitleNumber.length === 1
+            ? episodesByTitleNumber
+            : bangumiData.bangumi.episodes.filter(ep => parseInt(ep.episodeNumber) === targetEpisode);
         }
       }
 
