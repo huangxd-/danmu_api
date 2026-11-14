@@ -110,7 +110,7 @@ function parseIdentityMarker(value) {
   };
 }
 
-function parseEpisodeSide(value, { allowPlatform = false, allowReleaseGroup = false } = {}) {
+function parseEpisodeSide(value, { allowPlatform = false, allowReleaseGroup = false, allowSeasonZero = false } = {}) {
   const identity = parseIdentityMarker(value);
   let text = String(value || '').trim();
   if (allowReleaseGroup) {
@@ -137,7 +137,9 @@ function parseEpisodeSide(value, { allowPlatform = false, allowReleaseGroup = fa
   const season = Number(match[2]);
   const startEpisode = Number(match[3]);
   const endEpisode = match[4] === undefined ? null : Number(match[4]);
-  if (!title || season < 1 || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
+  // 源侧允许 S00：播放器用 S00 表示特别篇；目标侧仍须 S01+。
+  const minSeason = allowSeasonZero ? 0 : 1;
+  if (!title || season < minSeason || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
 
   return {
     title,
@@ -197,7 +199,7 @@ export function parseAutoMatchMappingRules(value, allowedPlatforms = []) {
       continue;
     }
 
-    const source = parseEpisodeSide(text.slice(0, arrowIndex), { allowReleaseGroup: true });
+    const source = parseEpisodeSide(text.slice(0, arrowIndex), { allowReleaseGroup: true, allowSeasonZero: true });
     const targetSide = parseEpisodeSide(text.slice(arrowIndex + 2), { allowPlatform: true, allowReleaseGroup: true });
     if (!source || !targetSide) {
       warnings.push(`规则 ${index + 1} 的季集格式无效: ${text}`);

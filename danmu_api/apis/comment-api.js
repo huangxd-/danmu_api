@@ -420,7 +420,9 @@ async function rememberEpisodeSelection(commentId, animeTitle, clientIp) {
   if (!clientIp || !globals.rememberLastSelect) return;
   const search = getLastSearch(clientIp);
   const [animeId, source, episodeTitle, aliases] = findAnimeIdByCommentId(commentId);
-  if (!animeId || !source || !episodeTitle || !search?.title || !search.season || !search.episode || Date.now() - search.timestamp >= 180000) return;
+  // season 用显式判空：播放器用 S00 表示特别篇，不能用真值判断当成无效季。
+  const hasSeason = search?.season !== null && search?.season !== undefined;
+  if (!animeId || !source || !episodeTitle || !search?.title || !hasSeason || !search.episode || Date.now() - search.timestamp >= 180000) return;
   if (String(search.episodeId) === String(commentId)) return;
   const titles = [animeTitle, ...aliases];
   const matches = titles.some(title => titleMatches(title, search.title, null, true) ||

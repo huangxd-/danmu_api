@@ -455,6 +455,18 @@ async function refreshRemoteTitleMapping(url, reason = 'scheduled') {
 //   3. 去掉分隔符小写  monsterisland（终极兜底，最宽松）
 // ---------------------------------------------------------------------
 
+// 标题尾部的发布年份：(2011)、[2011]、【2011】 三种写法
+const TRAILING_RELEASE_YEAR_PATTERN = /(?:\s*[（(]\s*(?:19|20)\d{2}\s*[)）]|\s*[\[［]\s*(?:19|20)\d{2}\s*[\]］]|\s*【\s*(?:19|20)\d{2}\s*】)\s*$/;
+
+/**
+ * 【去掉标题尾部的括号年份】
+ * 例："变形金刚3：月黑之时(2011)" → "变形金刚3：月黑之时"
+ * 用于精确键查不到时再放宽一次，别名表里通常不带年份。
+ */
+function stripTrailingReleaseYear(value) {
+  return String(value || '').replace(TRAILING_RELEASE_YEAR_PATTERN, '').trim();
+}
+
 /**
  * 【归一化：把各种分隔符统一成空格】
  * 例："Monster.Island.2017" → "Monster Island 2017"
@@ -611,7 +623,14 @@ export function applyTitleMappingWithLog(rawTitle, source = 'system', season = n
   const remoteTable = remoteState.mappings instanceof Map ? remoteState.mappings : new Map();
 
   // 生成候选键：剧名+年份+季 → 剧名+季 → 剧名+年份 → 裸剧名
+  // 精确键全部落空后，再忽略标题尾部括号年份重试（如 变形金刚3：月黑之时(2011) → 变形金刚3：月黑之时）
+  const strippedTitle = stripTrailingReleaseYear(rawTitle);
   const candidateKeys = buildMappingCandidateKeys(rawTitle, season, year);
+  if (strippedTitle && strippedTitle !== String(rawTitle || '').trim()) {
+    for (const key of buildMappingCandidateKeys(strippedTitle, season, year)) {
+      if (!candidateKeys.includes(key)) candidateKeys.push(key);
+    }
+  }
 
   // 把两张表各建成 3 个快速索引（精确/归一化/紧凑），方便下面直接查
   const localIndex = buildMappingIndex(localTable);
@@ -624,9 +643,10 @@ export function applyTitleMappingWithLog(rawTitle, source = 'system', season = n
     if (localMapped) return localMapped;  // 本地表命中，直接返回
   }
   // 本地表终极兜底：去掉所有分隔符来查（例 "Monster.Island" ≡ "monsterisland"）
-  const localCompactInput = compactKey(rawTitle);
-  const localCompactMapped = localCompactInput ? localIndex.compactIndex.get(localCompactInput) : undefined;
-  if (localCompactMapped !== undefined) return localCompactMapped;
+  for (const compactInput of [compactKey(rawTitle), compactKey(strippedTitle)]) {
+    const localCompactMapped = compactInput ? localIndex.compactIndex.get(compactInput) : undefined;
+    if (localCompactMapped !== undefined) return localCompactMapped;
+  }
 
   // ---------- 第二步：查远程表（本地没命中才到这里） ----------
   for (const key of candidateKeys) {
@@ -639,11 +659,12 @@ export function applyTitleMappingWithLog(rawTitle, source = 'system', season = n
   }
 
   // ---------- 第三步：远程表终极兜底（忽略所有分隔符） ----------
-  const compactInput = compactKey(rawTitle);
-  const remoteCompactMapped = compactInput ? remoteIndex.compactIndex.get(compactInput) : undefined;
-  if (remoteCompactMapped !== undefined) {
-    logRemoteMapping("info", `[system] [remote-mapping] [远程] [${source}] ✅ 匹配成功(紧凑): 「${rawTitle}」→「${remoteCompactMapped}」`);
-    return remoteCompactMapped;
+  for (const compactInput of [compactKey(rawTitle), compactKey(strippedTitle)]) {
+    const remoteCompactMapped = compactInput ? remoteIndex.compactIndex.get(compactInput) : undefined;
+    if (remoteCompactMapped !== undefined) {
+      logRemoteMapping("info", `[system] [remote-mapping] [远程] [${source}] ✅ 匹配成功(紧凑): 「${rawTitle}」→「${remoteCompactMapped}」`);
+      return remoteCompactMapped;
+    }
   }
 
   // ---------- 全都没查到：原样返回，并记录一次失败日志（便于排查） ----------

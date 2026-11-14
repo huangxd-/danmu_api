@@ -103,13 +103,49 @@ export function isMovieFeatureFilmEpisode(ep, anime) {
   return false;
 }
 
+// 计算对外上报的集数：过滤只会减少可用集数，平台声明值更小时以声明值为准
+export function resolveEpisodeCount(declaredCount, availableCount) {
+  const declared = Number(declaredCount) || 0;
+  const available = Number(availableCount) || 0;
+  if (available <= 0) return declared;
+  return declared > 0 ? Math.min(declared, available) : available;
+}
+
+// 按集标题过滤剧集，所有需要过滤的位置统一走这里
+export function filterEpisodesByTitle(episodes) {
+  return episodes.filter(episode => !globals.episodeTitleFilter.test(episode.episodeTitle));
+}
+
+// 按集标题过滤链接，并把过滤后的可用集数写回该动漫
+export function applyEpisodeTitleFilter(anime, links) {
+  const episodesList = filterEpisodesByTitle(links.map((link, index) => ({
+    episodeId: link.id,
+    episodeTitle: link.title,
+    episodeNumber: index + 1
+  })));
+  anime.episodeCount = resolveEpisodeCount(anime.episodeCount, episodesList.length);
+  return episodesList;
+}
+
+// 缓存命中的动漫按过滤后的可用集数上报集数，不改写缓存里的对象
+export function withAvailableEpisodeCount(animes, resolveAnimeDetail) {
+  if (!globals.enableAnimeEpisodeFilter) return animes;
+  return animes.map(anime => {
+    const animeData = resolveAnimeDetail(anime);
+    if (!animeData || !animeData.links) return anime;
+    const counted = { ...anime };
+    applyEpisodeTitleFilter(counted, animeData.links);
+    return counted;
+  });
+}
+
 function getMatchEpisodeCount(anime, bangumiData) {
   // 部分源（如 360）会把同一部电影的多个平台链接都放进 links，
   // 不能把平台链接数当成电影集数。
   if (isMovieMatchCandidate(anime)) return 1;
   const episodes = bangumiData?.bangumi?.episodes;
   const filtered = Array.isArray(episodes)
-    ? filterSameEpisodeTitle(episodes.filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle)))
+    ? filterSameEpisodeTitle(filterEpisodesByTitle(episodes))
     : [];
   const declaredCount = Number(anime?.episodeCount) || 0;
   return Math.max(filtered.length, declaredCount);
@@ -236,7 +272,7 @@ function checkEpisodeSatisfied(animesList, querySeason, queryEpisode, requestAni
       providedSources.add(anime.source);
 
       if (bData?.success && bData.bangumi?.episodes) {
-        const validEps = bData.bangumi.episodes.filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle));
+        const validEps = filterEpisodesByTitle(bData.bangumi.episodes);
         const filtered = filterSameEpisodeTitle(validEps);
 
         if (filtered.some(ep => extractEpisodeNumberFromTitle(ep.episodeTitle) === queryEpisode)) {
@@ -479,6 +515,11 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
   const requestAnimeDetailsMap = detailStore instanceof Map ? detailStore : new Map();
   let canCacheLookup = episodeLookupDeadline === null;
   const cacheKey = querySeason !== null ? `${queryTitle}_S${querySeason}` : queryTitle;
+  const resolveSearchAnimeDetail = anime =>
+    resolveAnimeByIdFromDetailStore(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
+    resolveAnimeByIdFromDetailStore(anime?.animeId, requestAnimeDetailsMap, anime?.source) ||
+    resolveAnimeById(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
+    resolveAnimeById(anime?.animeId, requestAnimeDetailsMap, anime?.source);
 
   let cachedResults = forceRefresh ? null : getSearchCache(scopedKey(cacheKey), requestAnimeDetailsMap);
 
@@ -499,7 +540,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
         errorCode: 0,
         success: true,
         errorMessage: "",
-        animes: cachedResults,
+        animes: withAvailableEpisodeCount(cachedResults, resolveSearchAnimeDetail),
         titleMappingInfo: recognitionInfo,
       });
     } else {
@@ -527,7 +568,7 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
           errorCode: 0,
           success: true,
           errorMessage: "",
-          animes: combinedCachedResults,
+          animes: withAvailableEpisodeCount(combinedCachedResults, resolveSearchAnimeDetail),
         });
       }
       log("info", `[system] [LogVar-API] Episode ${queryEpisode} not satisfied in cache. Proceeding to network search.`);
@@ -891,22 +932,9 @@ async function searchAnimeBody(url, preferAnimeId = null, preferSource = null, d
         continue; // 跳过该动漫
       }
 
-      const animeData =
-        resolveAnimeByIdFromDetailStore(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
-        resolveAnimeByIdFromDetailStore(anime?.animeId, requestAnimeDetailsMap, anime?.source) ||
-        resolveAnimeById(anime?.bangumiId, requestAnimeDetailsMap, anime?.source) ||
-        resolveAnimeById(anime?.animeId, requestAnimeDetailsMap, anime?.source);
+      const animeData = resolveSearchAnimeDetail(anime);
       if (animeData && animeData.links) {
-        let episodesList = animeData.links.map((link, index) => ({
-          episodeId: link.id,
-          episodeTitle: link.title,
-          episodeNumber: index + 1
-        }));
-
-        // 应用过滤
-        episodesList = episodesList.filter(episode => {
-          return !globals.episodeTitleFilter.test(episode.episodeTitle);
-        });
+        const episodesList = applyEpisodeTitleFilter(anime, animeData.links);
 
         log("info", `[searchAnime] Anime ${anime.animeId} filtered episodes: ${episodesList.length}/${animeData.links.length}`);
 
@@ -1206,9 +1234,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
 
     if (season && episode) {
         // 剧集模式逻辑
-        const filteredTmpEpisodes = bangumiData.bangumi.episodes.filter(episode => {
-          return !globals.episodeTitleFilter.test(episode.episodeTitle);
-        });
+        const filteredTmpEpisodes = filterEpisodesByTitle(bangumiData.bangumi.episodes);
         // 保留不同视频和不同平台的同号条目，交给选集阶段核对；不能提前按集号丢弃。
         const filteredEpisodes = filteredTmpEpisodes;
 
@@ -1555,7 +1581,7 @@ async function selectReadyMatch({ animes, details, title, season, episode, year,
     if (!titles.some(candidate => matchSeason({ ...anime, animeTitle: candidate }, title, season)) &&
         !matchEpisodeSeason(anime, title, season, details, mappedTitleSeason)) return false;
     const episodes = getBangumiDataForMatch(anime, details)?.bangumi?.episodes || [];
-    return episodes.some(ep => !globals.episodeTitleFilter.test(ep.episodeTitle) &&
+    return filterEpisodesByTitle(episodes).some(ep =>
       extractEpisodeNumberFromTitle(ep.episodeTitle) === episode &&
       getPlatformMatchScore(extractEpisodeTitle(ep.episodeTitle), platform) > 0);
   });
@@ -1655,7 +1681,7 @@ const AI_EPISODE_LIMIT = 30;
 
 function aiEpisodeCandidates(anime, detailStore) {
   const episodes = getBangumiDataForMatch(anime, detailStore)?.bangumi?.episodes || [];
-  return episodes.filter(ep => ep.episodeTitle && !globals.episodeTitleFilter.test(ep.episodeTitle));
+  return filterEpisodesByTitle(episodes).filter(ep => ep.episodeTitle);
 }
 
 function buildAiMatchMessages({ title, season, episode, year, pools }) {
@@ -1972,7 +1998,7 @@ export function selectCollectionEpisode(animes, context, getEpisodes) {
       continue;
     }
     // 合集编号只在同一合集目录中有效；其他目录必须通过具体短片名确认内容。
-    const episodes = getEpisodes(anime).filter(ep => !globals.episodeTitleFilter.test(ep.episodeTitle));
+    const episodes = filterEpisodesByTitle(getEpisodes(anime));
     const matching = episodes.filter(ep => names.length
       ? ugcEpisodeTitles({ episodeTitle: ep.episodeTitle }).some(candidate => {
         const normalized = normalize(candidate).replace(normalize(context.title), '').trim();
@@ -2810,9 +2836,7 @@ function buildBangumiData(anime, idParam = "") {
 
   // 如果启用了集标题过滤，则应用过滤
   if (globals.enableAnimeEpisodeFilter) {
-    episodesList = episodesList.filter(episode => {
-      return !globals.episodeTitleFilter.test(episode.episodeTitle);
-    });
+    episodesList = filterEpisodesByTitle(episodesList);
     log("info", `[system] [getBangumi] Episode filter enabled. Filtered episodes: ${episodesList.length}/${anime.links.length}`);
 
     // 如果过滤后没有有效剧集，返回错误
@@ -2845,7 +2869,9 @@ function buildBangumiData(anime, idParam = "") {
         id: `season-${anime.animeId}`,
         airDate: anime.startDate,
         name: `Season ${localSeason}`,
-        episodeCount: anime.episodeCount,
+        episodeCount: globals.enableAnimeEpisodeFilter
+          ? resolveEpisodeCount(anime.episodeCount, episodesList.length)
+          : anime.episodeCount,
       },
     ],
     episodes: episodesList,

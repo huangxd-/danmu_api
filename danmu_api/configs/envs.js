@@ -570,9 +570,9 @@ export class Envs {
       'ENABLE_ANIME_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤' },
       'STRICT_TITLE_MATCH': { category: 'match', type: 'boolean', description: '严格标题匹配模式' },
       'ANIME_TITLE_SIMPLIFIED': { category: 'match', type: 'boolean', description: '搜索的剧名标题自动繁转简' },
-      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '本机剧名映射表，用于自动匹配时替换标题进行搜索。本机规则优先于远程规则。远程映射默认关闭；启用时请在下方 TITLE_MAPPING_TABLE_URL 填写：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。格式：原始标题->映射标题;原始标题->映射标题;...，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
+      'TITLE_MAPPING_TABLE': { category: 'match', type: 'map', description: '本机剧名映射表，用于自动匹配、FongMi、收藏时替换标题进行搜索。精确标题优先；未命中时会忽略标题尾部括号年份再匹配（如“变形金刚3：月黑之时(2011)”可命中“变形金刚3：月黑之时”）。本机规则优先于远程规则。远程映射默认关闭；启用时请在下方 TITLE_MAPPING_TABLE_URL 填写：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。格式：原始标题->映射标题;原始标题->映射标题;...，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"' },
       'TITLE_MAPPING_TABLE_URL': { category: 'match', type: 'text', description: '远程剧名映射表（默认关闭，填写后启用）。推荐地址：https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt。程序首次下载后保存到本地，匹配时只读取本地缓存，不连接远程；每天北京时间05:30更新，失败保留旧缓存。本机 TITLE_MAPPING_TABLE 优先于远程表。支持 GitHub 文件页、Gist、jsDelivr 及任意 TXT 直链；内容格式为每行 原始标题->映射标题，# 或 // 开头为注释' },
-      'AUTO_MATCH_MAPPING_TABLE': { category: 'match', type: 'map', description: '自动匹配映射表，仅作用于 POST /api/v2/match。多个规则使用分号分隔。\n开放映射：永生 S05E02 -> 永生 S01E58\n有限范围：永生 S05E02~03 -> 永生 S01E58~59\n指定结果：海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62\n指定平台：航海王 S01E01 -> 航海王 S01E01 @iqiyi\n可选发布组：作品 S01E01 {[group=ANi]} -> 作品 S01E02；文件名有发布组时优先专用规则，失败后回退通用规则' },
+      'AUTO_MATCH_MAPPING_TABLE': { category: 'match', type: 'map', description: '自动匹配映射表，仅作用于 POST /api/v2/match。多个规则使用分号分隔。\n开放映射：永生 S05E02 -> 永生 S01E58\n有限范围：永生 S05E02~03 -> 永生 S01E58~59\n特别篇：灵笼 S00E01~01 -> 灵笼 S01E07~07（源侧支持 S00，目标侧须为 S01+）\n指定结果：海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62\n指定平台：航海王 S01E01 -> 航海王 S01E01 @iqiyi\n可选发布组：作品 S01E01 {[group=ANi]} -> 作品 S01E02；文件名有发布组时优先专用规则，失败后回退通用规则' },
       'AUTO_MATCH_MAPPING_TABLE_URL': { category: 'match', type: 'text', description: '远程季集映射表（默认关闭）。推荐填写 danmu-mapping 的 Word/season-candidates.txt。下载后保存到本机缓存，匹配过程中只读取本机缓存；每天北京时间05:30更新，失败沿用旧缓存。本机 AUTO_MATCH_MAPPING_TABLE 优先。为防止过度转换，远程表只接受同时写明起止集的有限范围规则；源侧可选使用 {[group=ANi]} 发布组标记。' },
       'TITLE_NOISE_FILTER': { category: 'match', type: 'text', description: '剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`）。\n默认值：[（(\\[［](?:臻彩|真彩|高清|标清|超清|国配|中配|日配|粤语|原声|台配|无修|未删减|完整版|日语版|国语版|英语版|中字|字幕|助听|原版)[\\])）］]，中英文圆方括号均匹配。\n设为空值可禁用' },
       'AI_API_KEY': { category: 'match', type: 'text', description: 'AI 兜底匹配密钥（OpenAI 兼容接口）。常规的标题、季号与分集匹配都失败后，才把候选目录交给模型判定是同一部作品的哪一集；留空关闭，不影响其他匹配路径。' },
@@ -584,7 +584,7 @@ export class Envs {
       'BLOCKED_WORDS': { category: 'danmu', type: 'text', description: '屏蔽词列表：仅支持普通词（字面包含匹配）和 /正则/flags。配置页按分类单行摘要显示；编辑器各分类默认单行折叠，点击分类展开，再点击编辑修改完整条目；支持逐条添加、修改和删除，点击保存后生效。内置纯数字/符号、日期时间、地区预设正则单独分类，自定义正则归为其他正则。底层仍用逗号分隔，命中任意规则即屏蔽整条弹幕。' },
       'BLOCK_DOMESTIC_CELEBRITIES': { category: 'danmu', type: 'boolean', description: '当前作品人物与作品名屏蔽开关，默认关闭。开启后同时屏蔽当前作品完整名称及已有别名（兼容简繁、大小写、空格及标点差异，不派生作品简称）；与人物过滤共用免屏蔽名单，人物资料查询失败时仍按已知作品名称过滤。开启后通过 TMDB 获取当前国产/港台作品的中文演员名和角色名；当前作品演员表和角色表的完整姓名及派生称呼直接包含匹配：识别复姓，派生二字及以上去姓称呼及名字中相邻二字简称（如热巴、千玺）；全名、姓、名字及名字中的单字组合小/老/阿/大前缀、儿/子/哥姐/叔姨/老师/总/导/宝/崽等亲昵称谓、身份称谓和单字叠称。单字本身不屏蔽，同名普通词及更长词也会命中。需要可用的 TMDB_API_KEY，或能够代为认证的 TMDB 反代；动画角色名单同时合并 Bangumi 当前条目及动画前传、续集的角色资料；维基百科补充当前作品演员、角色及表中化名，校验作品名称与首播/上映年份，不遍历演员作品表。各资料源与弹幕拉取并行，返回前完成过滤，匹配兼容简繁中文；查询失败或名单不完整时五分钟后允许重试，完整名单缓存一天。' },
       'PERSON_FILTER_EXCLUDED_TITLES': { category: 'danmu', type: 'text', description: '不屏蔽人物和作品名的动漫/作品名单，支持逗号、分号或换行分隔。可填写实际作品名或已有别名，例如“诛仙4”；系统通过现有名称对应关系取得实际作品名后判断是否免屏蔽，名单里只填名字。同时跳过自动演员/角色及当前作品名屏蔽，其他屏蔽词、地区和日期规则继续生效。' },
-      'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0表示不去重），默认1', min: 0, max: 30 },
+      'GROUP_MINUTE': { category: 'danmu', type: 'number', description: '分钟内合并去重（0 表示不按分钟合并，多源组合仍按时点去重），默认1', min: 0, max: 30 },
       'DANMU_LIMIT': { category: 'danmu', type: 'number', description: '弹幕数量限制，单位为k，即千：默认 0，表示不限制弹幕数', min: 0, max: 100 },
       'DANMU_SIMPLIFIED_TRADITIONAL': { category: 'danmu', type: 'select', options: ['default', 'simplified', 'traditional'], description: '弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）' },
       'CONVERT_TOP_BOTTOM_TO_SCROLL': { category: 'danmu', type: 'boolean', description: '顶部/底部弹幕转换为浮动弹幕' },
@@ -639,7 +639,7 @@ export class Envs {
       blockedWords: this.resolveBlockedWords(), // 屏蔽词列表
       blockDomesticCelebrities: this.get('BLOCK_DOMESTIC_CELEBRITIES', false, 'boolean'), // 按当前作品演员/角色表屏蔽姓名
       personFilterExcludedTitles: this.get('PERSON_FILTER_EXCLUDED_TITLES', '', 'string'),
-      groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0表示不去重）
+      groupMinute: Math.min(this.get('GROUP_MINUTE', 1, 'number'), 30), // 分钟内合并去重（默认 1，最大值30，0 表示不按分钟合并，多源仍按时点去重）
       danmuLimit: this.get('DANMU_LIMIT', 0, 'number'), // 等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000
       uiTheme: this.get('UI_THEME', 'lavender', 'string').toLowerCase(), // 管理界面主题
       proxyUrl: this.get('PROXY_URL', '', 'string', true), // 代理/反代地址
