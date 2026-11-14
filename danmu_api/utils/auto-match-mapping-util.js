@@ -14,7 +14,7 @@ function normalizeRuleTitle(value) {
     .toLowerCase();
 }
 
-function parseEpisodeSide(value, { allowPlatform = false } = {}) {
+function parseEpisodeSide(value, { allowPlatform = false, allowSeasonZero = false } = {}) {
   let text = String(value || '').trim();
   let platform = '';
 
@@ -33,7 +33,8 @@ function parseEpisodeSide(value, { allowPlatform = false } = {}) {
   const season = Number(match[2]);
   const startEpisode = Number(match[3]);
   const endEpisode = match[4] === undefined ? null : Number(match[4]);
-  if (!title || season < 1 || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
+  const minSeason = allowSeasonZero ? 0 : 1;
+  if (!title || season < minSeason || startEpisode < 1 || (endEpisode !== null && endEpisode < startEpisode)) return null;
 
   return { title, season, startEpisode, endEpisode, platform };
 }
@@ -74,7 +75,8 @@ export function parseAutoMatchMappingRules(value, allowedPlatforms = []) {
       continue;
     }
 
-    const source = parseEpisodeSide(text.slice(0, arrowIndex));
+    // Source S00 is used by players for specials; targets must still be normal seasons.
+    const source = parseEpisodeSide(text.slice(0, arrowIndex), { allowSeasonZero: true });
     const targetSide = parseEpisodeSide(text.slice(arrowIndex + 2), { allowPlatform: true });
     if (!source || !targetSide) {
       warnings.push(`规则 ${index + 1} 的季集格式无效: ${text}`);

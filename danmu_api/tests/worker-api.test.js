@@ -1334,6 +1334,28 @@ test('远程映射表：本机规则优先，禁用或切换地址后清理旧�
   assert.strictEqual(Globals.resolveTitleMapping('本地剧A'), '本地映射A');
 });
 
+test('剧名映射：精确键优先，尾部年份作为兜底', () => {
+  try {
+    Globals.init({
+      TITLE_MAPPING_TABLE: [
+        '某剧(2020)->精确年份结果',
+        '某剧->无年份结果',
+        '变形金刚3：月黑之时->变形金刚3',
+        '方括号剧->方括号结果'
+      ].join(';')
+    });
+
+    assert.strictEqual(Globals.resolveTitleMapping('某剧(2020)'), '精确年份结果');
+    assert.strictEqual(Globals.resolveTitleMapping('某剧(2019)'), '无年份结果');
+    assert.strictEqual(Globals.resolveTitleMapping('某剧（2019）'), '无年份结果');
+    assert.strictEqual(Globals.resolveTitleMapping('变形金刚3：月黑之时(2011)'), '变形金刚3');
+    assert.strictEqual(Globals.resolveTitleMapping('方括号剧【2019】'), '方括号结果');
+    assert.strictEqual(Globals.resolveTitleMapping('某剧 2020'), null);
+  } finally {
+    Globals.init({});
+  }
+});
+
 test('远程映射表：Node 启动复用磁盘缓存且不发起网络请求', async () => {
   const cacheRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'danmu-api-title-mapping-node-'));
   const originalCwd = process.cwd();

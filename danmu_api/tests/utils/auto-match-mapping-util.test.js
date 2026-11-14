@@ -83,6 +83,24 @@ test('auto match mapping table', async t => {
       }, narutoRule), true);
     });
 
+    await t.test('accepts S00 only on the source side for specials', () => {
+      const parsed = parseAutoMatchMappingRules([
+        '灵笼 S00E01~01->灵笼 S01E07~07',
+        '反向测试 S01E01->反向测试 S00E01'
+      ].join(';'));
+
+      assert.equal(parsed.rules.length, 1);
+      assert.equal(parsed.warnings.length, 1);
+      assert.match(parsed.warnings[0], /季集格式无效/);
+      assert.equal(parsed.rules[0].sourceSeason, 0);
+      assert.equal(parsed.rules[0].targetSeason, 1);
+      assert.equal(resolveAutoMatchMapping(parsed.rules, {
+        title: '灵笼',
+        season: 0,
+        episode: 1
+      }).targetEpisode, 7);
+    });
+
     await t.test('rejects invalid ranges and keeps declaration order for equal specificity', () => {
       const parsed = parseAutoMatchMappingRules([
         '测试 S01E02~04->测试 S01E10~11',
@@ -309,6 +327,64 @@ test('auto match mapping table', async t => {
         AIClient.prototype.ask = originalAiAsk;
         Globals.envs.sourceOrderArr = originalOrder;
         Globals.aiValid = originalAiValid;
+      }
+    });
+
+    await t.test('maps source S00 specials and records season 0 preferences', async () => {
+      const originalSearch = TencentSource.prototype.search;
+      const originalHandleAnimes = TencentSource.prototype.handleAnimes;
+      const originalGetComments = TencentSource.prototype.getComments;
+      const originalOrder = Globals.envs.sourceOrderArr;
+      const originalAiValid = Globals.aiValid;
+      const clientIp = 's00-mapping-ip';
+
+      TencentSource.prototype.search = async keyword => [{ keyword }];
+      TencentSource.prototype.handleAnimes = async (_source, title, results, details) => {
+        const anime = createFavoriteAnime(title, 14, 935000);
+        results.push(anime);
+        details.set(String(anime.animeId), anime);
+      };
+      TencentSource.prototype.getComments = async () => [{ p: '1,1,16777215', m: 's00-test' }];
+
+      try {
+        resetFavoriteState({
+          AUTO_MATCH_MAPPING_TABLE: [
+            '灵笼 S00E01~01->灵笼 S01E07~07',
+            '灵笼 S00E02~02->灵笼 S01E14~14'
+          ].join(';'),
+          LOG_LEVEL: 'error'
+        });
+        Globals.envs.sourceOrderArr = ['tencent'];
+        Globals.lastSelectMap = new Map();
+        Globals.aiValid = false;
+
+        const runMatch = async fileName => {
+          const request = new Request('http://localhost/api/v2/match', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ fileName })
+          });
+          return parseResponse(await matchAnime(new URL(request.url), request, clientIp));
+        };
+
+        let body = await runMatch('灵笼 S00E01');
+        assert.equal(body.matches[0].episodeId, 9350007);
+        assert.equal(body.matches[0].episodeTitle, '【qq】 第7集');
+
+        body = await runMatch('灵笼 S00E02');
+        assert.equal(body.matches[0].episodeId, 9350014);
+        assert.equal(body.matches[0].episodeTitle, '【qq】 第14集');
+
+        await getComment('/api/v2/comment/9350008', 'json', false, clientIp);
+        assert.equal(hasSeasonSpecificPreference('灵笼', 0), true);
+        assert.match(Globals.lastSelectMap.get('灵笼').offsets['0'], /^2:/);
+      } finally {
+        TencentSource.prototype.search = originalSearch;
+        TencentSource.prototype.handleAnimes = originalHandleAnimes;
+        TencentSource.prototype.getComments = originalGetComments;
+        Globals.envs.sourceOrderArr = originalOrder;
+        Globals.aiValid = originalAiValid;
+        Globals.lastSelectMap = new Map();
       }
     });
   });
