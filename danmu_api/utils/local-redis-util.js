@@ -1,7 +1,7 @@
 import { globals } from '../configs/globals.js';
 import { log } from './log-util.js';
 import { simpleHash, serializeValue } from "./codec-util.js";
-import { queryCacheKeys, canPersistCacheKey, restoreQueryCache } from "./cache-util.js";
+import { queryCacheKeys, canPersistCacheKey, cacheSnapshotValue, restoreQueryCache } from "./cache-util.js";
 
 // =====================
 // 本地 Redis 读写请求
@@ -232,7 +232,7 @@ export async function updateLocalRedisCaches({ keys, force = false, timeoutMs } 
     const updates = [];
 
     // 检查每个变量的哈希值
-    const variables = queryCacheKeys.filter(key => !keys || keys.includes(key)).map(key => ({ key, value: globals[key] }));
+    const variables = queryCacheKeys.filter(key => !keys || keys.includes(key)).map(key => ({ key, value: cacheSnapshotValue(key) }));
 
     for (const { key, value } of variables) {
       // 对于 lastSelectMap（Map 对象），需要转换为普通对象后再序列化

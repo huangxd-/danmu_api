@@ -1,4 +1,5 @@
 import { globals } from '../configs/globals.js';
+import { recordConfigEffect } from './pipeline-trace.js';
 import { log } from './log-util.js'
 import { binResponse, jsonResponse, xmlResponse } from "./http-util.js";
 import { simplized, traditionalized } from './zh-util.js';
@@ -472,6 +473,13 @@ export function convertToDanmakuJson(contents, platform) {
     }));
     const targetLabel = globals.danmuSimplifiedTraditional === 'simplified' ? '简体字' : '繁体字';
     log("info", `[system] [danmu] [danmu convert] 转换了 ${danmus.length} 条弹幕为${targetLabel}`);
+    recordConfigEffect('DANMU_SIMPLIFIED_TRADITIONAL', {
+      label: '弹幕字形转换',
+      hit: danmus.length > 0,
+      before: { 弹幕条数: danmus.length },
+      after: { 目标字形: targetLabel, 弹幕条数: danmus.length, 转换条数: danmus.length },
+      sum: true,
+    });
   }
 
   // =====================
@@ -526,16 +534,41 @@ export function convertToDanmakuJson(contents, platform) {
     }
   }
 
+  recordConfigEffect('BLOCKED_WORDS', {
+    label: '屏蔽词过滤',
+    hit: removedCount > 0,
+    before: { 弹幕条数: danmus.length, 生效规则数: regexArray.length },
+    after: { 弹幕条数: filteredDanmus.length },
+    removed: blockedSamples.map(sample => ({ value: sample })),
+    removedCount,
+    sum: true,
+  });
+
   // 按n分钟内去重；来源标签多于一种即为多源组合
   const isMultiSource = sourceLabels.size > 1;
   log("info", `[system] [danmu] 去重分钟数: ${globals.groupMinute}，来源标签 ${sourceLabels.size} 种`);
   const groupedDanmus = groupDanmusByMinute(filteredDanmus, globals.groupMinute, isMultiSource);
+
+  recordConfigEffect('GROUP_MINUTE', {
+    label: '同时间点去重',
+    hit: groupedDanmus.length < filteredDanmus.length,
+    before: { 去重窗口: `${globals.groupMinute} 分钟`, 弹幕条数: filteredDanmus.length, 来源数: sourceLabels.size },
+    after: { 弹幕条数: groupedDanmus.length },
+    sum: true,
+  });
 
   // 处理点赞数
   const likeDanmus = handleDanmusLike(groupedDanmus);
 
   // 应用弹幕转换规则（在去重和限制弹幕数之后）
   let convertedDanmus = limitDanmusByCount(likeDanmus, globals.danmuLimit);
+  recordConfigEffect('DANMU_LIMIT', {
+    label: '弹幕数量上限',
+    hit: convertedDanmus.length < likeDanmus.length,
+    before: { 上限: globals.danmuLimit === 0 ? '不限制' : `${globals.danmuLimit} 千条`, 弹幕条数: likeDanmus.length },
+    after: { 弹幕条数: convertedDanmus.length },
+    sum: true,
+  });
   if (globals.convertTopBottomToScroll || globals.convertColor === 'white' || globals.convertColor === 'color') {
     let topBottomCount = 0;
     let colorCount = 0;
@@ -605,6 +638,20 @@ export function convertToDanmakuJson(contents, platform) {
     if (colorCount > 0) {
       log("info", `[system] [danmu] [danmu convert] 转换了 ${colorCount} 条弹幕颜色（其中渐变色弹幕 ${gradientCount} 条）`);
     }
+    recordConfigEffect('CONVERT_TOP_BOTTOM_TO_SCROLL', {
+      label: '顶部/底部弹幕转滚动',
+      hit: topBottomCount > 0,
+      before: { 弹幕条数: convertedDanmus.length },
+      after: { 弹幕条数: convertedDanmus.length, 转换条数: topBottomCount },
+      sum: true,
+    });
+    recordConfigEffect('CONVERT_COLOR', {
+      label: '弹幕颜色转换',
+      hit: colorCount > 0,
+      before: { 转换模式: globals.convertColor || '不转换', 弹幕条数: convertedDanmus.length },
+      after: { 弹幕条数: convertedDanmus.length, 转换条数: colorCount, 渐变色条数: gradientCount },
+      sum: true,
+    });
   }
 
   log("info", `[system] [danmu] danmus_original: ${danmus.length}`);

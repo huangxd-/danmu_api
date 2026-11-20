@@ -552,7 +552,7 @@ export default class DandanSource extends BaseSource {
             }
           } else {
             // 初始数据源逻辑：执行严密的完整标题及季度双重校验
-            isMatch = allTitles.some(t => t && titleMatches(t, queryTitle, resolvedQuerySeason));
+            isMatch = allTitles.some(t => t && titleMatches(t, queryTitle, resolvedQuerySeason, false, 0.8, anime.animeTitle || allTitles[0]));
           }
 
           // 丢弃不符合拦截策略的条目，停止后续构建流程
