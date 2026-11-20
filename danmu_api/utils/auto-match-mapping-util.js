@@ -186,7 +186,7 @@ function normalizeMediaType(value) {
   return type;
 }
 
-function stripCandidateTitleMetadata(value) {
+export function stripCandidateTitleMetadata(value) {
   return String(value || '')
     .replace(/\s*from\s+.+$/i, '')
     .replace(/[（(](?:19|20)\d{2}[)）]/g, '')

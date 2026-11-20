@@ -12,6 +12,28 @@ import { previewJsContent } from '../../ui/js/preview.js';
 import { systemSettingsJsContent } from '../../ui/js/systemsettings.js';
 import { HTML_TEMPLATE } from '../../ui/template.js';
 
+test('按剧匹配规则使用当前配置的来源下拉框，其他映射仍可自由输入', () => {
+  const container = {};
+  const context = vm.createContext({
+    document: {
+      body: { dataset: {} }, addEventListener() {},
+      getElementById: id => id === 'value-input-container' ? container : id === 'env-form' ? { addEventListener() {} } : null
+    },
+    window: { addEventListener() {} }, editingCategory: 'match', uiIcon: () => '',
+    escapeHtml: value => value.replaceAll('&', '&amp;'), previewState: { categorizedVars: {} }
+  });
+  vm.runInContext(systemSettingsJsContent, context);
+  const item = { key: 'TITLE_PLATFORM_MAP', type: 'map', options: ['first'] };
+  context.renderValueInput(item);
+  assert.match(container.innerHTML, /<select class="map-input-right"[\s\S]*value="first"/);
+  context.previewState.categorizedVars.match = [{ key: item.key, options: ['second&third'] }];
+  context.renderValueInput(item);
+  assert.match(container.innerHTML, /<option value="second&amp;third">/);
+  assert.doesNotMatch(container.innerHTML, /value="first"/);
+  context.renderValueInput({ key: 'TITLE_MAPPING_TABLE', type: 'map' });
+  assert.match(container.innerHTML, /<input type="text" class="map-input-right"/);
+});
+
 test('cache clear UI displays recovery instructions and persistence failures', async () => {
   const start = systemSettingsJsContent.indexOf('async function confirmClearCache()');
   const end = systemSettingsJsContent.indexOf('// 显示重新部署确认模态框', start);

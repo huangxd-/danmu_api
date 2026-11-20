@@ -384,9 +384,8 @@ test('resolvePlatformOrder 单个/组合平台、空值与记账', () => {
     assert.deepStrictEqual(Envs.resolvePlatformOrder(), ['bilibili1&dandan', 'youku', null]);
     assert.deepStrictEqual(Envs.accessedEnvVars.get('PLATFORM_ORDER'), ['bilibili1&dandan', 'youku']);
 
-    // 仅做首尾 trim：'&' 两侧的内部空格会保留在返回项中，但校验时逐段 trim
     initEnvs({ PLATFORM_ORDER: ' custom & animeko , qiyi&nope ' });
-    assert.deepStrictEqual(Envs.resolvePlatformOrder(), ['custom & animeko', null]);
+    assert.deepStrictEqual(Envs.resolvePlatformOrder(), ['custom&animeko', null]);
 
     initEnvs({ PLATFORM_ORDER: ',,,,' });
     assert.deepStrictEqual(Envs.resolvePlatformOrder(), [null]);
@@ -396,6 +395,19 @@ test('resolvePlatformOrder 单个/组合平台、空值与记账', () => {
   } finally {
     restoreProcessEnv(saved);
   }
+});
+
+test('按剧匹配平台与 UI 选项共享平台定义，并随合并配置更新', () => {
+  const config = Globals.init({
+    TITLE_PLATFORM_MAP: '甲->tencent;乙->bilibili ＆ iqiyi;丙->qq&unknown;丁->;甲->imgo;戊->qq->qiyi',
+    MERGE_SOURCE_PAIRS: 'bilibili&iqiyi;renren&hanjutv;dandan',
+    PLATFORM_ORDER: 'custom&qq'
+  });
+  assert.deepEqual([...config.titlePlatformMap], [['甲', 'imgo'], ['乙', 'bilibili1&qiyi']]);
+  assert.deepEqual(config.envVarConfig.TITLE_PLATFORM_MAP.options, [...Envs.ALLOWED_PLATFORMS, 'bilibili1&qiyi', 'renren&hanjutv', 'custom&qq']);
+  Globals.init({ MERGE_SOURCE_PAIRS: 'tencent&animeko' });
+  assert.equal(config.titlePlatformMap.size, 0);
+  assert.deepEqual(config.envVarConfig.TITLE_PLATFORM_MAP.options, [...Envs.ALLOWED_PLATFORMS, 'qq&animeko']);
 });
 
 test('resolveMergeSourcePairs 主源校验、自我合并排除与分隔符', () => {

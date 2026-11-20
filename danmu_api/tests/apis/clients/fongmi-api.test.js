@@ -43,6 +43,10 @@ test('fongmi-api season aware scoring', () => {
   assert.equal(extractFongmiSeasonNumber('剧名 2x05'), 2);
   assert.equal(extractFongmiSeasonNumber('1920x1080'), null);
   assert.equal(extractFongmiSeasonNumber('凡人修仙传 第01集'), null);
+  assert.equal(extractFongmiSeasonNumber('第3期'), null);
+  assert.equal(extractFongmiSeasonNumber('第十四期下'), null);
+  assert.equal(extractFongmiSeasonNumber('第二季第3期'), 2);
+  assert.equal(extractFongmiSeasonNumber('第3期（第二季）'), 2);
   assert.equal(extractFongmiSeasonNumber('奔跑吧 第20180512期'), null);
   assert.equal(extractFongmiSeasonNumber(''), null);
 
