@@ -460,6 +460,27 @@ function appendDetail(base, detail) {
   return detail ? `${base}（${detail}）。` : `${base}。`;
 }
 
+// 弹幕地址查询串中的凭据类参数在登记前替换为掩码；名单与请求路径的查询串遮罩共用同一套语义
+const TRACE_CREDENTIAL_PARAMS = new Set([
+  'token', 'admintoken', 'accesstoken', 'refreshtoken', 'apikey', 'key',
+  'secret', 'password', 'passwd', 'auth', 'authorization', 'sign', 'signature', 'sig',
+]);
+
+// 对登记进步骤输入的弹幕地址遮蔽凭据参数，保留路径与非凭据参数以便排查
+export function maskCredentialParams(targetUrl) {
+  const text = String(targetUrl ?? '');
+  const qIndex = text.indexOf('?');
+  if (qIndex === -1) return text;
+  const base = text.slice(0, qIndex);
+  const params = new URLSearchParams(text.slice(qIndex + 1));
+  for (const key of [...params.keys()]) {
+    const normalized = key.toLowerCase().replace(/[_-]/g, '');
+    if (TRACE_CREDENTIAL_PARAMS.has(normalized)) params.set(key, '***');
+  }
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
 // 按输出字段识别步骤用途：步骤名仅用于展示，改名不影响诊断
 function findStepOutputs(steps, predicate) {
   for (let i = (steps || []).length - 1; i >= 0; i--) {

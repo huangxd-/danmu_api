@@ -299,6 +299,18 @@ test('recordConfigEffect 的记录不串到下一步骤', () => {
   assert.equal(trace.steps[1].changes, undefined);
 });
 
+test('maskCredentialParams 遮蔽地址查询串中的凭据参数', async () => {
+  const { maskCredentialParams } = await import('../../utils/pipeline-trace.js');
+  const masked = maskCredentialParams('https://example.com/d?token=a&sign=b&api-key=c&episode=3&path/to/page');
+  assert.match(masked, /token=%2A%2A%2A|token=\*\*\*/, '凭据参数应遮蔽');
+  assert.match(masked, /sign=%2A%2A%2A|sign=\*\*\*/, '签名参数应遮蔽');
+  assert.match(masked, /api-key=%2A%2A%2A|api-key=\*\*\*/, '带连字符的变体应遮蔽');
+  assert.match(masked, /episode=3/, '非凭据参数应保留');
+  assert.match(masked, /^https:\/\/example\.com\/d/, '路径应保留');
+  // 无查询串的地址原样返回
+  assert.equal(maskCredentialParams('https://example.com/page'), 'https://example.com/page');
+});
+
 test('同组的主标题与别名归并为一条判定并显示归属', () => {
   useAsyncLocalStorage(StubStorage);
   const trace = createTrace('GET', '/api/v2/search/anime');

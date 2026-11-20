@@ -26,7 +26,7 @@ import { getSourceByKey, getSourceMetaByKey, getSourceLabel, getLogNameByKey } f
 import { isHongguoPlayerUrl, isHongguoSeriesId } from "../sources/hongguo.js";
 import BilibiliSource from "../sources/bilibili.js"; // resolveB23Link 为 BilibiliSource 实例方法，单测中仍需直接 new
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
-import { createPhaseTimer, markStepActive, peekConfigEffects, traceStep, recordConfigEffect } from "../utils/pipeline-trace.js";
+import { createPhaseTimer, maskCredentialParams, markStepActive, peekConfigEffects, traceStep, recordConfigEffect } from "../utils/pipeline-trace.js";
 
 // =====================
 // 兼容弹弹play接口
@@ -1845,6 +1845,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
         ].filter(Boolean).join('、');
         candidates.push({
           title: anime.animeTitle,
+          animeId: anime.animeId,
           source: anime.source,
           episodeTitle: matchedEpisode.episodeTitle,
           score: currentScore,
@@ -2226,7 +2227,9 @@ export function buildMatchScoring(platformAttempts, resAnime) {
   const rows = [];
   const counts = { 标题未命中: 0, 年份不符: 0, 无分集: 0, 单集候选跳过: 0, 无匹配集数: 0, 资源平台不匹配偏好组: 0 };
   for (const [attemptIndex, attempt] of (platformAttempts || []).entries()) {
-    const selectedTitle = attempt.selected ? resAnime?.animeTitle : null;
+    const selectedKey = attempt.selected && resAnime
+      ? `${resAnime.animeTitle}|${resAnime.animeId ?? ''}|${resAnime.source ?? ''}`
+      : null;
     const platformLabel = attempt.platform.split(/[&＆]/).map(name => name.trim()).filter(Boolean).join('、');
     // 每轮尝试单独成组，同一候选在不同偏好组的重复参与如实标为多轮，不合并成多个候选
     const attemptLabel = `第 ${attemptIndex + 1} 轮 · ${platformLabel}`;
@@ -2251,7 +2254,11 @@ export function buildMatchScoring(platformAttempts, resAnime) {
     const scoreTally = new Map();
     for (const candidate of scored) scoreTally.set(candidate.score, (scoreTally.get(candidate.score) || 0) + 1);
     for (const candidate of scored) {
-      const isSelected = Boolean(selectedTitle && candidate.title === selectedTitle);
+      // 不同源可能返回相同标题的候选，选中判定须同时比对唯一标识
+      const isSelected = Boolean(
+        selectedKey
+        && `${candidate.title}|${candidate.animeId ?? ''}|${candidate.source ?? ''}` === selectedKey
+      );
       const tieNote = isSelected && scoreTally.get(candidate.score) > 1 ? '与同分候选并列，按候选顺序优先' : '';
       rows.push({
         尝试: attemptLabel,
@@ -3050,7 +3057,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
   if (url?.startsWith('local:')) {
     phase('弹幕·资源定位', {
       status: 'ok', reason: '弹幕库 ID 指向本地资源，转由本地弹幕流程处理',
-      inputs: { commentId }, outputs: { url },
+      inputs: { commentId }, outputs: { url: maskCredentialParams(url) },
     });
     return getCommentByUrl(url, queryFormat, segmentFlag, includeDuration);
   }
@@ -3409,7 +3416,7 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
       status: 'ok',
       // 格式错误不改变流程，仅提示原因，避免用户把源站无结果误判为源故障
       reason: malformedOffset || undefined,
-      inputs: { url, format: queryFormat || 'json', segment: segmentFlag },
+      inputs: { url: maskCredentialParams(url), format: queryFormat || 'json', segment: segmentFlag },
       outputs: { 链接数: String(url || '').split(MERGE_DELIMITER).filter(Boolean).length, attachDuration: shouldAttachDuration },
     });
     // 检查弹幕缓存
@@ -3503,7 +3510,7 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     phase('弹幕·抓取与过滤', {
       status: danmus.length === 0 ? 'empty' : 'ok',
       reason: danmus.length === 0 ? '所有弹幕源均未返回内容' : undefined,
-      inputs: { url: cleanUrl, 链接数: String(url || '').split(MERGE_DELIMITER).filter(Boolean).length, segment: segmentFlag },
+      inputs: { url: maskCredentialParams(cleanUrl), 链接数: String(url || '').split(MERGE_DELIMITER).filter(Boolean).length, segment: segmentFlag },
       outputs: { rawCount: stepEffectsRawDanmuCount(), count: danmus.length, linkOffset: singleUrlOffset, linkOffsetPercent: singleUrlOffsetPercent },
     });
 
@@ -3572,7 +3579,7 @@ export async function getSegmentComment(segment, queryFormat) {
 
     phase('分段弹幕·请求解析', {
       status: 'ok',
-      inputs: { url, platform, segmentStart: segment.segment_start, segmentEnd: segment.segment_end },
+      inputs: { url: maskCredentialParams(url), platform, segmentStart: segment.segment_start, segmentEnd: segment.segment_end },
       outputs: { format: queryFormat || 'json' },
     });
 

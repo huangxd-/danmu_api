@@ -383,15 +383,31 @@ test('buildMatchScoring 选中项与同分候选并列时标注顺序优先', ()
     platform: 'qq',
     selected: true,
     candidates: [
-      { title: '钢铁侠2(2010)【外语电影】from tencent', source: 'tencent', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
-      { title: '钢铁侠2(2010)【外语电影】from youku', source: 'youku', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
+      { title: '钢铁侠2(2010)【外语电影】from tencent', animeId: 1001, source: 'tencent', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
+      { title: '钢铁侠2(2010)【外语电影】from youku', animeId: 1002, source: 'youku', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
     ],
   }];
-  const { rows } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2(2010)【外语电影】from tencent' });
+  const { rows } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2(2010)【外语电影】from tencent', animeId: 1001, source: 'tencent' });
   const selected = rows.find(row => row.结果 === '选中');
   assert.match(selected.结果说明, /同分候选并列，按候选顺序优先/, '同分并列时说明选中依据');
+  assert.equal(selected.尝试.includes('qq'), true);
   // 未选中项不带并列说明
   assert.doesNotMatch(rows.find(row => row.结果 === '未选中').结果说明, /同分候选并列/);
+});
+
+test('buildMatchScoring 跨源同标题候选只标记实际选中的一条', () => {
+  const attempts = [{
+    platform: '默认',
+    selected: true,
+    candidates: [
+      { title: '同名剧', animeId: 1, source: 'bilibili', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+      { title: '同名剧', animeId: 2, source: 'tencent', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+    ],
+  }];
+  const { rows } = buildMatchScoring(attempts, { animeTitle: '同名剧', animeId: 1, source: 'bilibili' });
+  const selectedRows = rows.filter(row => row.结果 === '选中');
+  assert.equal(selectedRows.length, 1, '同标题不同源的两条候选只能有一条被标为选中');
+  assert.match(selectedRows[0].候选, /同名剧/);
 });
 
 test('buildMatchScoring 按轮次列出未评分候选与评分候选', () => {
@@ -408,12 +424,12 @@ test('buildMatchScoring 按轮次列出未评分候选与评分候选', () => {
       platform: 'bilibili&animeko',
       selected: true,
       candidates: [
-        { title: '钢铁侠2', source: 'iqiyi', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+        { title: '钢铁侠2', animeId: 1003, source: 'iqiyi', episodeTitle: '第1集', score: 100, stage: '参与评分' },
         { title: '钢铁侠3', source: 'iqiyi', stage: '标题未命中' },
       ],
     },
   ];
-  const { rows, counts } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2' });
+  const { rows, counts } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2', animeId: 1003, source: 'iqiyi' });
   // 每一轮尝试独立成行，同一候选在不同偏好组的重复参与可辨识
   const rejected = rows.filter(row => row.结果 === '标题未命中');
   assert.equal(rejected.length, 2);
