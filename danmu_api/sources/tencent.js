@@ -32,8 +32,8 @@ export default class TencentSource extends BaseSource {
   }
 
   titleOrAliasMatches(anime, queryTitle, querySeason = null) {
-    if (titleMatches(anime.title, queryTitle, querySeason)) return true;
-    return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason));
+    if (titleMatches(anime.title, queryTitle, querySeason, false, 0.8, anime.title)) return true;
+    return Array.isArray(anime.aliases) && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason, false, 0.8, anime.title));
   }
 
   // 搜索结果中用于补充同题材作品的分区：相关影视、与 X 相关、与关键词同名

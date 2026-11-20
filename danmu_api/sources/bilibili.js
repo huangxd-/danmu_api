@@ -5,7 +5,8 @@ import { httpGet, httpGetWithStreamCheck } from "../utils/http-util.js";
 import { parseDanmakuBase64, md5, convertToAsciiSum, decodeHtmlEntities } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
-import { titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle } from "../utils/common-util.js";
+import { titleMatches, titleDecisionMeta, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle } from "../utils/common-util.js";
+import { recordTitleDecision } from "../utils/pipeline-trace.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { simplized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
@@ -618,11 +619,19 @@ export default class BilibiliSource extends BaseSource {
 
     // 基础标题与季度匹配过滤
     // 港澳台资源不做严格标题匹配，其他资源根据当前标题或别名池（已包含原标题和 org_title）验证查询匹配度
-    let filteredAnimes = sourceAnimes.filter(anime => 
-        anime.isOversea || 
-        titleMatches(anime.title, queryTitle, querySeason) || 
-        (anime.aliases && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason)))
-    );
+    let filteredAnimes = sourceAnimes.filter(anime => {
+        if (anime.isOversea) {
+            // 直接放行也是一种判定结果，登记后接口详情才能解释该候选为何被保留
+            recordTitleDecision({
+                ...titleDecisionMeta(),
+                group: anime.title, value: anime.title, source: 'bilibili', query: queryTitle,
+                matched: true, reason: '港澳台资源不做标题匹配，直接保留',
+            });
+            return true;
+        }
+        return titleMatches(anime.title, queryTitle, querySeason, false, 0.8, anime.title)
+            || (anime.aliases && anime.aliases.some(alias => titleMatches(alias, queryTitle, querySeason, false, 0.8, anime.title)));
+    });
 
     // 提取搜索词中的明确季度信息或使用传入的季度参数
     const resolvedQuerySeason = querySeason !== null ? querySeason : getExplicitSeasonNumber(queryTitle);

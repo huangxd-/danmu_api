@@ -11,7 +11,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { parseLocalDanmu } from '../utils/local-danmu-parser.js';
-import { handleRequest, netlifyHandler, vercelHandler } from '../worker.js';
+import { handleRequest, handleRequestWithTrace, netlifyHandler, vercelHandler } from '../worker.js';
+import { getTraceRecords } from '../utils/pipeline-trace.js';
 import { MockRequest, parseResponse, readRequestBody, urlPrefix, withMockFetch } from './helpers/context.js';
 import { localDanmuEncodings, localDanmuExpected, localDanmuJson } from './helpers/local-danmu.js';
 import { matchAnime, searchAnime } from '../apis/dandan-api.js';
@@ -1533,4 +1534,38 @@ test('远程季集映射表：刷新接口保留路径、只接受 ADMIN_TOKEN�
   } finally {
     resetRemoteAutoMatchMappingForTests();
   }
+});
+
+test('限流拦截在详情中留下 skip 步骤与原因', async () => {
+  Globals.init({ TOKEN: '87654321', RATE_LIMIT_MAX_REQUESTS: '1', COMMENT_CACHE_MINUTES: '0' });
+  const env = { TOKEN: '87654321', RATE_LIMIT_MAX_REQUESTS: '1', COMMENT_CACHE_MINUTES: '0' };
+  const ip = '1.2.3.4';
+  const request = () => new Request('http://localhost/87654321/api/v2/comment/10001', {
+    headers: { authorization: '87654321' },
+  });
+
+  await handleRequestWithTrace(request(), env, 'node', ip);
+  const limited = await handleRequestWithTrace(request(), env, 'node', ip);
+  assert.equal(limited.status, 429);
+
+  const step = getTraceRecords().at(-1).steps.find(item => item.name === '弹幕·限流拦截');
+  assert.ok(step, '缺少限流拦截步骤');
+  assert.equal(step.status, 'skip');
+  assert.match(step.reason, /超过限流阈值（1 分钟内 1\/1 次）/);
+  assert.equal(step.inputs.限制次数, 1);
+});
+
+test('请求记录回填响应状态码', async () => {
+  Globals.init({ TOKEN: '87654321', ADMIN_TOKEN: 'admin-tok', SOURCE_ORDER: 'local' });
+  const env = { TOKEN: '87654321', ADMIN_TOKEN: 'admin-tok', SOURCE_ORDER: 'local' };
+  Globals.reqRecords = [];
+  await handleRequestWithTrace(
+    new Request('http://localhost/87654321/api/v2/favorite/remove', {
+      method: 'POST',
+      headers: { authorization: 'admin-tok', 'content-type': 'application/json' },
+      body: '{}',
+    }),
+    env, 'node', '1.1.1.1',
+  );
+  assert.equal(Globals.reqRecords.at(-1).statusCode, 400);
 });

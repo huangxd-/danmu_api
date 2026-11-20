@@ -542,6 +542,23 @@ export const HTML_TEMPLATE = /* html */ `
         </div>
     </div>
 
+    <!-- 接口详情弹窗：点击请求记录打开，展示总览 / 结果诊断 / 处理流水线 / 配置覆盖 -->
+    <div class="modal" id="interface-detail-modal" aria-hidden="true">
+        <div class="modal-content interface-detail-modal-content">
+            <div class="modal-header">
+                <h3>接口详情</h3>
+                <button type="button" class="close-btn" onclick="closeInterfaceDetail()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="interface-detail-loading" class="interface-detail-loading">加载中…</div>
+                <div id="interface-detail-content" class="interface-detail-content" hidden></div>
+            </div>
+            <div class="modal-footer" id="interface-detail-footer" hidden>
+                <button type="button" class="btn btn-primary" onclick="retryInterfaceDetail()">重试</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 编辑模态框 -->
     <div class="modal" id="env-modal">
         <div class="modal-content">
