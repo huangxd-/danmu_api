@@ -10,6 +10,8 @@ import { Envs } from '../../configs/envs.js';
 import { Globals } from '../../configs/globals.js';
 import { Season } from '../../models/dandan-model.js';
 import { findSecondaryMatches, applyMergeLogic, resolveDubVersionLinkIndex, mergeLinkEntry } from '../../utils/merge-util.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createTrace, runWithTrace, traceStep, useAsyncLocalStorage } from '../../utils/pipeline-trace.js';
 
 test('merge findSecondaryMatches 忽略规则与剧集标题的季度与类型噪声', () => {
   Globals.init({ LOG_LEVEL: 'error' });
@@ -1091,4 +1093,42 @@ test('merge applyMergeLogic 合并后按最终 links 重算总集数', async () 
   assert.ok(merged, '应产生合并条目');
   assert.ok(merged.links.length > 2, '合并后 links 多于主源');
   assert.strictEqual(merged.episodeCount, merged.links.length, '总集数以最终 links 为准');
+});
+
+test('applyMergeLogic 登记源合并明细供接口详情展示', async () => {
+  useAsyncLocalStorage(AsyncLocalStorage);
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&bilibili,renren' });
+  process.env.CUSTOM_MERGE_RULES = '';
+
+  const buildAnime = (animeId, animeTitle, source, links) => ({
+    animeId, bangumiId: String(animeId), animeTitle, aliases: [],
+    source, type: 'web', typeDescription: '网络放送',
+    startDate: '2026-03-18T16:00:00.000Z', links,
+  });
+  const buildLinks = (count, platform) => Array.from({ length: count }, (_, i) => ({
+    id: 100 + i,
+    title: `【${platform}】 第${i + 1}集`,
+    url: `https://example.com/${platform}/${i + 1}`,
+  }));
+
+  // 追踪作用域内执行合并，使登记落到步骤
+  const trace = createTrace('GET', '/api/v2/search/anime');
+  const curAnimes = [
+    buildAnime(1, '合并主源(2026)【网络放送】from dandan', 'dandan', buildLinks(3, 'dandan')),
+    buildAnime(2, '合并主源(2026)【网络放送】from bilibili', 'bilibili', buildLinks(3, 'bilibili')),
+    buildAnime(3, '独立结果(2026)【网络放送】from renren', 'renren', buildLinks(2, 'renren')),
+  ];
+  // 合并是异步过程：结束后再归档步骤，登记才能带上合并明细
+  await runWithTrace(trace, async () => {
+    await applyMergeLogic(curAnimes, new Map());
+    traceStep('搜索·源合并与过滤', Date.now(), {});
+  });
+
+  const change = trace.steps[0].changes.find(c => c.config === 'MERGE_SOURCE_PAIRS');
+  assert.ok(change, '应登记源合并明细');
+  assert.equal(change.kind, 'stats');
+  assert.equal(change.context.单源保留, 'renren', '单源保留配置应说明');
+  assert.match(change.summary, /3 条候选合并为 2 条/);
+  assert.ok(change.table.rows.some(row => String(row.结果).includes('副源')), '合并项应列出副源');
+  assert.ok(change.table.rows.some(row => String(row.结果).includes('已并入')), '被消费的原始条目应说明去向');
 });
