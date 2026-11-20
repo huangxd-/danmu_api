@@ -10,6 +10,26 @@ const buildTitle = (epData) => IqiyiSource.prototype._buildEpisodeTitle.call({},
 const ensureNumber = (title, animeTitle, order) =>
   IqiyiSource.prototype._ensureEpisodeNumber.call({}, title, animeTitle, order);
 
+const seasonCandidates = [
+  { title: '错爱2', mediaId: 'series' },
+  { title: '错爱（2007）', mediaId: 'movie' },
+  { title: '错爱2外传3', mediaId: 'spin-off' },
+];
+
+for (const [title, season, expected] of [
+  ['错爱2', 1, ['series', 'movie']],
+  ['错爱', 1, ['movie']],
+  ['错爱', 2, ['series']],
+]) {
+  test(`iqiyi 搜索「${title}」第 ${season} 季时区分完整片名与数字季号`, async () => {
+    const source = new IqiyiSource();
+    const requested = [];
+    source.getEpisodes = async (mediaId) => { requested.push(mediaId); return []; };
+    await source.handleAnimes(seasonCandidates, title, [], null, season);
+    assert.deepStrictEqual(requested, expected);
+  });
+}
+
 test('iqiyi episode title uses short_display_name and appends subtitle', () => {
   assert.strictEqual(buildTitle({ short_display_name: '太古神尊 天魔秘藏' }), '太古神尊 天魔秘藏');
   assert.strictEqual(
