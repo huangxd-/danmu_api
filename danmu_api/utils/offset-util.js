@@ -1,14 +1,8 @@
 import { normalizeTitleForMatch } from './common-util.js';
+import { platformKey } from './platform-util.js';
 
 // 弹幕时间偏移独立模块
 // 职责：解析链接 @偏移 与偏移规则、匹配偏移量、应用偏移到弹幕、按偏移换算时间轴时长
-
-// 来源→平台别名映射（source 名和 platform 名不一致时扩展匹配）
-const SOURCE_ALIASES = {
-  tencent: 'qq',
-  iqiyi: 'qiyi',
-  bilibili: 'bilibili1'
-};
 
 // 规范化季/集编号（S1→S01, E3→E03）
 function normalizeSegment(segment) {
@@ -104,7 +98,7 @@ export function resolveOffsetRule(rules, { anime, fullTitle, season, episode, so
       const trimmed = s.trim().toLowerCase();
       if (trimmed) {
         sourceKeys.add(trimmed);
-        if (SOURCE_ALIASES[trimmed]) sourceKeys.add(SOURCE_ALIASES[trimmed]);
+        sourceKeys.add(platformKey(trimmed));
       }
     }
   }
