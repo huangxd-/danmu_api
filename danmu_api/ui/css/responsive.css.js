@@ -172,18 +172,6 @@ export const responsiveCssContent = /* css */ `
         margin: 6px 0 0;
     }
 
-    .record-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .record-method,
-    .record-interface,
-    .record-ip {
-        width: 100%;
-        box-sizing: border-box;
-    }
-
     .footer {
         border-radius: 14px;
         padding: 14px 16px;

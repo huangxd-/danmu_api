@@ -494,6 +494,12 @@ function switchSection(section, event = null) {
                     fetchRealLogs();
                 }
             }
+            // 如果切换到请求记录页面，则立即刷新记录
+            if (section === 'request-records') {
+                if (typeof renderRequestRecords === 'function') {
+                    renderRequestRecords();
+                }
+            }
         }
     } else {
         // 对于非受保护页面（如配置预览），正常切换

@@ -120,7 +120,7 @@ LogVar 弹幕 API 服务器
   - 接口调试/弹幕测试
     - 自动匹配测试、手动匹配测试及收藏管理
   - 推送弹幕
-  - 请求记录
+  - 请求记录（含接口详情：处理流水线步骤、结果诊断、配置生效与脱敏视图）
   - 本地弹幕上传、列表管理和删除
   - 系统管理
 
@@ -776,6 +776,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │       ├── migu-util.js        # 咪咕工具
 │       ├── nipaplay-util.js    # NipaPlay 中转弹弹play服务端工具
 │       ├── offset-util.js      # 弹幕偏移工具
+│       ├── pipeline-trace.js   # 请求级追踪与接口详情记录
 │       ├── redis-util.js       # redis工具
 │       ├── remote-title-mapping-util.js # 远程剧名映射下载、缓存与定时刷新工具
 │       ├── server-listen-util.js # IPv4/IPv6 双栈监听与 IPv4 回退工具
