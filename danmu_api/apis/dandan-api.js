@@ -520,25 +520,36 @@ function displayTitleNames(title) {
   return clean === title ? [title] : [clean, clean.replace(/\s*[（(]\s*(?:(?:19|20)\d{2}|N\/A)?\s*[)）]$/i, '')];
 }
 
-export function resolveTitlePreference(title, mappedTitle, season) {
+function bareTitleSeason(key) {
+  const suffix = key.match(/\s*\d+$/);
+  if (!suffix || suffix.index === 0) return null;
+  const season = extractSeasonNumberFromAnimeTitle(key).season;
+  return season === Number(suffix[0]) ? { base: key.slice(0, suffix.index), season } : null;
+}
+
+export function resolveTitlePreference(title, mappedTitle, season, { episodeList = false } = {}) {
   const rules = globals.titlePlatformMap;
   if (!rules?.size || !title) return null;
   const titleKeys = platformTitleKeys(title);
-  const platform = titleKeys.map(key => rules.get(key)).find(Boolean);
+  const ruleKey = titleKeys.find(key => rules.has(key));
+  const bareRequest = !ruleKey && episodeList ? bareTitleSeason(titleKeys[0]) : null;
+  const platform = rules.get(ruleKey ?? bareRequest?.base);
   if (!platform) return null;
   const target = mappedTitle === undefined ? globals.resolveTitleMapping(title) : mappedTitle;
   const keys = new Set(target ? [...titleKeys, ...platformTitleKeys(target)] : titleKeys);
-  const requestedSeason = season || (titleKeys.length > 1 ? extractSeasonNumberFromAnimeTitle(title).season : null);
-  const matches = (anime, anySeason) => [...displayTitleNames(anime.animeTitle), ...(anime.aliases || [])].some(name => {
-    const [key, base] = platformTitleKeys(name);
-    if (keys.has(key)) return true;
-    if (keys.has(base)) return !requestedSeason || anySeason || extractSeasonNumberFromAnimeTitle(key).season === requestedSeason;
-    if (!requestedSeason) return false;
-    const suffix = key.match(/\s*\d+$/);
-    if (!suffix || !keys.has(key.slice(0, suffix.index))) return false;
-    const candidateSeason = extractSeasonNumberFromAnimeTitle(key).season;
-    return candidateSeason !== null && (anySeason || candidateSeason === requestedSeason);
-  });
+  if (bareRequest) keys.add(bareRequest.base);
+  const requestedSeason = season || bareRequest?.season || (titleKeys.length > 1 ? extractSeasonNumberFromAnimeTitle(title).season : null);
+  const matches = (anime, anySeason) => {
+    if (bareRequest && (isMovieMatchCandidate(anime) || (!anySeason && resolveCandidateSeason(anime) !== requestedSeason))) return false;
+    return [...displayTitleNames(anime.animeTitle), ...(anime.aliases || [])].some(name => {
+      const [key, base] = platformTitleKeys(name);
+      if (keys.has(key)) return true;
+      if (keys.has(base)) return !requestedSeason || anySeason || extractSeasonNumberFromAnimeTitle(key).season === requestedSeason;
+      if ((!episodeList && !requestedSeason) || (episodeList && isMovieMatchCandidate(anime))) return false;
+      const candidate = bareTitleSeason(key);
+      return candidate && keys.has(candidate.base) && (!requestedSeason || anySeason || candidate.season === requestedSeason);
+    });
+  };
   return { platform, matches: anime => matches(anime, false), matchesSeries: anime => matches(anime, true) };
 }
 
@@ -2506,7 +2517,7 @@ export async function searchEpisodes(url) {
   let searchUrl = buildSearchAnimeUrl(url, anime);
   const requestAnimeDetailsMap = new Map();
 
-  const preference = resolveTitlePreference(anime);
+  const preference = resolveTitlePreference(anime, undefined, undefined, { episodeList: true });
   const searchRes = await searchAnime(searchUrl, null, null, requestAnimeDetailsMap, null, false, preference);
   const searchData = await searchRes.json();
 
@@ -2603,7 +2614,7 @@ export async function getBangumi(path, detailStore = null, source = null, prefer
   }
   if (preference === undefined && globals.titlePlatformMap?.size) {
     for (const name of displayTitleNames(anime.animeTitle)) {
-      preference = resolveTitlePreference(name, null);
+      preference = resolveTitlePreference(name, null, undefined, { episodeList: true });
       if (preference) break;
     }
   }

@@ -57,6 +57,50 @@ test('请求的季号可以对应同剧候选的裸数字后缀，但不会匹�
   assert.equal((await match('庆余年 S02E01')).isMatched, false);
 });
 
+test('分集搜索和独立详情对裸数字第二季使用同一规则和季内编号', async () => {
+  const labels = ['【qq】第13集', '【imgo】第13集', '【qq】第14集', '【imgo】第14集'];
+  const sequel = makeAnime('庆余年2(2024)【电视剧】from 示例采集站', 914130, '360', labels);
+  const other = makeAnime('庆余年2(2024)【电视剧】from tencent', 914131, 'tencent', [labels[0], labels[2]]);
+  const records = [other, sequel];
+  const details = seed('庆余年', records, '庆余年->imgo');
+  for (const title of ['庆余年2', '庆余年 第二季']) setSearchCache(title, records.map(favoriteSearchResult), details);
+  for (const title of ['庆余年', '庆余年2', '庆余年 第二季']) {
+    const results = await searchEpisode(title, 2);
+    assert.equal(results[0]?.animeId, sequel.animeId, title);
+    assert.deepEqual(results[0].episodes.map(ep => ep.episodeId), [sequel.links[3].id, sequel.links[2].id]);
+  }
+  const detail = (await (await getBangumi(`/bangumi/${sequel.animeId}`)).json()).bangumi;
+  assert.deepEqual(detail.episodes.map(ep => [ep.episodeNumber, ep.episodeId]),
+    [1, 0, 3, 2].map(index => [index < 2 ? '1' : '2', sequel.links[index].id]));
+});
+
+test('数字季名的完整规则优先，电影、年份、外传和其他季不继承该规则', async () => {
+  const labels = ['【qq】第1集', '【imgo】第1集'];
+  const create = (name, id) => makeAnime(name, id, '360', labels);
+  const sequel = create('庆余年2', 914132);
+  const first = create('庆余年', 914133);
+  const third = create('庆余年3', 914134);
+  const movie = { ...create('庆余年2', 914135), type: 'movie', typeDescription: '电影' };
+  const others = ['庆余年外传2', '庆余年2024', '庆余年00'].map((name, index) => create(name, 914136 + index));
+  const records = [first, third, movie, ...others, sequel];
+  for (const [rule, expected] of [['庆余年->imgo', 1], ['庆余年->imgo;庆余年2->qq', 0]]) {
+    const details = seed('庆余年2', records, rule);
+    const result = await searchEpisode('庆余年2', 1);
+    const ids = anime => result.find(item => item.animeId === anime.animeId).episodes.map(ep => ep.episodeId);
+    assert.equal(ids(sequel)[0], sequel.links[expected].id);
+    const detailOf = async anime => (await (await getBangumi(`/bangumi/${anime.animeId}`, details)).json()).bangumi.episodes;
+    assert.equal((await detailOf(sequel))[0].episodeId, sequel.links[expected].id);
+    for (const anime of [first, third, ...others]) assert.deepEqual(ids(anime), [anime.links[0].id]);
+    if (expected === 1) {
+      assert.deepEqual(ids(movie), [movie.links[0].id]);
+      for (const anime of [movie, ...others]) assert.equal((await detailOf(anime))[0].episodeId, anime.links[0].id);
+      setSearchCache('庆余年 第二季', records.map(favoriteSearchResult), details);
+      const explicit = await searchEpisode('庆余年 第二季', 1);
+      assert.deepEqual(explicit.find(anime => anime.animeId === movie.animeId).episodes.map(ep => ep.episodeId), [movie.links[0].id]);
+    }
+  }
+});
+
 test('整剧标签相同时，按本集实际来源选择完整合并弹幕', async () => {
   const title = '宝珠(2024)【电视剧】from dandan&bilibili';
   const partial = makeAnime(title, 914004, 'dandan', ['【dandan&bilibili】第1集', '【dandan】第2集']);
