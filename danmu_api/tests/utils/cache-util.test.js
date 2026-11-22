@@ -310,6 +310,56 @@ test('restoreQueryCache 仅恢复请求记录时新详情不与历史记录重�
   ));
   await restoreQueryCache('redis', async () => serialized, {}, {});
   const trace = createTrace('POST', '/api/v2/match');
-  assert.ok(Number(trace.id) > 900, '新请求不得复用已保存请求记录的 id');
+  assert.notEqual(trace.id, '900', '新请求不得复用已保存请求记录的 id');
   assert.strictEqual(getInterfaceDetail('900'), null, '历史记录没有对应详情时应为空');
+});
+
+test('restoreQueryCache 请求记录按 requestId 去重并保留 null 记录', async () => {
+  reset();
+  Globals.reqRecords = [];
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const records = [
+    { requestId: 'dup', interface: '/old' },
+    { requestId: null, interface: '/null-1' },
+    { requestId: 'dup', interface: '/new' },
+    { requestId: null, interface: '/null-2' },
+  ];
+  const serialized = queryCacheKeys.map(key => (
+    key === 'reqRecords' ? JSON.stringify(records) : null
+  ));
+
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+
+  assert.deepEqual(Globals.reqRecords, [
+    { requestId: null, interface: '/null-1' },
+    { requestId: 'dup', interface: '/new' },
+    { requestId: null, interface: '/null-2' },
+  ]);
+});
+
+test('restoreQueryCache 请求记录先去重后截断到上限', async () => {
+  reset();
+  Globals.reqRecords = [];
+  Globals.todayReqNum = 250;
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const records = Array.from({ length: Globals.MAX_RECORDS + 5 }, (_, index) => ({
+    requestId: String(1000 + index),
+    interface: `/request/${index}`,
+  }));
+  const serialized = queryCacheKeys.map(key => (
+    key === 'reqRecords' ? JSON.stringify(records)
+      : key === 'todayReqNum' ? JSON.stringify(250)
+        : null
+  ));
+
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+
+  assert.equal(Globals.reqRecords.length, Globals.MAX_RECORDS);
+  assert.equal(Globals.reqRecords[0].requestId, '1005');
+  assert.equal(Globals.reqRecords.at(-1).requestId, '1104');
+  assert.equal(Globals.todayReqNum, 250, '今日请求累计数不随记录窗口回算');
 });

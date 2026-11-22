@@ -26,7 +26,7 @@ import { getSourceByKey, getSourceMetaByKey, getSourceLabel, getLogNameByKey } f
 import { isHongguoPlayerUrl, isHongguoSeriesId } from "../sources/hongguo.js";
 import BilibiliSource from "../sources/bilibili.js"; // resolveB23Link 为 BilibiliSource 实例方法，单测中仍需直接 new
 import { Anime, AnimeMatch, Episodes, Bangumi } from "../models/dandan-model.js";
-import { createPhaseTimer, maskCredentialParams, markStepActive, peekConfigEffects, traceStep, recordConfigEffect } from "../utils/pipeline-trace.js";
+import { createPhaseTimer, describeConfigValue, maskCredentialParams, markStepActive, peekConfigEffects, traceStep, recordConfigEffect } from "../utils/pipeline-trace.js";
 
 // =====================
 // 兼容弹弹play接口
@@ -2392,7 +2392,10 @@ export async function matchAnime(url, req, clientIp) {
     recordConfigEffect('AUTO_MATCH_MAPPING_TABLE_URL', {
       label: '远程季集映射规则加载', kind: 'stats',
       hit: remoteRuleCount > 0,
-      context: { 地址: globals.autoMatchMappingTableUrl || '未设置', 远程规则数: remoteRuleCount },
+      context: {
+        地址: describeConfigValue('autoMatchMappingTableUrl', globals.autoMatchMappingTableUrl),
+        远程规则数: remoteRuleCount,
+      },
       summary: remoteRuleCount > 0 ? `从远程加载 ${remoteRuleCount} 条规则` : '远程规则为空',
     });
     const manualPreferenceTitle = findSeasonPreferenceTitle(preferenceTitles, originalSeason);
@@ -2411,8 +2414,8 @@ export async function matchAnime(url, req, clientIp) {
       inputs: {
         title: originalTitle, season: originalSeason, episode: originalEpisode,
         titleMappingTable: globals.titleMappingTable?.size ?? 0,
-        titleMappingTableUrl: globals.titleMappingTableUrl || '未设置',
-        autoMatchMappingTableUrl: globals.autoMatchMappingTableUrl || '未设置',
+        titleMappingTableUrl: describeConfigValue('titleMappingTableUrl', globals.titleMappingTableUrl),
+        autoMatchMappingTableUrl: describeConfigValue('autoMatchMappingTableUrl', globals.autoMatchMappingTableUrl),
         useBangumiData: globals.useBangumiData, titleToChinese: globals.titleToChinese,
       },
       outputs: { mappingHit: Boolean(mapping), candidate: mapping ? mapping.targetTitle : null },
@@ -2571,6 +2574,11 @@ export async function matchAnime(url, req, clientIp) {
   } catch (error) {
     // 处理匹配请求中的异常
     log("error", `[system] [match] Error processing match request: ${error.stack || error.message}`);
+    traceStep('匹配·处理异常', Date.now(), {
+      status: 'fail',
+      reason: '匹配请求处理失败',
+      error: error.message,
+    });
     return jsonResponse(
       { errorCode: 400, success: false, errorMessage: error.message || "Invalid JSON body" },
       400
@@ -3065,7 +3073,7 @@ export async function getComment(path, queryFormat, segmentFlag, clientIp, inclu
     status: url ? 'ok' : 'empty',
     reason: url ? undefined : '该弹幕库 ID 未关联播放地址',
     inputs: { commentId },
-    outputs: { animeTitle, episodeTitle: title, sourceKey: plat, url },
+    outputs: { animeTitle, episodeTitle: title, sourceKey: plat, url: maskCredentialParams(url) },
   });
   // 分段请求不会用到本地兜底结果，直接跳过这次全量扫描（本地资源多时它是白跑的开销）。
   markStepActive('弹幕·本地弹幕');
@@ -3380,6 +3388,11 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     // 验证URL参数
     if (!videoUrl || typeof videoUrl !== 'string') {
       log("error", "[system] [LogVar-API] Missing or invalid url parameter");
+      phase('弹幕·地址解析', {
+        status: 'fail',
+        reason: '缺少或无效的 url 参数',
+        inputs: { url: maskCredentialParams(videoUrl) },
+      });
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Missing or invalid url parameter", count: 0, comments: [] },
         400
@@ -3391,13 +3404,25 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
       const key = videoUrl.slice(6);
       if (segmentFlag) return jsonResponse(await localSource.getComments(key, 'local', true));
       const localComments = await localSource.getComments(key, 'local');
-      if (!localComments.length) return jsonResponse({ success: false, count: 0, comments: [] }, 404);
+      if (!localComments.length) {
+        phase('弹幕·地址解析', {
+          status: 'miss',
+          reason: '本地弹幕不存在',
+          inputs: { url: maskCredentialParams(videoUrl) },
+        });
+        return jsonResponse({ success: false, count: 0, comments: [] }, 404);
+      }
       return formatDanmuResponse(buildDanmuResponse({ count: localComments.length, comments: localComments }, null), queryFormat);
     }
 
     // 验证URL格式
     if (!videoUrl.startsWith('http')) {
       log("error", "[system] [LogVar-API] Invalid url format, must start with http or https");
+      phase('弹幕·地址解析', {
+        status: 'fail',
+        reason: 'url 必须以 http 或 https 开头',
+        inputs: { url: maskCredentialParams(videoUrl) },
+      });
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Invalid url format, must start with http or https", count: 0, comments: [] },
         400
@@ -3549,6 +3574,11 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
   } catch (error) {
     // 处理异常
     log("error", `[system] [LogVar-API] Failed to process comment by URL request: ${error.message}`);
+    phase('弹幕·处理异常', {
+      status: 'fail',
+      reason: '弹幕地址处理失败',
+      error: error.message,
+    });
     return jsonResponse(
       { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
       500
@@ -3567,6 +3597,11 @@ export async function getSegmentComment(segment, queryFormat) {
     // 验证URL参数
     if (!url || typeof url !== 'string') {
       log("error", "[system] [segmentcomment] Missing or invalid url parameter");
+      phase('分段弹幕·请求解析', {
+        status: 'fail',
+        reason: '缺少或无效的 url 参数',
+        inputs: { url: maskCredentialParams(url), platform },
+      });
       return jsonResponse(
         { errorCode: 400, success: false, errorMessage: "Missing or invalid url parameter", count: 0, comments: [] },
         400
@@ -3659,7 +3694,7 @@ export async function getSegmentComment(segment, queryFormat) {
     phase('分段弹幕·抓取与过滤', {
       status: danmus.length === 0 ? 'empty' : 'ok',
       reason: danmus.length === 0 ? '该平台未返回分段弹幕' : undefined,
-      inputs: { platform, url },
+      inputs: { platform, url: maskCredentialParams(url) },
       outputs: { count: danmus.length },
     });
 
@@ -3685,6 +3720,11 @@ export async function getSegmentComment(segment, queryFormat) {
   } catch (error) {
     // 处理异常
     log("error", `[system] [segmentcomment] Failed to process segment comment request: ${error.message}`);
+    phase('分段弹幕·处理异常', {
+      status: 'fail',
+      reason: '分段弹幕处理失败',
+      error: error.message,
+    });
     return jsonResponse(
       { errorCode: 500, success: false, errorMessage: "Internal server error", count: 0, comments: [] },
       500

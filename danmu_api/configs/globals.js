@@ -1,5 +1,5 @@
 import { Envs } from './envs.js';
-import { recordConfigAccess, recordConfigEffect } from '../utils/pipeline-trace.js';
+import { describeConfigValue, recordConfigAccess, recordConfigEffect } from '../utils/pipeline-trace.js';
 
 const TRAILING_RELEASE_YEAR_PATTERN = /(?:\s*[（(]\s*(?:19|20)\d{2}\s*[)）]|\s*[\[［]\s*(?:19|20)\d{2}\s*[\]］]|\s*【\s*(?:19|20)\d{2}\s*】)\s*$/;
 
@@ -180,7 +180,7 @@ export const Globals = {
         if (remoteConfigured) {
           recordConfigEffect('TITLE_MAPPING_TABLE_URL', {
             label: '本机规则优先，远程规则未参与', hit: false,
-            before: { title: key, url: this.envs.titleMappingTableUrl },
+            before: { title: key, url: describeConfigValue('titleMappingTableUrl', this.envs.titleMappingTableUrl) },
             after: { title: mapped, origin: 'local' },
           });
         }
@@ -190,7 +190,11 @@ export const Globals = {
         const mapped = remoteMappings.get(candidate);
         recordConfigEffect('TITLE_MAPPING_TABLE_URL', {
           label: '远程剧名映射命中', hit: true,
-          before: { title: key, matchedKey: candidate, url: this.envs?.titleMappingTableUrl || '未设置' },
+          before: {
+            title: key,
+            matchedKey: candidate,
+            url: describeConfigValue('titleMappingTableUrl', this.envs?.titleMappingTableUrl),
+          },
           after: { title: mapped, origin: 'remote', remoteRules: remoteMappings.size },
         });
         return mapped;
@@ -204,7 +208,7 @@ export const Globals = {
     if (remoteConfigured) {
       recordConfigEffect('TITLE_MAPPING_TABLE_URL', {
         label: '远程剧名映射未命中', hit: false,
-        before: { title: key, url: this.envs.titleMappingTableUrl },
+        before: { title: key, url: describeConfigValue('titleMappingTableUrl', this.envs.titleMappingTableUrl) },
         after: { title: key, remoteRules: remoteMappings?.size || 0 },
       });
     }
@@ -286,4 +290,3 @@ export const globals = new Proxy({}, {
     return Object.getOwnPropertyDescriptor(Globals.getConfig(), prop);
   }
 });
-

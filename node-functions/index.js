@@ -53,5 +53,5 @@ export const onRequest = async (context) => {
   }
 
   // 传递带完整 URL 的 request 和 env 给核心处理函数
-  return await handleRequestWithTrace(modifiedRequest, env, "edgeone", clientIp);
+  return await handleRequestWithTrace(modifiedRequest, env, "edgeone", clientIp, context);
 };

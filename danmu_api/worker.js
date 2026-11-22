@@ -23,7 +23,7 @@ import {
 } from "./utils/cookie-util.js";
 import { ensureRemoteTitleMapping } from './utils/remote-title-mapping-util.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createTrace, currentTrace, finishTrace, markHandlerStart, runWithTrace, setTracePersistHook, traceStep, useAsyncLocalStorage } from './utils/pipeline-trace.js';
+import { createTrace, currentTrace, finishTrace, markHandlerStart, maskTraceQueryString, runWithTrace, setTracePersistHook, traceStep, useAsyncLocalStorage } from './utils/pipeline-trace.js';
 
 // 注入异步上下文实现，使追踪状态按请求隔离
 useAsyncLocalStorage(AsyncLocalStorage);
@@ -44,23 +44,6 @@ const TITLE_MAPPING_PATHS = new Set([
   "/api/v2/favorite/remove",
   "/api/favorite/remove",
 ]);
-
-// 查询串中的凭据类参数在追踪记录里替换为掩码，避免 keyword 这类普通参数被误判
-const TRACE_CREDENTIAL_PARAMS = new Set([
-  'token', 'admintoken', 'accesstoken', 'refreshtoken', 'apikey', 'key',
-  'secret', 'password', 'passwd', 'auth', 'authorization',
-]);
-
-function traceQueryString(search) {
-  if (!search) return '';
-  const params = new URLSearchParams(search);
-  for (const key of [...params.keys()]) {
-    const normalized = key.toLowerCase().replace(/[_-]/g, '');
-    if (TRACE_CREDENTIAL_PARAMS.has(normalized)) params.set(key, '***');
-  }
-  const text = params.toString();
-  return text ? `?${text}` : '';
-}
 
 // 限流检查：超过阈值时记录拦截步骤并返回 true，调用方据此返回 429；
 // 未超限则登记本次请求时间并返回 false。缓存命中的请求不进入此函数。
@@ -179,7 +162,7 @@ async function handleRequest(req, env, deployPlatform, clientIp) {
   const requestTrace = currentTrace();
   if (requestTrace) {
     requestTrace.path = tokenlessPath;
-    requestTrace.query = traceQueryString(url.search);
+    requestTrace.query = maskTraceQueryString(url.search);
   }
   const isFavoriteRequest = /(?:^|\/)favorite(?:\/|$)/.test(tokenlessPath);
   const isFavoriteListRequest = method === "GET"
@@ -843,11 +826,13 @@ function detectDeployPlatform(env) {
   return isRunningOnVercel() ? "vercel" : "cloudflare";
 }
 
-// 详情落盘：只写详情键，避免整包查询缓存写入放大延迟；失败不影响请求结果
-const TRACE_PERSIST_KEYS = { keys: ['pipelineTraces'] };
+// 请求记录与详情必须同批落盘，避免重启后出现有详情但无请求记录；失败不影响请求结果
+const REQUEST_RECORD_PERSIST_KEYS = { keys: ['reqRecords', 'todayReqNum', 'pipelineTraces'] };
 let tracePersistTimer = null;
+let tracePersistPromise = null;
+let tracePersistRequested = false;
 
-async function persistTraces() {
+async function persistRequestSnapshot() {
   const backends = [
     ['file', globals.localCacheValid, './utils/cache-util.js', 'updateLocalCaches'],
     ['upstash', globals.redisValid, './utils/redis-util.js', 'updateRedisCaches'],
@@ -857,7 +842,7 @@ async function persistTraces() {
     if (!enabled) continue;
     try {
       const module = await import(modulePath);
-      const result = await module[method](TRACE_PERSIST_KEYS);
+      const result = await module[method](REQUEST_RECORD_PERSIST_KEYS);
       if (result === false) log('warn', `[system] [trace] ${backend} 详情落盘未执行`);
     } catch (error) {
       log('warn', `[system] [trace] ${backend} 详情落盘失败: ${error.message}`);
@@ -865,20 +850,48 @@ async function persistTraces() {
   }
 }
 
+function startTracePersist() {
+  if (tracePersistPromise) return tracePersistPromise;
+  tracePersistPromise = (async () => {
+    try {
+      while (tracePersistRequested) {
+        tracePersistRequested = false;
+        await persistRequestSnapshot();
+      }
+    } finally {
+      tracePersistPromise = null;
+    }
+  })();
+  return tracePersistPromise;
+}
+
 function scheduleTracePersist() {
   // 合并短时间内的多次落盘，写穿仍保持与请求记录同批可见
-  if (tracePersistTimer) return;
+  tracePersistRequested = true;
+  if (tracePersistTimer || tracePersistPromise) return;
   tracePersistTimer = setTimeout(() => {
     tracePersistTimer = null;
-    persistTraces().catch(error => log('warn', `[system] [trace] 详情落盘失败: ${error.message}`));
+    startTracePersist().catch(error => log('warn', `[system] [trace] 详情落盘失败: ${error.message}`));
   }, 500);
 }
 
+function flushTracePersistence() {
+  if (tracePersistTimer) {
+    clearTimeout(tracePersistTimer);
+    tracePersistTimer = null;
+  }
+  tracePersistRequested = true;
+  return startTracePersist();
+}
+
+const SERVERLESS_PLATFORMS = new Set(['cloudflare', 'vercel', 'netlify', 'edgeone']);
+
 // 在追踪作用域内处理一次请求，结束时留存该请求的接口详情
-export async function handleRequestWithTrace(req, env, deployPlatform, clientIp) {
+export async function handleRequestWithTrace(req, env, deployPlatform, clientIp, lifecycleContext) {
   // 接口路径由 handleRequest 写入不含凭据的路径，此处不记录 URL 中可能携带的 token
   const trace = createTrace(req.method, '', clientIp);
-  return runWithTrace(trace, async () => {
+  let retained = false;
+  const response = await runWithTrace(trace, async () => {
     try {
       const response = await handleRequest(req, env, deployPlatform, clientIp);
       trace.statusCode = response?.status ?? null;
@@ -888,10 +901,17 @@ export async function handleRequestWithTrace(req, env, deployPlatform, clientIp)
       return response;
     } finally {
       // 只有写入请求记录的请求才留存详情，两者一一对应
-      const retained = globals.reqRecords.some(record => record.requestId === trace.id);
+      retained = globals.reqRecords.some(record => record.requestId === trace.id);
       finishTrace(trace, retained);
     }
   });
+  // 边缘/Serverless 可能在响应后冻结 timer：优先注册 waitUntil，否则返回前写完同一快照
+  if (retained && SERVERLESS_PLATFORMS.has(deployPlatform)) {
+    const pending = flushTracePersistence();
+    if (typeof lifecycleContext?.waitUntil === 'function') lifecycleContext.waitUntil(pending);
+    else await pending;
+  }
+  return response;
 }
 
 // 详情随请求记录同批落盘；模块加载时注册一次
@@ -907,7 +927,7 @@ export default {
     // 获取客户端的真实 IP
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
 
-    const response = await handleRequestWithTrace(request, env, detectDeployPlatform(env), clientIp);
+    const response = await handleRequestWithTrace(request, env, detectDeployPlatform(env), clientIp, ctx);
     // 边缘运行时在响应返回后延长生命周期，容纳可能在途的 Bangumi Data 后台静默下载
     extendBangumiDownloadLifecycle(ctx);
     return response;
@@ -954,7 +974,7 @@ export async function netlifyHandler(event, context) {
   });
 
   // 调用核心处理函数
-  const response = await handleRequestWithTrace(request, process.env, "netlify", clientIp);
+  const response = await handleRequestWithTrace(request, process.env, "netlify", clientIp, context);
 
   // 转换为 Netlify 响应格式
   const headers = {};

@@ -22,12 +22,15 @@ class StubStorage {
   getStore() { return this._store; }
 }
 
-test('createTrace 生成唯一且递增的 id，并初始化耗时与容器', () => {
+const traceSeqOf = id => Number(String(id).slice(String(id).lastIndexOf('-') + 1));
+
+test('createTrace 生成唯一且进程内递增的 id，并初始化耗时与容器', () => {
   useAsyncLocalStorage(StubStorage);
   const a = createTrace('GET', '/api/v2/search');
   const b = createTrace('POST', '/api/v2/match');
-  assert.equal(a.id, '1');
-  assert.equal(b.id, '2');
+  assert.equal(traceSeqOf(a.id), 1);
+  assert.equal(traceSeqOf(b.id), traceSeqOf(a.id) + 1);
+  assert.notEqual(a.id, b.id);
   assert.equal(a.method, 'GET');
   assert.equal(a.path, '/api/v2/search');
   assert.equal(a.clientIp, 'unknown');
@@ -36,6 +39,14 @@ test('createTrace 生成唯一且递增的 id，并初始化耗时与容器', ()
   assert.equal(a.handlerMs, 0);
   assert.deepEqual(a.steps, []);
   assert.deepEqual(a.configs, {});
+});
+
+test('不同模块实例生成的 trace id 前缀不同', async () => {
+  const first = await import('../../utils/pipeline-trace.js?instance=first');
+  const second = await import('../../utils/pipeline-trace.js?instance=second');
+  const a = first.createTrace('GET', '/a');
+  const b = second.createTrace('GET', '/b');
+  assert.notEqual(a.id, b.id, '不同实例不得从相同序号生成同一个 id');
 });
 
 test('createTrace 记录客户端 IP', () => {
@@ -117,10 +128,10 @@ test('bumpTraceSequence 只接受数字 id，非法值不抬高序号', () => {
   bumpTraceSequence('not-a-number');
   bumpTraceSequence(null);
   const after = createTrace('GET', '/x').id;
-  assert.equal(Number(after), Number(before) + 1, '非法 id 不改变序号');
+  assert.equal(traceSeqOf(after), traceSeqOf(before) + 1, '非法 id 不改变序号');
   bumpTraceSequence('999');
   const bumped = createTrace('GET', '/x').id;
-  assert.equal(Number(bumped), 1000, '数字 id 抬高序号下限');
+  assert.equal(traceSeqOf(bumped), 1000, '旧数字 id 抬高序号下限');
 });
 
 test('registerTraceConfigAccessors 重复注册以最新配置为准', () => {
@@ -309,6 +320,34 @@ test('maskCredentialParams 遮蔽地址查询串中的凭据参数', async () =>
   assert.match(masked, /^https:\/\/example\.com\/d/, '路径应保留');
   // 无查询串的地址原样返回
   assert.equal(maskCredentialParams('https://example.com/page'), 'https://example.com/page');
+});
+
+test('maskCredentialParams 分别处理合并链接中的每段地址', async () => {
+  const { maskCredentialParams } = await import('../../utils/pipeline-trace.js');
+  const masked = maskCredentialParams(
+    'https://a.example/v?x=1&episode=2$$$https://b.example/v?sign=xyz&episode=3'
+  );
+  const decoded = decodeURIComponent(masked);
+
+  assert.match(masked, /\$\$\$/, '合并链接分隔符应保留');
+  assert.match(decoded, /https:\/\/a\.example\/v\?x=1/);
+  assert.match(decoded, /https:\/\/b\.example\/v\?sign=\*\*\*/);
+  assert.doesNotMatch(decoded, /sign=xyz/, '第二段的签名不得明文保留');
+  assert.match(decoded, /episode=2/);
+  assert.match(decoded, /episode=3/);
+});
+
+test('maskCredentialParams 递归遮蔽嵌套 URL 并保留 fragment', async () => {
+  const { maskCredentialParams } = await import('../../utils/pipeline-trace.js');
+  const masked = maskCredentialParams(
+    'https://example.com/d?url=https%3A%2F%2Fnested.example%2Fv%3Ftoken%3Dabc%26episode%3D4#player'
+  );
+  const decoded = decodeURIComponent(masked);
+
+  assert.match(decoded, /url=https:\/\/nested\.example\/v\?token=\*\*\*/);
+  assert.doesNotMatch(decoded, /token=abc/, '嵌套地址中的令牌不得明文保留');
+  assert.match(decoded, /episode=4/);
+  assert.match(masked, /#player$/, 'fragment 应保留');
 });
 
 test('同组的主标题与别名归并为一条判定并显示归属', () => {
@@ -580,7 +619,7 @@ test('replaceTraceRecords 恢复记录并从已有 id 之后继续编号', () =>
   assert.equal(getInterfaceDetail('12').path, '/old-12');
   assert.equal(getInterfaceDetail(7).path, '/old-7', '数字 id 也应按记录查找');
   const next = createTrace('GET', '/new');
-  assert.ok(Number(next.id) > 12, '重启后新请求不得与已保存记录重号');
+  assert.ok(traceSeqOf(next.id) > 12, '重启后新请求不得与已保存记录重号');
 });
 
 test('追踪记录经 JSON 往返后内容不变', () => {
@@ -641,9 +680,33 @@ test('replaceTraceRecords 规范化损坏快照的步骤与配置字段', () => 
 
 test('replaceTraceRecords 忽略无效记录并按上限截断', () => {
   const many = Array.from({ length: MAX_PIPELINE_RECORDS + 5 }, (_, i) => ({ id: String(1000 + i) }));
+  many.push({ id: String(1000 + MAX_PIPELINE_RECORDS + 4), path: '/latest-duplicate' });
   replaceTraceRecords([null, {}, ...many]);
   assert.equal(getTraceRecords().length, MAX_PIPELINE_RECORDS);
   assert.equal(getTraceRecords()[0].id, String(1000 + 5));
+  assert.equal(getInterfaceDetail(String(1000 + MAX_PIPELINE_RECORDS + 4)).path, '/latest-duplicate');
+});
+
+test('replaceTraceRecords 历史重复 id 保留最新记录', () => {
+  replaceTraceRecords([
+    { id: 'dup', path: '/old' },
+    { id: 'other', path: '/other' },
+    { id: 'dup', path: '/new' },
+  ]);
+  assert.deepEqual(getTraceRecords().map(record => record.id), ['other', 'dup']);
+  assert.equal(getInterfaceDetail('dup').path, '/new');
+});
+
+test('replaceTraceRecords 为在途 trace 重新分配冲突 id', () => {
+  const active = createTrace('GET', '/active');
+  active.id = 'legacy-conflict';
+  replaceTraceRecords([{ id: 'legacy-conflict', path: '/restored' }]);
+
+  assert.notEqual(active.id, 'legacy-conflict');
+  assert.equal(getInterfaceDetail('legacy-conflict').path, '/restored');
+  finishTrace(active);
+  assert.equal(getInterfaceDetail(active.id).path, '/active');
+  assert.equal(getTraceRecords().filter(record => record.id === active.id).length, 1);
 });
 
 test('createTrace 的 id 在恢复后依然唯一', () => {
@@ -651,7 +714,7 @@ test('createTrace 的 id 在恢复后依然唯一', () => {
   const a = createTrace('GET', '/a');
   const b = createTrace('GET', '/b');
   assert.notEqual(a.id, b.id);
-  assert.ok(Number(a.id) > 3 && Number(b.id) > Number(a.id));
+  assert.ok(traceSeqOf(a.id) > 3 && traceSeqOf(b.id) > traceSeqOf(a.id));
 });
 
 test('配置生效记录引用的配置名都存在于配置目录', async () => {

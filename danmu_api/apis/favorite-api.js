@@ -155,7 +155,7 @@ export async function handleFavoriteAdd(req, url) {
     markStepActive('收藏·写入');
     phase('收藏·写入', {
       status: 'ok',
-      reason: `已收藏「${favoriteName}」`,
+      reason: '已收藏',
       inputs: { favoriteName },
       // 写入步骤的 count 是候选剧集数而非收藏条数，用明确字段名避免诊断误读为「返回 N 条收藏」
       outputs: { 写入剧集数: entry.results.length },
@@ -170,6 +170,7 @@ export async function handleFavoriteAdd(req, url) {
     });
   } catch (error) {
     log('error', `[system] [favorite] add failed: ${error.message}`);
+    phase('收藏·新增', { status: 'fail', reason: '收藏失败', error: error.message });
     return jsonResponse({ success: false, message: `收藏失败: ${error.message}` }, 500);
   }
 }
@@ -247,7 +248,9 @@ export async function handleFavoriteSchedule(req) {
     });
   } catch (error) {
     log('error', `[system] [favorite] schedule failed: ${error.message}`);
-    traceStep('收藏·定时刷新', scheduleStartedAt, { status: 'fail', reason: `设置定时刷新失败: ${error.message}` });
+    traceStep('收藏·定时刷新', scheduleStartedAt, {
+      status: 'fail', reason: '设置定时刷新失败', error: error.message,
+    });
     return jsonResponse({ success: false, message: `设置定时刷新失败: ${error.message}` }, 500);
   }
 }
@@ -285,7 +288,7 @@ export async function handleFavoriteRemove(req) {
     return jsonResponse({ success: true, message: '已删除收藏' });
   } catch (error) {
     log('error', `[system] [favorite] remove failed: ${error.message}`);
-    phase('收藏·删除', { status: 'fail', reason: `删除收藏失败: ${error.message}` });
+    phase('收藏·删除', { status: 'fail', reason: '删除收藏失败', error: error.message });
     return jsonResponse({ success: false, message: `删除收藏失败: ${error.message}` }, 500);
   }
 }
@@ -388,7 +391,16 @@ export async function handleFavoriteRefresh(req, url) {
   } catch (error) {
     log('error', `[system] [favorite] refresh failed: ${error.message}`);
     // refreshFavoriteByKeyword 以带 status 的错误表达未找到与并发刷新，统一在此留痕
-    phase('收藏·刷新', { status: error.status === 409 ? 'fail' : 'miss', reason: error.message });
+    const reason = error.status === 404
+      ? '未找到该收藏'
+      : error.status === 409
+        ? '该收藏正在刷新，请稍后再试'
+        : '刷新收藏失败';
+    phase('收藏·刷新', {
+      status: error.status === 409 ? 'fail' : 'miss',
+      reason,
+      error: error.message,
+    });
     return jsonResponse({ success: false, message: `刷新收藏失败: ${error.message}` }, error.status || 500);
   }
 }

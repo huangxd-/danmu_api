@@ -127,7 +127,10 @@ test('Globals.resolveTitleMapping 记录本机映射命中与来源', () => {
 });
 
 test('Globals.resolveTitleMapping 本机命中且配置了远程地址时说明远程未参与', () => {
-  initGlobals({ TITLE_MAPPING_TABLE: '唐朝诡事录->唐朝诡事录之西行', TITLE_MAPPING_TABLE_URL: 'https://example.com/map.json' });
+  initGlobals({
+    TITLE_MAPPING_TABLE: '唐朝诡事录->唐朝诡事录之西行',
+    TITLE_MAPPING_TABLE_URL: 'https://private.example/map.json?token=secret',
+  });
   const trace = createTrace('POST', '/api/v2/match');
   runWithTrace(trace, () => {
     Globals.resolveTitleMapping('唐朝诡事录');
@@ -136,12 +139,13 @@ test('Globals.resolveTitleMapping 本机命中且配置了远程地址时说明�
   const urlChange = trace.steps[0].changes.find(c => c.config === 'TITLE_MAPPING_TABLE_URL');
   assert.ok(urlChange, '缺少远程表未参与说明');
   assert.equal(urlChange.hit, false);
-  assert.equal(urlChange.before.url, 'https://example.com/map.json');
+  assert.equal(urlChange.before.url, '已设置');
   assert.equal(urlChange.after.origin, 'local');
+  assert.doesNotMatch(JSON.stringify(trace), /private\.example|token=secret/, '远程映射地址不得进入追踪记录');
 });
 
 test('Globals.resolveTitleMapping 记录远程映射命中与来源', () => {
-  initGlobals({ TITLE_MAPPING_TABLE_URL: 'https://example.com/map.json' });
+  initGlobals({ TITLE_MAPPING_TABLE_URL: 'https://private.example/map.json?sign=secret' });
   Globals.remoteTitleMappingTable = new Map([['间谍过家家', '間諜家家酒']]);
   const trace = createTrace('POST', '/api/v2/match');
   runWithTrace(trace, () => {
@@ -154,6 +158,8 @@ test('Globals.resolveTitleMapping 记录远程映射命中与来源', () => {
   assert.equal(change.after.title, '間諜家家酒');
   assert.equal(change.after.origin, 'remote');
   assert.equal(change.after.remoteRules, 1);
+  assert.equal(change.before.url, '已设置');
+  assert.doesNotMatch(JSON.stringify(trace), /private\.example|sign=secret/, '远程映射地址不得进入追踪记录');
 });
 
 test('Globals.resolveTitleMapping 记录未命中，便于定位配置未生效', () => {

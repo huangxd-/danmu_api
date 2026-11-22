@@ -42,7 +42,10 @@ export const TRACE_RUNTIME_ACCESSORS = {
 let records = [];
 
 // 请求追踪序号，作为 trace 唯一标识，用于请求记录与接口详情关联
+const TRACE_BOOT_NONCE = globalThis.crypto?.randomUUID?.()
+  || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 let traceSeq = 0;
+const activeTraces = new Set();
 
 // 异步上下文存储；未注入时追踪不启用
 let traceStorage = null;
@@ -343,8 +346,8 @@ export function markHandlerStart(startedAt) {
 
 // 建立一条请求追踪记录
 export function createTrace(method, path, clientIp) {
-  return {
-    id: String(++traceSeq),
+  const trace = {
+    id: `${TRACE_BOOT_NONCE}-${++traceSeq}`,
     method,
     path,
     query: '',
@@ -358,12 +361,15 @@ export function createTrace(method, path, clientIp) {
     steps: [],
     configs: {},
   };
+  activeTraces.add(trace);
+  return trace;
 }
 
 // 结束并留存一条追踪记录；重复调用只生效首次，保持记录列表与落盘钩子的幂等
 export function finishTrace(trace, retain = true) {
   if (!trace || trace.finished) return;
   trace.finished = true;
+  activeTraces.delete(trace);
   // 页面、静态资源与详情查询不产生请求记录，其追踪不占用留存名额
   if (!retain) return;
   trace.totalMs = Math.max(0, Date.now() - trace.startedAt);
@@ -466,19 +472,57 @@ const TRACE_CREDENTIAL_PARAMS = new Set([
   'secret', 'password', 'passwd', 'auth', 'authorization', 'sign', 'signature', 'sig',
 ]);
 
+// 合并弹幕链接使用与 merge-util 相同的分隔符；此处保留本地常量以避免循环依赖
+const TRACE_URL_DELIMITER = '$$$';
+
+function isTraceCredentialParam(key) {
+  return TRACE_CREDENTIAL_PARAMS.has(key.toLowerCase().replace(/[_-]/g, ''));
+}
+
+// 遮罩一组查询参数中的凭据，并递归处理 HTTP URL 值
+function maskTraceParams(params) {
+  for (const key of [...params.keys()]) {
+    if (isTraceCredentialParam(key)) {
+      params.set(key, '***');
+      continue;
+    }
+    const value = params.get(key);
+    if (value && /^https?:\/\//i.test(value.trim())) {
+      params.set(key, maskCredentialParams(value));
+    }
+  }
+}
+
+// 遮罩单个 URL 的查询串，保留 fragment
+function maskSingleUrlCredentials(text) {
+  const hashIndex = text.indexOf('#');
+  const fragment = hashIndex === -1 ? '' : text.slice(hashIndex);
+  const withoutFragment = hashIndex === -1 ? text : text.slice(0, hashIndex);
+  const qIndex = withoutFragment.indexOf('?');
+  if (qIndex === -1) return text;
+
+  const base = withoutFragment.slice(0, qIndex);
+  const params = new URLSearchParams(withoutFragment.slice(qIndex + 1));
+  maskTraceParams(params);
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ''}${fragment}`;
+}
+
 // 对登记进步骤输入的弹幕地址遮蔽凭据参数，保留路径与非凭据参数以便排查
 export function maskCredentialParams(targetUrl) {
-  const text = String(targetUrl ?? '');
-  const qIndex = text.indexOf('?');
-  if (qIndex === -1) return text;
-  const base = text.slice(0, qIndex);
-  const params = new URLSearchParams(text.slice(qIndex + 1));
-  for (const key of [...params.keys()]) {
-    const normalized = key.toLowerCase().replace(/[_-]/g, '');
-    if (TRACE_CREDENTIAL_PARAMS.has(normalized)) params.set(key, '***');
-  }
-  const query = params.toString();
-  return query ? `${base}?${query}` : base;
+  return String(targetUrl ?? '')
+    .split(TRACE_URL_DELIMITER)
+    .map(maskSingleUrlCredentials)
+    .join(TRACE_URL_DELIMITER);
+}
+
+// 对请求查询串做与弹幕地址一致的凭据遮罩
+export function maskTraceQueryString(search) {
+  if (!search) return '';
+  const params = new URLSearchParams(search);
+  maskTraceParams(params);
+  const text = params.toString();
+  return text ? `?${text}` : '';
 }
 
 // 按输出字段识别步骤用途：步骤名仅用于展示，改名不影响诊断
@@ -595,26 +639,50 @@ export function getTraceRecords() {
   return records;
 }
 
-// 恢复持久化的追踪记录：在入口规范化结构，序号从已有 id 之后继续，避免重启后与新请求重号
+// 恢复持久化追踪记录：规范化、去重后再截断，确保保留窗口尽量包含唯一详情
 export function replaceTraceRecords(list) {
-  const restored = Array.isArray(list)
+  const normalized = Array.isArray(list)
     ? list
       .filter(item => item && item.id)
-      .slice(-MAX_PIPELINE_RECORDS)
       .map(item => ({
         ...item,
         steps: Array.isArray(item.steps) ? item.steps : [],
         configs: item.configs && typeof item.configs === 'object' && !Array.isArray(item.configs) ? item.configs : {},
       }))
     : [];
-  records = restored;
+  const seen = new Set();
+  const unique = [];
+  for (let index = normalized.length - 1; index >= 0; index--) {
+    const item = normalized[index];
+    const id = String(item.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(item);
+  }
+  records = unique.reverse().slice(-MAX_PIPELINE_RECORDS);
+
   for (const item of records) bumpTraceSequence(item.id);
+
+  // 恢复发生在请求记录写入前；此处为所有并发在途 trace 消除与历史快照的 id 冲突
+  const usedIds = new Set(records.map(item => String(item.id)));
+  for (const trace of activeTraces) {
+    if (!usedIds.has(String(trace.id))) {
+      usedIds.add(String(trace.id));
+      continue;
+    }
+    do {
+      trace.id = `${TRACE_BOOT_NONCE}-${++traceSeq}`;
+    } while (usedIds.has(trace.id));
+    usedIds.add(trace.id);
+  }
 }
 
-// 抬高追踪序号下限：请求记录已持久化而详情未恢复时，新请求不得复用历史记录的 id
+// 兼容旧版纯数字 id：抬高进程内序号，避免旧详情与新记录继续重号
 export function bumpTraceSequence(id) {
-  const value = Number.parseInt(id, 10);
-  if (Number.isFinite(value)) traceSeq = Math.max(traceSeq, value);
+  const text = String(id ?? '');
+  if (!/^\d+$/.test(text)) return;
+  const value = Number(text);
+  if (Number.isSafeInteger(value)) traceSeq = Math.max(traceSeq, value);
 }
 
 // 清空追踪记录

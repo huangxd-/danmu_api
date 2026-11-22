@@ -7,13 +7,15 @@ dotenv.config();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Globals } from '../../configs/globals.js';
-import { getBangumi, getCommentByUrl, matchAnime, searchEpisodes } from '../../apis/dandan-api.js';
-import { handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from '../../apis/favorite-api.js';
+import { Globals, globals } from '../../configs/globals.js';
+import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchEpisodes } from '../../apis/dandan-api.js';
+import { handleFavoriteAdd, handleFavoriteRefresh, handleFavoriteRemove, handleFavoriteSchedule } from '../../apis/favorite-api.js';
+import { handleInterfaceDetail } from '../../apis/system-api.js';
 import { getSourceByKey } from '../../sources/registry.js';
 import { setSearchCache } from '../../utils/cache-util.js';
 import { convertToDanmakuJson } from '../../utils/danmu-util.js';
-import { createTrace, runWithTrace, useAsyncLocalStorage } from '../../utils/pipeline-trace.js';
+import { createTrace, finishTrace, runWithTrace, useAsyncLocalStorage } from '../../utils/pipeline-trace.js';
+import { createFavoriteAnime, favoriteSearchResult } from '../helpers/favorites.js';
 
 function initGlobals(overrides = {}) {
   Globals.init(overrides);
@@ -118,6 +120,124 @@ test('getCommentByUrl 地址解析记录合并链接数', async () => {
   }
 });
 
+test('getComment 遮罩资源定位步骤中的弹幕地址凭据', async () => {
+  initGlobals({ SOURCE_ORDER: 'tencent', COMMENT_CACHE_MIN_COUNT: '0', DANMU_LIMIT: '0', GROUP_MINUTE: '0' });
+  Globals.episodeIds = [{
+    id: 70001,
+    url: 'https://v.qq.com/x/cover/abc.html?token=secret&sign=sig&episode=2',
+    title: '第2集',
+  }];
+  const instance = getSourceByKey('tencent');
+  const originalGetComments = instance.getComments;
+  instance.getComments = async () => convertToDanmakuJson([{ p: '1.0,1,16777215', m: 'x' }], 'tencent');
+  try {
+    const trace = createTrace('GET', '/api/v2/comment/70001');
+    await runWithTrace(trace, () => getComment('/api/v2/comment/70001', 'json', false));
+
+    const locate = trace.steps.find(step => step.name === '弹幕·资源定位');
+    assert.ok(locate, '缺少资源定位步骤');
+    const decoded = decodeURIComponent(locate.outputs.url);
+    assert.match(decoded, /episode=2/, '非凭据参数应保留');
+    assert.doesNotMatch(decoded, /token=secret|sign=sig/, '资源地址中的凭据应遮蔽');
+  } finally {
+    instance.getComments = originalGetComments;
+  }
+});
+
+test('getSegmentComment 遮罩抓取步骤中的弹幕地址凭据', async () => {
+  initGlobals({});
+  const instance = getSourceByKey('tencent');
+  const originalGetSegmentComments = instance.getSegmentComments;
+  instance.getSegmentComments = async () => [];
+  try {
+    const trace = createTrace('POST', '/api/v2/segmentcomment');
+    const segment = {
+      url: 'https://v.qq.com/x/cover/abc.html?token=secret&sign=sig&episode=2',
+      type: 'tencent',
+      segment_start: 1,
+      segment_end: 2,
+    };
+    await runWithTrace(trace, () => getSegmentComment(segment, 'json'));
+
+    const fetchStep = trace.steps.find(step => step.name === '分段弹幕·抓取与过滤');
+    assert.ok(fetchStep, '缺少分段弹幕抓取步骤');
+    const decoded = decodeURIComponent(fetchStep.inputs.url);
+    assert.match(decoded, /episode=2/, '非凭据参数应保留');
+    assert.doesNotMatch(decoded, /token=secret|sign=sig/, '分段地址中的凭据应遮蔽');
+  } finally {
+    instance.getSegmentComments = originalGetSegmentComments;
+  }
+});
+
+test('getCommentByUrl 参数错误与本地缺失时记录失败步骤', async () => {
+  initGlobals({});
+  const cases = [
+    { url: undefined, status: 'fail', reason: '缺少或无效的 url 参数' },
+    { url: 'ftp://example.com/video', status: 'fail', reason: 'url 必须以 http 或 https 开头' },
+    { url: 'local:not-exist', status: 'miss', reason: '本地弹幕不存在' },
+  ];
+  for (const item of cases) {
+    const trace = createTrace('GET', '/api/v2/comment');
+    const response = await runWithTrace(trace, () => getCommentByUrl(item.url, 'json', false));
+    assert.equal(response.status, 400 + (item.status === 'miss' ? 4 : 0));
+    const step = trace.steps.find(candidate => candidate.name === '弹幕·地址解析');
+    assert.ok(step, `缺少 ${item.url || '空地址'} 的地址解析步骤`);
+    assert.equal(step.status, item.status);
+    assert.equal(step.reason, item.reason);
+  }
+});
+
+test('getCommentByUrl 源异常时记录失败步骤', async () => {
+  initGlobals({ SOURCE_ORDER: 'tencent', COMMENT_CACHE_MIN_COUNT: '0' });
+  const instance = getSourceByKey('tencent');
+  const originalGetComments = instance.getComments;
+  instance.getComments = async () => { throw new Error('upstream failed'); };
+  try {
+    const trace = createTrace('GET', '/api/v2/comment');
+    const response = await runWithTrace(trace, () => getCommentByUrl('https://v.qq.com/x/cover/error.html', 'json', false));
+    assert.equal(response.status, 500);
+    const step = trace.steps.find(candidate => candidate.name === '弹幕·处理异常');
+    assert.ok(step, '缺少弹幕处理异常步骤');
+    assert.equal(step.status, 'fail');
+    assert.equal(step.reason, '弹幕地址处理失败');
+    assert.equal(step.error, 'upstream failed');
+  } finally {
+    instance.getComments = originalGetComments;
+  }
+});
+
+test('getSegmentComment 缺少地址与源异常时记录失败步骤', async () => {
+  initGlobals({});
+  const missingTrace = createTrace('POST', '/api/v2/segmentcomment');
+  const missing = await runWithTrace(missingTrace, () => getSegmentComment({ type: 'qq' }, 'json'));
+  assert.equal(missing.status, 400);
+  const parseStep = missingTrace.steps.find(step => step.name === '分段弹幕·请求解析');
+  assert.ok(parseStep);
+  assert.equal(parseStep.status, 'fail');
+  assert.equal(parseStep.reason, '缺少或无效的 url 参数');
+
+  const instance = getSourceByKey('tencent');
+  const originalGetSegmentComments = instance.getSegmentComments;
+  instance.getSegmentComments = async () => { throw new Error('segment failed'); };
+  try {
+    const trace = createTrace('POST', '/api/v2/segmentcomment');
+    const response = await runWithTrace(trace, () => getSegmentComment({
+      url: 'https://v.qq.com/x/cover/error.html',
+      type: 'qq',
+      segment_start: 1,
+      segment_end: 2,
+    }, 'json'));
+    assert.equal(response.status, 500);
+    const step = trace.steps.find(candidate => candidate.name === '分段弹幕·处理异常');
+    assert.ok(step, '缺少分段弹幕处理异常步骤');
+    assert.equal(step.status, 'fail');
+    assert.equal(step.reason, '分段弹幕处理失败');
+    assert.equal(step.error, 'segment failed');
+  } finally {
+    instance.getSegmentComments = originalGetSegmentComments;
+  }
+});
+
 test('getCommentByUrl 对 @30% 这类非法偏移格式给出提示', async () => {
   initGlobals({ SOURCE_ORDER: 'tencent', COMMENT_CACHE_MIN_COUNT: '0', DANMU_LIMIT: '0', GROUP_MINUTE: '0' });
   const instance = getSourceByKey('tencent');
@@ -206,6 +326,24 @@ test('matchAnime 参数校验失败时记录 fail 步骤', async () => {
   }
 });
 
+test('matchAnime 请求体解析异常时记录 fail 步骤', async () => {
+  initGlobals({});
+  const trace = createTrace('POST', '/api/v2/match');
+  const request = new Request('http://localhost/api/v2/match', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'not-json',
+  });
+  const response = await runWithTrace(trace, () => matchAnime(new URL(request.url), request, '1.1.1.1'));
+
+  assert.equal(response.status, 400);
+  const step = trace.steps.find(item => item.name === '匹配·处理异常');
+  assert.ok(step, '缺少匹配处理异常步骤');
+  assert.equal(step.status, 'fail');
+  assert.equal(step.reason, '匹配请求处理失败');
+  assert.ok(step.error);
+});
+
 test('handleFavoriteRemove 未找到收藏时记录 miss 步骤', async () => {
   initGlobals({});
   const trace = createTrace('POST', '/api/v2/favorite/remove');
@@ -233,6 +371,75 @@ test('handleFavoriteRefresh 未找到收藏时记录 miss 步骤', async () => {
   assert.ok(step, '缺少刷新步骤');
   assert.equal(step.status, 'miss');
   assert.equal(step.reason, '未找到该收藏');
+});
+
+test('handleFavoriteAdd 使用固定 reason 并在非管理员视图遮罩收藏名', async () => {
+  initGlobals({ ADMIN_TOKEN: 'admin-tok' });
+  Globals.favoriteCache = new Map();
+  Globals.searchCache = new Map();
+  Globals.localCacheValid = false;
+  Globals.redisValid = false;
+  const anime = createFavoriteAnime('敏感收藏', 1, 930001);
+  Globals.searchCache.set('敏感收藏', {
+    results: [favoriteSearchResult(anime)],
+    details: [anime],
+    timestamp: Date.now(),
+  });
+
+  const trace = createTrace('POST', '/api/v2/favorite/add');
+  const request = new Request('http://localhost/api/v2/favorite/add', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ keyword: '敏感收藏' }),
+  });
+  const response = await runWithTrace(trace, () => handleFavoriteAdd(request, new URL(request.url)));
+  assert.equal(response.status, 200);
+
+  const writeStep = trace.steps.find(step => step.name === '收藏·写入');
+  assert.ok(writeStep, '缺少收藏写入步骤');
+  assert.equal(writeStep.reason, '已收藏');
+  assert.equal(writeStep.inputs.favoriteName, '敏感收藏');
+
+  finishTrace(trace);
+  globals.currentToken = 'user-tok';
+  const body = await (await handleInterfaceDetail(trace.id)).json();
+  const maskedWrite = body.trace.steps.find(step => step.name === '收藏·写入');
+  assert.equal(maskedWrite.reason, '已收藏');
+  assert.equal(maskedWrite.inputs.favoriteName, '***');
+  assert.doesNotMatch(body.trace.diagnosis.conclusion, /敏感收藏/);
+});
+
+test('收藏异常分支使用固定 reason 且非管理员只看到打码后的 error', async () => {
+  const cases = [
+    { handler: handleFavoriteAdd, step: '收藏·新增', reason: '收藏失败' },
+    { handler: handleFavoriteSchedule, step: '收藏·定时刷新', reason: '设置定时刷新失败' },
+    { handler: handleFavoriteRemove, step: '收藏·删除', reason: '删除收藏失败' },
+    { handler: handleFavoriteRefresh, step: '收藏·刷新', reason: '刷新收藏失败' },
+  ];
+  for (const { handler, step, reason } of cases) {
+    initGlobals({ ADMIN_TOKEN: 'admin-tok' });
+    Globals.deployPlatform = 'node';
+    const trace = createTrace('POST', '/api/v2/favorite/error');
+    const request = new Request('http://localhost/api/v2/favorite/error', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not-json',
+    });
+    const response = await runWithTrace(trace, () => handler(request, new URL(request.url)));
+    assert.equal(response.status, 500);
+
+    const failedStep = trace.steps.find(item => item.name === step);
+    assert.ok(failedStep, `缺少 ${step} 失败步骤`);
+    assert.equal(failedStep.reason, reason);
+    assert.ok(failedStep.error, '原始异常应保留在会被脱敏的 error 字段');
+
+    finishTrace(trace);
+    globals.currentToken = 'user-tok';
+    const body = await (await handleInterfaceDetail(trace.id)).json();
+    const maskedStep = body.trace.steps.find(item => item.name === step);
+    assert.equal(maskedStep.reason, reason);
+    assert.equal(maskedStep.error, '***');
+  }
 });
 
 test('handleFavoriteSchedule 缺参数与非 Node 部署分别记录 fail 与 skip', async () => {

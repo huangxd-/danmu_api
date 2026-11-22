@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { handleRequestWithTrace } from '../../worker.js';
 import { Globals, globals } from '../../configs/globals.js';
-import { getInterfaceDetail, getTraceRecords } from '../../utils/pipeline-trace.js';
+import { getInterfaceDetail, getTraceRecords, replaceTraceRecords } from '../../utils/pipeline-trace.js';
 import { withMockFetch } from '../helpers/context.js';
 
 test('worker 各部署入口统一调用 handleRequestWithTrace', () => {
@@ -71,8 +71,71 @@ test('handleRequestWithTrace 只留存写入请求记录的请求', async () => 
   assert.equal(getTraceRecords().length, before + 1, '业务接口应留存追踪');
 });
 
+test('恢复历史 trace 后新请求不会复用旧 id 的详情', async () => {
+  const previousTraces = getTraceRecords();
+  const previousRecords = globals.reqRecords;
+  replaceTraceRecords([{ id: '1', path: '/restored' }]);
+  globals.reqRecords = [{ requestId: '1', interface: '/restored' }];
+  try {
+    const response = await handleRequestWithTrace(
+      new Request('http://localhost/api/v2/comment/999'),
+      { TOKEN: '87654321' },
+      'vercel',
+      '9.9.9.9',
+    );
+    assert.equal(response.status, 404);
+    const record = globals.reqRecords.at(-1);
+    assert.notEqual(record.requestId, '1');
+    assert.equal(getInterfaceDetail('1').path, '/restored');
+    assert.equal(getInterfaceDetail(record.requestId).path, '/api/v2/comment/999');
+  } finally {
+    replaceTraceRecords(previousTraces);
+    globals.reqRecords = previousRecords;
+  }
+});
+
+test('恢复的 requestId 不会让页面请求被错误留存', async () => {
+  const previousRecords = globals.reqRecords;
+  globals.reqRecords = [{ requestId: 'restored-request', interface: '/restored' }];
+  try {
+    const before = getTraceRecords().length;
+    const response = await handleRequestWithTrace(
+      new Request('http://localhost/'),
+      { TOKEN: '87654321' },
+      'vercel',
+      '9.9.9.9',
+    );
+    assert.equal(response.status, 200);
+    assert.equal(getTraceRecords().length, before, '页面请求不产生请求记录，也不应留存详情');
+    assert.deepEqual(globals.reqRecords, [{ requestId: 'restored-request', interface: '/restored' }]);
+  } finally {
+    globals.reqRecords = previousRecords;
+  }
+});
+
+test('handleRequestWithTrace 向边缘上下文注册同批持久化任务', async () => {
+  const tasks = [];
+  const request = new Request('http://localhost/api/v2/comment/999', { method: 'GET' });
+  const response = await handleRequestWithTrace(
+    request,
+    { TOKEN: '87654321' },
+    'cloudflare',
+    '9.9.9.9',
+    { waitUntil: task => tasks.push(task) },
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(tasks.length, 1, '业务请求应注册持久化任务');
+  assert.equal(typeof tasks[0]?.then, 'function');
+  await tasks[0];
+});
+
 test('handleRequestWithTrace 只对查询串中的凭据参数做掩码', async () => {
-  const request = new Request('http://localhost/api/v2/search/anime?keyword=x&token=secret&api_key=k&season=2', { method: 'GET' });
+  const nestedUrl = encodeURIComponent('https://nested.example/v?token=inner-secret&episode=4');
+  const request = new Request(
+    `http://localhost/api/v2/search/anime?keyword=x&token=secret&api_key=k&sign=sig&season=2&url=${nestedUrl}`,
+    { method: 'GET' },
+  );
   const response = await withMockFetch(
     async () => new Response(JSON.stringify({ animes: [] }), { status: 200 }),
     () => handleRequestWithTrace(request, { TOKEN: '87654321' }, 'cloudflare', '9.9.9.9'),
@@ -85,4 +148,8 @@ test('handleRequestWithTrace 只对查询串中的凭据参数做掩码', async 
   assert.equal(detail.query.includes('secret'), false, 'token 取值不得出现');
   assert.ok(detail.query.includes('token=***'), '凭据参数替换为掩码');
   assert.ok(detail.query.includes('api_key=***'), '含 key 的参数替换为掩码');
+  assert.ok(detail.query.includes('sign=***'), '签名参数替换为掩码');
+  const decodedQuery = decodeURIComponent(detail.query);
+  assert.ok(decodedQuery.includes('episode=4'), '嵌套 URL 的非凭据参数应保留');
+  assert.equal(decodedQuery.includes('inner-secret'), false, '嵌套 URL 中的令牌不得出现');
 });

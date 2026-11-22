@@ -863,6 +863,24 @@ export const queryCacheKeys = [
   'animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum', 'pipelineTraces'
 ];
 
+// 请求记录先去重再截断：同一 requestId 只保留最新一条，无 requestId 的记录不参与去重
+function restoreRequestRecords(list) {
+  if (!Array.isArray(list)) return [];
+  const seenIds = new Set();
+  const kept = [];
+  for (let index = list.length - 1; index >= 0 && kept.length < globals.MAX_RECORDS; index--) {
+    const record = list[index];
+    if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+    const requestId = record.requestId == null ? '' : String(record.requestId);
+    if (requestId) {
+      if (seenIds.has(requestId)) continue;
+      seenIds.add(requestId);
+    }
+    kept.push(record);
+  }
+  return kept.reverse();
+}
+
 // 取待持久化的取值：追踪记录由 pipeline-trace 持有，其余读取全局变量
 export function cacheSnapshotValue(key) {
   return key === 'pipelineTraces' ? getTraceRecords() : globals[key];
@@ -948,7 +966,11 @@ export async function restoreQueryCache(backend, read, hashes, restored = {}, is
     const hasData = key === 'lastSelectMap' ? value && Object.keys(value).length > 0
       : key === 'reqRecords' ? value?.length > 0 : value > 0;
     if (!restored[key] && hasData) {
-      globals[key] = key === 'lastSelectMap' ? new Map(Object.entries(value)) : value;
+      globals[key] = key === 'lastSelectMap'
+        ? new Map(Object.entries(value))
+        : key === 'reqRecords'
+          ? restoreRequestRecords(value)
+          : value;
       restored[key] = true;
     }
   }

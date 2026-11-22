@@ -108,6 +108,24 @@ test('handleInterfaceDetail 敏感配置只显示已设置，不泄露取值', a
   assert.equal(body.trace.configs.find(c => c.name === 'AI_API_KEY').value, '未设置');
 });
 
+test('handleInterfaceDetail 远程映射地址对管理员也只显示存在性', async () => {
+  Globals.init({
+    ADMIN_TOKEN: 'admin-tok',
+    TITLE_MAPPING_TABLE_URL: 'https://private.example/title.txt?token=title-secret',
+    AUTO_MATCH_MAPPING_TABLE_URL: 'https://private.example/season.txt?sign=season-secret',
+  });
+  globals.currentToken = 'admin-tok';
+  useAsyncLocalStorage(AsyncLocalStorage);
+  const trace = seedTrace();
+  const body = await (await handleInterfaceDetail(trace.id)).json();
+
+  for (const name of ['TITLE_MAPPING_TABLE_URL', 'AUTO_MATCH_MAPPING_TABLE_URL']) {
+    assert.equal(body.trace.configs.find(config => config.name === name)?.value, '已设置');
+  }
+  const serialized = JSON.stringify(body);
+  assert.doesNotMatch(serialized, /private\.example|title-secret|season-secret/);
+});
+
 test('handleInterfaceDetail 结果归零诊断定位到具体步骤并保留配置生效记录', async () => {
   useToken('admin-tok', 'admin-tok');
   const trace = createTrace('GET', '/x');
