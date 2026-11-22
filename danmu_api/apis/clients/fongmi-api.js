@@ -3,7 +3,8 @@ import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
 import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripEpisodePlatform, stripNonTitleChars } from "../../utils/common-util.js";
-import { buildEpisodeCatalogs, filterSameEpisodeTitle, resolveCandidateSeason, resolveTitlePreference, scoreAnimePlatform, searchAnime } from "../dandan-api.js";
+import { buildEpisodeCatalogs, filterEpisodesByTitle, filterSameEpisodeTitle, getBangumiDataForMatch, resolveCandidateSeason, resolveTitlePreference, scoreAnimePlatform, searchAnime } from "../dandan-api.js";
+import { createPhaseTimer, markStepActive } from "../../utils/pipeline-trace.js";
 
 // =====================
 // FongMi 弹幕接口适配
@@ -404,7 +405,16 @@ function buildFongmiDanmakuItems(catalogs, apiBase) {
  * @returns {Promise<Response>} 弹幕候选响应
  */
 export async function getFongmiDanmaku(url, req) {
+  const phase = createPhaseTimer();
+  markStepActive('弹幕·参数解析');
   let { name, episode } = await parseFongmiRequestParams(url, req);
+
+  phase('弹幕·参数解析', {
+    status: name ? 'ok' : 'empty',
+    reason: name ? undefined : '缺少剧名参数，无法检索',
+    inputs: { keyword: name, episode },
+    outputs: { candidateKeywords: buildFongmiSearchKeywords(name || '') },
+  });
 
   if (!name) {
     return jsonResponse([], 200);
@@ -442,6 +452,14 @@ export async function getFongmiDanmaku(url, req) {
     return jsonResponse([], 200);
   }
 
+  markStepActive('弹幕·候选检索');
+  phase('弹幕·候选检索', {
+    status: animes.length === 0 ? 'empty' : 'ok',
+    reason: animes.length === 0 ? '按剧名与回退关键词均未检索到剧集' : undefined,
+    inputs: { keywords, episode },
+    outputs: { animeCount: animes.length },
+  });
+
   const apiBase = buildFongmiApiBase(req);
   const listings = buildEpisodeCatalogs(animes, detailStore, preference, boundaries);
   const catalogs = preference ? [...listings] : listings;
@@ -467,6 +485,14 @@ export async function getFongmiDanmaku(url, req) {
   }
 
   log("info", `[system] [fongmi] name=${name}, episode=${episode}, candidates=${items.length}`);
+  markStepActive('弹幕·候选评分');
+  phase('弹幕·候选评分', {
+    status: items.length === 0 ? 'empty' : 'ok',
+    reason: items.length === 0 ? '候选剧集均无可用的弹幕地址' : undefined,
+    inputs: { episode, candidateCount: candidates.length },
+    // 该数量是可选弹幕地址数，不是弹幕条数，用候选字段名避免诊断按条数表述
+    outputs: { 候选地址数: items.length, topScore: candidates[0]?.score },
+  });
   return jsonResponse(items, 200);
 }
 

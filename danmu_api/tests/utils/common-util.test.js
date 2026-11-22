@@ -13,7 +13,7 @@ import {
   extractSeasonNumberFromAnimeTitle, extractYear, convertChineseNumber, parseFileName,
   createDynamicPlatformOrder, sanitizeSearchKeyword, stripNonTitleChars, strictTitleMatch,
   getExplicitSeasonNumber, titleMatches, extractEpisodeNumberFromTitle, extractAnimeInfo,
-  extractEpisodeTitle, extractAnimeTitle, printFirst200Chars, normalizeTitleForMatch,
+  extractEpisodeTitle, extractAnimeTitle, printFirst200Chars, normalizeTitleForMatch, titleDecisionMeta,
 } from '../../utils/common-util.js';
 
 test('season extraction recognizes season markers', () => {
@@ -215,4 +215,17 @@ test('common-util printFirst200Chars 截断到 200 字符并写入日志缓冲',
   Globals.getConfig().logBuffer.length = 0;
   printFirst200Chars('静默');
   assert.strictEqual(Globals.getConfig().logBuffer.length, 0, 'error 级别下 info 日志不写缓冲');
+});
+
+test('common-util titleDecisionMeta 按严格模式给出判定记录名', () => {
+  Globals.init({ LOG_LEVEL: 'error', STRICT_TITLE_MATCH: 'false' });
+  assert.deepEqual(titleDecisionMeta(), {
+    config: null, label: '默认标题匹配（包含 / 相似度）', mode: '包含匹配 + 相似度（阈值 0.8）',
+  });
+  Globals.init({ LOG_LEVEL: 'error', STRICT_TITLE_MATCH: 'true' });
+  assert.equal(titleDecisionMeta().config, 'STRICT_TITLE_MATCH');
+  assert.equal(titleDecisionMeta().label, '严格标题匹配');
+  // 偏好记录等场景传 forceNonStrict，沿用默认规则名
+  assert.equal(titleDecisionMeta({ forceNonStrict: true }).label, '默认标题匹配（包含 / 相似度）');
+  Globals.init({ LOG_LEVEL: 'error' });
 });

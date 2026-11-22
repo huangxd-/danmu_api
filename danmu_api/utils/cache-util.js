@@ -3,6 +3,7 @@ import { log } from './log-util.js'
 import { Anime } from "../models/dandan-model.js";
 import { simpleHash } from "./codec-util.js";
 import { loadFavorites, resolveFavoriteForSearchKeyword, saveFavorites } from "./favorite-util.js";
+import { bumpTraceSequence, getTraceRecords, replaceTraceRecords } from "./pipeline-trace.js";
 let fs, path;
 let nodeModulesPromise;
 async function loadFileCacheModules() {
@@ -859,8 +860,31 @@ export function cleanupExpiredIPs(currentTime) {
 }
 
 export const queryCacheKeys = [
-  'animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum'
+  'animes', 'episodeIds', 'episodeNum', 'reqRecords', 'lastSelectMap', 'todayReqNum', 'pipelineTraces'
 ];
+
+// 请求记录先去重再截断：同一 requestId 只保留最新一条，无 requestId 的记录不参与去重
+function restoreRequestRecords(list) {
+  if (!Array.isArray(list)) return [];
+  const seenIds = new Set();
+  const kept = [];
+  for (let index = list.length - 1; index >= 0 && kept.length < globals.MAX_RECORDS; index--) {
+    const record = list[index];
+    if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+    const requestId = record.requestId == null ? '' : String(record.requestId);
+    if (requestId) {
+      if (seenIds.has(requestId)) continue;
+      seenIds.add(requestId);
+    }
+    kept.push(record);
+  }
+  return kept.reverse();
+}
+
+// 取待持久化的取值：追踪记录由 pipeline-trace 持有，其余读取全局变量
+export function cacheSnapshotValue(key) {
+  return key === 'pipelineTraces' ? getTraceRecords() : globals[key];
+}
 
 // 业务可以降级到内存；未成功读取的后端在本进程内保持只读，避免覆盖未知快照。
 export function canPersistCacheKey(key, backend) {
@@ -886,7 +910,7 @@ export async function restoreQueryCache(backend, read, hashes, restored = {}, is
       if (raw === null) return { key };
       if (typeof raw !== 'string') throw new Error('响应无效');
       const value = JSON.parse(raw);
-      const valid = ['animes', 'episodeIds', 'reqRecords'].includes(key)
+      const valid = ['animes', 'episodeIds', 'reqRecords', 'pipelineTraces'].includes(key)
         ? Array.isArray(value)
         : ['episodeNum', 'todayReqNum'].includes(key)
           ? Number.isSafeInteger(value) && value >= 0 && (key !== 'episodeNum' || value < Number.MAX_SAFE_INTEGER)
@@ -942,10 +966,21 @@ export async function restoreQueryCache(backend, read, hashes, restored = {}, is
     const hasData = key === 'lastSelectMap' ? value && Object.keys(value).length > 0
       : key === 'reqRecords' ? value?.length > 0 : value > 0;
     if (!restored[key] && hasData) {
-      globals[key] = key === 'lastSelectMap' ? new Map(Object.entries(value)) : value;
+      globals[key] = key === 'lastSelectMap'
+        ? new Map(Object.entries(value))
+        : key === 'reqRecords'
+          ? restoreRequestRecords(value)
+          : value;
       restored[key] = true;
     }
   }
+  // 追踪记录与请求记录同源恢复，序号由追踪模块接续
+  if (!restored.pipelineTraces && Array.isArray(data.pipelineTraces) && data.pipelineTraces.length > 0) {
+    replaceTraceRecords(data.pipelineTraces);
+    restored.pipelineTraces = true;
+  }
+  // 仅有请求记录时也要抬高序号下限，避免新请求与历史记录指向同一条详情
+  for (const record of globals.reqRecords || []) bumpTraceSequence(record?.requestId);
 }
 
 const backedUpCacheFiles = new Set();
@@ -1075,6 +1110,7 @@ export async function updateLocalCaches({ keys, force = false } = {}) {
       { key: 'episodeIds', value: globals.episodeIds },
       { key: 'episodeNum', value: globals.episodeNum },
       { key: 'reqRecords', value: globals.reqRecords },
+      { key: 'pipelineTraces', value: getTraceRecords() },
       { key: 'lastSelectMap', value: globals.lastSelectMap },
       { key: 'todayReqNum', value: globals.todayReqNum },
       { key: 'favoritesCache', value: globals.favoriteCache }

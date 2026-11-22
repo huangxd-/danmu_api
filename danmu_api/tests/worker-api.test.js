@@ -11,7 +11,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { parseLocalDanmu } from '../utils/local-danmu-parser.js';
-import { handleRequest, netlifyHandler, vercelHandler } from '../worker.js';
+import { handleRequest, handleRequestWithTrace, netlifyHandler, vercelHandler } from '../worker.js';
+import { getTraceRecords } from '../utils/pipeline-trace.js';
 import { MockRequest, parseResponse, readRequestBody, urlPrefix, withMockFetch } from './helpers/context.js';
 import { localDanmuEncodings, localDanmuExpected, localDanmuJson } from './helpers/local-danmu.js';
 import { matchAnime, searchAnime } from '../apis/dandan-api.js';
@@ -673,6 +674,152 @@ test('GET /api/v2/search/episodes should ignore polluted global detail cache sta
   } finally {
     delete Globals.requestAnimeDetailsMap;
   }
+});
+
+test('GET /api/v2/search/episodes should match by the episode number in the title after filtering removes episodes', async () => {
+  resetSearchState();
+
+  const anime = {
+    animeId: 700101,
+    bangumiId: "700101",
+    animeTitle: "集号口径测试(2024)【动漫】from iqiyi",
+    type: "动漫",
+    typeDescription: "动漫",
+    imageUrl: "https://example.com/numbered.jpg",
+    startDate: "2024-01-01T00:00:00.000Z",
+    episodeCount: 3,
+    rating: 0,
+    isFavorited: true,
+    source: "iqiyi",
+    links: [
+      { id: 730001, url: "https://www.iqiyi.com/v_case_1.html", title: "【qiyi】 第1集" },
+      { id: 730002, url: "https://www.iqiyi.com/v_case_2.html", title: "【qiyi】 第2集 预告" },
+      { id: 730003, url: "https://www.iqiyi.com/v_case_3.html", title: "【qiyi】 第3集" }
+    ]
+  };
+
+  const keyword = "集号口径测试";
+  Globals.searchCache.set(keyword, {
+    results: [createSearchResult(anime)],
+    details: [anime],
+    timestamp: Date.now()
+  });
+
+  const req = new MockRequest(urlPrefix + "/api/v2/search/episodes?anime=" + encodeURIComponent(keyword) + "&episode=3", { method: "GET" });
+  const body = await parseResponse(await handleRequest(req, { ENABLE_ANIME_EPISODE_FILTER: 'true' }));
+
+  assert.strictEqual(body.animes.length, 1);
+  assert.strictEqual(body.animes[0].episodes.length, 1);
+  assert.strictEqual(body.animes[0].episodes[0].episodeTitle, "【qiyi】 第3集", "过滤删除第2集后仍按集标题集号定位第3集");
+});
+
+test('GET /api/v2/search/episodes should fall back to list order when titles carry no episode number', async () => {
+  resetSearchState();
+
+  const anime = {
+    animeId: 700102,
+    bangumiId: "700102",
+    animeTitle: "无集号标题测试(2024)【动漫】from renren",
+    type: "动漫",
+    typeDescription: "动漫",
+    imageUrl: "https://example.com/unnumbered.jpg",
+    startDate: "2024-01-01T00:00:00.000Z",
+    episodeCount: 3,
+    rating: 0,
+    isFavorited: true,
+    source: "renren",
+    links: [
+      { id: 731001, url: "renren://case-a-1", title: "【renren】 初遇" },
+      { id: 731002, url: "renren://case-a-2", title: "【renren】 重逢" },
+      { id: 731003, url: "renren://case-a-3", title: "【renren】 告别" }
+    ]
+  };
+
+  const keyword = "无集号标题测试";
+  Globals.searchCache.set(keyword, {
+    results: [createSearchResult(anime)],
+    details: [anime],
+    timestamp: Date.now()
+  });
+
+  const req = new MockRequest(urlPrefix + "/api/v2/search/episodes?anime=" + encodeURIComponent(keyword) + "&episode=2", { method: "GET" });
+  const body = await parseResponse(await handleRequest(req));
+
+  assert.strictEqual(body.animes[0].episodes.length, 1);
+  assert.strictEqual(body.animes[0].episodes[0].episodeTitle, "【renren】 重逢", "标题无集号时退回列表第2项");
+});
+
+test('GET /api/v2/search/episodes should fall back to list order when several titles share an episode number', async () => {
+  resetSearchState();
+
+  const anime = {
+    animeId: 700103,
+    bangumiId: "700103",
+    animeTitle: "同号多条测试(2024)【综艺】from iqiyi",
+    type: "综艺",
+    typeDescription: "综艺",
+    imageUrl: "https://example.com/duplicate.jpg",
+    startDate: "2024-01-01T00:00:00.000Z",
+    episodeCount: 4,
+    rating: 0,
+    isFavorited: true,
+    source: "iqiyi",
+    links: [
+      { id: 732001, url: "https://www.iqiyi.com/v_dup_1.html", title: "【qiyi】 第1集" },
+      { id: 732002, url: "https://www.iqiyi.com/v_dup_2.html", title: "【qiyi】 第2集" },
+      { id: 732003, url: "https://www.iqiyi.com/v_dup_3a.html", title: "【qiyi】 第3集 正片" },
+      { id: 732004, url: "https://www.iqiyi.com/v_dup_3b.html", title: "【qiyi】 第3集 彩蛋版" }
+    ]
+  };
+
+  const keyword = "同号多条测试";
+  Globals.searchCache.set(keyword, {
+    results: [createSearchResult(anime)],
+    details: [anime],
+    timestamp: Date.now()
+  });
+
+  const req = new MockRequest(urlPrefix + "/api/v2/search/episodes?anime=" + encodeURIComponent(keyword) + "&episode=3", { method: "GET" });
+  const body = await parseResponse(await handleRequest(req));
+
+  assert.strictEqual(body.animes[0].episodes.length, 1, "同号多条时不返回整个同号集合");
+  assert.strictEqual(body.animes[0].episodes[0].episodeTitle, "【qiyi】 第3集 正片", "回退为列表第3项");
+});
+
+test('GET /api/v2/search/episodes should fall back to list order when titles carry only episode labels', async () => {
+  resetSearchState();
+
+  const anime = {
+    animeId: 700104,
+    bangumiId: "700104",
+    animeTitle: "综艺期号测试(2024)【综艺】from iqiyi",
+    type: "综艺",
+    typeDescription: "综艺",
+    imageUrl: "https://example.com/variety.jpg",
+    startDate: "2024-01-01T00:00:00.000Z",
+    episodeCount: 3,
+    rating: 0,
+    isFavorited: true,
+    source: "iqiyi",
+    links: [
+      { id: 733001, url: "https://www.iqiyi.com/v_var_1.html", title: "【qiyi】 第1期上" },
+      { id: 733002, url: "https://www.iqiyi.com/v_var_2.html", title: "【qiyi】 第1期下" },
+      { id: 733003, url: "https://www.iqiyi.com/v_var_3.html", title: "【qiyi】 第2期" }
+    ]
+  };
+
+  const keyword = "综艺期号测试";
+  Globals.searchCache.set(keyword, {
+    results: [createSearchResult(anime)],
+    details: [anime],
+    timestamp: Date.now()
+  });
+
+  const req = new MockRequest(urlPrefix + "/api/v2/search/episodes?anime=" + encodeURIComponent(keyword) + "&episode=2", { method: "GET" });
+  const body = await parseResponse(await handleRequest(req));
+
+  assert.strictEqual(body.animes[0].episodes.length, 1);
+  assert.strictEqual(body.animes[0].episodes[0].episodeTitle, "【qiyi】 第1期下", "期号无法提取集号时回退为列表第2项");
 });
 
 test('POST /api/v2/match should ignore polluted global anime details and use current search snapshot', async () => {
@@ -1533,4 +1680,38 @@ test('远程季集映射表：刷新接口保留路径、只接受 ADMIN_TOKEN�
   } finally {
     resetRemoteAutoMatchMappingForTests();
   }
+});
+
+test('限流拦截在详情中留下 skip 步骤与原因', async () => {
+  Globals.init({ TOKEN: '87654321', RATE_LIMIT_MAX_REQUESTS: '1', COMMENT_CACHE_MINUTES: '0' });
+  const env = { TOKEN: '87654321', RATE_LIMIT_MAX_REQUESTS: '1', COMMENT_CACHE_MINUTES: '0' };
+  const ip = '1.2.3.4';
+  const request = () => new Request('http://localhost/87654321/api/v2/comment/10001', {
+    headers: { authorization: '87654321' },
+  });
+
+  await handleRequestWithTrace(request(), env, 'node', ip);
+  const limited = await handleRequestWithTrace(request(), env, 'node', ip);
+  assert.equal(limited.status, 429);
+
+  const step = getTraceRecords().at(-1).steps.find(item => item.name === '弹幕·限流拦截');
+  assert.ok(step, '缺少限流拦截步骤');
+  assert.equal(step.status, 'skip');
+  assert.match(step.reason, /超过限流阈值（1 分钟内 1\/1 次）/);
+  assert.equal(step.inputs.限制次数, 1);
+});
+
+test('请求记录回填响应状态码', async () => {
+  Globals.init({ TOKEN: '87654321', ADMIN_TOKEN: 'admin-tok', SOURCE_ORDER: 'local' });
+  const env = { TOKEN: '87654321', ADMIN_TOKEN: 'admin-tok', SOURCE_ORDER: 'local' };
+  Globals.reqRecords = [];
+  await handleRequestWithTrace(
+    new Request('http://localhost/87654321/api/v2/favorite/remove', {
+      method: 'POST',
+      headers: { authorization: 'admin-tok', 'content-type': 'application/json' },
+      body: '{}',
+    }),
+    env, 'node', '1.1.1.1',
+  );
+  assert.equal(Globals.reqRecords.at(-1).statusCode, 400);
 });

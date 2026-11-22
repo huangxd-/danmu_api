@@ -1,4 +1,4 @@
-import { handleRequest } from '../danmu_api/worker.js';
+import { handleRequestWithTrace } from '../danmu_api/worker.js';
 
 export const onRequest = async (context) => {
   const { request, env } = context;
@@ -52,6 +52,6 @@ export const onRequest = async (context) => {
     }
   }
 
-  // 传递修改后的 request 和 env 给 handleRequest
-  return await handleRequest(modifiedRequest, env, "edgeone", clientIp);
+  // 传递带完整 URL 的 request 和 env 给核心处理函数
+  return await handleRequestWithTrace(modifiedRequest, env, "edgeone", clientIp, context);
 };

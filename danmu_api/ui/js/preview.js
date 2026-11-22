@@ -357,9 +357,10 @@ function clearPreviewSearch(shouldRender = true) {
     }
 }
 
+// 折叠取值供配置预览与接口详情共用：按 aria-controls 定位目标，避免依赖具体容器结构
 function togglePreviewValue(button) {
-    const item = button.closest('.preview-item');
-    const value = item ? item.querySelector('.preview-value') : null;
+    const id = button.getAttribute('aria-controls');
+    const value = id ? document.getElementById(id) : null;
     if (!value) return;
 
     const willExpand = value.classList.contains('is-collapsed');

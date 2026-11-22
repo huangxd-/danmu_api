@@ -1206,9 +1206,9 @@ export default class RenrenSource extends BaseSource {
 
     // 基础标题与季度匹配过滤 (增加别名匹配)
     let filteredAnimes = sourceAnimes.filter(s => {
-      if (titleMatches(s.title, queryTitle, querySeason)) return true;
+      if (titleMatches(s.title, queryTitle, querySeason, false, 0.8, s.title)) return true;
       if (s.aliases && Array.isArray(s.aliases)) {
-          return s.aliases.some(alias => titleMatches(alias, queryTitle, querySeason));
+          return s.aliases.some(alias => titleMatches(alias, queryTitle, querySeason, false, 0.8, s.title));
       }
       return false;
     });
