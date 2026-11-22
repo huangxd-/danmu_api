@@ -1,7 +1,7 @@
 import BaseSource from './base.js';
 import { log } from "../utils/log-util.js";
 import { buildQueryString, httpGet} from "../utils/http-util.js";
-import { printFirst200Chars, titleMatches, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle, extractAnimeTitle } from "../utils/common-util.js";
+import { printFirst200Chars, titleMatches, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle, extractEpisodeNumberFromTitle, extractAnimeTitle } from "../utils/common-util.js";
 import { md5, convertToAsciiSum, decodeHtmlEntities, base64ToBytes, decompressBrotli, utf8BytesToString } from "../utils/codec-util.js";
 import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
@@ -783,9 +783,12 @@ export default class IqiyiSource extends BaseSource {
 
     // 初始列表预过滤机制：若用户指定了季度，优先检查初始结果中是否已包含匹配项
     if (resolvedQuerySeason !== null) {
+      const firstSeasonTitle = resolvedQuerySeason === 1 ? normalizeTitleForMatch(queryTitle).toLowerCase() : null;
       const seasonFiltered = filteredAnimes.filter(anime => {
-        const s = extractSeasonNumberFromAnimeTitle(anime.title).season;
-        return s === resolvedQuerySeason || (resolvedQuerySeason === 1 && s === null);
+        const { season } = extractSeasonNumberFromAnimeTitle(anime.title);
+        if (season === resolvedQuerySeason || (resolvedQuerySeason === 1 && season === null)) return true;
+        return firstSeasonTitle && normalizeTitleForMatch(anime.title).toLowerCase() === firstSeasonTitle
+          && getExplicitSeasonNumber(anime.title) === null;
       });
 
       // 如果已命中目标，减少详情请求量
