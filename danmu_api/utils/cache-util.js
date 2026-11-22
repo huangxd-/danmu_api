@@ -160,43 +160,43 @@ function findAnimeByIdInIterator(iterator, idStr, source = null) {
     return fallback;
 }
 
-function* iterateSearchCacheDetails() {
-    const seen = new Set();
-
+function* detailSnapshots() {
     for (const cached of getActiveSearchCacheEntries()) {
-        if (!Array.isArray(cached.details)) {
-            continue;
-        }
-
-        for (const anime of cached.details) {
-            const identityKey = getAnimeIdentityKey(anime);
-            if (identityKey && seen.has(identityKey)) {
-                continue;
-            }
-            if (identityKey) {
-                seen.add(identityKey);
-            }
-            yield anime;
-        }
+        if (Array.isArray(cached.details)) yield cached.details;
     }
 
     // 收藏剧集的详情也纳入解析范围（永久缓存）
     if (globals.favoriteCache instanceof Map) {
         for (const cached of globals.favoriteCache.values()) {
-            if (!Array.isArray(cached.details)) {
-                continue;
-            }
+            if (Array.isArray(cached.details)) yield cached.details;
+        }
+    }
+}
 
-            for (const anime of cached.details) {
-                const identityKey = getAnimeIdentityKey(anime);
-                if (identityKey && seen.has(identityKey)) {
-                    continue;
-                }
-                if (identityKey) {
-                    seen.add(identityKey);
-                }
-                yield anime;
-            }
+export function* relatedAnimeDetails(animes, detailStore) {
+    const anchors = new Set(animes.map(getAnimeIdentityKey).filter(Boolean));
+    const seenSnapshots = new Set(animes);
+    function* siblings(details) {
+        for (const item of details) {
+            if (seenSnapshots.has(item) || !getAnimeIdentityKey(item)) continue;
+            seenSnapshots.add(item);
+            yield item;
+        }
+    }
+    if (detailStore instanceof Map) yield* siblings(detailStore.values());
+    for (const details of detailSnapshots()) {
+        if (details.some(item => anchors.has(getAnimeIdentityKey(item)))) yield* siblings(details);
+    }
+}
+
+function* iterateSearchCacheDetails() {
+    const seen = new Set();
+    for (const details of detailSnapshots()) {
+        for (const anime of details) {
+            const identityKey = getAnimeIdentityKey(anime);
+            if (identityKey && seen.has(identityKey)) continue;
+            if (identityKey) seen.add(identityKey);
+            yield anime;
         }
     }
 }

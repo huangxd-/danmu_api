@@ -5,6 +5,7 @@
 import { danAnyFormats } from '../utils/dan-any.js';
 import { parseOffsetRules } from '../utils/offset-util.js';
 import { parseAutoMatchMappingRules } from '../utils/auto-match-mapping-util.js';
+import { normalizePlatformGroup, platformTitleKey } from '../utils/platform-util.js';
 import { registerTraceConfigAccessors } from '../utils/pipeline-trace.js';
 
 export class Envs {
@@ -22,7 +23,7 @@ export class Envs {
   static sensitiveKeys = new Set();
 
   // 允许在值中写入 # 等 dotenv 视为注释字符的变量；读取时绕过 dotenv 截断以保留完整内容。加密变量按掩码写入预览集合，原始值仅供运行期使用与日志脱敏。
-  static RAW_ENV_KEYS = new Set(['ADMIN_TOKEN', 'AI_API_KEY', 'AI_MATCH_PROMPT', 'ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'BILIBILI_COOKIE', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'CUSTOM_SOURCE_API_URL', 'DANDANPLAY_ACCOUNT', 'DANDANPLAY_PASSWORD', 'DANMU_OFFSET', 'DANMU_PUSH_URL', 'DEPLOY_PLATFROM_ACCOUNT', 'DEPLOY_PLATFROM_PROJECT', 'DEPLOY_PLATFROM_TOKEN', 'DOUBAN_COOKIE', 'EPISODE_TITLE_FILTER', 'IP_BLACKLIST', 'LOCAL_REDIS_URL', 'OTHER_SERVER', 'PROXY_URL', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'TMDB_API_KEY', 'TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'UPSTASH_REDIS_REST_URL', 'VOD_SERVERS']);
+  static RAW_ENV_KEYS = new Set(['ADMIN_TOKEN', 'AI_API_KEY', 'AI_MATCH_PROMPT', 'ANIME_TITLE_FILTER', 'AUTO_MATCH_MAPPING_TABLE', 'BLOCKED_WORDS', 'BILIBILI_COOKIE', 'COLOR_POOL', 'CUSTOM_MERGE_RULES', 'CUSTOM_SOURCE_API_URL', 'DANDANPLAY_ACCOUNT', 'DANDANPLAY_PASSWORD', 'DANMU_OFFSET', 'DANMU_PUSH_URL', 'DEPLOY_PLATFROM_ACCOUNT', 'DEPLOY_PLATFROM_PROJECT', 'DEPLOY_PLATFROM_TOKEN', 'DOUBAN_COOKIE', 'EPISODE_TITLE_FILTER', 'IP_BLACKLIST', 'LOCAL_REDIS_URL', 'OTHER_SERVER', 'PROXY_URL', 'TITLE_MAPPING_TABLE', 'TITLE_NOISE_FILTER', 'TITLE_PLATFORM_MAP', 'TMDB_API_KEY', 'TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'UPSTASH_REDIS_REST_URL', 'VOD_SERVERS']);
 
   static VOD_ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan']; // vod允许的播放平台
   static ALLOWED_PLATFORMS = ['qiyi', 'bilibili1', 'imgo', 'youku', 'qq', 'migu', 'renren', 'hanjutv', 'sohu', 'leshi', 'xigua', 'maiduidui', 'aiyifan', 'hongguo', 'dandan', 'bahamut', 'animeko', 'custom']; // 全部源允许的播放平台
@@ -247,17 +248,8 @@ export class Envs {
     
     const orderArr = rawOrder
       .split(',')
-      .map(s => s.trim())
-      .filter(item => {
-        if (!item) return false;
-        // 如果包含 &，则分割校验每一部分是否有效
-        if (item.includes('&')) {
-            const parts = item.split('&').map(p => p.trim());
-            return parts.every(p => this.ALLOWED_PLATFORMS.includes(p));
-        }
-        // 单个平台直接校验
-        return this.ALLOWED_PLATFORMS.includes(item);
-      });
+      .map(item => normalizePlatformGroup(item, this.ALLOWED_PLATFORMS))
+      .filter(Boolean);
 
     this.accessedEnvVars.set('PLATFORM_ORDER', orderArr);
 
@@ -645,8 +637,8 @@ export class Envs {
    * 解析剧名映射表
    * @returns {Map} 剧名映射表
    */
-  static resolveTitleMappingTable() {
-    const mappingStr = this.get('TITLE_MAPPING_TABLE', '', 'string').trim();
+  static resolveTitleMappingTable(key = 'TITLE_MAPPING_TABLE', normalizeKey = value => value, normalizeValue = value => value) {
+    const mappingStr = this.get(key, '', 'string').trim();
     const mappingTable = new Map();
 
     if (!mappingStr) {
@@ -656,11 +648,12 @@ export class Envs {
     // 解析格式："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"
     const pairs = mappingStr.split(';');
     for (const pair of pairs) {
-      if (pair.includes('->')) {
-        const [original, mapped] = pair.split('->').map(s => s.trim());
-        if (original && mapped) {
-          mappingTable.set(original, mapped);
-        }
+      const arrow = pair.indexOf('->');
+      if (arrow < 0) continue;
+      const original = normalizeKey(pair.slice(0, arrow).trim());
+      const mapped = normalizeValue(pair.slice(arrow + 2).trim());
+      if (original && mapped) {
+        mappingTable.set(original, mapped);
       }
     }
 
@@ -691,6 +684,13 @@ export class Envs {
   static load(env = {}) {
     this.env = env;
     const configuredAiMatchPrompt = this.get('AI_MATCH_PROMPT', this.DEFAULT_AI_MATCH_PROMPT, 'string');
+    const mergeSourcePairs = this.resolveMergeSourcePairs();
+    const platformOrderArr = this.resolvePlatformOrder();
+    const platformOptions = [...new Set([
+      ...this.ALLOWED_PLATFORMS,
+      ...mergeSourcePairs.map(({ primary, secondaries }) => normalizePlatformGroup([primary, ...secondaries].join('&'), this.ALLOWED_PLATFORMS)),
+      ...platformOrderArr.filter(Boolean)
+    ].filter(Boolean))];
     
     // 环境变量分类和描述映射
     const envVarConfig = {
@@ -720,6 +720,7 @@ export class Envs {
       
       // 匹配配置
       'PLATFORM_ORDER': { category: 'match', type: 'multi-select', options: this.ALLOWED_PLATFORMS, description: '平台排序配置，可以配置自动匹配时的优选平台。\n当配置合并平台的时候，可以指定期望的合并源，\n示例：一个结果返回了"dandan&bilibili1&animeko"和"youku"时，\n当配置"youku"时返回"youku" \n当配置"dandan&animeko"时返回"dandan&bilibili1&animeko"', accessor: 'platformOrderArr' },
+      'TITLE_PLATFORM_MAP': { category: 'match', type: 'map', options: platformOptions, description: '按播放器请求的完整剧名优选来源，格式：剧名->平台;剧名->合并平台。只调整该剧的匹配和来源顺序；未配置的剧保持原样。' },
       'ANIME_TITLE_FILTER': { category: 'match', type: 'text', description: '剧名过滤规则', accessor: 'animeTitleFilter' },
       'EPISODE_TITLE_FILTER': { category: 'match', type: 'text', description: '剧集标题过滤规则', accessor: 'episodeTitleFilter' },
       'ENABLE_ANIME_EPISODE_FILTER': { category: 'match', type: 'boolean', description: '控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤', accessor: 'enableAnimeEpisodeFilter' },
@@ -789,7 +790,7 @@ export class Envs {
       favoriteRequireAdmin: this.get('FAVORITE_REQUIRE_ADMIN', false, 'boolean'), // 收藏写入和管理接口是否必须使用 admin token；列表始终公开
       localDanmuNotRequireAdmin: this.get('LOCAL_DANMU_NOT_REQUIRE_ADMIN', false, 'boolean'),
       sourceOrderArr: this.resolveSourceOrder(), // 源排序
-      mergeSourcePairs: this.resolveMergeSourcePairs(), // 源合并配置，用于将源合并获取
+      mergeSourcePairs: mergeSourcePairs, // 源合并配置，用于将源合并获取
       customMergeRules: this.resolveCustomMergeRules(), // 合并映射表，用于自定义源合并行为。
       otherServer: this.get('OTHER_SERVER', 'https://api.danmu.icu', 'string'), // 第三方弹幕服务器
       customSourceApiUrl: this.get('CUSTOM_SOURCE_API_URL', '', 'string', true), // 自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源
@@ -803,7 +804,8 @@ export class Envs {
       iqiyiConcurrency: Math.max(1, Math.min(this.get('IQIYI_CONCURRENCY', 100, 'number'), 200)), // 爱奇艺弹幕分片并发配置
       dandanplayAccount: this.get('DANDANPLAY_ACCOUNT', '', 'string', true), // 弹弹play账号，dandan 源使用
       dandanplayPassword: this.get('DANDANPLAY_PASSWORD', '', 'string', true), // 弹弹play密码，dandan 源使用
-      platformOrderArr: this.resolvePlatformOrder(), // 自动匹配优选平台
+      platformOrderArr: platformOrderArr, // 自动匹配优选平台
+      titlePlatformMap: this.resolveTitleMappingTable('TITLE_PLATFORM_MAP', platformTitleKey, value => normalizePlatformGroup(value, this.ALLOWED_PLATFORMS)),
       animeTitleFilter: this.resolveAnimeTitleFilter(), // 剧名正则过滤
       episodeTitleFilter: this.resolveEpisodeTitleFilter(), // 剧集标题正则过滤
       titleNoiseFilter: this.resolveTitleNoiseFilter(), // 剧名杂音清理规则

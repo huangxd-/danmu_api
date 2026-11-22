@@ -2,8 +2,8 @@ import { globals } from "../../configs/globals.js";
 import { jsonResponse } from "../../utils/http-util.js";
 import { log } from "../../utils/log-util.js";
 import { simplized } from "../../utils/zh-util.js";
-import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripNonTitleChars } from "../../utils/common-util.js";
-import { filterEpisodesByTitle, filterSameEpisodeTitle, getBangumiDataForMatch, searchAnime } from "../dandan-api.js";
+import { convertChineseNumber, extractEpisodeTitle, extractEpisodeNumberFromTitle, extractSeasonNumberFromAnimeTitle, getExplicitSeasonNumber, stripEpisodePlatform, stripNonTitleChars } from "../../utils/common-util.js";
+import { buildEpisodeCatalogs, filterEpisodesByTitle, filterSameEpisodeTitle, getBangumiDataForMatch, resolveCandidateSeason, resolveTitlePreference, scoreAnimePlatform, searchAnime } from "../dandan-api.js";
 import { createPhaseTimer, markStepActive } from "../../utils/pipeline-trace.js";
 
 // =====================
@@ -161,14 +161,14 @@ function extractFongmiEpisodeNumber(episode) {
 /**
  * 从 FongMi 集数文本中提取显式季号。
  * 支持 S02E05 / 第2季第3集 / Season 2 / Part 2 / 2x05 等写法。
- * 仅接受 1~50 的合理季号，避免把综艺日期"第20180512期"等误判为季。
+ * 分集文本中的「期」与「集」同义，只有显式标注且在 1~50 内的季号才参与匹配。
  * @param {string} episode 原始集数文本
  * @returns {number|null} 季号，无法识别时返回 null
  */
 function extractFongmiSeasonNumber(episode) {
   if (!episode) return null;
   const text = String(episode);
-  const season = getExplicitSeasonNumber(text);
+  const season = getExplicitSeasonNumber(text.replace(/期/g, "集"));
   if (season !== null && Number.isFinite(season) && season >= 1 && season <= 50) return season;
   const match = text.match(/(?:^|[\s_\-])(\d{1,2})x(\d{1,4})(?:$|[\s_\-.])/i);
   if (match) {
@@ -303,8 +303,8 @@ async function parseFongmiRequestParams(url, req) {
  * @param {number} index 分集索引
  * @returns {number} 匹配得分
  */
-function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
-  let score = Math.max(0, 200 - index);
+function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index, useIndexBonus = true, seasonNumber) {
+  let score = useIndexBonus ? Math.max(0, 200 - index) : 0;
 
   const normalizedTargetEpisode = normalizeFongmiEpisodeByRegex(targetEpisode);
   const targetText = normalizeFongmiText(normalizedTargetEpisode);
@@ -315,12 +315,16 @@ function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
   const titleWithoutPlatform = normalizeFongmiText(extractEpisodeTitle(episodeTitle));
   const animeText = normalizeFongmiText(anime?.animeTitle || "");
 
-  if (episodeText === targetText || titleWithoutPlatform === targetText) score += 10000;
-  if (episodeText.includes(targetText) || targetText.includes(episodeText)) score += 4500;
-  if (titleWithoutPlatform && (titleWithoutPlatform.includes(targetText) || targetText.includes(titleWithoutPlatform))) score += 2500;
-
   const targetNum = extractFongmiEpisodeNumber(normalizedTargetEpisode);
-  const episodeNum = extractFongmiEpisodeNumber(episodeTitle);
+  const targetDate = extractDateDigits(normalizedTargetEpisode);
+  const targetSeason = extractFongmiSeasonNumber(targetEpisode);
+  const useSeasonNumber = seasonNumber != null && targetNum !== null && (targetSeason !== null || !targetDate);
+  if (!useSeasonNumber) {
+    if (episodeText === targetText || titleWithoutPlatform === targetText) score += 10000;
+    if (episodeText.includes(targetText) || targetText.includes(episodeText)) score += 4500;
+    if (titleWithoutPlatform && (titleWithoutPlatform.includes(targetText) || targetText.includes(titleWithoutPlatform))) score += 2500;
+  }
+  const episodeNum = useSeasonNumber ? seasonNumber : extractFongmiEpisodeNumber(episodeTitle);
   const episodeIndexNum = parseInt(episode?.episodeNumber || `${index + 1}`, 10);
   if (targetNum !== null && episodeNum !== null && targetNum === episodeNum) score += 7000;
   if (targetNum !== null && Number.isFinite(episodeIndexNum) && targetNum === episodeIndexNum) score += 4000;
@@ -328,13 +332,11 @@ function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
   // 季数比对：目标与候选都带显式季号时严格区分（如"剧名 S02E05"应优先命中"第二季"条目）。
   // 集数加分对跨季同号集完全同分，胜负此前只由源返回顺序决定；这里同季加分、跨季重罚，
   // 保证跨季候选排到任何同季候选之后。任一侧无季标注则不调整，保持原有行为。
-  const targetSeason = extractFongmiSeasonNumber(targetEpisode);
   const animeSeason = extractSeasonNumberFromAnimeTitle(anime?.animeTitle || "").season;
   if (targetSeason !== null && animeSeason !== null) {
     score += targetSeason === animeSeason ? 5000 : -12000;
   }
 
-  const targetDate = extractDateDigits(normalizedTargetEpisode);
   const episodeDate = extractDateDigits(episodeTitle);
   if (targetDate && episodeDate && targetDate === episodeDate) score += 9000;
 
@@ -346,31 +348,46 @@ function scoreFongmiEpisodeMatch(anime, episode, targetEpisode, index) {
   return score;
 }
 
+function resolveFongmiEpisodeTarget(catalogs, target) {
+  const normalized = normalizeFongmiEpisodeByRegex(target);
+  const number = extractFongmiEpisodeNumber(normalized);
+  if (number === null || extractFongmiSeasonNumber(target) !== null || extractDateDigits(normalized)) return target;
+
+  const title = String(target).trim();
+  let resolved;
+  for (const { anime, data, seasonNumbers } of catalogs) {
+    for (const episode of data?.bangumi?.episodes || []) {
+      if (Number(episode.episodeNumber) === number) return target;
+      const relative = seasonNumbers?.get(episode.episodeId);
+      if (relative == null || (episode.episodeTitle !== title && stripEpisodePlatform(episode.episodeTitle) !== title)) continue;
+      const seasonEpisode = `S${resolveCandidateSeason(anime)}E${relative}`;
+      if (resolved && resolved !== seasonEpisode) return target;
+      resolved = seasonEpisode;
+    }
+  }
+  return resolved ?? target;
+}
+
 /**
  * 将搜索结果展开成 FongMi 可排序的候选分集列表。
- * @param {Array} animes 搜索到的剧集列表
- * @param {Map} detailStore 详情缓存
+ * @param {Iterable} catalogs 搜索结果及其分集编号
  * @param {string} apiBase 基础地址
  * @returns {Array} 候选分集数组
  */
-function buildFongmiDanmakuItems(animes, detailStore, apiBase) {
+function buildFongmiDanmakuItems(catalogs, apiBase) {
   const candidates = [];
 
-  for (const anime of animes) {
-    const bangumiData = getBangumiDataForMatch(anime, detailStore);
+  for (const { anime, data: bangumiData, seasonNumbers } of catalogs) {
     if (!bangumiData?.success || !bangumiData?.bangumi?.episodes?.length) continue;
 
-    let episodes = bangumiData.bangumi.episodes;
-    if (globals.enableAnimeEpisodeFilter) {
-      episodes = filterEpisodesByTitle(episodes);
-    }
-    episodes = filterSameEpisodeTitle(episodes);
+    const episodes = filterSameEpisodeTitle(bangumiData.bangumi.episodes, { seasonNumbers });
 
     episodes.forEach((episode, index) => {
       const commentUrl = `${apiBase}/api/v2/comment/${encodeURIComponent(episode.episodeId)}?format=xml`;
       candidates.push({
         anime,
         episode,
+        seasonNumber: seasonNumbers?.get(episode.episodeId),
         index,
         commentUrl
       });
@@ -403,6 +420,8 @@ export async function getFongmiDanmaku(url, req) {
     return jsonResponse([], 200);
   }
   const mappedTitle = globals.resolveTitleMapping(name);
+  const preference = resolveTitlePreference(name, mappedTitle, extractFongmiSeasonNumber(episode));
+  const preferredPlatform = preference?.platform;
   if (mappedTitle) {
     log("info", `[system] [fongmi] Title mapped from original: ${name} to: ${mappedTitle}`);
     name = mappedTitle;
@@ -411,13 +430,16 @@ export async function getFongmiDanmaku(url, req) {
   const detailStore = new Map();
   const keywords = buildFongmiSearchKeywords(name);
   let animes = [];
+  let boundaries;
 
   for (const keyword of keywords) {
     searchUrl.searchParams.set("keyword", keyword);
-    const searchRes = await searchAnime(searchUrl, null, null, detailStore);
+    const searchRes = await searchAnime(searchUrl, null, null, detailStore, null, false, preference);
     const searchData = await searchRes.json();
     animes = Array.isArray(searchData?.animes) ? searchData.animes : [];
+    if (preference) animes = animes.filter(preference.matches);
     if (animes.length) {
+      boundaries = searchData.tmdbSeasonBoundaries;
       if (keyword !== name) {
         log("info", `[system] [fongmi] Search fallback hit: raw=${name}, keyword=${keyword}, episode=${episode}`);
       }
@@ -439,12 +461,16 @@ export async function getFongmiDanmaku(url, req) {
   });
 
   const apiBase = buildFongmiApiBase(req);
-  const candidates = buildFongmiDanmakuItems(animes, detailStore, apiBase)
+  const listings = buildEpisodeCatalogs(animes, detailStore, preference, boundaries);
+  const catalogs = preference ? [...listings] : listings;
+  const target = preference ? resolveFongmiEpisodeTarget(catalogs, episode) : episode;
+  const candidates = buildFongmiDanmakuItems(catalogs, apiBase)
     .map(item => ({
       ...item,
-      score: scoreFongmiEpisodeMatch(item.anime, item.episode, episode, item.index)
+      score: scoreFongmiEpisodeMatch(item.anime, item.episode, target, item.index, !preferredPlatform, item.seasonNumber),
+      platformScore: preferredPlatform ? scoreAnimePlatform(item.anime, preferredPlatform, extractEpisodeTitle(item.episode.episodeTitle)) : 0
     }))
-    .sort((a, b) => b.score - a.score);
+    .sort((left, right) => right.score - left.score || right.platformScore - left.platformScore || (preferredPlatform ? left.index - right.index : 0));
 
   const seen = new Set();
   const items = [];

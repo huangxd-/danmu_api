@@ -71,7 +71,7 @@ async function findSearchEntry(cacheKey, title, season, episode, url) {
   }
 
   const searchUrl = buildFavoriteSearchUrl(url, title, season, episode);
-  const searchResponse = await searchAnime(searchUrl, null, null, detailsMap);
+  const searchResponse = await searchAnime(searchUrl, null, null, detailsMap, null, false, null);
   const searchData = await searchResponse.json();
   if (!searchData?.success || !Array.isArray(searchData.animes) || searchData.animes.length === 0) return null;
 
@@ -315,7 +315,7 @@ async function refreshFavoriteResolved(fileName, requestedKeyword, url) {
 
     const detailsMap = new Map();
     const searchUrl = buildFavoriteSearchUrl(url, title, season, episode);
-    const searchResponse = await searchAnime(searchUrl, null, null, detailsMap, null, true);
+    const searchResponse = await searchAnime(searchUrl, null, null, detailsMap, null, true, null);
     const searchData = await searchResponse.json();
     if (!searchData?.success || !Array.isArray(searchData.animes) || searchData.animes.length === 0) {
       const error = new Error('刷新失败：未找到该剧集搜索结果');
