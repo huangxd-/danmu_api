@@ -3402,16 +3402,31 @@ export async function getCommentByUrl(videoUrl, queryFormat, segmentFlag, includ
     videoUrl = videoUrl.trim();
     if (videoUrl.startsWith('local:')) {
       const key = videoUrl.slice(6);
-      if (segmentFlag) return jsonResponse(await localSource.getComments(key, 'local', true));
+      if (segmentFlag) {
+        const segments = await localSource.getComments(key, 'local', true);
+        phase('弹幕·本地弹幕', {
+          status: 'hit',
+          reason: '本地资源返回分片列表',
+          inputs: { url: maskCredentialParams(videoUrl) },
+          outputs: { count: segments.segmentList.length },
+        });
+        return jsonResponse(segments);
+      }
       const localComments = await localSource.getComments(key, 'local');
       if (!localComments.length) {
-        phase('弹幕·地址解析', {
+        phase('弹幕·本地弹幕', {
           status: 'miss',
           reason: '本地弹幕不存在',
           inputs: { url: maskCredentialParams(videoUrl) },
         });
         return jsonResponse({ success: false, count: 0, comments: [] }, 404);
       }
+      phase('弹幕·本地弹幕', {
+        status: 'hit',
+        reason: '命中本地弹幕资源',
+        inputs: { url: maskCredentialParams(videoUrl) },
+        outputs: { count: localComments.length },
+      });
       return formatDanmuResponse(buildDanmuResponse({ count: localComments.length, comments: localComments }, null), queryFormat);
     }
 

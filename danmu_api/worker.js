@@ -891,7 +891,7 @@ export async function handleRequestWithTrace(req, env, deployPlatform, clientIp,
   // 接口路径由 handleRequest 写入不含凭据的路径，此处不记录 URL 中可能携带的 token
   const trace = createTrace(req.method, '', clientIp);
   let retained = false;
-  const response = await runWithTrace(trace, async () => {
+  return runWithTrace(trace, async () => {
     try {
       const response = await handleRequest(req, env, deployPlatform, clientIp);
       trace.statusCode = response?.status ?? null;
@@ -903,15 +903,14 @@ export async function handleRequestWithTrace(req, env, deployPlatform, clientIp,
       // 只有写入请求记录的请求才留存详情，两者一一对应
       retained = globals.reqRecords.some(record => record.requestId === trace.id);
       finishTrace(trace, retained);
+      // 异常同样要落盘；边缘/Serverless 可能在响应后冻结 timer，优先注册 waitUntil
+      if (retained && SERVERLESS_PLATFORMS.has(deployPlatform)) {
+        const pending = flushTracePersistence();
+        if (typeof lifecycleContext?.waitUntil === 'function') lifecycleContext.waitUntil(pending);
+        else await pending;
+      }
     }
   });
-  // 边缘/Serverless 可能在响应后冻结 timer：优先注册 waitUntil，否则返回前写完同一快照
-  if (retained && SERVERLESS_PLATFORMS.has(deployPlatform)) {
-    const pending = flushTracePersistence();
-    if (typeof lifecycleContext?.waitUntil === 'function') lifecycleContext.waitUntil(pending);
-    else await pending;
-  }
-  return response;
 }
 
 // 详情随请求记录同批落盘；模块加载时注册一次

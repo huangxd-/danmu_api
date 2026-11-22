@@ -16,6 +16,7 @@ import { setSearchCache } from '../../utils/cache-util.js';
 import { convertToDanmakuJson } from '../../utils/danmu-util.js';
 import { createTrace, finishTrace, runWithTrace, useAsyncLocalStorage } from '../../utils/pipeline-trace.js';
 import { createFavoriteAnime, favoriteSearchResult } from '../helpers/favorites.js';
+import { buildLocalDanmuResourceKey } from '../../utils/local-danmu-parser.js';
 
 function initGlobals(overrides = {}) {
   Globals.init(overrides);
@@ -181,9 +182,49 @@ test('getCommentByUrl 参数错误与本地缺失时记录失败步骤', async (
     const response = await runWithTrace(trace, () => getCommentByUrl(item.url, 'json', false));
     assert.equal(response.status, 400 + (item.status === 'miss' ? 4 : 0));
     const step = trace.steps.find(candidate => candidate.name === '弹幕·地址解析');
-    assert.ok(step, `缺少 ${item.url || '空地址'} 的地址解析步骤`);
-    assert.equal(step.status, item.status);
-    assert.equal(step.reason, item.reason);
+    if (item.status === 'miss') {
+      const localStep = trace.steps.find(candidate => candidate.name === '弹幕·本地弹幕');
+      assert.ok(localStep, '本地弹幕缺失应记录本地弹幕步骤');
+      assert.equal(localStep.status, 'miss');
+      assert.equal(localStep.reason, '本地弹幕不存在');
+    } else {
+      assert.ok(step, `缺少 ${item.url || '空地址'} 的地址解析步骤`);
+      assert.equal(step.status, item.status);
+      assert.equal(step.reason, item.reason);
+    }
+  }
+});
+
+test('getCommentByUrl 本地弹幕命中记录 hit 步骤及条数', async () => {
+  initGlobals({});
+  const local = getSourceByKey('local');
+  const originalGetComments = local.getComments;
+  local.getComments = async (key, source, segmentFlag) => segmentFlag
+    ? { type: 'local', segmentList: [{ segment_start: 0, segment_end: 30000, url: key }] }
+    : convertToDanmakuJson([{ p: '1.0,1,16777215', m: 'local danmu' }], 'local');
+  try {
+    const resourceKey = buildLocalDanmuResourceKey({ title: '本地剧', year: 2026, type: 'tv', episode: 1 });
+    const trace = createTrace('GET', '/api/v2/comment');
+    const response = await runWithTrace(trace, () => getCommentByUrl(`local:${resourceKey}`, 'json', false));
+    assert.equal(response.status, 200);
+    const step = trace.steps.find(candidate => candidate.name === '弹幕·本地弹幕');
+    assert.ok(step, '缺少本地弹幕命中步骤');
+    assert.equal(step.status, 'hit');
+    assert.equal(step.reason, '命中本地弹幕资源');
+    assert.equal(step.outputs.count, 1);
+    assert.equal(step.inputs.url, `local:${resourceKey}`, '本地资源标识只登记在输入中');
+    assert.doesNotMatch(step.reason, /本地剧/, '固定 reason 不夹带资源标识');
+
+    const segmentTrace = createTrace('GET', '/api/v2/comment');
+    const segments = await runWithTrace(segmentTrace, () => getCommentByUrl(`local:${resourceKey}`, 'json', true));
+    assert.equal(segments.status, 200);
+    const segmentStep = segmentTrace.steps.find(candidate => candidate.name === '弹幕·本地弹幕');
+    assert.ok(segmentStep, '缺少本地分片列表步骤');
+    assert.equal(segmentStep.status, 'hit');
+    assert.equal(segmentStep.reason, '本地资源返回分片列表');
+    assert.equal(segmentStep.outputs.count, 1);
+  } finally {
+    local.getComments = originalGetComments;
   }
 });
 

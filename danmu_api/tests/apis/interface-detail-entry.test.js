@@ -130,6 +130,58 @@ test('handleRequestWithTrace 向边缘上下文注册同批持久化任务', asy
   await tasks[0];
 });
 
+test('handleRequestWithTrace 异常时仍向边缘上下文注册持久化任务', async () => {
+  const failure = new Error('cache read failed');
+  const previousEpisodes = globals.episodeIds;
+  globals.episodeIds = [Object.defineProperty({}, 'id', { get() { throw failure; } })];
+  const tasks = [];
+  try {
+    await assert.rejects(
+      handleRequestWithTrace(
+        new Request('http://localhost/api/v2/comment/999'),
+        { TOKEN: '87654321' },
+        'cloudflare',
+        '9.9.9.9',
+        { waitUntil: task => tasks.push(task) },
+      ),
+      error => error === failure,
+    );
+  } finally {
+    globals.episodeIds = previousEpisodes;
+  }
+
+  assert.equal(tasks.length, 1, '异常请求也应注册持久化任务');
+  await tasks[0];
+});
+
+test('handleRequestWithTrace 无 waitUntil 时异常前完成持久化', async () => {
+  const failure = new Error('cache read failed');
+  const previousEpisodes = globals.episodeIds;
+  const previousLocalCacheValid = globals.localCacheValid;
+  const previousWritable = globals.queryCacheWritable;
+  globals.episodeIds = [Object.defineProperty({}, 'id', { get() { throw failure; } })];
+  globals.localCacheValid = true;
+  globals.queryCacheWritable = { file: false };
+  try {
+    await assert.rejects(
+      handleRequestWithTrace(
+        new Request('http://localhost/api/v2/comment/999'),
+        { TOKEN: '87654321' },
+        'vercel',
+        '9.9.9.9',
+      ),
+      error => error === failure,
+    );
+    const record = globals.reqRecords.at(-1);
+    assert.ok(record?.requestId, '异常请求应留下请求记录');
+    assert.ok(getInterfaceDetail(record.requestId), '持久化流程应可读取该异常详情');
+  } finally {
+    globals.episodeIds = previousEpisodes;
+    globals.localCacheValid = previousLocalCacheValid;
+    globals.queryCacheWritable = previousWritable;
+  }
+});
+
 test('handleRequestWithTrace 只对查询串中的凭据参数做掩码', async () => {
   const nestedUrl = encodeURIComponent('https://nested.example/v?token=inner-secret&episode=4');
   const request = new Request(
