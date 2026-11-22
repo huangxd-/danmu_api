@@ -6,7 +6,7 @@ dotenv.config();
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp, filterSameEpisodeTitle, buildBangumiData, resolveEpisodeCount, applyEpisodeTitleFilter, filterEpisodesByTitle, withAvailableEpisodeCount } from '../../apis/dandan-api.js';
+import { extractTitleSeasonEpisode, buildSearchAnimeUrl, matchSeason, matchAniAndEp, fallbackMatchAniAndEp, filterSameEpisodeTitle, buildBangumiData, resolveEpisodeCount, applyEpisodeTitleFilter, filterEpisodesByTitle, withAvailableEpisodeCount, buildMatchScoring } from '../../apis/dandan-api.js';
 import { getSearchCache, setSearchCache } from '../../utils/cache-util.js';
 import { addFavorite, removeFavorite, saveFavorites } from '../../utils/favorite-util.js';
 import { Globals, globals } from '../../configs/globals.js';
@@ -175,11 +175,21 @@ test('normal matching keeps the requested platform and exact episode', async () 
     ]
   };
 
+  const unrelated = {
+    animeId: 7782,
+    bangumiId: '7782',
+    animeTitle: '别的番剧',
+    source: '360',
+    type: 'tvseries',
+    episodeCount: 1,
+    links: [{ id: 14, title: '【qq】 第1集', url: 'https://v.qq.com/x/cover/other/1.html' }],
+  };
+
   const result = await matchAniAndEp(
     1,
     1,
     null,
-    { animes: [anime] },
+    { animes: [unrelated, anime] },
     '平台测试',
     new Request('http://localhost/api/v2/match'),
     'qq',
@@ -191,6 +201,15 @@ test('normal matching keeps the requested platform and exact episode', async () 
   assert.equal(result.resAnime?.animeId, 7781);
   assert.equal(result.resEpisode?.episodeId, 12);
   assert.equal(result.resEpisode?.episodeTitle, '【qq】 第1集');
+  // 每个候选都带判定阶段，标题不符的候选同样列出
+  assert.equal(result.candidates.length, 2);
+  const scored = result.candidates.find(item => item.stage === '参与评分');
+  assert.equal(scored.title, '平台测试');
+  assert.equal(typeof scored.score, 'number');
+  assert.equal(scored.score > 0, true, '命中偏好平台应为正分');
+  assert.equal(scored.episodeTitle, '【qq】 第1集');
+  const missed = result.candidates.find(item => item.title === '别的番剧');
+  assert.equal(missed.stage, '标题未命中');
 });
 
 // 真实数据样本：腾讯《现在就出发 第4季》第5话，21 集里 11 集是「先导片」「加更」，过滤后剩 10 集正片
@@ -357,4 +376,134 @@ test('回填可用集数后匹配到的剧集与平台声明集数时一致', as
 
   assert.equal(withDeclaredCount.episodeId, 40012, '声明集数为 21 时匹配到第 3 话');
   assert.deepStrictEqual(withAvailableCount, withDeclaredCount, '可用集数为 10 时匹配结果不变');
+});
+
+test('buildMatchScoring 选中项与同分候选并列时标注顺序优先', () => {
+  const attempts = [{
+    platform: 'qq',
+    selected: true,
+    candidates: [
+      { title: '钢铁侠2(2010)【外语电影】from tencent', animeId: 1001, source: 'tencent', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
+      { title: '钢铁侠2(2010)【外语电影】from youku', animeId: 1002, source: 'youku', episodeTitle: '第1集', score: -99, stage: '参与评分', detail: '无平台偏好 +1、单集兜底 -100、合计 -99' },
+    ],
+  }];
+  const { rows } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2(2010)【外语电影】from tencent', animeId: 1001, source: 'tencent' });
+  const selected = rows.find(row => row.结果 === '选中');
+  assert.match(selected.结果说明, /同分候选并列，按候选顺序优先/, '同分并列时说明选中依据');
+  assert.equal(selected.尝试.includes('qq'), true);
+  // 未选中项不带并列说明
+  assert.doesNotMatch(rows.find(row => row.结果 === '未选中').结果说明, /同分候选并列/);
+});
+
+test('buildMatchScoring 跨源同标题候选只标记实际选中的一条', () => {
+  const attempts = [{
+    platform: '默认',
+    selected: true,
+    candidates: [
+      { title: '同名剧', animeId: 1, source: 'bilibili', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+      { title: '同名剧', animeId: 2, source: 'tencent', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+    ],
+  }];
+  const { rows } = buildMatchScoring(attempts, { animeTitle: '同名剧', animeId: 1, source: 'bilibili' });
+  const selectedRows = rows.filter(row => row.结果 === '选中');
+  assert.equal(selectedRows.length, 1, '同标题不同源的两条候选只能有一条被标为选中');
+  assert.match(selectedRows[0].候选, /同名剧/);
+});
+
+test('buildMatchScoring 按轮次列出未评分候选与评分候选', () => {
+  const attempts = [
+    {
+      platform: 'qq',
+      candidates: [
+        { title: '钢铁侠2', source: 'iqiyi', episodeTitle: '第1集', score: 1, stage: '参与评分' },
+        { title: '钢铁侠2 普通话', source: 'iqiyi', stage: '无分集' },
+        { title: '钢铁侠3', source: 'iqiyi', stage: '标题未命中' },
+      ],
+    },
+    {
+      platform: 'bilibili&animeko',
+      selected: true,
+      candidates: [
+        { title: '钢铁侠2', animeId: 1003, source: 'iqiyi', episodeTitle: '第1集', score: 100, stage: '参与评分' },
+        { title: '钢铁侠3', source: 'iqiyi', stage: '标题未命中' },
+      ],
+    },
+  ];
+  const { rows, counts } = buildMatchScoring(attempts, { animeTitle: '钢铁侠2', animeId: 1003, source: 'iqiyi' });
+  // 每一轮尝试独立成行，同一候选在不同偏好组的重复参与可辨识
+  const rejected = rows.filter(row => row.结果 === '标题未命中');
+  assert.equal(rejected.length, 2);
+  assert.deepEqual(rejected.map(row => row.尝试), ['第 1 轮 · qq', '第 2 轮 · bilibili、animeko']);
+  assert.match(rejected[0].结果说明, /qq 偏好组下淘汰/);
+  assert.equal(counts.标题未命中, 2);
+  assert.equal(counts.无分集, 1);
+  // 评分候选按轮次展开并按分数降序
+  const scored = rows.filter(row => row.结果 === '选中' || row.结果 === '未选中');
+  assert.equal(scored.length, 2);
+  assert.equal(scored[0].尝试, '第 1 轮 · qq');
+  assert.equal(scored[1].尝试, '第 2 轮 · bilibili、animeko');
+  assert.equal(scored.filter(row => row.结果 === '选中').length, 1, '只有实际命中的偏好组标记选中');
+  assert.equal(scored.find(row => row.结果 === '选中').尝试, '第 2 轮 · bilibili、animeko');
+});
+
+test('matchAniAndEp 电影模式记录平台不匹配的候选', async () => {
+  Globals.init({ REMEMBER_LAST_SELECT: 'false', LOG_LEVEL: 'error' });
+
+  const anime = {
+    animeId: 8848,
+    bangumiId: '8848',
+    animeTitle: '平台测试电影',
+    source: 'youku',
+    type: 'movie',
+    episodeCount: 1,
+    links: [{ id: 21, title: '【youku】 正片', url: 'https://v.youku.com/x/other/1.html' }],
+  };
+
+  const result = await matchAniAndEp(
+    null, null, null,
+    { animes: [anime] },
+    '平台测试电影',
+    new Request('http://localhost/api/v2/match'),
+    'qq',
+    null, null,
+    new Map([['8848', anime]]),
+  );
+
+  // 资源挂在 youku，偏好组 qq 下无可用集：候选带阶段出现而不是消失
+  assert.equal(result.resAnime, null);
+  assert.equal(result.candidates.length, 1);
+  assert.equal(result.candidates[0].stage, '资源平台不匹配偏好组');
+  assert.equal(result.candidates[0].detail, 'qq');
+});
+
+test('matchAniAndEp 剧集模式记录无匹配集数的候选', async () => {
+  Globals.init({ REMEMBER_LAST_SELECT: 'false', LOG_LEVEL: 'error' });
+
+  const anime = {
+    animeId: 9900,
+    bangumiId: '9900',
+    animeTitle: '集数测试',
+    source: '360',
+    type: 'tvseries',
+    episodeCount: 2,
+    links: [
+      { id: 31, title: '【imgo】 第1集', url: 'https://www.mgtv.com/x/test/1.html' },
+      { id: 32, title: '【imgo】 第2集', url: 'https://www.mgtv.com/x/test/2.html' },
+    ],
+  };
+
+  const result = await matchAniAndEp(
+    1, 9, null,
+    { animes: [anime] },
+    '集数测试',
+    new Request('http://localhost/api/v2/match'),
+    null,
+    null, null,
+    new Map([['9900', anime]]),
+  );
+
+  assert.equal(result.resAnime, null);
+  const candidate = result.candidates.find(item => item.stage === '无匹配集数');
+  assert.ok(candidate, '无匹配集数的候选应带阶段出现');
+  assert.equal(candidate.detail, '');
 });

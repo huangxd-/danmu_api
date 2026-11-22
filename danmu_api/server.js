@@ -8,7 +8,7 @@ import zlib from 'zlib';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import dotenv from 'dotenv';
 import { Request as NodeFetchRequest } from 'node-fetch';
-import { handleRequest } from './worker.js';
+import { handleRequestWithTrace } from './worker.js';
 import { Globals, globals } from './configs/globals.js';
 import { Envs } from './configs/envs.js';
 import { clearBangumiDataCache, initBangumiData, syncBangumiDataLifecycleOnConfigChange } from './utils/bangumi-data-util.js';
@@ -362,7 +362,7 @@ function createServer() {
       });
 
       // 调用核心处理函数，并标识当前部署平台
-      const webResponse = await handleRequest(webRequest, process.env, detectNodeDeployPlatform(), clientIp);
+      const webResponse = await handleRequestWithTrace(webRequest, process.env, detectNodeDeployPlatform(), clientIp);
 
       // 将 Web API Response 对象转换为 Node.js 响应
       res.statusCode = webResponse.status;

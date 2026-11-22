@@ -2,7 +2,7 @@ import { globals } from '../configs/globals.js';
 import { log } from './log-util.js'
 import { simpleHash, serializeValue } from "./codec-util.js";
 import { loadFavorites } from './favorite-util.js';
-import { queryCacheKeys, canPersistCacheKey, restoreQueryCache, getLocalCaches, judgeLocalCacheValid } from './cache-util.js';
+import { queryCacheKeys, canPersistCacheKey, cacheSnapshotValue, restoreQueryCache, getLocalCaches, judgeLocalCacheValid } from './cache-util.js';
 
 let initializing = null;
 let persistentCachesInitializing = null;
@@ -332,7 +332,7 @@ export async function updateRedisCaches({ keys, force = false, timeoutMs } = {})
     const updates = [];
 
     // 检查每个变量的哈希值
-    const variables = [...queryCacheKeys, 'favoriteCache'].filter(key => (!keys || keys.includes(key)) && (force || canPersistCacheKey(key, 'upstash'))).map(key => ({ key, value: globals[key] }));
+    const variables = [...queryCacheKeys, 'favoriteCache'].filter(key => (!keys || keys.includes(key)) && (force || canPersistCacheKey(key, 'upstash'))).map(key => ({ key, value: cacheSnapshotValue(key) }));
 
     for (const { key, value } of variables) {
       const serializedValue = serializeValue(key, value);

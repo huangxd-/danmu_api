@@ -1,4 +1,6 @@
 import { globals } from '../configs/globals.js';
+import { recordTitleDecision } from './pipeline-trace.js';
+import { sourceLogContext } from './http-util.js';
 import { log } from './log-util.js'
 import { simplized } from './zh-util.js';
 
@@ -279,15 +281,38 @@ export function getExplicitSeasonNumber(text) {
  * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false, threshold = 0.8) {
-  if (title == null || query == null) return false;
+// 标题判定的记录名：严格模式由 STRICT_TITLE_MATCH 决定，默认规则是代码内固定的包含匹配与相似度阈值
+// 跳过标题判定的放行分支复用同一组名称，使同一配置项的判定聚合在一处
+export function titleDecisionMeta({ forceNonStrict = false, threshold = 0.8 } = {}) {
+  if (!forceNonStrict && globals.strictTitleMatch) {
+    return { config: 'STRICT_TITLE_MATCH', label: '严格标题匹配', mode: '严格匹配（标题相等或搜索词开头加季号）' };
+  }
+  return { config: null, label: '默认标题匹配（包含 / 相似度）', mode: `包含匹配 + 相似度（阈值 ${threshold}）` };
+}
+
+export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false, threshold = 0.8, group = null) {
+  const strictMode = !forceNonStrict && globals.strictTitleMatch;
+  const decision = titleDecisionMeta({ forceNonStrict, threshold });
+  // 偏好记录、跨季预筛等场景传入 forceNonStrict，不作为过滤判定登记
+  const finish = (matched, reason) => {
+    if (!forceNonStrict) {
+      recordTitleDecision({
+        ...decision, group, source: sourceLogContext.getStore() || '', query, value: title, matched, reason,
+      });
+    }
+    return matched;
+  };
+  if (title == null || query == null) return finish(false, '标题或搜索词为空');
 
   const titleText = String(title);
   const queryText = String(query);
-  if (!titleText || !queryText) return false;
+  if (!titleText || !queryText) return finish(false, '标题或搜索词为空');
 
   // 策略1：严格模式仅允许头部或完全匹配（forceNonStrict 为 true 时跳过，用于偏好记录等场景）
-  if (!forceNonStrict && globals.strictTitleMatch) return strictTitleMatch(titleText, queryText);
+  if (strictMode) {
+    const matched = strictTitleMatch(titleText, queryText);
+    return finish(matched, matched ? '严格匹配：完全相等或搜索词开头加季号' : '严格匹配：标题不以搜索词开头');
+  }
 
   // 剧名杂音清理：移除画质/配音/版本等杂音词，避免阻塞匹配
   const tagFilter = globals.titleNoiseFilter || null;
@@ -326,15 +351,15 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
     if (querySeason > 1) {
       // 搜索指定续作(>1)时，仅当源标题明确包含季号时才校验季号一致性
       // 源标题无季号的不分季长剧不应被此规则拦截，交由上游源处理器决定
-      if (titleSeason !== null && titleSeason !== querySeason) return false;
+      if (titleSeason !== null && titleSeason !== querySeason) return finish(false, `季度校验：标题 S${titleSeason} 与查询 S${querySeason} 不一致`);
     } else if (querySeason === 1) {
       // 搜索第1季时，拦截明确标明为其他季度(如第2季、第3季)的结果
-      if (titleSeason !== null && titleSeason !== 1) return false;
+      if (titleSeason !== null && titleSeason !== 1) return finish(false, `季度校验：标题 S${titleSeason} 与查询 S1 不一致`);
     }
   }
 
   // 策略2：包含匹配优先 (性能最优且准确，只要完整包含任意变种即匹配)
-  if (qList.some(kw => t.includes(kw))) return true;
+  if (qList.some(kw => t.includes(kw))) return finish(true, '包含匹配命中');
 
   // 策略3：相似度匹配 (阈值0.8)
   const simMatch = qList.some(kw => {
@@ -368,11 +393,11 @@ export function titleMatches(title, query, parsedSeason = null, forceNonStrict =
       const yearQ = normalizeTitleForMatch(cleanYear).toLowerCase();
       // 仅当标题不含年份时才接受兜底，保留用户刻意用年份过滤的语义
       const titleHasYear = /[\(\（]\s*(?:19|20)\d{2}\s*[\)\）]|\b(?:19|20)\d{2}\b/.test(titleText);
-      if (yearQ && t.includes(yearQ) && !titleHasYear) return true;
+      if (yearQ && t.includes(yearQ) && !titleHasYear) return finish(true, '去年份兜底命中');
     }
   }
 
-  return simMatch;
+  return finish(simMatch, simMatch ? '相似度匹配命中' : '包含匹配与相似度匹配均未命中');
 }
 
 /**

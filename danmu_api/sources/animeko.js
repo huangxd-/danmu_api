@@ -528,8 +528,8 @@ export default class AnimekoSource extends BaseSource {
         });
       }
 
-      // 只要主标题、中文名或任一别名符合匹配条件，即保留该条目
-      return titles.some(t => t && titleMatches(t, keyword));
+      // 只要主标题、中文名或任一别名符合匹配条件，即保留该条目；同一作品的全部标题归为一个判定结果
+      return titles.some(t => t && titleMatches(t, keyword, null, false, 0.8, item.name || titles[0]));
     });
   }
 

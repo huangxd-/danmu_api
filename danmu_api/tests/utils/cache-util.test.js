@@ -9,8 +9,9 @@ import {
   isCommentCacheValid, getCommentCache, setCommentCache, findAnimeIdByCommentId, findTitleById,
   setPreferByAnimeId, getPreferAnimeId, hasLegacySeasonPreference, setPreferForTitle, storeAnimeIdsToMap,
   cleanupExpiredIPs, removeEarliestAnime, removeEpisodeByUrl, getEpisodeIdFloor,
-  canPersistCacheKey, mergeAddAnimeError, queryCacheKeys,
+  canPersistCacheKey, mergeAddAnimeError, queryCacheKeys, cacheSnapshotValue, restoreQueryCache,
 } from '../../utils/cache-util.js';
+import { createTrace, getInterfaceDetail, replaceTraceRecords, getTraceRecords, clearTraceRecords } from '../../utils/pipeline-trace.js';
 
 const reset = (extra = {}) => {
   Globals.init({ LOG_LEVEL: 'error', ...extra });
@@ -272,4 +273,93 @@ test('cache-util mergeAddAnimeError 只在目标缺少错误时补齐来源错�
   const clean = new Map();
   mergeAddAnimeError(noError, clean);
   assert.strictEqual(noError.__addAnimeError, undefined, '来源无错误时不做任何写入');
+});
+
+test('cacheSnapshotValue 为追踪记录提供与请求记录同源的持久化取值', () => {
+  reset();
+  replaceTraceRecords([{ id: '31', path: '/api/v2/search/anime' }]);
+  assert.deepStrictEqual(queryCacheKeys.includes('pipelineTraces'), true);
+  assert.strictEqual(cacheSnapshotValue('pipelineTraces').length, 1);
+  assert.strictEqual(cacheSnapshotValue('pipelineTraces')[0].id, '31');
+  assert.strictEqual(cacheSnapshotValue('reqRecords'), Globals.reqRecords);
+  clearTraceRecords();
+});
+
+test('restoreQueryCache 恢复追踪记录并使新请求不与之重号', async () => {
+  reset();
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const serialized = queryCacheKeys.map(key => (
+    key === 'pipelineTraces' ? JSON.stringify([{ id: '88', path: '/restored' }])
+      : key === 'reqRecords' ? JSON.stringify([{ requestId: '88' }])
+        : null
+  ));
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+  assert.strictEqual(getTraceRecords().length, 1);
+  assert.strictEqual(getTraceRecords()[0].path, '/restored');
+});
+
+test('restoreQueryCache 仅恢复请求记录时新详情不与历史记录重号', async () => {
+  reset();
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const serialized = queryCacheKeys.map(key => (
+    key === 'reqRecords' ? JSON.stringify([{ requestId: '900', interface: '/api/v2/match' }]) : null
+  ));
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+  const trace = createTrace('POST', '/api/v2/match');
+  assert.notEqual(trace.id, '900', '新请求不得复用已保存请求记录的 id');
+  assert.strictEqual(getInterfaceDetail('900'), null, '历史记录没有对应详情时应为空');
+});
+
+test('restoreQueryCache 请求记录按 requestId 去重并保留 null 记录', async () => {
+  reset();
+  Globals.reqRecords = [];
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const records = [
+    { requestId: 'dup', interface: '/old' },
+    { requestId: null, interface: '/null-1' },
+    { requestId: 'dup', interface: '/new' },
+    { requestId: null, interface: '/null-2' },
+  ];
+  const serialized = queryCacheKeys.map(key => (
+    key === 'reqRecords' ? JSON.stringify(records) : null
+  ));
+
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+
+  assert.deepEqual(Globals.reqRecords, [
+    { requestId: null, interface: '/null-1' },
+    { requestId: 'dup', interface: '/new' },
+    { requestId: null, interface: '/null-2' },
+  ]);
+});
+
+test('restoreQueryCache 请求记录先去重后截断到上限', async () => {
+  reset();
+  Globals.reqRecords = [];
+  Globals.todayReqNum = 250;
+  Globals.queryCacheWritable = {};
+  Globals.queryCacheInitialized = false;
+  clearTraceRecords();
+  const records = Array.from({ length: Globals.MAX_RECORDS + 5 }, (_, index) => ({
+    requestId: String(1000 + index),
+    interface: `/request/${index}`,
+  }));
+  const serialized = queryCacheKeys.map(key => (
+    key === 'reqRecords' ? JSON.stringify(records)
+      : key === 'todayReqNum' ? JSON.stringify(250)
+        : null
+  ));
+
+  await restoreQueryCache('redis', async () => serialized, {}, {});
+
+  assert.equal(Globals.reqRecords.length, Globals.MAX_RECORDS);
+  assert.equal(Globals.reqRecords[0].requestId, '1005');
+  assert.equal(Globals.reqRecords.at(-1).requestId, '1104');
+  assert.equal(Globals.todayReqNum, 250, '今日请求累计数不随记录窗口回算');
 });

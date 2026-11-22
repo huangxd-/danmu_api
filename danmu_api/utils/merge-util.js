@@ -1,4 +1,5 @@
 import { globals } from '../configs/globals.js';
+import { recordConfigEffect } from './pipeline-trace.js';
 import { log as baseLog } from './log-util.js';
 import { addAnime } from './cache-util.js';
 import { simplized } from '../utils/zh-util.js';
@@ -3285,6 +3286,9 @@ async function processMergeTask(params) {
  */
 export async function applyMergeLogic(curAnimes, detailStore = null) {
     if (!curAnimes || curAnimes.length < 2) return;
+    // 合并明细：主源与副源的配对结果，登记为配置生效记录供接口详情展示
+    const mergeEvents = [];
+    const snapshotBefore = curAnimes.length;
 
     // 获取常规配置与映射表配置
     const baseGroups = globals.mergeSourcePairs || [];
@@ -3535,9 +3539,13 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     }
 
     // 最终清理：移除已被任意一组所消费的单源原始资源
+    const removedIds = [];
     for (let i = curAnimes.length - 1; i >= 0; i--) {
         const item = curAnimes[i];
-        if (item._isMerged || globalConsumedIds.has(item.animeId)) curAnimes.splice(i, 1);
+        if (item._isMerged || globalConsumedIds.has(item.animeId)) {
+            removedIds.push(item);
+            curAnimes.splice(i, 1);
+        }
     }
 
     if (newMergedAnimes.length > 0) {
@@ -3545,6 +3553,32 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     } else {
         log("info", `[merge] 扫描完毕，未产生任何合并，列表保持不变 (数量: ${curAnimes.length})`);
     }
+
+    // 合并前后对照：合并项由主源与副源组成，被消费的原始条目与合并项一并说明
+    for (const merged of newMergedAnimes) {
+        mergeEvents.push({
+            结果: `${merged.animeTitle}（含 ${merged.mergedChildren?.length || 0} 个副源，共 ${merged.episodeCount} 集）`,
+            副源: (merged.mergedChildren || []).map(child => `${child.animeTitle} [${child.source}]`),
+        });
+    }
+    for (const item of removedIds) {
+        if (!item._isMerged) {
+            mergeEvents.push({ 结果: `${item.animeTitle} 已并入其他结果`, 副源: [item.source] });
+        }
+    }
+    recordConfigEffect('MERGE_SOURCE_PAIRS', {
+        label: '源合并明细',
+        kind: 'stats',
+        hit: newMergedAnimes.length > 0,
+        context: {
+          合并组: (globals.mergeSourcePairs || []).map(g => [g.primary, ...g.secondaries].join(' & ')).join('；') || '未配置',
+          单源保留: [...new Set((globals.mergeSourcePairs || []).filter(g => g.secondaries.length === 0).map(g => g.primary))].join('、') || '无',
+        },
+        summary: `${snapshotBefore} 条候选合并为 ${curAnimes.length} 条` + (newMergedAnimes.length > 0 ? `，产生 ${newMergedAnimes.length} 个合并项` : '，无合并产生'),
+        table: mergeEvents.length > 0
+          ? { columns: ['结果', '副源'], rows: mergeEvents }
+          : undefined,
+    });
 }
 
 
