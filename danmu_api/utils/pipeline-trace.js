@@ -42,8 +42,15 @@ export const TRACE_RUNTIME_ACCESSORS = {
 let records = [];
 
 // 请求追踪序号，作为 trace 唯一标识，用于请求记录与接口详情关联
-const TRACE_BOOT_NONCE = globalThis.crypto?.randomUUID?.()
-  || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+// 随机前缀延迟到首次创建 trace 时生成：Cloudflare Workers 禁止在模块全局作用域生成随机值
+let traceNonce;
+function getTraceNonce() {
+  if (!traceNonce) {
+    traceNonce = globalThis.crypto?.randomUUID?.()
+      || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+  return traceNonce;
+}
 let traceSeq = 0;
 const activeTraces = new Set();
 
@@ -347,7 +354,7 @@ export function markHandlerStart(startedAt) {
 // 建立一条请求追踪记录
 export function createTrace(method, path, clientIp) {
   const trace = {
-    id: `${TRACE_BOOT_NONCE}-${++traceSeq}`,
+    id: `${getTraceNonce()}-${++traceSeq}`,
     method,
     path,
     query: '',
@@ -671,7 +678,7 @@ export function replaceTraceRecords(list) {
       continue;
     }
     do {
-      trace.id = `${TRACE_BOOT_NONCE}-${++traceSeq}`;
+      trace.id = `${getTraceNonce()}-${++traceSeq}`;
     } while (usedIds.has(trace.id));
     usedIds.add(trace.id);
   }

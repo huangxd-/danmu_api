@@ -49,6 +49,34 @@ test('不同模块实例生成的 trace id 前缀不同', async () => {
   assert.notEqual(a.id, b.id, '不同实例不得从相同序号生成同一个 id');
 });
 
+test('模块加载不生成随机值，首次创建 trace 时才生成前缀', async () => {
+  // Cloudflare Workers 禁止在模块全局作用域生成随机值，导入阶段必须做到零调用
+  const cryptoObject = globalThis.crypto;
+  const original = Object.getOwnPropertyDescriptor(cryptoObject, 'randomUUID');
+  let calls = 0;
+  Object.defineProperty(cryptoObject, 'randomUUID', {
+    configurable: true,
+    writable: true,
+    value: () => {
+      calls += 1;
+      return '00000000-0000-4000-8000-000000000000';
+    },
+  });
+  try {
+    const fresh = await import('../../utils/pipeline-trace.js?instance=lazy-nonce');
+    assert.equal(calls, 0, '导入模块时不得生成随机值');
+    const first = fresh.createTrace('GET', '/a');
+    assert.equal(calls, 1, '首次创建 trace 时生成一次随机前缀');
+    const second = fresh.createTrace('GET', '/b');
+    assert.equal(calls, 1, '同一实例后续 trace 复用随机前缀');
+    const prefixOf = id => String(id).slice(0, String(id).lastIndexOf('-'));
+    assert.equal(prefixOf(second.id), prefixOf(first.id));
+  } finally {
+    if (original) Object.defineProperty(cryptoObject, 'randomUUID', original);
+    else delete cryptoObject.randomUUID;
+  }
+});
+
 test('createTrace 记录客户端 IP', () => {
   const t = createTrace('GET', '/x', '9.9.9.9');
   assert.equal(t.clientIp, '9.9.9.9');
