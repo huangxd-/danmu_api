@@ -208,8 +208,26 @@ test('normal matching keeps the requested platform and exact episode', async () 
   assert.equal(typeof scored.score, 'number');
   assert.equal(scored.score > 0, true, '命中偏好平台应为正分');
   assert.equal(scored.episodeTitle, '【qq】 第1集');
+  assert.match(scored.detail, /平台 qq 计分 \d+/, '评分说明带出平台分数值');
   const missed = result.candidates.find(item => item.title === '别的番剧');
   assert.equal(missed.stage, '标题未命中');
+  assert.match(missed.detail, /均未命中/, '标题未命中应说明尝试的候选名称数');
+});
+
+test('matchAniAndEp 标题匹配但年份不符时说明年份原因', async () => {
+  Globals.init({ REMEMBER_LAST_SELECT: 'false', LOG_LEVEL: 'error' });
+  const anime = {
+    animeId: 9001, bangumiId: '9001', animeTitle: '同名剧(2020)【电影】',
+    source: 'youku', type: 'movie', episodeCount: 1,
+    links: [{ id: 31, title: '【youku】 正片', url: 'https://v.youku.com/x/year/1.html' }],
+  };
+  const result = await matchAniAndEp(
+    null, null, 2024, { animes: [anime] }, '同名剧',
+    new Request('http://localhost/api/v2/match'), null, null, null, new Map(),
+  );
+  const missed = result.candidates.find(item => item.title === anime.animeTitle);
+  assert.equal(missed?.stage, '年份不符', '标题命中但年份不符应给出专门的阶段');
+  assert.match(missed?.detail || '', /年份不符/, '结果说明应包含年份不匹配的信息');
 });
 
 // 真实数据样本：腾讯《现在就出发 第4季》第5话，21 集里 11 集是「先导片」「加更」，过滤后剩 10 集正片

@@ -252,13 +252,14 @@ export function getExplicitSeasonNumber(text) {
  * @param {number|null} parsedSeason - 解析出的目标季度
  * @returns {boolean} 是否匹配
  */
-// 标题判定的记录名：严格模式由 STRICT_TITLE_MATCH 决定，默认规则是代码内固定的包含匹配与相似度阈值
-// 跳过标题判定的放行分支复用同一组名称，使同一配置项的判定聚合在一处
-export function titleDecisionMeta({ forceNonStrict = false, threshold = 0.8 } = {}) {
+// 标题判定的记录名：严格模式由 STRICT_TITLE_MATCH 决定，默认规则是代码内固定的包含匹配与相似度阈值；
+// 跳过标题判定的放行分支复用同一组名称，使同一配置项的判定聚合在一处；
+// 使用自有匹配规则的来源通过 label/mode 覆盖默认描述，严格模式下仍返回统一文案
+export function titleDecisionMeta({ forceNonStrict = false, threshold = 0.8, label = '默认标题匹配（包含 / 相似度）', mode = null } = {}) {
   if (!forceNonStrict && globals.strictTitleMatch) {
     return { config: 'STRICT_TITLE_MATCH', label: '严格标题匹配', mode: '严格匹配（标题相等或搜索词开头加季号）' };
   }
-  return { config: null, label: '默认标题匹配（包含 / 相似度）', mode: `包含匹配 + 相似度（阈值 ${threshold}）` };
+  return { config: null, label, mode: mode || `包含匹配 + 相似度（阈值 ${threshold}）` };
 }
 
 export function titleMatches(title, query, parsedSeason = null, forceNonStrict = false, threshold = 0.8, group = null) {

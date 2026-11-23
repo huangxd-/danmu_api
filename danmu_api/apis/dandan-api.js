@@ -554,6 +554,14 @@ export function resolveTitlePreference(title, mappedTitle, season, { episodeList
   const ruleKey = titleKeys.find(key => rules.has(key));
   const bareRequest = !ruleKey && episodeList ? bareTitleSeason(titleKeys[0]) : null;
   const platform = rules.get(ruleKey ?? bareRequest?.base);
+  // 请求剧名命中按剧优选规则时登记来源与结果；同名剧在匹配各轮反复求值由 sum 归并
+  recordConfigEffect('TITLE_PLATFORM_MAP', {
+    label: platform ? '按剧优选命中' : '按剧优选未命中',
+    hit: Boolean(platform),
+    sum: true,
+    before: { title, matchedKey: ruleKey ?? bareRequest?.base ?? '' },
+    after: { platform: platform || '' },
+  });
   if (!platform) return null;
   const target = mappedTitle === undefined ? globals.resolveTitleMapping(title) : mappedTitle;
   const keys = new Set(target ? [...titleKeys, ...platformTitleKeys(target)] : titleKeys);
@@ -2041,6 +2049,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
             if (normalizeTitleForMatch(candTitle).includes(candidateQueryTitle)) {
                 // 年份匹配依然以原始 anime 为准，且年份匹配优先于季匹配
                 if (!matchYear(anime, year)) {
+                    yearMismatch = true;
                     log("info", `[system] [match] Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
                     continue;
                 }
@@ -2067,6 +2076,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
             if (normalizeTitleForMatch(cleanTitle) === candidateQueryTitle) {
                 // 年份匹配检查
                 if (!matchYear(anime, year)) {
+                    yearMismatch = true;
                     log("info", `[system] [match] Year mismatch: anime year ${extractYear(anime.animeTitle)} vs query year ${year}`);
                     continue;
                 }
@@ -2077,7 +2087,13 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
     }
 
     if (!isMatch) {
-      candidates.push({ title: anime.animeTitle, source: anime.source, stage: yearMismatch ? '年份不符' : '标题未命中' });
+      const titleDetail = yearMismatch
+        ? `标题匹配但年份不符：请求 ${year || '不限'}，候选 ${extractYear(anime.animeTitle) || '未知'}`
+        : `标题与 ${candidateTitles.length} 个候选名称均未命中`;
+      candidates.push({
+        title: anime.animeTitle, source: anime.source,
+        stage: yearMismatch ? '年份不符' : '标题未命中', detail: titleDetail,
+      });
       continue;
     }
 
@@ -2155,7 +2171,8 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
     // 3. 匹配结果处理与评分比较
     if (matchedEpisode) {
         // 计算当前匹配的得分
-        let currentScore = platform ? scoreAnimePlatform(anime, platform, extractEpisodeTitle(matchedEpisode.episodeTitle), hasTitlePreference) : 1;
+        const platformScore = platform ? scoreAnimePlatform(anime, platform, extractEpisodeTitle(matchedEpisode.episodeTitle), hasTitlePreference) : 1;
+        let currentScore = platformScore;
 
         // 赋予手动指定偏好最高分数权重，确保其在多源匹配中具有绝对优先级
         if (isPreferredAnime) {
@@ -2170,7 +2187,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
             currentScore += 100;
         }
         const detail = [
-          platform ? `平台 ${platform} 计分` : '无平台偏好 +1',
+          platform ? `平台 ${platform} 计分 ${platformScore}` : '无平台偏好 +1',
           isPreferredAnime ? '手动优选 +9999' : null,
           isSingleEpisodeCandidate ? '单集兜底 -100' : (season && episode ? '多集 +100' : null),
           `合计 ${currentScore}`,
@@ -2207,11 +2224,21 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
   if (!hasTitlePreference && !bestRes.episode && season && episode) {
     const spilloverRes = findCrossSeasonEpisodeMap(searchData, title, year, season, episode, platform, detailStore);
     if (spilloverRes.resEpisode) {
+      const spilloverScore = platform ? scoreAnimePlatform(spilloverRes.resAnime, platform, extractEpisodeTitle(spilloverRes.resEpisode.episodeTitle), hasTitlePreference) : 1;
       bestRes = {
         episode: spilloverRes.resEpisode,
         anime: spilloverRes.resAnime,
-        score: platform ? scoreAnimePlatform(spilloverRes.resAnime, platform, extractEpisodeTitle(spilloverRes.resEpisode.episodeTitle), hasTitlePreference) : 1
+        score: spilloverScore
       };
+      candidates.push({
+        title: spilloverRes.resAnime?.animeTitle || title,
+        animeId: spilloverRes.resAnime?.animeId,
+        source: spilloverRes.resAnime?.source,
+        episodeTitle: spilloverRes.resEpisode.episodeTitle,
+        score: spilloverScore,
+        stage: '跨季顺延命中',
+        detail: `第 ${season} 季第 ${episode} 集顺延到候选剧集`,
+      });
     }
   }
 

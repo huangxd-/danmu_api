@@ -12,6 +12,13 @@ import path from 'node:path';
 import { Envs } from '../../configs/envs.js';
 import { Globals } from '../../configs/globals.js';
 
+// 从配置目录提取声明顺序，供文档一致性用例共用
+async function readEnvOrder() {
+  const source = await fs.readFile(new URL('../../configs/envs.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('const envVarConfig = {'), source.indexOf('envVarConfig: envVarConfig'));
+  return [...block.matchAll(/^\s*'([A-Z_][A-Z0-9_]*)':\s*\{/gm)].map(match => match[1]);
+}
+
 test('TITLE_NOISE_FILTER 默认规则为合法正则，且文档默认值与其一致', async () => {
     const savedEnv = Envs.env;
     const savedSystemEnv = process.env.TITLE_NOISE_FILTER;
@@ -779,3 +786,24 @@ test('Globals.init 基于 Envs 生成配置并区分 RAW_ENV_KEYS 与非 RAW 变
 //    当前 load() 中所有 encrypt 键都是 string，故线上尚未触发；
 //    本文件因此只断言 string 掩码，不断言该错误返回值。
 // ---------------------------------------------------------------------------
+
+test('README 环境变量表与配置目录的顺序一致', async () => {
+  const envOrder = await readEnvOrder();
+  assert.ok(envOrder.length > 0, '配置目录包含声明项');
+
+  const readme = await fs.readFile(new URL('../../../README.md', import.meta.url), 'utf8');
+  const tableOrder = [...readme.matchAll(/^\| ([A-Z_][A-Z0-9_]*)\s*\|/gm)].map(match => match[1]);
+
+  assert.deepStrictEqual(tableOrder, envOrder, 'README 环境变量表的顺序与配置目录一致');
+});
+
+test('.env.example 覆盖配置目录的全部变量且顺序一致', async () => {
+  const envOrder = await readEnvOrder();
+
+  const example = await fs.readFile(new URL('../../../config/.env.example', import.meta.url), 'utf8');
+  // 示例文件还包含运行时变量（端口、协议），只比较配置目录声明的键
+  const exampleKeys = [...example.matchAll(/^(?:#\s?)?([A-Z_][A-Z0-9_]*)=/gm)]
+    .map(match => match[1])
+    .filter(key => envOrder.includes(key));
+  assert.deepStrictEqual(exampleKeys, envOrder, '.env.example 的配置顺序与配置目录一致');
+});

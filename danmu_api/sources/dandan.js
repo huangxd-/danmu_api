@@ -12,7 +12,8 @@ import MangoSource from "./mango.js";
 import BilibiliSource from "./bilibili.js";
 import YoukuSource from "./youku.js";
 import BahamutSource from "./bahamut.js";
-import { titleMatches, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { titleMatches, titleDecisionMeta, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { recordTitleDecision } from "../utils/pipeline-trace.js";
 import { isNonChinese } from "../utils/zh-util.js";
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
@@ -553,6 +554,18 @@ export default class DandanSource extends BaseSource {
           } else {
             // 初始数据源逻辑：执行严密的完整标题及季度双重校验
             isMatch = allTitles.some(t => t && titleMatches(t, queryTitle, resolvedQuerySeason, false, 0.8, anime.animeTitle || allTitles[0]));
+          }
+
+          // 相关作品与 TMDB 结果按季度过滤后保留，登记放行结果使详情可解释候选来源
+          if (anime.isRelated || anime.isTmdbSource) {
+            recordTitleDecision({
+              ...titleDecisionMeta(),
+              group: anime.animeTitle, value: anime.animeTitle, source: 'dandan', query: queryTitle,
+              matched: isMatch,
+              reason: isMatch
+                ? (resolvedQuerySeason !== null ? '相关作品季度过滤后保留' : '相关作品无指定季度直接保留')
+                : '相关作品季度不符',
+            });
           }
 
           // 丢弃不符合拦截策略的条目，停止后续构建流程

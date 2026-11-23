@@ -6,7 +6,8 @@ import { generateValidStartDate } from "../utils/time-util.js";
 import { addAnime, removeEarliestAnime } from "../utils/cache-util.js";
 import { simplized, traditionalized } from "../utils/zh-util.js";
 import { getTmdbJaOriginalTitle, smartTitleReplace } from "../utils/tmdb-util.js";
-import { strictTitleMatch, normalizeTitleForMatch, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { strictTitleMatch, normalizeTitleForMatch, titleDecisionMeta, getExplicitSeasonNumber, extractSeasonNumberFromAnimeTitle } from "../utils/common-util.js";
+import { recordTitleDecision } from "../utils/pipeline-trace.js";
 import { SegmentListResponse } from '../models/dandan-model.js';
 import { searchBangumiData } from '../utils/bangumi-data-util.js';
 
@@ -332,12 +333,23 @@ export default class BahamutSource extends BaseSource {
       // 如果搜索词是日语，或者该结果是基于TMDB转换得来的，则直接跳过匹配规则放行
       if (isJapaneseKeyword || (item._searchUsedTitle && item._searchUsedTitle !== queryTitle)) {
         log("info", `[bahamut] 命中日语关键词或TMDB结果，绕过匹配规则直接保留: ${itemTitle}`);
+        recordTitleDecision({
+          config: null, label: '巴哈姆特标题匹配', mode: '日语关键词与 TMDB 检索词跳过标题判定，直接保留',
+          group: itemTitle, value: itemTitle, source: 'bahamut', query: queryTitle,
+          matched: true, reason: isJapaneseKeyword ? '日语关键词不做标题匹配，直接保留' : 'TMDB检索词不做标题匹配，直接保留',
+        });
         return true;
       }
 
       // 优先匹配主标题，若失败则继续在别名池中进行匹配兜底
-      return bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle) || 
+      const isMatch = bahamutTitleMatches(itemTitle, queryTitle, usedSearchTitle) ||
              (Array.isArray(item.aliases) && item.aliases.some(alias => bahamutTitleMatches(alias, queryTitle, usedSearchTitle)));
+      recordTitleDecision({
+        ...titleDecisionMeta({ label: '巴哈姆特标题匹配', mode: '归一化后包含匹配（繁简归一、忽略大小写）' }),
+        group: itemTitle, value: itemTitle, source: 'bahamut', query: queryTitle,
+        matched: isMatch, reason: isMatch ? '巴哈姆特标题归一化后包含匹配' : '标题与检索词不匹配',
+      });
+      return isMatch;
     });
 
     // 记录替换前的原始标题，作为别名传递给合并工具进行比对

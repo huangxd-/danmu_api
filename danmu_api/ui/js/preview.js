@@ -33,7 +33,7 @@ function renderCategoryHeading(category) {
 
 const previewGroupDefinitions = {
     api: [
-        { name: '访问认证', keys: ['TOKEN', 'ADMIN_TOKEN', 'FAVORITE_REQUIRE_ADMIN'] },
+        { name: '访问认证', keys: ['TOKEN', 'ADMIN_TOKEN', 'FAVORITE_REQUIRE_ADMIN', 'LOCAL_DANMU_NOT_REQUIRE_ADMIN'] },
         { name: '请求控制', keys: ['RATE_LIMIT_MAX_REQUESTS'] }
     ],
     source: [
@@ -43,16 +43,18 @@ const previewGroupDefinitions = {
         { name: 'NipaPlay 中转弹弹play服务端', keys: ['DANDANPLAY_ACCOUNT', 'DANDANPLAY_PASSWORD'] }
     ],
     match: [
-        { name: '匹配策略', keys: ['PLATFORM_ORDER', 'TITLE_PLATFORM_MAP', 'STRICT_TITLE_MATCH', 'ENABLE_ANIME_EPISODE_FILTER'] },
-        { name: '标题处理', keys: ['ANIME_TITLE_FILTER', 'EPISODE_TITLE_FILTER', 'TITLE_TO_CHINESE', 'ANIME_TITLE_SIMPLIFIED', 'TITLE_MAPPING_TABLE', 'TITLE_MAPPING_TABLE_URL', 'AUTO_MATCH_MAPPING_TABLE', 'AUTO_MATCH_MAPPING_TABLE_URL', 'TITLE_NOISE_FILTER'] },
+        { name: '匹配策略', keys: ['PLATFORM_ORDER', 'TITLE_PLATFORM_MAP'] },
+        { name: '剧名清洗与映射', keys: ['TITLE_NOISE_FILTER', 'ANIME_TITLE_SIMPLIFIED', 'TITLE_TO_CHINESE', 'TITLE_MAPPING_TABLE', 'TITLE_MAPPING_TABLE_URL', 'AUTO_MATCH_MAPPING_TABLE', 'AUTO_MATCH_MAPPING_TABLE_URL'] },
+        { name: '结果过滤', keys: ['ANIME_TITLE_FILTER', 'EPISODE_TITLE_FILTER', 'ENABLE_ANIME_EPISODE_FILTER'] },
+        { name: '匹配严格度', keys: ['STRICT_TITLE_MATCH'] },
         { name: 'AI 匹配', keys: ['AI_BASE_URL', 'AI_MODEL', 'AI_API_KEY', 'AI_MATCH_PROMPT'] },
         { name: '动画元数据', keys: ['USE_BANGUMI_DATA'] }
     ],
     danmu: [
         { name: '过滤与数量', keys: ['BLOCKED_WORDS', 'GROUP_MINUTE', 'DANMU_LIMIT'] },
         { name: '显示与转换', keys: ['DANMU_SIMPLIFIED_TRADITIONAL', 'CONVERT_TOP_BOTTOM_TO_SCROLL', 'CONVERT_COLOR', 'COLOR_POOL', 'GRADIENT_CHANCE', 'GRADIENT_COLORS', 'LIKE_SWITCH'] },
-        { name: '输出与推送', keys: ['DANMU_OUTPUT_FORMAT', 'DANMU_PUSH_URL'] },
-        { name: '时间与来源适配', keys: ['DANMU_OFFSET', 'HONGGUO_MERGE_ALL_EPISODES'] }
+        { name: '时间与来源适配', keys: ['DANMU_OFFSET', 'HONGGUO_MERGE_ALL_EPISODES'] },
+        { name: '输出与推送', keys: ['DANMU_OUTPUT_FORMAT', 'DANMU_PUSH_URL'] }
     ],
     cache: [
         { name: '文件缓存', keys: ['LOCAL_CACHE_ENABLED'] },
