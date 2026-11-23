@@ -300,7 +300,7 @@ export default class YoukuSource extends BaseSource {
           for (const ep of formattedEps) {
             const fullUrl = ep.link || `https://v.youku.com/v_show/id_${ep.vid}.html`;
             links.push({
-              "name": ep.episodeIndex.toString(),
+              "name": (ep.displayNumber ?? ep.episodeIndex).toString(),
               "url": fullUrl,
               "title": `【youku】 ${ep.title}`
             });
@@ -349,12 +349,15 @@ export default class YoukuSource extends BaseSource {
     // 格式化分集标题
     const formattedEpisodes = filteredEpisodes.map((ep, index) => {
       const episodeIndex = index + 1;
-      const title = this._formatEpisodeTitle(ep, episodeIndex, mediaType);
+      const officialNumber = /^\d+$/.test(String(ep.seq ?? '')) && Number(ep.seq) > 0 ? Number(ep.seq) : null;
+      const title = this._formatEpisodeTitle(ep, episodeIndex, mediaType, officialNumber);
 
+      // 平台集号与数组索引分开保留：展示与集数比对用平台集号，排序仍用索引
       return {
         vid: ep.id,
         title: title,
         episodeIndex: episodeIndex,
+        displayNumber: officialNumber,
         link: ep.link
       };
     });
@@ -367,9 +370,10 @@ export default class YoukuSource extends BaseSource {
    * @param {Object} ep - 分集对象
    * @param {number} episodeIndex - 分集索引
    * @param {string} mediaType - 媒体类型
+   * @param {number|null} officialNumber - 平台标注的集号，跳过集数时与索引不同
    * @returns {string} 格式化后的标题
    */
-  _formatEpisodeTitle(ep, episodeIndex, mediaType) {
+  _formatEpisodeTitle(ep, episodeIndex, mediaType, officialNumber = null) {
     // 清理 displayName (移除日期前缀)
     let cleanDisplayName = ep.displayName || ep.title;
     const datePattern = /^(?:\d{2,4}-\d{2}-\d{2}|\d{2}-\d{2})\s*(?=(?:第\d+期))|^(?:\d{2,4}-\d{2}-\d{2}|\d{2}-\d{2})\s*:\s*/;
@@ -390,11 +394,11 @@ export default class YoukuSource extends BaseSource {
       }
     }
 
-    // 电视剧/动漫：使用 "第N集" 格式 + 原始标题
+    // 电视剧/动漫：优先用平台集号，跳过集数时数组索引会与官方编号错位
     if (/^第\d+集/.test(cleanDisplayName)) {
       return cleanDisplayName;
     } else {
-      return `第${episodeIndex}集 ${cleanDisplayName}`;
+      return `第${officialNumber ?? episodeIndex}集 ${cleanDisplayName}`;
     }
   }
 
