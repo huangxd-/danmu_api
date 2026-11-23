@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Globals } from '../../configs/globals.js';
 import { titleMatches } from '../../utils/common-util.js';
 import { setSearchCache } from '../../utils/cache-util.js';
-import { searchAnime } from '../../apis/dandan-api.js';
+import { searchAnime, resolveTitlePreference } from '../../apis/dandan-api.js';
 import { getSourceByKey } from '../../sources/registry.js';
 import {
   createTrace, runWithTrace, finishTrace, getInterfaceDetail, useAsyncLocalStorage, traceStep,
@@ -39,6 +39,24 @@ function seedCache(keyword) {
 function traceStepForTest() {
   traceStep('测试步骤', Date.now(), { status: 'ok' });
 }
+
+test('resolveTitlePreference 登记按剧优选来源的命中结果', () => {
+  initGlobals({ TITLE_PLATFORM_MAP: '葬送的芙莉莲->bilibili1' });
+  const trace = createTrace('POST', '/api/v2/match');
+  runWithTrace(trace, () => {
+    const preference = resolveTitlePreference('葬送的芙莉莲', undefined, 1);
+    assert.equal(preference?.platform, 'bilibili1', '按剧配置解析出首选平台');
+    traceStepForTest();
+  });
+  finishTrace(trace);
+
+  const detail = getInterfaceDetail(trace.id);
+  const change = detail.steps[0].changes.find(c => c.config === 'TITLE_PLATFORM_MAP' && c.hit === true);
+  assert.ok(change, '命中时登记 TITLE_PLATFORM_MAP 生效记录');
+  assert.equal(change.after.platform, 'bilibili1', '记录生效的首选平台');
+  assert.match(change.before.title, /葬送的芙莉莲/, '记录触发规则的剧名');
+  assert.equal(detail.configs.titlePlatformMap?.used, true, '配置访问应记录到追踪对象');
+});
 
 test('titleMatches 严格模式登记被过滤与保留的候选及判定原因', () => {
   initGlobals({ STRICT_TITLE_MATCH: 'true' });

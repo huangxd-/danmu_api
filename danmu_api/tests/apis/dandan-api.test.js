@@ -208,6 +208,7 @@ test('normal matching keeps the requested platform and exact episode', async () 
   assert.equal(typeof scored.score, 'number');
   assert.equal(scored.score > 0, true, '命中偏好平台应为正分');
   assert.equal(scored.episodeTitle, '【qq】 第1集');
+  assert.match(scored.detail, /平台 qq 计分 \d+/, '评分说明带出平台分数值');
   const missed = result.candidates.find(item => item.title === '别的番剧');
   assert.equal(missed.stage, '标题未命中');
 });

@@ -554,6 +554,14 @@ export function resolveTitlePreference(title, mappedTitle, season, { episodeList
   const ruleKey = titleKeys.find(key => rules.has(key));
   const bareRequest = !ruleKey && episodeList ? bareTitleSeason(titleKeys[0]) : null;
   const platform = rules.get(ruleKey ?? bareRequest?.base);
+  // 请求剧名命中按剧优选规则时登记来源与结果；同名剧在匹配各轮反复求值由 sum 归并
+  recordConfigEffect('TITLE_PLATFORM_MAP', {
+    label: platform ? '按剧优选命中' : '按剧优选未命中',
+    hit: Boolean(platform),
+    sum: true,
+    before: { title, matchedKey: ruleKey ?? bareRequest?.base ?? '' },
+    after: { platform: platform || '' },
+  });
   if (!platform) return null;
   const target = mappedTitle === undefined ? globals.resolveTitleMapping(title) : mappedTitle;
   const keys = new Set(target ? [...titleKeys, ...platformTitleKeys(target)] : titleKeys);
@@ -2155,7 +2163,8 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
     // 3. 匹配结果处理与评分比较
     if (matchedEpisode) {
         // 计算当前匹配的得分
-        let currentScore = platform ? scoreAnimePlatform(anime, platform, extractEpisodeTitle(matchedEpisode.episodeTitle), hasTitlePreference) : 1;
+        const platformScore = platform ? scoreAnimePlatform(anime, platform, extractEpisodeTitle(matchedEpisode.episodeTitle), hasTitlePreference) : 1;
+        let currentScore = platformScore;
 
         // 赋予手动指定偏好最高分数权重，确保其在多源匹配中具有绝对优先级
         if (isPreferredAnime) {
@@ -2170,7 +2179,7 @@ export async function matchAniAndEp(season, episode, year, searchData, title, re
             currentScore += 100;
         }
         const detail = [
-          platform ? `平台 ${platform} 计分` : '无平台偏好 +1',
+          platform ? `平台 ${platform} 计分 ${platformScore}` : '无平台偏好 +1',
           isPreferredAnime ? '手动优选 +9999' : null,
           isSingleEpisodeCandidate ? '单集兜底 -100' : (season && episode ? '多集 +100' : null),
           `合计 ${currentScore}`,
