@@ -171,6 +171,35 @@ function buildApiUrl(path, isSystemPath = false) {
     return res;
 }
 
+// 配置项按声明顺序排列，未在声明表中的变量按原始顺序追加，显示顺序与配置读取顺序无关
+function orderEnvKeysByDeclaration(originalKeys, declaredKeys) {
+  const declared = declaredKeys.filter(key => originalKeys.includes(key));
+  const extras = originalKeys.filter(key => !declaredKeys.includes(key));
+  return declared.concat(extras);
+}
+
+// 按声明顺序把环境变量归入分类，供系统设置页按分类渲染
+function groupEnvVarsByCategory(originalEnvVars, envVarConfig) {
+  const categorized = {};
+  const declaredKeys = Object.keys(envVarConfig || {});
+  orderEnvKeysByDeclaration(Object.keys(originalEnvVars), declaredKeys).forEach(key => {
+    const varConfig = envVarConfig?.[key] || { category: 'system', type: 'text', description: '未分类配置项' };
+    const category = varConfig.category || 'system';
+    if (!categorized[category]) categorized[category] = [];
+    categorized[category].push({
+      key: key,
+      value: originalEnvVars[key],
+      description: varConfig.description || '',
+      type: varConfig.type || 'text',
+      min: varConfig.min,
+      max: varConfig.max,
+      options: varConfig.options || [],
+      sources: varConfig.sources || null
+    });
+  });
+  return categorized;
+}
+
 // 从API加载真实环境变量数据
 function loadEnvVariables() {
     // 从API获取真实配置数据
@@ -205,32 +234,7 @@ function loadEnvVariables() {
             });
 
             // 重新组织数据结构以适配现有UI
-            envVariables = {};
-            
-            // 将原始环境变量转换为UI所需格式
-            // 这里需要将原始环境变量按类别组织
-            Object.keys(originalEnvVars).forEach(key => {
-                // 从envVarConfig获取配置信息
-                const varConfig = config.envVarConfig?.[key] || { category: 'system', type: 'text', description: '未分类配置项' };
-                const category = varConfig.category || 'system';
-                
-                // 如果该分类不存在，创建它
-                if (!envVariables[category]) {
-                    envVariables[category] = [];
-                }
-                
-                // 添加到对应分类，包含完整的配置信息
-                envVariables[category].push({
-                    key: key,
-                    value: originalEnvVars[key],
-                    description: varConfig.description || '',
-                    type: varConfig.type || 'text',
-                    min: varConfig.min,
-                    max: varConfig.max,
-                    options: varConfig.options || [], // 仅对 select 和 multi-select 类型有效
-                    sources: varConfig.sources || null // 仅对 DANMU_OFFSET 等需要来源配置的有效
-                });
-            });
+            envVariables = groupEnvVarsByCategory(originalEnvVars, config.envVarConfig);
             
             // 渲染环境变量列表
             renderEnvList();

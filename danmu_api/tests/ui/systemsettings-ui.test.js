@@ -10,7 +10,16 @@ import vm from 'node:vm';
 import { apitestJsContent } from '../../ui/js/apitest.js';
 import { previewJsContent } from '../../ui/js/preview.js';
 import { systemSettingsJsContent } from '../../ui/js/systemsettings.js';
+import { mainJsContent } from '../../ui/js/main.js';
+import { Envs } from '../../configs/envs.js';
+import { Globals, globals } from '../../configs/globals.js';
 import { HTML_TEMPLATE } from '../../ui/template.js';
+
+// 从前端脚本抽取具名函数源码，供前端逻辑用例实例化
+function extractFrontendFunction(source, name) {
+  const match = source.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
+  return match ? match[0] : null;
+}
 
 test('按剧匹配规则使用当前配置的来源下拉框，其他映射仍可自由输入', () => {
   const container = {};
@@ -106,4 +115,72 @@ test('系统设置页的环境变量写接口统一携带 ADMIN_TOKEN', () => {
     // 401 时给出统一提示且不再回落 add 接口
     assert.match(systemSettingsJsContent, /function isAdminAuthError\(status, result\)/);
     assert.match(systemSettingsJsContent, /alertAdminTokenRequired\(\)/);
+});
+
+test('系统设置页的环境变量按配置声明顺序排列', () => {
+  const source = extractFrontendFunction(mainJsContent, 'orderEnvKeysByDeclaration');
+  assert.ok(source, '前端包含按声明顺序排列配置项的辅助函数');
+  const orderKeys = new Function(`${source}; return orderEnvKeysByDeclaration;`)();
+
+  // 运行时读取顺序与声明顺序不同时，按声明顺序展示
+  assert.deepStrictEqual(
+    orderKeys(['MERGE_SOURCE_PAIRS', 'SOURCE_ORDER', 'CUSTOM_MERGE_RULES'], ['SOURCE_ORDER', 'MERGE_SOURCE_PAIRS', 'CUSTOM_MERGE_RULES']),
+    ['SOURCE_ORDER', 'MERGE_SOURCE_PAIRS', 'CUSTOM_MERGE_RULES'],
+    '源配置按声明顺序展示'
+  );
+  // 未在声明表中登记的变量追加在末尾，不丢失
+  assert.deepStrictEqual(
+    orderKeys(['RUNTIME_ONLY', 'TOKEN'], ['TOKEN']),
+    ['TOKEN', 'RUNTIME_ONLY'],
+    '未登记的变量追加在声明项之后'
+  );
+  // 声明表中未出现在运行时的变量不占位
+  assert.deepStrictEqual(
+    orderKeys(['TOKEN'], ['SOURCE_ORDER', 'TOKEN']),
+    ['TOKEN'],
+    '未加载的声明项不占位'
+  );
+});
+
+test('配置目录的声明顺序与预览页分组顺序一致', () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  new Envs();
+  const declared = Object.keys(globals.envVarConfig || {});
+  assert.ok(declared.length > 0, '配置目录可用');
+
+  const groups = previewJsContent.match(/const previewGroupDefinitions = (\{[\s\S]*?\n\});/);
+  assert.ok(groups, '预览页包含分组定义');
+  const definitions = new Function(`return ${groups[1]};`)();
+
+  for (const [category, items] of Object.entries(definitions)) {
+    const previewKeys = items.flatMap(item => item.keys).filter(key => globals.envVarConfig[key]);
+    const declaredKeys = declared.filter(key => globals.envVarConfig[key]?.category === category);
+    assert.deepStrictEqual(declaredKeys, previewKeys, `${category} 分类的声明顺序与预览页分组顺序一致`);
+  }
+});
+
+test('系统设置页按声明顺序把环境变量归入分类', () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  new Envs();
+  const orderSource = extractFrontendFunction(mainJsContent, 'orderEnvKeysByDeclaration');
+  const groupSource = extractFrontendFunction(mainJsContent, 'groupEnvVarsByCategory');
+  assert.ok(orderSource && groupSource, '前端包含排序与分组函数');
+  const group = new Function(`${orderSource}\n${groupSource}; return groupEnvVarsByCategory;`)();
+
+  const originalEnvVars = Object.fromEntries([...Envs.originalEnvVars]);
+  const categorized = group(originalEnvVars, globals.envVarConfig);
+
+  assert.deepStrictEqual(
+    categorized.source.map(item => item.key).slice(0, 3),
+    ['SOURCE_ORDER', 'MERGE_SOURCE_PAIRS', 'CUSTOM_MERGE_RULES'],
+    '源配置按声明顺序排列'
+  );
+  const token = categorized.api.find(item => item.key === 'TOKEN');
+  assert.strictEqual(typeof token?.type, 'string', '分类项携带控件类型');
+  assert.strictEqual(typeof token?.description, 'string', '分类项携带说明');
+  assert.ok(Array.isArray(token?.options), '分类项携带选项数组');
+
+  const extra = group({ UNKNOWN_KEY: 'x' }, globals.envVarConfig);
+  assert.strictEqual(extra.system[0].key, 'UNKNOWN_KEY', '未登记的变量归入系统分类');
+  assert.strictEqual(extra.system[0].description, '未分类配置项', '未登记变量使用默认说明');
 });

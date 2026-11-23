@@ -576,4 +576,17 @@ test('local source configuration and search', async t => {
       }
     }
   });
+
+  await t.test('categorized env vars follow the declared config order in the preview payload', async () => {
+    resetState();
+    const config = await handleConfig().json();
+    const sourceKeys = config.categorizedEnvVars.source.map(item => item.key);
+    assert.deepEqual(
+      sourceKeys.slice(0, 3),
+      ['SOURCE_ORDER', 'MERGE_SOURCE_PAIRS', 'CUSTOM_MERGE_RULES'],
+      '预览 payload 的源配置按配置目录声明顺序排列'
+    );
+    const declaredSourceKeys = Object.keys(config.envVarConfig).filter(key => config.envVarConfig[key].category === 'source');
+    assert.deepEqual(sourceKeys, declaredSourceKeys, '预览 payload 与配置目录的源配置顺序逐项一致');
+  });
 });

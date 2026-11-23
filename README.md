@@ -479,6 +479,10 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | ADMIN_TOKEN      | 【可选】系统管理访问令牌，如果未配置此值，则无法访问系统管理功能，需要先配置后在URL中填入此token才能打开系统管理。系统管理接口（`/api/env/set\|add\|del`、`/api/deploy`、`/api/cache/clear\|animes`、`/api/logs/clear`、`/api/cookie/*`、`/api/ai/verify`、`/api/nipaplay/verify`）在服务端强制要求 `ADMIN_TOKEN`：未配置时这些接口一律返回 `401`，默认 `TOKEN=87654321` 的免 token 兼容**不适用**于这些接口。升级须知：此前未配置 `ADMIN_TOKEN` 的部署，升级后需先设置 `ADMIN_TOKEN` 才能使用上述接口       |
 | FAVORITE_REQUIRE_ADMIN | 【可选】收藏写入和管理接口是否必须使用 `ADMIN_TOKEN`，默认为 `false`。设为 `false` 时接受 `TOKEN` 或 `ADMIN_TOKEN`；自定义 `TOKEN` 必须在 URL 路径中显式携带，默认 `TOKEN=87654321` 时可省略。设为 `true` 时只接受已配置的 `ADMIN_TOKEN`。`GET /api/v2/favorite/list` 始终公开，无需 token。 |
 | LOCAL_DANMU_NOT_REQUIRE_ADMIN | 【可选】本地弹幕上传和删除是否无需 ADMIN 权限，默认为 `false`。普通 `TOKEN` 用户可查看已导入列表。设为 `false` 时仅 `ADMIN_TOKEN` 可上传和删除，非管理员点击“选择文件”或删除按钮会直接提示需要 ADMIN 权限；设为 `true` 时也允许普通 `TOKEN` 用户上传和删除。 |
+| RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |
+| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`douban,360,renren,hanjutv`，表示douban数据排在最前，hanjutv数据排在最后，示例：`douban,renren`：只返回douban数据和renren数据，且douban数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,dandan,bahamut,animeko,custom,local`。`local` 表示已上传的本地弹幕，例如 `local,douban,360` 会将本地弹幕搜索结果排在前面。       |
+| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`dandan&bahamut&animeko,renren&hanjutv,renren`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,dandan,bahamut,animeko` |
+| CUSTOM_MERGE_RULES | 【可选】合并映射表，用于自定义源合并行为，默认为空。<br>格式 1 (合并)：`副源剧名/S季数@来源 -> 主源剧名/S季数@来源 \| E副源集数>E主源集数`<br>格式 2 (阻断)：`副源剧名/S季数@来源 × 主源剧名/S季数@来源`<br>说明：`[/S季数]` 与 `[\|路由规则]` 为可选项，留空则交由程序判断。多个规则用分号隔开，多段路由用逗号分隔。<br>示例：<br>1. 常规合并：`天气之子@bilibili -> 天气之子@dandan`<br>2. 多集路由：`我推的孩子/S01@bahamut -> 我推的孩子/S03@dandan \| E25~E35>E25~E35`<br>3. 阻断合并：`辉夜大小姐想让我告白？～天才们的恋爱头脑战～(2020)@bilibili × 辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA(2021)【OVA】@dandan` |
 | OTHER_SERVER   | 【可选】兜底第三方弹幕服务器，不填默认为`https://api.danmu.icu`，其他可选：`https://fc.lyz05.cn`，`https://dmku.hls.one`，`https://se.678.ooo`，`https://danmu.56uxi.com`，`https://dm.lxlad.com`       |
 | CUSTOM_SOURCE_API_URL   | 【可选】自定义弹幕源API地址，默认为空，配置后还需在SOURCE_ORDER添加custom源       |
 | VOD_SERVERS      | 【可选】VOD服务器列表，默认为空；未配置时跳过VOD查询，不发送采集请求，即使`SOURCE_ORDER`包含`vod`也不会访问任何默认站点。支持多个服务器并发查询，格式：`名称@URL,名称@URL,...`。格式示例：`自定义源@https://example.com`（仅占位，不是可用采集服务）；使用时需填写自行确认有效的上游，并在`SOURCE_ORDER`中添加`vod`       |
@@ -489,61 +493,60 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 | YOUKU_CONCURRENCY    | 【可选】youku弹幕请求并发数，用于加快youku弹幕请求速度，不填默认为`8`，最高`16`       |
 | TENCENT_CONCURRENCY    | 【可选】tencent弹幕分片请求并发数，用于防止长视频整集弹幕一次性发起过多上游请求，不填默认为`100`，最高`200`       |
 | IQIYI_CONCURRENCY    | 【可选】iqiyi弹幕分片请求并发数，用于防止长视频整集弹幕一次性发起过多上游请求，不填默认为`100`，最高`200`       |
-| SOURCE_ORDER    | 【可选】源排序，用于按源对返回资源的排序（注意：先后顺序会影响自动匹配最终的返回），默认是`douban,360,renren,hanjutv`，表示douban数据排在最前，hanjutv数据排在最后，示例：`douban,renren`：只返回douban数据和renren数据，且douban数据靠前；当前可选择的源字段有 `360,vod,tmdb,douban,tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,dandan,bahamut,animeko,custom,local`。`local` 表示已上传的本地弹幕，例如 `local,douban,360` 会将本地弹幕搜索结果排在前面。       |
+| DANDANPLAY_ACCOUNT      | 【可选】弹弹play账号（dandan 源使用）。与密码同时填写后开启 [NipaPlay](https://github.com/AimesSoft/NipaPlay-Reload) 中转弹弹play辅助服务，使用 NipaPlay 获取弹幕与兜底，解决默认服务端无弹幕与更新缓慢的问题，并开启弹弹聚合弹幕实时拉取功能（实时拉取注意：需先开启对应源；指向的平台视频若已下架将无法获取；含巴哈姆特平台时需确保能够连通巴哈）       |
+| DANDANPLAY_PASSWORD      | 【可选】弹弹play密码（dandan 源使用），与账号同时填写后开启 [NipaPlay](https://github.com/AimesSoft/NipaPlay-Reload) 中转弹弹play辅助服务（UI 配置页提供连通性测试）       |
 | PLATFORM_ORDER    | 【可选】自动匹配优选平台，按顺序优先返回指定平台弹幕，默认为空，即返回第一个满足条件的平台，示例：`bilibili1,qq`，表示如果有b站的播放源，则优先返回b站的弹幕，否则就返回腾讯的弹幕，两者都没有，则返回第一个满足条件的平台，当配置合并平台的时候为指定期望的合并源；当前可选择的平台字段有 `qiyi, bilibili1, imgo, youku, qq, migu, sohu, leshi, xigua, maiduidui, aiyifan, hongguo, renren, hanjutv, dandan, bahamut, animeko, custom`  |
 | TITLE_PLATFORM_MAP | 【可选】只为指定剧优选来源，适用于该剧各季。例如 `宝珠->imgo;航海王->dandan&bilibili1`：播放《宝珠》优先芒果；若芒果缺第 2 集、腾讯有第 2 集，播放第 2 集时选腾讯，不会用芒果第 3 集代替。未配置的剧保持原有匹配和返回顺序。按播放器请求的完整剧名识别；启用 `TITLE_TO_CHINESE` 时仍按翻译前的剧名配置。缩短的搜索词、映射目标和搜索结果不会触发另一部剧的规则。若播放器使用别名，需要为该别名单独配置。系统设置的「匹配配置」可选择平台或已配置的合并组合。`/api/v2/match` 中季集映射指定的平台、请求的 `@平台` 优先于本表，本表优先于 `PLATFORM_ORDER`。搜索、分集、详情和 FongMi 优先展示该剧的指定来源；电影按实际链接选择首选来源。不会启用新源或强制合并。 |
-| MERGE_SOURCE_PAIRS    | 【可选】源合并配置，配置后将对应源合并同时一起获取弹幕返回，默认为空，格式是`源字段&源字段&源字段`，示例：`dandan&bahamut&animeko,renren&hanjutv,renren`， 允许多组、允许同时存在、允许多源，允许填单源表示保留原结果，一组中第一个为主源其余为副源，副源往主源合并，主源如果没有结果会轮替下一个作为主源循环，目前允许合并的源字段有`tencent,youku,iqiyi,imgo,bilibili,migu,sohu,leshi,xigua,maiduidui,aiyifan,hongguo,renren,hanjutv,dandan,bahamut,animeko` |
-| CUSTOM_MERGE_RULES | 【可选】合并映射表，用于自定义源合并行为，默认为空。<br>格式 1 (合并)：`副源剧名/S季数@来源 -> 主源剧名/S季数@来源 \| E副源集数>E主源集数`<br>格式 2 (阻断)：`副源剧名/S季数@来源 × 主源剧名/S季数@来源`<br>说明：`[/S季数]` 与 `[\|路由规则]` 为可选项，留空则交由程序判断。多个规则用分号隔开，多段路由用逗号分隔。<br>示例：<br>1. 常规合并：`天气之子@bilibili -> 天气之子@dandan`<br>2. 多集路由：`我推的孩子/S01@bahamut -> 我推的孩子/S03@dandan \| E25~E35>E25~E35`<br>3. 阻断合并：`辉夜大小姐想让我告白？～天才们的恋爱头脑战～(2020)@bilibili × 辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA(2021)【OVA】@dandan` |
-| ANIME_TITLE_FILTER    | 【可选】剧名过滤规则，用于按正则表达式对剧名进行过滤，适用于过滤一些不需要的剧集，需开启ENABLE_ANIME_EPISODE_FILTER，默认值：空（不过滤），格式：使用 \| 分隔多个关键词，例如：广告\|预告\|无关剧名       |
-| EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
-| ENABLE_ANIME_EPISODE_FILTER    | 【可选】控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
-| STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
+| TITLE_NOISE_FILTER    | 【可选】剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`），默认值如下，设为空值可禁用      |
+| ANIME_TITLE_SIMPLIFIED    | 【可选】是否在搜索时将繁体剧名标题自动转换为简体，适用于繁体标题搜索，默认值：false（不转换），可选值：`true`、`false`       |
 | TITLE_TO_CHINESE    | 【可选】是否在match自动匹配时将外语标题转换成中文标题，适用于网盘没有刮削的资源，默认值：false（不转换），说明：需配合TMDB_API_KEY使用       |
 | TITLE_MAPPING_TABLE    | 【可选】本机剧名映射表（优先级高于远程表），用于自动匹配、FongMi、收藏时替换标题进行搜索；精确标题优先，未命中时会忽略标题尾部括号年份再匹配（如 `变形金刚3：月黑之时(2011)` 可命中 `变形金刚3：月黑之时`），手动搜索保持原始关键词。格式：原始标题->映射标题;原始标题->映射标题;... ，例如："唐朝诡事录->唐朝诡事录之西行;国色芳华->锦绣芳华"       |
 | TITLE_MAPPING_TABLE_URL | 【可选，默认关闭】远程剧名映射表 TXT 地址。本机 `TITLE_MAPPING_TABLE` 优先；Node/Docker 首次使用后缓存到 `.cache/title-mapping-remote.json`，每天北京时间 05:30 后台更新；Serverless 冷启动后的首次标题匹配会同步下载，最长约等待 5 秒，成功后复用当前实例内存。示例：`https://raw.githubusercontent.com/xlmc/danmu-mapping/main/Word/2026.txt`       |
 | AUTO_MATCH_MAPPING_TABLE    | 【可选】自动匹配映射表，仅作用于 `POST /api/v2/match`，多条规则用分号分隔。开放映射 `永生 S05E02 -> 永生 S01E58` 会在源第 5 季内按集数递增映射；同标题同季度可配置多个开放规则，后面起始集数的规则会从该集开始覆盖前面的规则，例如 `一念永恒 S01E53 -> 一念永恒 S02E01;一念永恒 S01E107 -> 一念永恒 S03E01`；有限范围 `永生 S05E02~03 -> 永生 S01E58~59` 只映射包含两端的等长范围。源侧支持 `S00E01` 特别篇映射到正常季集，如 `灵笼 S00E01~01 -> 灵笼 S01E07~07`；目标侧仍须使用 `S01+`。支持目标结果优选 `海贼王 S02E01 -> 航海王(1999)【动漫】 S01E62` 和平台优选 `航海王 S01E01 -> 航海王 S01E01 @qiyi`。同一输入优先采用有限范围规则，规则起始集数相同按配置顺序；整体优先级为当前源季手动偏好 > 本映射表 > `TITLE_MAPPING_TABLE` > 普通匹配，`default` 偏好不阻断映射。限定候选不可用时回退同目标标题，映射目标失败时按原始请求重新匹配。普通搜索、收藏缓存和弹幕时间偏移不受影响。       |
 | AUTO_MATCH_MAPPING_TABLE_URL | 【可选，默认关闭】远程季集映射表 TXT 地址。本机 `AUTO_MATCH_MAPPING_TABLE` 优先；支持 GitHub 文件页、Gist、jsDelivr 和 HTTP/HTTPS 直链，内容格式与本机映射表一致。Node/Docker 会缓存到 `.cache/auto-match-mapping-remote.json`，每天北京时间 05:30 后台更新；Serverless 首次匹配会在后台下载，不阻塞当前请求，下载完成后由后续请求使用，仅保存在当前实例内存中。管理员可携带 `ADMIN_TOKEN` 调用 `POST /api/auto-match-mapping/refresh` 立即刷新当前实例。       |
-| TITLE_NOISE_FILTER    | 【可选】剧名杂音清理规则，按正则表达式清理搜索与匹配阶段的剧名杂音词（如`百花杀（真彩）`→`百花杀`），默认值如下，设为空值可禁用      |
-| ANIME_TITLE_SIMPLIFIED    | 【可选】是否在搜索时将繁体剧名标题自动转换为简体，适用于繁体标题搜索，默认值：false（不转换），可选值：`true`、`false`       |
-| BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，多条规则用逗号分隔（中英文逗号均可，逗号前后空格会自动忽略）。每条规则支持两种写法：正则 `/正则/` 或 `/正则/i`（可带 i/m/s/u 等标志），或直接写纯文本词（按字面匹配）。示例如下       |
-| GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不按分钟合并（多源组合仍按同一时间点去重）       |
-| DANMU_LIMIT    | 【可选】等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000       |
-| CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
-| CONVERT_COLOR    | 【可选】弹幕转换颜色配置，默认为`default`（不转换），`white` 将所有非白色的弹幕颜色转换为纯白色，`color` 将所有白色弹幕转换为随机颜色（包含白色），可选值：`default`、`white`、`color`       |
-| COLOR_POOL    | 【可选】自定义颜色池（`CONVERT_COLOR`为`color`时生效），不配置使用默认颜色池（白、红、橙、黄、绿、青、蓝、紫、粉），格式：十进制颜色值逗号分隔，例如：`16711680,65280,255,16776960`       |
-| LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
-| DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式）及所有`@dan-uni/dan-any`支持的输出格式，支持通过查询参数`?format=xml`或`?format=json`等覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
-| DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
-| DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式，在路径/来源末尾添加 `%`，例如：`东方/S03/E02@tencent%:11`，按 `原时间 * (视频时长 + 偏移秒数) / 视频时长` 计算新的弹幕发送时间。       |
-| UI_THEME    | 【可选】管理界面默认主题，默认为 `lavender`（经典默认）。浏览器中选择的主题会保存在本地并优先使用。可选值：`lavender`（经典默认）、`shinyo`（新叶绿）、`sakura`（哔哩粉）、`tianyi`（天依蓝）、`hatsune`（初音青）、`sakuragi`（樱木红）、`violet`（罗兰紫）、`amber`（LCL橘）       |
-| PROXY_URL    | 【可选】代理/反代地址，目前只对巴哈姆特、TMDB API、bilibili、animeko、aiyifan生效，支持格式：<br> 正常代理：`http://127.0.0.1:7890`，支持 `http://用户名:密码@代理地址:端口`（用户名和密码中的特殊字符需分别 URL 编码） <br> 万能反代：`@http://127.0.0.1` <br> 特定反代：`源字段@http://127.0.0.1`，目前支持的字段有：`bahamut,tmdb,bilibili,animeko,aiyifan`（bilibili字段会启用阿b的港澳台番剧的搜索与获取）<br> 混合配置/示例：`http://你的代理地址:28233,bahamut@你的巴哈反代地址,tmdb@你的tmdb反代地址,@你的万能反代地址` <br> 优先级：特定反代 > 万能反代 > 正常代理，高优先级覆盖低优先级使用。 <br> （注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了 bahamut / animeko 源或 TMDB API ，请配置代理/反代地址（animeko 也可通过开启 Bangumi Data 解决）（[Netlify反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |
-| TMDB_API_KEY    | 【可选】TMDB API Key地址，目前只对巴哈姆特生效，配置后并行从TMDB获取日语原名搜索巴哈（如果TMDB条目类型不是动画或制作地区不是jp则不会进行巴哈搜索）可以解决巴哈译名不同导致的搜索无结果问题，例如大陆常用译名`间谍过家家`在巴哈译名为`間諜家家酒`，正常搜索无法搜索到，配置后可以解决这一问题但会稍微影响请求速度，[TMDBAPI](https://www.themoviedb.org/settings/api)获取方法参考：[TMDB API Key申请 - 绿联NAS私有云](https://www.ugnas.com/tutorial-detail/id-226.html)       |
-| RATE_LIMIT_MAX_REQUESTS    | 【可选】限流配置：1分钟内同一IP最大请求次数，默认为`3`，设置为`0`表示不限流       |
-| IP_BLACKLIST    | 【可选】IP 黑名单列表，命中则拒绝请求。支持逗号/分号/换行分隔，支持 `/regex/` 或 `/regex/i` 正则，支持 IPv4/IPv6 CIDR，例如：`192.168.1.10,10.0.0.0/24,2001:db8::/64,/^203\.0\.113\./`       |
-| LOG_LEVEL    | 【可选】日志级别，默认为`info`，可选值：`error`（仅错误）、`warn`（错误和警告）、`info`（所有日志），生产环境建议使用`warn`，调试时使用`info`       |
-| SEARCH_CACHE_MINUTES    | 【可选】搜索结果缓存时间（分钟），默认为`3`，避免短期内重复的不必要API请求，同时保证获取最新的结果列表，可根据需要调整：Vercel/Cloudflare建议`1-5`分钟，Docker可设置`5-30`分钟，设置为`0`表示不缓存       |
-| COMMENT_CACHE_MINUTES    | 【可选】弹幕缓存时间（分钟），默认为`3`，弹幕数据的缓存时间，独立于搜索结果缓存，设置为`0`表示不缓存       |
-| COMMENT_CACHE_MIN_COUNT    | 【可选】弹幕缓存最少条数，默认为`100`。缓存弹幕少于该数量时忽略缓存时间并重新获取最新弹幕，设置为`0`可关闭此机制       |
-| HONGGUO_MERGE_ALL_EPISODES | 【可选】红果短剧是否将所有集弹幕按集号合并为一集返回，默认为`false`。启用后每集弹幕时间会累加前面各集时长，搜索结果保留真实集数并在剧集列表中显示“全集（共 N 集）”；管理页获取全集前会再次确认，并通过分片请求降低长连接超时概率       |
-| REMEMBER_LAST_SELECT    | 【可选】是否记住明确手动选择的结果，用于match自动匹配时优选上次的选择，默认为`true`。自动匹配后直接获取其返回结果不会写入偏好，选择不同结果时才会记录；如不需要，请关闭       |
-| MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId，最小值100，最大值1000       |
-| MAX_ANIMES    | 【可选】动漫标题缓存最大数量，默认为`100`，缓存最多保存的anime条目数，超过限制时删除最早的条目（FIFO），最小值100，最大值1000       |
-| BANGUMI_DATA_CACHE_DAYS    | 【可选】指定 Bangumi Data 数据有效期(天)，默认为：`7`，超过有效期后会下载更新，设置0则每次请求时强制异步更新（需开启`USE_BANGUMI_DATA`）'       |
-| UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
-| LOCAL_CACHE_ENABLED    | 【可选】Node/Docker 通用文件缓存开关，默认为 `true`，需已有 `.cache` 目录；设置 `false` 后不读取或写入通用文件缓存，包括收藏与定时计划；已配置 Upstash 时仍可持久化。不影响本地弹幕文件、Bangumi Data、内存缓存或 Redis。运行中开启时保存当前内存，不自动导入旧文件。       |
-| LOCAL_REDIS_URL    | 【可选】本地 Redis 连接 URL，用于查询数据持久化，适用于 Docker 和本地部署，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地 Redis）。       |
-| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
-| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称或 ID，EdgeOne Makers 填控制台显示的完整项目 ID（`pages-...` 或 `makers-...`），调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
-| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
-| NODE_TLS_REJECT_UNAUTHORIZED      | 【可选】在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1       |
+| ANIME_TITLE_FILTER    | 【可选】剧名过滤规则，用于按正则表达式对剧名进行过滤，适用于过滤一些不需要的剧集，需开启ENABLE_ANIME_EPISODE_FILTER，默认值：空（不过滤），格式：使用 \| 分隔多个关键词，例如：广告\|预告\|无关剧名       |
+| EPISODE_TITLE_FILTER    | 【可选】剧集标题正则过滤，按正则关键字对剧集或综艺的集标题进行过滤，适用于过滤一些预告或综艺非正式集，只支持match自动匹配，默认值如下 |
+| ENABLE_ANIME_EPISODE_FILTER    | 【可选】控制手动搜索的时候是否根据ANIME_TITLE_FILTER进行剧名过滤以及根据EPISODE_TITLE_FILTER进行集标题过滤，默认为`false`（禁用），启用后 GET /api/v2/bangumi/{id} 和 GET /api/v2/search/anime 接口会过滤掉预告、花絮等特殊集，以及名称包含特殊关键词的动漫。       |
+| STRICT_TITLE_MATCH    | 【可选】是否启用严格标题匹配模式，默认为`false`（宽松模糊匹配），启用后只匹配标题开头或完全匹配的结果。例如：搜索"遮天"时，`false`会匹配"古惑仔3之只手遮天"，`true`只匹配"遮天"、"遮天 第一季"等。可选值：`true`、`false`       |
 | AI_BASE_URL      | 【可选】AI服务的基础URL地址，用于配置AI相关功能的API端点，不填默认为https://api.openai.com/v1       |
 | AI_MODEL      | 【可选】AI模型名称，指定使用的AI模型，不填默认为gpt-4o       |
 | AI_API_KEY      | 【可选】AI服务的API密钥，用于身份验证，默认为空，需手动填写       |
 | AI_MATCH_PROMPT      | 【可选】AI匹配提示词，用于自定义AI匹配行为，不填提供默认提示词，提示词如下       |
 | USE_BANGUMI_DATA      | 【可选】[Bangumi Data](https://github.com/bangumi-data/bangumi-data) 数据辅助开关，默认值：`false`（关闭），开启后将动画元数据缓存至本地或内存中给源调用，提升动画源的检索速度与匹配精准度并补全特定数据与番剧（本地和Docker部署使用时请先挂载.cache目录获得最佳体验，云部署使用时会将数据缓存至临时内存中如果体验不佳请关闭）       |
-| DANDANPLAY_ACCOUNT      | 【可选】弹弹play账号（dandan 源使用）。与密码同时填写后开启 [NipaPlay](https://github.com/AimesSoft/NipaPlay-Reload) 中转弹弹play辅助服务，使用 NipaPlay 获取弹幕与兜底，解决默认服务端无弹幕与更新缓慢的问题，并开启弹弹聚合弹幕实时拉取功能（实时拉取注意：需先开启对应源；指向的平台视频若已下架将无法获取；含巴哈姆特平台时需确保能够连通巴哈）       |
-| DANDANPLAY_PASSWORD      | 【可选】弹弹play密码（dandan 源使用），与账号同时填写后开启 [NipaPlay](https://github.com/AimesSoft/NipaPlay-Reload) 中转弹弹play辅助服务（UI 配置页提供连通性测试）       |
+| BLOCKED_WORDS    | 【可选】弹幕屏蔽词列表，默认为空，多条规则用逗号分隔（中英文逗号均可，逗号前后空格会自动忽略）。每条规则支持两种写法：正则 `/正则/` 或 `/正则/i`（可带 i/m/s/u 等标志），或直接写纯文本词（按字面匹配）。示例如下       |
+| GROUP_MINUTE    | 【可选】合并去重分钟数，表示按n分钟分组后对弹幕合并去重，默认为1，最大值为30，0表示不按分钟合并（多源组合仍按同一时间点去重）       |
+| DANMU_LIMIT    | 【可选】等间隔采样限制弹幕总数，单位为k，即千：默认 0，表示不限制弹幕数，若改为5，弹幕总数在超过5000的情况下会将弹幕数控制在5000       |
+| DANMU_SIMPLIFIED_TRADITIONAL    | 【可选】弹幕简繁体转换设置：default（默认不转换）、simplified（繁转简）、traditional（简转繁）       |
+| CONVERT_TOP_BOTTOM_TO_SCROLL    | 【可选】是否将顶部和底部弹幕转换为浮动弹幕，默认为`false`（不转换），启用后顶部弹幕（ct=5）和底部弹幕（ct=4）会被转换为浮动弹幕（ct=1），可选值：`true`、`false`       |
+| CONVERT_COLOR    | 【可选】弹幕转换颜色配置，默认为`default`（不转换），`white` 将所有非白色的弹幕颜色转换为纯白色，`color` 将所有白色弹幕转换为随机颜色（包含白色），可选值：`default`、`white`、`color`       |
+| COLOR_POOL    | 【可选】自定义颜色池（`CONVERT_COLOR`为`color`时生效），不配置使用默认颜色池（白、红、橙、黄、绿、青、蓝、紫、粉），格式：十进制颜色值逗号分隔，例如：`16711680,65280,255,16776960`       |
+| GRADIENT_CHANCE    | 【可选】渐变色弹幕概率（`CONVERT_COLOR`为`color`时生效），单位百分比 0-100，默认 `0`（关闭），弹幕按此概率从渐变色带取色（随出现时间平滑流转）       |
+| GRADIENT_COLORS    | 【可选】渐变色带（`CONVERT_COLOR`为`color`时生效），可填皮肤名：`bilibili`（默认）/`sweet`/`cyber`/`sunset`/`ocean`/`mint`/`rainbow`，或十进制颜色值逗号分隔（至少 2 个）       |
+| LIKE_SWITCH    | 【可选】弹幕点赞数显示开关，默认为`true`（开启），开启后会在弹幕内容后显示点赞数标记，≥5 才显示，避免低赞干扰       |
+| DANMU_OFFSET      | 【可选】弹幕时间偏移配置，用于解决弹幕与视频不同步的问题。格式：剧名:秒（全剧偏移）或 剧名/季:秒（整季偏移）或 剧名/季/集:秒（单集偏移），支持指定来源：剧名@来源:秒 或 剧名/季@来源1&来源2:秒（不指定来源则对所有来源生效），多条用逗号分隔。例如：`overlord/S01:90, re-zero/S02@bilibili:120, re-zero/S02/E03@dandan&bilibili:10`。正数表示弹幕延后（向右），负数表示弹幕提前（向左）。支持百分比模式，在路径/来源末尾添加 `%`，例如：`东方/S03/E02@tencent%:11`，按 `原时间 * (视频时长 + 偏移秒数) / 视频时长` 计算新的弹幕发送时间。       |
+| HONGGUO_MERGE_ALL_EPISODES | 【可选】红果短剧是否将所有集弹幕按集号合并为一集返回，默认为`false`。启用后每集弹幕时间会累加前面各集时长，搜索结果保留真实集数并在剧集列表中显示“全集（共 N 集）”；管理页获取全集前会再次确认，并通过分片请求降低长连接超时概率       |
+| DANMU_OUTPUT_FORMAT    | 【可选】弹幕输出格式，默认为`json`，可选值：`json`（JSON格式）、`xml`（XML格式）及所有`@dan-uni/dan-any`支持的输出格式，支持通过查询参数`?format=xml`或`?format=json`等覆盖此设置，优先级：查询参数 > 环境变量 > 默认值       |
+| DANMU_PUSH_URL    | 【可选】弹幕推送地址，示例 `http://127.0.0.1:9978/action?do=refresh&type=danmaku&path=`       |
+| LOCAL_CACHE_ENABLED    | 【可选】Node/Docker 通用文件缓存开关，默认为 `true`，需已有 `.cache` 目录；设置 `false` 后不读取或写入通用文件缓存，包括收藏与定时计划；已配置 Upstash 时仍可持久化。不影响本地弹幕文件、Bangumi Data、内存缓存或 Redis。运行中开启时保存当前内存，不自动导入旧文件。       |
+| SEARCH_CACHE_MINUTES    | 【可选】搜索结果缓存时间（分钟），默认为`3`，避免短期内重复的不必要API请求，同时保证获取最新的结果列表，可根据需要调整：Vercel/Cloudflare建议`1-5`分钟，Docker可设置`5-30`分钟，设置为`0`表示不缓存       |
+| COMMENT_CACHE_MINUTES    | 【可选】弹幕缓存时间（分钟），默认为`3`，弹幕数据的缓存时间，独立于搜索结果缓存，设置为`0`表示不缓存       |
+| COMMENT_CACHE_MIN_COUNT    | 【可选】弹幕缓存最少条数，默认为`100`。缓存弹幕少于该数量时忽略缓存时间并重新获取最新弹幕，设置为`0`可关闭此机制       |
+| BANGUMI_DATA_CACHE_DAYS    | 【可选】指定 Bangumi Data 数据有效期(天)，默认为：`7`，超过有效期后会下载更新，设置0则每次请求时强制异步更新（需开启`USE_BANGUMI_DATA`）'       |
+| REMEMBER_LAST_SELECT    | 【可选】是否记住明确手动选择的结果，用于match自动匹配时优选上次的选择，默认为`true`。自动匹配后直接获取其返回结果不会写入偏好，选择不同结果时才会记录；如不需要，请关闭       |
+| MAX_LAST_SELECT_MAP    | 【可选】最后选择映射缓存大小限制，默认为`100`，lastSelectMap最多保存的条目数，超过限制时删除最早的条目（FIFO），用于存储查询关键字上次选择的animeId，最小值100，最大值1000       |
+| MAX_ANIMES    | 【可选】动漫标题缓存最大数量，默认为`100`，缓存最多保存的anime条目数，超过限制时删除最早的条目（FIFO），最小值100，最大值1000       |
+| UPSTASH_REDIS_REST_URL    | 【可选】Upstash redis url，需配合UPSTASH_REDIS_REST_TOKEN使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| UPSTASH_REDIS_REST_TOKEN    | 【可选】Upstash redis token，需配合UPSTASH_REDIS_REST_URL使用，用于持久化原有查询信息和收藏缓存，避免 serverless 冷启动丢失收藏；搜索结果和弹幕缓存不会写入 Redis（会稍微影响收藏操作和冷启动请求速度），获取方法请参考：`https://cloud.tencent.cn/developer/article/2424508`       |
+| LOCAL_REDIS_URL    | 【可选】本地 Redis 连接 URL，用于查询数据持久化，适用于 Docker 和本地部署，格式：`redis://:password@127.0.0.1:6379/0`，默认为空（不使用本地 Redis）。       |
+| UI_THEME    | 【可选】管理界面默认主题，默认为 `lavender`（经典默认）。浏览器中选择的主题会保存在本地并优先使用。可选值：`lavender`（经典默认）、`shinyo`（新叶绿）、`sakura`（哔哩粉）、`tianyi`（天依蓝）、`hatsune`（初音青）、`sakuragi`（樱木红）、`violet`（罗兰紫）、`amber`（LCL橘）       |
+| LOG_LEVEL    | 【可选】日志级别，默认为`info`，可选值：`error`（仅错误）、`warn`（错误和警告）、`info`（所有日志），生产环境建议使用`warn`，调试时使用`info`       |
+| PROXY_URL    | 【可选】代理/反代地址，目前只对巴哈姆特、TMDB API、bilibili、animeko、aiyifan生效，支持格式：<br> 正常代理：`http://127.0.0.1:7890`，支持 `http://用户名:密码@代理地址:端口`（用户名和密码中的特殊字符需分别 URL 编码） <br> 万能反代：`@http://127.0.0.1` <br> 特定反代：`源字段@http://127.0.0.1`，目前支持的字段有：`bahamut,tmdb,bilibili,animeko,aiyifan`（bilibili字段会启用阿b的港澳台番剧的搜索与获取）<br> 混合配置/示例：`http://你的代理地址:28233,bahamut@你的巴哈反代地址,tmdb@你的tmdb反代地址,@你的万能反代地址` <br> 优先级：特定反代 > 万能反代 > 正常代理，高优先级覆盖低优先级使用。 <br> （注意：如果巴哈姆特请求不通，会拖慢搜索返回速度，如需使用bahamut源请在SOURCE_ORDER环境变量中手动添加`bahamut`）如果你使用docker部署并且访问不了 bahamut / animeko 源或 TMDB API ，请配置代理/反代地址（animeko 也可通过开启 Bangumi Data 解决）（[Netlify反代教程](https://github.com/wan0ge/bahamut-api-proxy)）；vercel/netlify/cf中理应都自然能联通，不用填写       |
+| TMDB_API_KEY    | 【可选】TMDB API Key地址，目前只对巴哈姆特生效，配置后并行从TMDB获取日语原名搜索巴哈（如果TMDB条目类型不是动画或制作地区不是jp则不会进行巴哈搜索）可以解决巴哈译名不同导致的搜索无结果问题，例如大陆常用译名`间谍过家家`在巴哈译名为`間諜家家酒`，正常搜索无法搜索到，配置后可以解决这一问题但会稍微影响请求速度，[TMDBAPI](https://www.themoviedb.org/settings/api)获取方法参考：[TMDB API Key申请 - 绿联NAS私有云](https://www.ugnas.com/tutorial-detail/id-226.html)       |
+| DEPLOY_PLATFROM_ACCOUNT    | 【可选】部署账号ID，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置      |
+| DEPLOY_PLATFROM_PROJECT    | 【可选】部署项目名称或 ID，EdgeOne Makers 填控制台显示的完整项目 ID（`pages-...` 或 `makers-...`），调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| DEPLOY_PLATFROM_TOKEN    | 【可选】部署平台token，调用部署服务API需要，配置后可使用UI界面配置服务，不同部署平台获取方式可查看 [部署平台环境变量配置指南](https://github.com/huangxd-/danmu_api/tree/main/danmu_api/ui/README.md#部署平台环境变量配置指南) ，docker部署和本地node部署并不需要配置       |
+| NODE_TLS_REJECT_UNAUTHORIZED      | 【可选】在建立 HTTPS 连接时是否验证服务器的 SSL/TLS 证书，0表示忽略，默认为1       |
+| IP_BLACKLIST    | 【可选】IP 黑名单列表，命中则拒绝请求。支持逗号/分号/换行分隔，支持 `/regex/` 或 `/regex/i` 正则，支持 IPv4/IPv6 CIDR，例如：`192.168.1.10,10.0.0.0/24,2001:db8::/64,/^203\.0\.113\./`       |
 
 ```regex
 # EPISODE_TITLE_FILTER 默认值

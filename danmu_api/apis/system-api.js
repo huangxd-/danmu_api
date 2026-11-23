@@ -60,11 +60,17 @@ export function handleConfig(hasPermission = false) {
     deployPlatform: globals.deployPlatform
   };
   
-  // 将环境变量按分类组织 - 使用原始环境变量进行分类，但保持预览格式
-  Object.keys(previewEnvVars).forEach(key => {
+  // 将环境变量按分类组织 - 按配置目录的声明顺序排列，未登记的变量按预览快照顺序追加
+  const previewKeys = Object.keys(previewEnvVars);
+  const declaredKeys = Object.keys(envVarConfig || {});
+  const orderedPreviewKeys = [
+    ...declaredKeys.filter(key => previewKeys.includes(key)),
+    ...previewKeys.filter(key => !declaredKeys.includes(key)),
+  ];
+  orderedPreviewKeys.forEach(key => {
     const varConfig = envVarConfig[key] || { category: 'system', type: 'text', description: '未分类配置项' };
     const category = varConfig.category || 'system';
-    
+
     categorizedVars[category].push({
       key: key,
       value: previewEnvVars[key].value || previewEnvVars[key], // 如果是新格式则取value字段，否则直接使用原值
