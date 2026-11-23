@@ -513,8 +513,11 @@ test('merge findSecondaryMatches 中文数字季号取完整数字', () => {
 test('merge cleanText 对相同输入返回一致的清洗结果', () => {
   const raw = '【bilibili1】 第1話 買東西記';
   const first = cleanText(raw);
+  const second = cleanText(raw);
   assert.equal(cleanText(raw), first, '重复清洗同一标题结果一致');
-  assert.equal(cleanText(raw), cleanText('【bilibili1】 第1話 買東西記'), '相同内容的不同字符串实例命中同一结果');
+  // 二次调用走缓存路径，结果与首洗一致；清洗结果再清洗保持不变（缓存不改变输出）
+  assert.equal(cleanText(raw), second, '缓存命中路径与首洗结果一致');
+  assert.equal(cleanText(first), first, '清洗结果幂等');
   assert.notEqual(cleanText('第2話 畫畫記'), first, '不同标题不受缓存串扰');
 });
 test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落单', async () => {
