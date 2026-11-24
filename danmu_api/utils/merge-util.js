@@ -409,6 +409,8 @@ function normalizeTitleForEngine(title) {
 
 // 同一标题在集数对齐与候选比对中会被反复清洗，按原文缓存结果
 const cleanTextCache = new Map();
+// 相似度比对中同一集标题会随偏移枚举被反复比较，按原文缓存清洗结果
+const similarityTitleCache = new Map();
 
 /**
  * 通用文本清洗
@@ -458,6 +460,8 @@ export function cleanText(text) {
  */
 function cleanTitleForSimilarity(text) {
     if (!text) return '';
+    const cached = similarityTitleCache.get(text);
+    if (cached !== undefined) return cached;
     // 先做引擎级语义转换，保证特殊系列能被正确对齐
     let clean = normalizeTitleForEngine(text);
     clean = simplized(clean);
@@ -480,7 +484,9 @@ function cleanTitleForSimilarity(text) {
     clean = clean.replace(RegexStore.Lang.KEYWORDS_STRONG,      '');
     clean = clean.replace(RegexStore.Clean.LONE_VER_CHAR,       '');
     clean = clean.replace(RegexStore.Clean.NON_ALPHANUM_CN,     '');
-    return clean.toLowerCase();
+    const result = clean.toLowerCase();
+    similarityTitleCache.set(text, result);
+    return result;
 }
 
 /**

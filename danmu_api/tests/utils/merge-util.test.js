@@ -553,6 +553,59 @@ test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落�
   assert.ok(softballPaired.every(link => String(link.url).split('$$$').length === 2), '垒球比赛副源并入对应主源话，尾部数字集号不再造成错配');
   assert.match(merged.links.at(-1).title, /跟妈妈一起洗澡/, '无对应主源内容的副源集落单在列表尾部');
 });
+// 相似度清洗缓存用例共用夹具合并流程，验证缓存复用下的结果稳定性
+const mergeCachedFixture = async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
+  const buildAnime = (animeId, animeTitle, source, typeDescription, titles) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle,
+    aliases: [],
+    source,
+    type: 'tvseries',
+    typeDescription,
+    startDate: '1992-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title, url: `${source}:${animeId}:${i}` })),
+    episodeCount: titles.length,
+  });
+  const primary = buildAnime(5048637, '蜡笔小新 中文(1992)【TV动画】from bilibili', 'bilibili', 'TV动画', PRIMARY_TITLES);
+  const secondary = buildAnime(3670126, '蜡笔小新 第1季(1992)【2D动漫】from tencent', 'tencent', '2D动漫', SECONDARY_TITLES);
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+  const merged = Globals.animes.find((anime) => anime.animeTitle.includes('from bilibili&tencent'));
+  return merged.links.map((link) => `${link.title}||${link.url}`);
+};
+test('merge applyMergeLogic 相似度标题缓存命中后合并结果一致', async () => {
+  const first = await mergeCachedFixture();
+  const second = await mergeCachedFixture();
+  assert.ok(first.length > 0, '合并产出条目');
+  assert.deepEqual(second, first, '缓存命中后的合并结果与首次完全一致');
+});
+test('merge applyMergeLogic 相似度标题缓存不串扰不同剧集的合并结果', async () => {
+  const baseline = await mergeCachedFixture();
+  // 先以另一组剧集填充缓存，再重跑夹具合并
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
+  const buildOther = (id, source, titles) => ({
+    animeId: id,
+    bangumiId: String(id),
+    animeTitle: `其他剧 第${id}季(2020)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'tvseries',
+    typeDescription: 'TV动画',
+    startDate: '2020-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title, url: `${source}:${id}:${i}` })),
+    episodeCount: titles.length,
+  });
+  const otherTitles = Array.from({ length: 30 }, (_, i) => `【bilibili1】 第${i + 1}话 其他内容${i}`);
+  Globals.animes = [
+    buildOther(7001, 'bilibili', otherTitles),
+    buildOther(7002, 'tencent', otherTitles),
+  ];
+  await applyMergeLogic(Globals.animes);
+  const afterOther = await mergeCachedFixture();
+  assert.deepEqual(afterOther, baseline, '不同剧集复用同一缓存后，夹具合并结果不变');
+});
 test('merge applyMergeLogic 集号基准不同时按季度偏移对齐', async () => {
   Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&animeko' });
   const buildAnime = (animeId, animeTitle, source, titles) => ({
