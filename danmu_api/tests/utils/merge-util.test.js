@@ -521,7 +521,8 @@ test('merge cleanText 对相同输入返回一致的清洗结果', () => {
   assert.equal(cleanText(first), first, '清洗结果幂等');
   assert.notEqual(cleanText('第2話 畫畫記'), first, '不同标题不受缓存串扰');
 });
-test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落单', async () => {
+// 蜡笔小新集标题夹具的合并流程，供集数对齐与相似度缓存用例共用
+const mergeCrayonFixture = async () => {
   Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
   const buildAnime = (animeId, animeTitle, source, typeDescription, titles) => ({
     animeId,
@@ -537,11 +538,17 @@ test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落�
   });
   const primary = buildAnime(5048637, '蜡笔小新 中文(1992)【TV动画】from bilibili', 'bilibili', 'TV动画', PRIMARY_TITLES);
   const secondary = buildAnime(3670126, '蜡笔小新 第1季(1992)【2D动漫】from tencent', 'tencent', '2D动漫', SECONDARY_TITLES);
-
   Globals.animes = [primary, secondary];
   await applyMergeLogic([primary, secondary]);
-
-  const merged = Globals.animes.find((anime) => anime.animeTitle.includes('from bilibili&tencent'));
+  return Globals.animes.find((anime) => anime.animeTitle.includes('from bilibili&tencent'));
+};
+// 合并条目的集标题与链接序列，用于比对缓存复用下的合并结果
+const crayonMergedLinks = async () => {
+  const merged = await mergeCrayonFixture();
+  return merged.links.map((link) => `${link.title}||${link.url}`);
+};
+test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落单', async () => {
+  const merged = await mergeCrayonFixture();
   assert.ok(merged, '产生合并条目');
   // 479 集对齐并入；副源唯一无对应内容的主源跳集区副源集（跟妈妈一起洗澡）落单在尾部
   assert.equal(merged.links.length, 480, '对齐集正常并入，无对应主源集的副源集落单');
@@ -553,36 +560,14 @@ test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落�
   assert.ok(softballPaired.every(link => String(link.url).split('$$$').length === 2), '垒球比赛副源并入对应主源话，尾部数字集号不再造成错配');
   assert.match(merged.links.at(-1).title, /跟妈妈一起洗澡/, '无对应主源内容的副源集落单在列表尾部');
 });
-// 相似度清洗缓存用例共用夹具合并流程，验证缓存复用下的结果稳定性
-const mergeCachedFixture = async () => {
-  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
-  const buildAnime = (animeId, animeTitle, source, typeDescription, titles) => ({
-    animeId,
-    bangumiId: String(animeId),
-    animeTitle,
-    aliases: [],
-    source,
-    type: 'tvseries',
-    typeDescription,
-    startDate: '1992-01-01T00:00:00.000Z',
-    links: titles.map((title, i) => ({ title, url: `${source}:${animeId}:${i}` })),
-    episodeCount: titles.length,
-  });
-  const primary = buildAnime(5048637, '蜡笔小新 中文(1992)【TV动画】from bilibili', 'bilibili', 'TV动画', PRIMARY_TITLES);
-  const secondary = buildAnime(3670126, '蜡笔小新 第1季(1992)【2D动漫】from tencent', 'tencent', '2D动漫', SECONDARY_TITLES);
-  Globals.animes = [primary, secondary];
-  await applyMergeLogic([primary, secondary]);
-  const merged = Globals.animes.find((anime) => anime.animeTitle.includes('from bilibili&tencent'));
-  return merged.links.map((link) => `${link.title}||${link.url}`);
-};
 test('merge applyMergeLogic 相似度标题缓存命中后合并结果一致', async () => {
-  const first = await mergeCachedFixture();
-  const second = await mergeCachedFixture();
+  const first = await crayonMergedLinks();
+  const second = await crayonMergedLinks();
   assert.ok(first.length > 0, '合并产出条目');
   assert.deepEqual(second, first, '缓存命中后的合并结果与首次完全一致');
 });
 test('merge applyMergeLogic 相似度标题缓存不串扰不同剧集的合并结果', async () => {
-  const baseline = await mergeCachedFixture();
+  const baseline = await crayonMergedLinks();
   // 先以另一组剧集填充缓存，再重跑夹具合并
   Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
   const buildOther = (id, source, titles) => ({
@@ -603,7 +588,7 @@ test('merge applyMergeLogic 相似度标题缓存不串扰不同剧集的合并�
     buildOther(7002, 'tencent', otherTitles),
   ];
   await applyMergeLogic(Globals.animes);
-  const afterOther = await mergeCachedFixture();
+  const afterOther = await crayonMergedLinks();
   assert.deepEqual(afterOther, baseline, '不同剧集复用同一缓存后，夹具合并结果不变');
 });
 test('merge applyMergeLogic 集号基准不同时按季度偏移对齐', async () => {
