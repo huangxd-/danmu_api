@@ -1,8 +1,16 @@
 import crypto from 'node:crypto';
 import { jsonResponse } from '../utils/http-util.js';
 import { globals } from '../configs/globals.js';
-import { parseLocalDanmu, normalizeLocalKey, normalizeLocalSeason, normalizeLocalEpisode, normalizeLocalType, buildLocalDanmuResourceKey, groupLocalDanmuResources } from '../utils/local-danmu-parser.js';
+import { parseLocalDanmu, normalizeLocalKey, normalizeLocalSeason, normalizeLocalEpisode, normalizeLocalType, buildLocalDanmuResourceKey, buildLegacyLocalDanmuResourceKey, groupLocalDanmuResources } from '../utils/local-danmu-parser.js';
 import { saveLocalDanmu, listLocalDanmu, getLocalDanmu, removeLocalDanmu } from '../utils/local-danmu-store.js';
+
+let writeQueue = Promise.resolve();
+
+function withLocalDanmuWrite(write) {
+  const result = writeQueue.then(write);
+  writeQueue = result.catch(() => {});
+  return result;
+}
 
 function resourceMetadata({ comments, ...meta }) {
   return { ...meta, season: normalizeLocalSeason(meta.season) };
@@ -13,13 +21,29 @@ function buildLocalDanmuMatchKeys(resource) {
     resource.title,
     `${resource.title}|${resource.year}|${resource.type}`,
     `${resource.title}|${resource.year}|${resource.type}|${resource.season}|${resource.episode ?? 'movie'}`
-  ].map(normalizeLocalKey).filter(Boolean))];
+  ].map(value => normalizeLocalKey(value).slice(0, 180)).filter(Boolean))];
 }
 
 function invalidateLocalDanmuCache(resourceKey) {
   globals.searchCache?.clear();
   globals.commentCache?.delete(`local:${resourceKey}`);
   globals.commentCache?.delete(resourceKey);
+}
+
+async function getUploadKey(fields) {
+  const key = buildLocalDanmuResourceKey(fields);
+  const current = await getLocalDanmu(key, { forWrite: true });
+  if (current) {
+    if (current.resourceKey !== key || buildLocalDanmuResourceKey(current) !== key) {
+      throw new Error('目标资源键已被其他作品占用');
+    }
+    return key;
+  }
+
+  const legacyKey = buildLegacyLocalDanmuResourceKey(fields);
+  const previous = legacyKey && await getLocalDanmu(legacyKey, { forWrite: true });
+  if (previous && previous.resourceKey === legacyKey && buildLocalDanmuResourceKey(previous) === key) return legacyKey;
+  return key;
 }
 
 export async function handleLocalDanmuUpload(req) {
@@ -43,15 +67,17 @@ export async function handleLocalDanmuUpload(req) {
     // movie 可以不传季和集；空季沿用已有资源键的第 1 季归一化规则。
     const season = normalizeLocalSeason(form.get('season'));
     if (season === null) throw new Error('季数必须是大于 0 的整数');
-    const resourceKey = buildLocalDanmuResourceKey({ title, year, type, season, episode });
     const filename = String(file.name || 'danmu.txt').slice(0, 240);
     const parsed = parseLocalDanmu(Buffer.from(await file.arrayBuffer()), filename);
     // videoId 作为内部资源标识，不要求用户填写；未提供时自动生成 UUID。
     const videoId = String(form.get('videoId') || '').trim() || crypto.randomUUID();
     const matchKeys = buildLocalDanmuMatchKeys({ title, year, type, season, episode });
-    const resource = { resourceKey, videoId, title, year, type, season, episode, filename, size: file.size, format: parsed.format, status: 'ready', count: parsed.comments.length, matchKeys, comments: parsed.comments, updatedAt: new Date().toISOString() };
-    await saveLocalDanmu(resource);
-    invalidateLocalDanmuCache(resourceKey);
+    const resource = await withLocalDanmuWrite(async () => {
+      const resourceKey = await getUploadKey({ title, year, type, season, episode });
+      const saved = await saveLocalDanmu({ resourceKey, videoId, title, year, type, season, episode, filename, size: file.size, format: parsed.format, status: 'ready', count: parsed.comments.length, matchKeys, comments: parsed.comments, updatedAt: new Date().toISOString() });
+      invalidateLocalDanmuCache(resourceKey);
+      return saved;
+    });
     return jsonResponse({ success: true, resource: resourceMetadata(resource) });
   } catch (e) { return jsonResponse({ success: false, status: 'failed', errorMessage: e.message || '解析失败' }, 400); }
 }
@@ -61,9 +87,11 @@ export async function handleLocalDanmuList() {
 }
 export async function handleLocalDanmuGet(key) { const r = await getLocalDanmu(key); return r ? jsonResponse({ success: true, resource: resourceMetadata(r) }) : jsonResponse({ success: false, errorMessage: '资源不存在' }, 404); }
 export async function handleLocalDanmuDelete(key) {
-  await removeLocalDanmu(key);
-  invalidateLocalDanmuCache(key);
-  return jsonResponse({ success: true });
+  return withLocalDanmuWrite(async () => {
+    await removeLocalDanmu(key);
+    invalidateLocalDanmuCache(key);
+    return jsonResponse({ success: true });
+  });
 }
 function validateEditFields(fields, current) {
   const title = String(fields.title ?? current.title ?? '').trim();
@@ -79,7 +107,11 @@ function validateEditFields(fields, current) {
   return { title, year, type, season };
 }
 
-export async function handleLocalDanmuUpdate(req, key) {
+export function handleLocalDanmuUpdate(req, key) {
+  return withLocalDanmuWrite(() => updateLocalDanmu(req, key));
+}
+
+async function updateLocalDanmu(req, key) {
   try {
     const current = await getLocalDanmu(key);
     if (!current) return jsonResponse({ success: false, errorMessage: '资源不存在' }, 404);
@@ -112,14 +144,23 @@ export async function handleLocalDanmuUpdate(req, key) {
       const filename = scope === 'group' ? resource.filename : String(body?.filename ?? resource.filename ?? '').trim().slice(0, 240);
       if (!filename) throw new Error('文件名不能为空');
       const next = { ...resource, ...common, episode, filename };
-      next.resourceKey = buildLocalDanmuResourceKey(next);
+      const identity = buildLocalDanmuResourceKey(next);
+      if (identity !== buildLocalDanmuResourceKey(resource)) next.resourceKey = identity;
       next.matchKeys = buildLocalDanmuMatchKeys(next);
       next.updatedAt = new Date().toISOString();
       return next;
     });
     const oldKeys = new Set(targets.map(resource => resource.resourceKey));
-    const existingKeys = new Set(all.map(resource => resource.resourceKey));
-    if (updates.some(resource => existingKeys.has(resource.resourceKey) && !oldKeys.has(resource.resourceKey))) {
+    const occupied = new Set();
+    for (const resource of all) {
+      if (oldKeys.has(resource.resourceKey)) continue;
+      occupied.add(resource.resourceKey);
+      if (normalizeLocalKey(resource.title) && normalizeLocalSeason(resource.season) !== null) {
+        occupied.add(buildLocalDanmuResourceKey(resource));
+      }
+    }
+    const destinations = new Set(updates.map(resource => resource.resourceKey));
+    if (destinations.size !== updates.length || updates.some(resource => occupied.has(buildLocalDanmuResourceKey(resource)))) {
       return jsonResponse({ success: false, errorMessage: '目标资源已存在，无法覆盖' }, 409);
     }
     const savedKeys = [];
@@ -128,9 +169,8 @@ export async function handleLocalDanmuUpdate(req, key) {
         await saveLocalDanmu(resource);
         savedKeys.push(resource.resourceKey);
       }
-      const nextKeys = new Set(updates.map(resource => resource.resourceKey));
       for (const resource of targets) {
-        if (!nextKeys.has(resource.resourceKey)) await removeLocalDanmu(resource.resourceKey);
+        if (!destinations.has(resource.resourceKey)) await removeLocalDanmu(resource.resourceKey);
       }
     } catch (error) {
       for (const resource of targets) {

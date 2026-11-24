@@ -174,9 +174,19 @@ export async function saveLocalDanmu(resource) {
   }
   return resource;
 }
-export async function getLocalDanmu(resourceKey) {
-  if (useRedis()) return unwrap(await getRedisKey(`localDanmu:data:${resourceKey}`)) || null;
-  try { return JSON.parse(await fs.readFile(file(resourceKey), 'utf8')); } catch { return null; }
+export async function getLocalDanmu(resourceKey, { forWrite = false } = {}) {
+  if (useRedis()) {
+    if (forWrite && !globals.redisValid) throw new Error('云端 Redis 未连接');
+    const resource = unwrap(await getRedisKey(`localDanmu:data:${resourceKey}`));
+    if (forWrite && resource !== null && !resource?.resourceKey) throw new Error('无法读取已有弹幕资源，请重试');
+    return resource || null;
+  }
+  try {
+    return JSON.parse(await fs.readFile(file(resourceKey), 'utf8'));
+  } catch (error) {
+    if (forWrite && error.code !== 'ENOENT') throw new Error('无法读取已有弹幕资源，请重试', { cause: error });
+    return null;
+  }
 }
 export async function listLocalDanmu() {
   if (useRedis()) {
