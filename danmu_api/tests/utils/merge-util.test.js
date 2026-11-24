@@ -9,9 +9,10 @@ import assert from 'node:assert';
 import { Envs } from '../../configs/envs.js';
 import { Globals } from '../../configs/globals.js';
 import { Season } from '../../models/dandan-model.js';
-import { findSecondaryMatches, applyMergeLogic, resolveDubVersionLinkIndex, mergeLinkEntry } from '../../utils/merge-util.js';
+import { findSecondaryMatches, applyMergeLogic, resolveDubVersionLinkIndex, mergeLinkEntry, cleanText } from '../../utils/merge-util.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTrace, runWithTrace, traceStep, useAsyncLocalStorage } from '../../utils/pipeline-trace.js';
+import { PRIMARY_TITLES, SECONDARY_TITLES } from '../helpers/crayon-shinchan-titles.js';
 
 test('merge findSecondaryMatches 忽略规则与剧集标题的季度与类型噪声', () => {
   Globals.init({ LOG_LEVEL: 'error' });
@@ -510,6 +511,86 @@ test('merge findSecondaryMatches 中文数字季号取完整数字', () => {
     buildAnime(4, '长篇番剧 第十三季(2024)【TV动画】from bahamut', 'bahamut')),
     true, '同为第十三季的候选仍可匹配');
 });
+test('merge cleanText 对相同输入返回一致的清洗结果', () => {
+  const raw = '【bilibili1】 第1話 買東西記';
+  const first = cleanText(raw);
+  const second = cleanText(raw);
+  assert.equal(cleanText(raw), first, '重复清洗同一标题结果一致');
+  // 二次调用走缓存路径，结果与首洗一致；清洗结果再清洗保持不变（缓存不改变输出）
+  assert.equal(cleanText(raw), second, '缓存命中路径与首洗结果一致');
+  assert.equal(cleanText(first), first, '清洗结果幂等');
+  assert.notEqual(cleanText('第2話 畫畫記'), first, '不同标题不受缓存串扰');
+});
+// 蜡笔小新集标题夹具的合并流程，供集数对齐与相似度缓存用例共用
+const mergeCrayonFixture = async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
+  const buildAnime = (animeId, animeTitle, source, typeDescription, titles) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle,
+    aliases: [],
+    source,
+    type: 'tvseries',
+    typeDescription,
+    startDate: '1992-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title, url: `${source}:${animeId}:${i}` })),
+    episodeCount: titles.length,
+  });
+  const primary = buildAnime(5048637, '蜡笔小新 中文(1992)【TV动画】from bilibili', 'bilibili', 'TV动画', PRIMARY_TITLES);
+  const secondary = buildAnime(3670126, '蜡笔小新 第1季(1992)【2D动漫】from tencent', 'tencent', '2D动漫', SECONDARY_TITLES);
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+  return Globals.animes.find((anime) => anime.animeTitle.includes('from bilibili&tencent'));
+};
+// 合并条目的集标题与链接序列，用于比对缓存复用下的合并结果
+const crayonMergedLinks = async () => {
+  const merged = await mergeCrayonFixture();
+  return merged.links.map((link) => `${link.title}||${link.url}`);
+};
+test('merge applyMergeLogic 副源多数集无集号时不产生整体偏移落单', async () => {
+  const merged = await mergeCrayonFixture();
+  assert.ok(merged, '产生合并条目');
+  // 479 集对齐并入；副源唯一无对应内容的主源跳集区副源集（跟妈妈一起洗澡）落单在尾部
+  assert.equal(merged.links.length, 480, '对齐集正常并入，无对应主源集的副源集落单');
+  assert.equal(String(merged.links[0].url).includes('tencent:'), true, '首集副源并入对应主集');
+  assert.match(merged.links[0].title, /买东西记/, '首集标题保持主源内容');
+  assert.equal(String(merged.links[0].url).split('$$$').length, 2, '首集只容纳一个副源链接，尾部数字集号相同的另一集不再重复并入');
+  const softballPaired = merged.links.filter(link => /垒球比赛/.test(String(link.title)));
+  assert.equal(softballPaired.length, 2, '垒球比赛两话各自独立成条');
+  assert.ok(softballPaired.every(link => String(link.url).split('$$$').length === 2), '垒球比赛副源并入对应主源话，尾部数字集号不再造成错配');
+  assert.match(merged.links.at(-1).title, /跟妈妈一起洗澡/, '无对应主源内容的副源集落单在列表尾部');
+});
+test('merge applyMergeLogic 相似度标题缓存命中后合并结果一致', async () => {
+  const first = await crayonMergedLinks();
+  const second = await crayonMergedLinks();
+  assert.ok(first.length > 0, '合并产出条目');
+  assert.deepEqual(second, first, '缓存命中后的合并结果与首次完全一致');
+});
+test('merge applyMergeLogic 相似度标题缓存不串扰不同剧集的合并结果', async () => {
+  const baseline = await crayonMergedLinks();
+  // 先以另一组剧集填充缓存，再重跑夹具合并
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'bilibili&tencent' });
+  const buildOther = (id, source, titles) => ({
+    animeId: id,
+    bangumiId: String(id),
+    animeTitle: `其他剧 第${id}季(2020)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'tvseries',
+    typeDescription: 'TV动画',
+    startDate: '2020-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title, url: `${source}:${id}:${i}` })),
+    episodeCount: titles.length,
+  });
+  const otherTitles = Array.from({ length: 30 }, (_, i) => `【bilibili1】 第${i + 1}话 其他内容${i}`);
+  Globals.animes = [
+    buildOther(7001, 'bilibili', otherTitles),
+    buildOther(7002, 'tencent', otherTitles),
+  ];
+  await applyMergeLogic(Globals.animes);
+  const afterOther = await crayonMergedLinks();
+  assert.deepEqual(afterOther, baseline, '不同剧集复用同一缓存后，夹具合并结果不变');
+});
 test('merge applyMergeLogic 集号基准不同时按季度偏移对齐', async () => {
   Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&animeko' });
   const buildAnime = (animeId, animeTitle, source, titles) => ({
@@ -828,6 +909,134 @@ test('merge applyMergeLogic 小数集号不参与集号基准统计', async () =
   assert.deepStrictEqual(numbersOf(merged, 'bahamut'), ['25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '24.5'], '副源正片按承接编号对齐，番外沉底');
 });
 
+test('merge applyMergeLogic 集号制导定位到已占用主源集时副源集落单', async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&bahamut' });
+  const buildAnime = (animeId, source, titles) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle: `占用落单测试(2026)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'TV动画',
+    typeDescription: 'TV动画',
+    startDate: '2026-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title: `【${source}】 ${title}`, url: `${source}:${animeId}:${i}` })),
+    episodeCount: titles.length,
+  });
+
+  // 副源两集声明同一集号且标题不同，两者都经集号制导定位到主源第 3 集
+  const primary = buildAnime(1, 'dandan', ['第1集 甲', '第2集 乙', '第3集 丙', '第4集 丁']);
+  const secondary = buildAnime(2, 'bahamut', ['第1集 甲', '第2集 乙', '第3集 丙', '第3集 丙之二']);
+
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+
+  const merged = Globals.animes.find((anime) => String(anime.animeTitle).includes('from dandan&bahamut'));
+  assert.notStrictEqual(merged, undefined, '产生合并条目');
+  const third = merged.links[2];
+  assert.strictEqual(String(third.url).split('$$$').length, 2, '主源第3集只并入先定位到的一集');
+  assert.match(String(third.url), /bahamut:2:2/, '并入的是先处理且内容对应的一集');
+  assert.strictEqual(merged.links.length, 5, '后定位的重复集号集落单为独立条目');
+});
+test('merge applyMergeLogic 主源跳集时副源尾部数字集号按锚点配对', async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&bahamut' });
+  const buildAnime = (animeId, source, titles) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle: `跳集集号测试(2026)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'TV动画',
+    typeDescription: 'TV动画',
+    startDate: '2026-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title: `【${source}】 ${title}`, url: `${source}:${animeId}:${i}` })),
+    episodeCount: titles.length,
+  });
+
+  // 主源缺第 4 集；副源每集标题带尾部数字，集号差投票须按标题命中的对应关系配对，
+  // 不能由几何位置偏移推出集号偏移
+  const primary = buildAnime(1, 'dandan', [
+    '第1集 标题1', '第2集 标题2', '第3集 标题3', '第5集 标题5', '第6集 标题6',
+    '第7集 标题7', '第8集 标题8', '第9集 标题9', '第10集 标题10', '第11集 标题11',
+  ]);
+  const secondary = buildAnime(2, 'bahamut', [
+    '标题1 第1', '标题2 第2', '标题3 第3', '标题4 第4', '标题5 第5', '标题6 第6',
+    '标题7 第7', '标题8 第8', '标题9 第9', '标题10 第10', '标题11 第11',
+  ]);
+
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+
+  const merged = Globals.animes.find((anime) => String(anime.animeTitle).includes('from dandan&bahamut'));
+  assert.notStrictEqual(merged, undefined, '产生合并条目');
+  assert.strictEqual(merged.links.length, 11, '主源 10 集全部并入，副源多出的一集落单');
+  for (let i = 0; i < 10; i++) {
+    const num = i < 3 ? i + 1 : i + 2;
+    assert.match(String(merged.links[i].title), new RegExp(`第${num}集`), `主源第 ${num} 集保持原位`);
+    assert.match(String(merged.links[i].url), new RegExp(`bahamut:2:${num - 1}`), `第 ${num} 集并入同集号的副源集`);
+  }
+  assert.match(String(merged.links[10].title), /标题4/, '主源缺第 4 集，对应的副源集落单');
+});
+test('merge applyMergeLogic 副源重复集号时同一主源集只并入一集', async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&bahamut' });
+  const buildAnime = (animeId, source, titles) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle: `重复集号测试(2026)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'TV动画',
+    typeDescription: 'TV动画',
+    startDate: '2026-01-01T00:00:00.000Z',
+    links: titles.map((title, i) => ({ title: `【${source}】 ${title}`, url: `${source}:${animeId}:${i}` })),
+    episodeCount: titles.length,
+  });
+
+  // 副源接口偶发把两集标成同一集号：主源同一集只容纳一个副源链接，另一集按位置落到后续主源集
+  const primary = buildAnime(1, 'dandan', ['第1集 甲', '第2集 乙', '第3集 丙', '第4集 丁', '第5集 戊', '第6集 己']);
+  const secondary = buildAnime(2, 'bahamut', ['第1集 甲', '第2集 乙', '第3集 丙', '第4集 丁', '第5集 戊', '第5集 戊之二']);
+
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+
+  const merged = Globals.animes.find((anime) => String(anime.animeTitle).includes('from dandan&bahamut'));
+  assert.notStrictEqual(merged, undefined, '产生合并条目');
+  assert.strictEqual(merged.links.length, 6, '合并条数与主源集数一致，重复集号不额外增加条目');
+  const fifth = merged.links[4];
+  assert.strictEqual(String(fifth.url).split('$$$').length, 2, '主源第5集只并入一个副源链接');
+  assert.match(String(fifth.url), /bahamut:2:4/, '并入第5集的是集号与内容都对应的那一集');
+});
+test('merge applyMergeLogic 小数番外序列按集号与文本共同对齐', async () => {
+  Globals.init({ LOG_LEVEL: 'error', MERGE_SOURCE_PAIRS: 'dandan&bahamut' });
+  const buildAnime = (animeId, source, unit) => ({
+    animeId,
+    bangumiId: String(animeId),
+    animeTitle: `小数序列测试(2026)【TV动画】from ${source}`,
+    aliases: [],
+    source,
+    type: 'tvseries',
+    typeDescription: 'TV动画',
+    startDate: '2026-01-01T00:00:00.000Z',
+    links: ['1', '2', '2.5', '3', '3.5', '4'].map((n, i) => ({
+      title: `【${source}】 第${n}集 第${n}集内容${i}`,
+      url: `${source}:${animeId}:${i}:第${n}集`,
+    })),
+    episodeCount: 6,
+  });
+
+  const primary = buildAnime(1, 'dandan', '话');
+  const secondary = buildAnime(2, 'bahamut', '集');
+
+  Globals.animes = [primary, secondary];
+  await applyMergeLogic([primary, secondary]);
+
+  const merged = Globals.animes.find((anime) => String(anime.animeTitle).includes('from dandan&bahamut'));
+  assert.notStrictEqual(merged, undefined, '产生合并条目');
+  assert.equal(merged.links.length, 6, '六集各自对齐，小数番外不因查重落单');
+  for (const link of merged.links) {
+    assert.equal(String(link.url).split('$$$').length, 2, `第 ${link.title} 集应并入了对应的副源链接: ${link.url}`);
+  }
+});
 test('merge applyMergeLogic 映射表按拉丁分部标记区分规则', async () => {
   Globals.init({
     LOG_LEVEL: 'error',
@@ -1132,3 +1341,5 @@ test('applyMergeLogic 登记源合并明细供接口详情展示', async () => {
   assert.ok(change.table.rows.some(row => String(row.结果).includes('副源')), '合并项应列出副源');
   assert.ok(change.table.rows.some(row => String(row.结果).includes('已并入')), '被消费的原始条目应说明去向');
 });
+
+

@@ -407,6 +407,11 @@ function normalizeTitleForEngine(title) {
     return normTitle;
 }
 
+// 同一标题在集数对齐与候选比对中会被反复清洗，按原文缓存结果
+const cleanTextCache = new Map();
+// 相似度比对中同一集标题会随偏移枚举被反复比较，按原文缓存清洗结果
+const similarityTitleCache = new Map();
+
 /**
  * 通用文本清洗
  * 包含：繁简转换、移除 N/A 标签、标准化季数格式、保护小数点、移除干扰符号
@@ -414,8 +419,10 @@ function normalizeTitleForEngine(title) {
  * @param {string} text - 原始文本
  * @returns {string} 清洗后的文本（小写）
  */
-function cleanText(text) {
+export function cleanText(text) {
     if (!text) return '';
+    const cached = cleanTextCache.get(text);
+    if (cached !== undefined) return cached;
     let clean = simplized(text);
     clean = clean.replace(RegexStore.Clean.NA_TAG, '');
     // 标准化 Part/Season 表达
@@ -439,7 +446,9 @@ function cleanText(text) {
     clean = clean.replace(/(\d+)\.(\d+)/g, '$1{{DOT}}$2');
     clean = clean.replace(RegexStore.Clean.PUNCTUATION, ' ');
     clean = clean.replace(/{{DOT}}/g, '.');
-    return clean.replace(RegexStore.Clean.WHITESPACE, ' ').toLowerCase().trim();
+    const result = clean.replace(RegexStore.Clean.WHITESPACE, ' ').toLowerCase().trim();
+    cleanTextCache.set(text, result);
+    return result;
 }
 
 /**
@@ -451,6 +460,8 @@ function cleanText(text) {
  */
 function cleanTitleForSimilarity(text) {
     if (!text) return '';
+    const cached = similarityTitleCache.get(text);
+    if (cached !== undefined) return cached;
     // 先做引擎级语义转换，保证特殊系列能被正确对齐
     let clean = normalizeTitleForEngine(text);
     clean = simplized(clean);
@@ -473,7 +484,9 @@ function cleanTitleForSimilarity(text) {
     clean = clean.replace(RegexStore.Lang.KEYWORDS_STRONG,      '');
     clean = clean.replace(RegexStore.Clean.LONE_VER_CHAR,       '');
     clean = clean.replace(RegexStore.Clean.NON_ALPHANUM_CN,     '');
-    return clean.toLowerCase();
+    const result = clean.toLowerCase();
+    similarityTitleCache.set(text, result);
+    return result;
 }
 
 /**
@@ -1431,20 +1444,33 @@ function findBestAlignmentOffset(
     const sInfos = secondaryLinks.map(item => processLink(item, sourceB, seriesLangB, redundantB));
 
     // 计算季度偏移（最小正片集数之差），用于快速定位搜索范围中心
-    let minNormalA = null, minNormalB = null;
+    let minNormalA = null, minNormalB = null, mainCountA = 0, mainCountB = 0, numberedA = 0, numberedB = 0;
     pInfos.forEach(({ info }) => {
-        if (info.num !== null && !info.isSpecial && info.num % 1 === 0)
+        if (info.isSpecial) return;
+        mainCountA++;
+        if (info.num !== null && info.num % 1 === 0) {
+            numberedA++;
             minNormalA = minNormalA === null ? info.num : Math.min(minNormalA, info.num);
+        }
     });
     sInfos.forEach(({ info }) => {
-        if (info.num !== null && !info.isSpecial && info.num % 1 === 0)
+        if (info.isSpecial) return;
+        mainCountB++;
+        if (info.num !== null && info.num % 1 === 0) {
+            numberedB++;
             minNormalB = minNormalB === null ? info.num : Math.min(minNormalB, info.num);
+        }
     });
     const seasonShift = (minNormalA !== null && minNormalB !== null) ? (minNormalA - minNormalB) : null;
 
     // 集号基准：两侧正片的最小集号相差不超过 1 时视为同一套编号，较小一侧仅缺首集且该集由同一来源的相邻分部条目提供
     // 基准不同（一方本季从 1 起、另一方承接上一季顺延编号）时，同一号码落在双方各自不同的集上，号码相等不构成集号对齐的证据
-    const sharesEpisodeBase = (seasonShift !== null && Math.abs(seasonShift) <= 1);
+    // 一侧绝大多数正片无集号时（标题仅写剧名），最小集号来自零星带数字的标题，不能代表该侧编号基准
+    const numericCoverageReliable = (mainCount, numbered) =>
+        mainCount <= 5 || numbered / mainCount >= 0.3;
+    const sharesEpisodeBase = seasonShift !== null && Math.abs(seasonShift) <= 1
+        && numericCoverageReliable(mainCountA, numberedA)
+        && numericCoverageReliable(mainCountB, numberedB);
 
     // 动态计算搜索范围，以估算的季度偏移为中心向外延伸
     const baseRange  = 15;
@@ -2918,13 +2944,97 @@ async function processMergeTask(params) {
                 offset                = bestOffsetLocal + sliceStartP - sliceStartS;
                 if (offset !== 0) log("info", `${logPrefix} 集数自动对齐 (${secSource}): Offset=${offset} (P:${filteredPLinksWithIndex.length}, S:${filteredMLinksWithIndex.length})`);
 
+                // ── 标题一致性多数表决 ───────────────────────────────────────────
+                // 清洗后标题严格一致的集对计为一票一致；一致票达到副源正片八成时，
+                // 表决结果（命中映射与偏移众数）才生效——足够严苛，不改变少数同名集场景的行为
+                const titleIndexed = new Map();
+                filteredPLinksWithIndex.forEach((pItem, i) => {
+                    const pTitle = getTempTitle(pItem.link.title || pItem.link.name, redundantP);
+                    if (extractEpisodeInfo(pTitle, currentPrimarySource).num === null) return;
+                    const key = cleanEpisodeText(pTitle);
+                    if (!titleIndexed.has(key)) titleIndexed.set(key, i);
+                });
+
+                const titleMatches = new Map();
+                const titleLocked  = new Set();
+                filteredMLinksWithIndex.forEach((sItem, k) => {
+                    const sTitle = getTempTitle(sItem.link.title || sItem.link.name, redundantS);
+                    const info = extractEpisodeInfo(sTitle, secSource);
+                    if (isBroadSpecial(info)) return;
+                    const hit = titleIndexed.get(cleanEpisodeText(sTitle));
+                    if (hit !== undefined && !titleLocked.has(hit)) {
+                        titleMatches.set(k, hit);
+                        titleLocked.add(hit);
+                    }
+                });
+
+                const regularCount   = filteredMLinksWithIndex.length;
+                const shiftVoteCount = new Map();
+                for (const [k, hit] of titleMatches) {
+                    shiftVoteCount.set(hit - k, (shiftVoteCount.get(hit - k) || 0) + 1);
+                }
+                const titleShift   = [...shiftVoteCount.entries()].reduce((max, curr) => curr[1] > max[1] ? curr : max, [offset, 0])[0];
+                const titleVoterCount = [...shiftVoteCount.values()].reduce((a, b) => a + b, 0);
+                // 一致票达到副源正片八成才表决生效，高于半数门槛以尽量少触碰原对齐行为；
+                // 锚点稀疏（承接季、少量同名集）时表决不通过，全部沿用原对齐行为。
+                // 生效时：顺序基线取标题偏移，未命中的无集号集按邻近命中集插值落点，
+                // 顺序落点已被命中集占用时落单，主源跳集时副源列表按锚点落位而非整体偏移
+                const useTitleVote = titleVoterCount * 10 >= regularCount * 8;
+                if (titleVoterCount > 0 || useTitleVote) {
+                    log("info", `${logPrefix} 标题一致性表决 (${secSource}): 一致票 ${titleVoterCount}/${regularCount}${useTitleVote ? `，按标题锚点对齐（偏移众数 ${titleShift}）` : '，未达生效门槛'}`);
+                }
+
+                const seqBase       = useTitleVote ? titleShift : offset;
+                const anchors       = [...titleMatches.entries()].sort((a, b) => a[0] - b[0]);
+                // 主源跳集使内容对齐的锚点偏移在跳集前后不一致（如缺第 17 话时后段为 -1、前段为 0），
+                // 全局偏移无法同时满足两段：未命中集的落点改由邻近锚点插值。
+                // 锚点按副源位置升序，二分定位相邻锚点，避免逐集全量扫描
+                const locateByAnchors = (k) => {
+                    let low = 0, high = anchors.length - 1, pos = -1;
+                    while (low <= high) {
+                        const mid = (low + high) >> 1;
+                        if (anchors[mid][0] < k) { pos = mid; low = mid + 1; }
+                        else high = mid - 1;
+                    }
+                    const prev = pos >= 0 ? anchors[pos] : null;
+                    const next = anchors[pos + 1] || null;
+                    if (prev) {
+                        const mapped = prev[1] + (k - prev[0]);
+                        if (!next || mapped < next[1]) return mapped;
+                    }
+                    return null;
+                };
+
+                // 标题尾部数字与锚定位置上的主源集号不符时视为标题噪声（如「垒球比赛 1」的 1），
+                // 该集按无集号处理，不参与集号制导
+                const noisyNumKs = new Set();
+                if (useTitleVote) {
+                    filteredMLinksWithIndex.forEach((sItem, k) => {
+                        if (titleMatches.has(k)) return;
+                        const info = extractEpisodeInfo(getTempTitle(sItem.link.title || sItem.link.name, redundantS), secSource);
+                        if (info.num === null || isBroadSpecial(info)) return;
+                        const expected = locateByAnchors(k);
+                        if (expected === null || expected >= filteredPLinksWithIndex.length) return;
+                        const neighborNum = extractEpisodeInfo(getTempTitle(filteredPLinksWithIndex[expected].link.title || filteredPLinksWithIndex[expected].link.name, redundantP), currentPrimarySource).num;
+                        if (neighborNum !== null && neighborNum !== info.num) noisyNumKs.add(k);
+                    });
+                    if (noisyNumKs.size > 0) {
+                        log("info", `${logPrefix} 标题噪声集号 (${secSource}): ${noisyNumKs.size} 集按无集号对齐`);
+                    }
+                }
+
                 // ── 智能对齐策略（共识差计算） ───────────────────────────────────
                 // 1. 提取共识集数差（consensus shift）
                 // 通过所有正片对的集数差加权投票，找出最可信的"主源集数 - 副源集数"偏移量
                 const shiftCounts = new Map();
                 let lastPNum = null;
                 filteredMLinksWithIndex.forEach((sItem, k) => {
-                    const pItem  = filteredPLinksWithIndex[k + offset];
+                    // 表决生效时按命中锚点配对（集对应关系由标题一致确定），未命中集不参与投票；
+                    // 表决未通过时沿用几何对齐的偏移配对
+                    const matchIndex = titleMatches.get(k);
+                    const pItem  = useTitleVote
+                        ? (matchIndex === undefined ? null : filteredPLinksWithIndex[matchIndex])
+                        : filteredPLinksWithIndex[k + offset];
                     if (!pItem) return;
                     const titleP = getTempTitle(pItem.link.title || pItem.link.name, redundantP);
                     const titleS = getTempTitle(sItem.link.title || sItem.link.name, redundantS);
@@ -2946,6 +3056,13 @@ async function processMergeTask(params) {
                 const consensusShift = shiftCounts.size > 0
                     ? [...shiftCounts.entries()].reduce((max, curr) => curr[1] > max[1] ? curr : max)[0]
                     : null;
+                // 主源集号索引：正片制导按集号定位时用哈希查找替代线性扫描
+                const pNumIndex = new Map();
+                filteredPLinksWithIndex.forEach((pItem, idx) => {
+                    const info = extractEpisodeInfo(getTempTitle(pItem.link.title || pItem.link.name, redundantP), currentPrimarySource);
+                    if (info.num === null || isBroadSpecial(info)) return;
+                    if (!pNumIndex.has(info.num)) pNumIndex.set(info.num, idx);
+                });
 
                 // 2. 预处理主源的广义番外索引池（供番外制导使用）
                 const pSpecialIndices = filteredPLinksWithIndex.reduce((acc, pItem, i) => {
@@ -2957,22 +3074,21 @@ async function processMergeTask(params) {
 
                 // 3. 执行智能映射
                 for (let k = 0; k < filteredMLinksWithIndex.length; k++) {
-                    let pIndex          = k + offset;
+                    let pIndex          = k + seqBase;
                     const sourceLinkItem = filteredMLinksWithIndex[k];
                     const sourceLink    = sourceLinkItem.link;
                     const sTitleShort   = sourceLink.name || sourceLink.title || `Index ${k}`;
                     const cleanTitleS   = getTempTitle(sourceLink.title || sourceLink.name, redundantS);
                     const infoS         = extractEpisodeInfo(cleanTitleS, secSource);
+                    // 噪声集号（标题尾部数字与锚定位置不符）不参与集号制导，按无集号走标题制导
+                    if (noisyNumKs.has(k)) infoS.num = null;
                     const orphanItem    = { link: sourceLink, originalIndex: sourceLinkItem.originalIndex, relativeIndex: pIndex, info: infoS };
                     const broadSpecialS = isBroadSpecial(infoS);
 
                     if (consensusShift !== null && infoS.num !== null && !broadSpecialS) {
                         // [正片制导] 基于共识差精确定位主源对应集
                         const targetNum = infoS.num + consensusShift;
-                        pIndex = filteredPLinksWithIndex.findIndex(pItem => {
-                            const infoP = extractEpisodeInfo(getTempTitle(pItem.link.title || pItem.link.name, redundantP), currentPrimarySource);
-                            return infoP.num === targetNum && !isBroadSpecial(infoP);
-                        });
+                        pIndex = pNumIndex.get(targetNum) ?? -1;
                         if (pIndex !== -1) {
                             orphanItem.relativeIndex = pIndex;
                         } else {
@@ -3004,7 +3120,19 @@ async function processMergeTask(params) {
                         pIndex = bestPIdx;
                         orphanItem.relativeIndex = pIndex !== -1 ? pIndex : filteredPLinksWithIndex.length + (k * 0.001);
                     } else {
-                        orphanItem.relativeIndex = pIndex !== -1 ? pIndex : (k + offset);
+                        // [标题制导] 表决生效时，无集号副源集优先用命中映射，其次按邻近命中集插值；
+                        // 顺序落点已被命中集占用时落单
+                        if (useTitleVote && titleMatches.has(k)) {
+                            pIndex = titleMatches.get(k);
+                        } else if (useTitleVote) {
+                            const anchored = locateByAnchors(k);
+                            if (anchored !== null && !titleLocked.has(anchored)) {
+                                pIndex = anchored;
+                            } else if (titleLocked.has(k + seqBase)) {
+                                pIndex = -1;
+                            }
+                        }
+                        orphanItem.relativeIndex = pIndex !== -1 ? pIndex : (k + seqBase);
                     }
 
                     if (pIndex >= 0 && pIndex < filteredPLinksWithIndex.length) {
@@ -3037,6 +3165,12 @@ async function processMergeTask(params) {
                         const isRegularS       = !infoS.isSpecial && (infoS.num === null || infoS.num % 1 === 0);
                         if ((strictOrDecimalP && isRegularS) || (strictOrDecimalS && isRegularP)) {
                             mappingEntries.push({ idx: orphanItem.relativeIndex, text: `   [略过] ${pTitleShort} =/= ${sTitleShort} (正片与番外阻断)` });
+                            orphanedEpisodes.push(orphanItem);
+                            continue;
+                        }
+                        // 同一主源集只容纳一个副源集的链接：正片定位到已占用集说明集号或标题误判，该集落单
+                        if (!broadSpecialS && matchedPIndices.has(targetPIndex)) {
+                            mappingEntries.push({ idx: orphanItem.relativeIndex, text: `   [略过] ${pTitleShort} =/= ${sTitleShort} (目标集已被其他副源集占用)` });
                             orphanedEpisodes.push(orphanItem);
                             continue;
                         }
@@ -3344,9 +3478,10 @@ export async function applyMergeLogic(curAnimes, detailStore = null) {
     const generatedSignatures = new Set();
     const globalConsumedIds   = new Set();
 
-    // 收集单独作为主源（无副源配置）的来源，用于最终保护阶段
+    // 收集单独作为主源（无副源配置）的来源，用于最终保护阶段；
+    // 以用户声明的配置组为准，映射表规则混入执行组不改变单源保留的范围
     const keepSources = new Set();
-    groups.forEach(g => { if (g.secondaries.length === 0) keepSources.add(g.primary); });
+    baseGroups.forEach(g => { if (g.secondaries.length === 0) keepSources.add(g.primary); });
 
     for (const group of groups) {
         if (group.secondaries.length === 0) continue;

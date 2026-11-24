@@ -12,6 +12,37 @@ import YoukuSource from '../../sources/youku.js';
 import { handleRequest } from '../../worker.js';
 import { MockRequest, parseResponse, token, urlPrefix, withMockFetch } from '../helpers/context.js';
 
+test('youku 分集标题使用平台集号，跳过集数时与数组索引不同', () => {
+  Globals.init({ LOG_LEVEL: 'error' });
+  const source = new YoukuSource();
+  // 平台跳过第 17 集：第 17 项的 seq 为 18
+  const raw = [
+    { id: 'A', title: '养小蝌蚪记', seq: '16', stage: '16' },
+    { id: 'B', title: '避难训练记', seq: '18', stage: '18' },
+    { id: 'C', title: '拣狗记', seq: '19', stage: '19' },
+  ];
+  const formatted = source._processAndFormatEpisodes(raw, 'anime');
+  assert.equal(formatted[0].title, '第16集 养小蝌蚪记');
+  assert.equal(formatted[1].title, '第18集 避难训练记', '跳集后应使用平台集号而非数组序号');
+  assert.equal(formatted[1].episodeIndex, 2, '数组索引保持原义供排序使用');
+  assert.equal(formatted[1].displayNumber, 18);
+});
+
+test('youku 分集标题在平台集号缺失或为 0 时回退数组序号', () => {
+  const source = new YoukuSource();
+  const formatted = source._processAndFormatEpisodes([
+    { id: 'A', title: '第一集内容', seq: '0', stage: '0' },
+    { id: 'B', title: '第二集内容', seq: undefined, stage: undefined },
+    { id: 'C', title: '第三集内容', seq: '5', stage: '5' },
+  ], 'anime');
+  assert.strictEqual(formatted[0].displayNumber, null, 'seq 为 0 视为未提供平台集号');
+  assert.strictEqual(formatted[1].displayNumber, null, 'seq 缺失视为未提供平台集号');
+  assert.strictEqual(formatted[2].displayNumber, 5, '有效 seq 作为平台集号');
+  assert.match(formatted[0].title, /^第1集/, '平台集号缺失时回退数组序号');
+  assert.match(formatted[1].title, /^第2集/, 'seq 缺失时回退数组序号');
+  assert.match(formatted[2].title, /^第5集/, '平台集号有效时优先使用');
+});
+
 test('youku source falls back to a locally generated cna', async (t) => {
   const youkuUrl = 'https://v.youku.com/v_show/id_XNjQ3ODMyNjU3Mg==.html';
 

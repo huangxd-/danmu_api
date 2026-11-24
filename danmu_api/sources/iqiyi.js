@@ -581,24 +581,31 @@ export default class IqiyiSource extends BaseSource {
   }
 
   /**
-   * 补齐分集标题缺失的集数，集数置于作品名后面，与接口自带集数的分集保持同一格式；
-   * 接口未提供集号时不补集数，保持标题原样
+   * 使分集标题中的集号与专辑声明的集号一致：标题缺集数时补齐、集数与声明不符时改写，
+   * 集数置于作品名后面，与接口自带集数的分集保持同一格式；
+   * 接口未提供集号时标题保持原样（接口偶发把个别分集的标题集号写错，如声明第 182 集而标题写第 183 集）
    * @param {string} title - 分集标题
    * @param {string} animeTitle - 所属作品名
-   * @param {number|null} order - 集号
-   * @returns {string} 含集数的分集标题
+   * @param {number|null} order - 专辑声明的集号
+   * @returns {string} 含正确集数的分集标题
    */
   _ensureEpisodeNumber(title, animeTitle, order) {
-    if (extractEpisodeNumberFromTitle(title) !== null) return title;
     const episodeNumber = this._resolveEpisodeOrder(order);
     if (episodeNumber === null) return title;
-    // 作品名去掉年份与类型后缀后再与分集标题比对，避免拼接出来的名字对不上
-    const animeName = extractAnimeTitle(animeTitle || "");
-    const prefix = animeName && title.startsWith(animeName) ? animeName : "";
-    const rest = prefix ? title.slice(prefix.length).trim() : title;
-    return prefix
-      ? `${prefix} 第${episodeNumber}集 ${rest}`.trim()
-      : `第${episodeNumber}集 ${rest}`.trim();
+    const titleNumber = extractEpisodeNumberFromTitle(title);
+    if (titleNumber === null) {
+      // 作品名去掉年份与类型后缀后再与分集标题比对，避免拼接出来的名字对不上
+      const animeName = extractAnimeTitle(animeTitle || "");
+      const prefix = animeName && title.startsWith(animeName) ? animeName : "";
+      const rest = prefix ? title.slice(prefix.length).trim() : title;
+      return prefix
+        ? `${prefix} 第${episodeNumber}集 ${rest}`.trim()
+        : `第${episodeNumber}集 ${rest}`.trim();
+    }
+    // 标题集号与声明集号不符时改写为声明集号，保留标题原有的集/话/回写法
+    if (titleNumber === episodeNumber) return title;
+    // 提取成功的集号与标题写法一致（第N集/话/回），按同一写法替换
+    return title.replace(new RegExp(`第${titleNumber}([集话回])`), (_m, unit) => `第${episodeNumber}${unit}`);
   }
 
   /**

@@ -678,7 +678,7 @@ API 支持返回 Bilibili 标准 XML 格式的弹幕数据，通过查询参数 
 │   ├── server.js               # 本地node启动脚本
 │   ├── worker.js               # 主 API 服务器代码
 │   ├── tests/                  # 测试用例，目录结构与源码一一对应（npm test 入口）
-│   │   ├── helpers/            # 共享夹具（请求/响应 mock、全局状态重置、DOM 沙箱）
+│   │   ├── helpers/            # 共享夹具（请求/响应 mock、全局状态重置、DOM 沙箱、回归测试数据）
 │   │   ├── apis/ configs/ models/ sources/ utils/ ui/  # 按模块镜像的 *.test.js
 │   │   ├── worker-api.test.js  # 请求级端点测试
 │   │   └── manual/             # 依赖真实数据源的手工巡检用例（不参与自动测试，需手动指定路径运行）

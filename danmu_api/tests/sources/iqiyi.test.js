@@ -73,6 +73,33 @@ test('iqiyi episode number keeps titles that already carry an episode number', (
   assert.strictEqual(ensureNumber('太古神尊 EP11', '太古神尊', 11), '太古神尊 EP11');
 });
 
+test('iqiyi episode number rewrites a mismatched number to the declared order', () => {
+  // 接口偶发把标题里的集号写错（声明第 182 集、标题写第 183 集），以声明集号为准改写
+  assert.strictEqual(
+    ensureNumber('蜡笔小新 第一季第183集 参加相扑比赛', '蜡笔小新 第一季', 182),
+    '蜡笔小新 第一季第182集 参加相扑比赛'
+  );
+  // 副标题集号写错同样改写
+  assert.strictEqual(
+    ensureNumber('蜡笔小新 第一季第99集 切西瓜记', '蜡笔小新 第一季', 100),
+    '蜡笔小新 第一季第100集 切西瓜记'
+  );
+  // 话数写法的标题同样按声明集号校正，并保留原有写法
+  assert.strictEqual(
+    ensureNumber('蜡笔小新 第9话 特别的今天', '蜡笔小新 第一季', 10),
+    '蜡笔小新 第10话 特别的今天'
+  );
+  assert.strictEqual(
+    ensureNumber('第9话 特别的今天', '蜡笔小新 第一季', 9),
+    '第9话 特别的今天'
+  );
+  // 声明集号缺失（album_order 置 0）时标题保持原样，不做改写
+  assert.strictEqual(
+    ensureNumber('蜡笔小新 第一季第183集 参加相扑比赛', '蜡笔小新 第一季', 0),
+    '蜡笔小新 第一季第183集 参加相扑比赛'
+  );
+});
+
 test('iqiyi episode number is not added without a valid order', () => {
   assert.strictEqual(ensureNumber('太古神尊 天魔秘藏', '太古神尊', undefined), '太古神尊 天魔秘藏');
   assert.strictEqual(ensureNumber('太古神尊 天魔秘藏', '太古神尊', null), '太古神尊 天魔秘藏');
