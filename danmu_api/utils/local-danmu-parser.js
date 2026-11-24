@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 
 const MAX_LINES = 200000;
@@ -225,7 +226,10 @@ export function parseLocalDanmu(buffer, filename = '') {
   return parseDelimited(text, 'TEXT');
 }
 
-export function normalizeLocalKey(value) { return String(value || '').normalize('NFKC').replace(/\.[^.]+$/, '').trim().toLowerCase().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').slice(0, 180); }
+export function normalizeLocalKey(value) {
+  return String(value || '').normalize('NFKC').trim().toLowerCase()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ');
+}
 
 export function normalizeLocalYear(value) {
   const year = Number.parseInt(String(value ?? '').trim(), 10);
@@ -256,8 +260,7 @@ export function normalizeLocalSeason(value) {
   return Number.isSafeInteger(season) && season > 0 ? season : null;
 }
 
-export function buildLocalDanmuResourceKey({ title, year, type, season = 1, episode = null }) {
-  const cleanTitle = normalizeLocalKey(title);
+function localDanmuIdentity({ year, type, season = 1, episode = null }, cleanTitle) {
   const cleanYear = normalizeLocalYear(year);
   const cleanType = normalizeLocalType(type);
   const cleanSeason = normalizeLocalSeason(season);
@@ -265,14 +268,26 @@ export function buildLocalDanmuResourceKey({ title, year, type, season = 1, epis
   if (!cleanTitle) throw new Error('标题为必填项');
   if (cleanSeason === null) throw new Error('季数必须是大于 0 的整数');
   const parts = [cleanTitle, cleanYear ?? 'any', cleanType || 'any'];
-  // 第 1 季沿用旧键，已有链接及同集重新上传继续生效；其他季增加独立标识。
   if (cleanSeason !== 1) parts.push(`s${cleanSeason}`);
   parts.push(cleanEpisode ?? 'all');
   return parts.join('|');
 }
 
+export function buildLocalDanmuResourceKey(resource) {
+  const identity = localDanmuIdentity(resource, normalizeLocalKey(resource.title));
+  // 新键与历史键分开，避免任何新标题占用另一个作品留下的旧键。
+  return `v2-${createHash('sha256').update(identity).digest('hex')}`;
+}
+
+export function buildLegacyLocalDanmuResourceKey(resource) {
+  const title = String(resource.title || '').normalize('NFKC').replace(/\.[^.]+$/, '');
+  const cleanTitle = normalizeLocalKey(title).slice(0, 180);
+  return cleanTitle ? localDanmuIdentity(resource, cleanTitle) : null;
+}
+
 export function groupLocalDanmuResources(resources) {
   const groups = new Map();
+  const legacyGroups = new Map();
   for (const resource of resources) {
     if (!resource?.resourceKey || !normalizeLocalKey(resource.title)) continue;
     const season = normalizeLocalSeason(resource.season);
@@ -280,6 +295,11 @@ export function groupLocalDanmuResources(resources) {
     const year = normalizeLocalYear(resource.year);
     const type = normalizeLocalType(resource.type);
     const groupKey = buildLocalDanmuResourceKey({ ...resource, season, episode: null });
+    if (resource.resourceKey === buildLegacyLocalDanmuResourceKey(resource)) {
+      const legacyKey = buildLegacyLocalDanmuResourceKey({ ...resource, season, episode: null });
+      if (!legacyGroups.has(legacyKey)) legacyGroups.set(legacyKey, new Set());
+      legacyGroups.get(legacyKey).add(groupKey);
+    }
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
         groupKey, title: String(resource.title).trim(), year, type, season,
@@ -292,6 +312,10 @@ export function groupLocalDanmuResources(resources) {
     group.count += Number(resource.count) || 0;
     group.size += Number(resource.size) || 0;
     if (String(resource.updatedAt || '') > group.updatedAt) group.updatedAt = resource.updatedAt;
+  }
+  // 旧详情 ID 只留给仍能唯一确定归属的剧集。
+  for (const [legacyKey, owners] of legacyGroups) {
+    if (owners.size === 1) groups.get(owners.values().next().value).groupKey = legacyKey;
   }
   for (const group of groups.values()) {
     group.episodes.sort((a, b) => (a.episode ?? Infinity) - (b.episode ?? Infinity));

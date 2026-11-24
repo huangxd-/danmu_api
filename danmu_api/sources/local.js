@@ -12,13 +12,14 @@ export default class LocalSource extends BaseSource {
   async search(keyword) {
     if (!String(keyword || '').trim()) return [];
     const resources = await listLocalDanmu();
-    return resources.filter(resource => resource?.status === 'ready' && resource.resourceKey && titleMatches(seasonTitle(resource), keyword));
+    const groups = groupLocalDanmuResources(resources.filter(resource => resource?.status === 'ready'));
+    return groups.filter(group => titleMatches(seasonTitle(group), keyword));
   }
 
-  async handleAnimes(sourceAnimes, queryTitle, curAnimes, detailStore = null, querySeason = null) {
-    if (!Array.isArray(sourceAnimes)) return [];
+  async handleAnimes(groups, queryTitle, curAnimes, detailStore = null, querySeason = null) {
+    if (!Array.isArray(groups)) return [];
     const animes = [];
-    for (const group of groupLocalDanmuResources(sourceAnimes)) {
+    for (const group of groups) {
       if (querySeason !== null && group.season !== querySeason) continue;
       if (!titleMatches(seasonTitle(group), queryTitle, querySeason)) continue;
       const { year, season, episodes } = group;

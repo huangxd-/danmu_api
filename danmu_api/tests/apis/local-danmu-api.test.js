@@ -10,14 +10,15 @@ import { Request as NodeFetchRequest } from 'node-fetch';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { getBangumi, getComment, getSegmentComment, matchAnime, searchAnime } from '../../apis/dandan-api.js';
+import { getBangumi, getComment, getCommentByUrl, getSegmentComment, matchAnime, searchAnime } from '../../apis/dandan-api.js';
 import { handleLocalDanmuList, handleLocalDanmuDelete, handleLocalDanmuGet, handleLocalDanmuUpdate } from '../../apis/local-danmu-api.js';
 import { handleConfig } from '../../apis/system-api.js';
 import { Globals } from '../../configs/globals.js';
 import { Season } from '../../models/dandan-model.js';
 import { getSourceByKey } from '../../sources/registry.js';
 import { addAnime } from '../../utils/cache-util.js';
-import { buildLocalDanmuResourceKey } from '../../utils/local-danmu-parser.js';
+import { convertToAsciiSum } from '../../utils/codec-util.js';
+import { buildLegacyLocalDanmuResourceKey, buildLocalDanmuResourceKey } from '../../utils/local-danmu-parser.js';
 import { saveLocalDanmu, getLocalDanmu, listLocalDanmu, findLocalDanmu, removeLocalDanmu } from '../../utils/local-danmu-store.js';
 import { handleRequest } from '../../worker.js';
 import { token } from '../helpers/context.js';
@@ -142,6 +143,7 @@ test('local source configuration and search', async t => {
   await t.test('first-season uploads replace legacy files and later seasons remain independent', async () => {
     resetState();
     const legacy = makeResource('旧季兼容', 5);
+    legacy.resourceKey = buildLegacyLocalDanmuResourceKey(legacy);
     await saveLocalDanmu(legacy);
     const oldMetadata = await (await handleLocalDanmuGet(legacy.resourceKey)).json();
     assert.equal(oldMetadata.resource.season, 1);
@@ -244,6 +246,52 @@ test('local source configuration and search', async t => {
     assert.deepEqual(groups[1].episodes.map(resource => resource.episode), [5, 10]);
     assert.ok(listing.resources.every(resource => !('comments' in resource)));
     assert.ok(groups.every(group => group.episodes.every(resource => !('comments' in resource))));
+  });
+
+  await t.test('uploads of different dotted titles store and serve their own comments', async () => {
+    resetState();
+    const common = { year: 2020, type: 'tv', season: 1, episode: 1 };
+    const titles = ['Mr. Queen', 'Mr. Heart'];
+    const keys = [];
+    for (const title of titles) {
+      const response = await uploadResource({ ...common, title }, title);
+      assert.equal(response.status, 200);
+      const { resource } = await response.json();
+      keys.push(resource.resourceKey);
+    }
+    assert.notEqual(keys[0], keys[1]);
+    const { groups } = await (await handleLocalDanmuList()).json();
+    assert.deepEqual(groups.filter(group => titles.includes(group.title)).map(group => group.title).sort(), titles.slice().sort());
+    for (const [index, key] of keys.entries()) {
+      const comments = await (await getCommentByUrl(`local:${key}`, 'json', false)).json();
+      assert.equal(comments.comments[0].m, titles[index]);
+    }
+  });
+
+  await t.test('legacy uploads keep their resource key and unambiguous detail ID', async () => {
+    resetState();
+    const legacy = { ...makeResource('Dr. Alpha', 1, 2024), filename: 'old.json' };
+    legacy.resourceKey = buildLegacyLocalDanmuResourceKey(legacy);
+    await saveLocalDanmu(legacy);
+
+    const otherFields = { title: 'Dr', year: 2024, type: 'tv', episode: 1 };
+    const otherUpload = await uploadResource(otherFields, 'other title');
+    assert.equal(otherUpload.status, 200);
+    const { resource: other } = await otherUpload.json();
+    assert.notEqual(other.resourceKey, legacy.resourceKey);
+    assert.deepEqual((await getLocalDanmu(legacy.resourceKey)).comments, legacy.comments);
+
+    const replacement = await uploadResource(legacy, 'updated legacy');
+    assert.equal(replacement.status, 200);
+    assert.equal((await replacement.json()).resource.resourceKey, legacy.resourceKey);
+    const oldGroupKey = buildLegacyLocalDanmuResourceKey({ ...legacy, episode: null });
+    const results = await (await searchAnime(localDanmuSearchUrl(legacy.title))).json();
+    const oldAnimeId = convertToAsciiSum(`local:${oldGroupKey}`);
+    assert.equal(results.animes.find(row => row.animeTitle.startsWith(legacy.title))?.animeId, oldAnimeId);
+    assert.equal((await getBangumi(`/api/v2/bangumi/${oldAnimeId}`)).status, 200);
+    const comments = await (await getCommentByUrl(`local:${legacy.resourceKey}`, 'json', false)).json();
+    assert.equal(comments.comments[0].m, 'updated legacy');
+    assert.equal((await getLocalDanmu(other.resourceKey)).comments[0].m, 'other title');
   });
 
   await t.test('local metadata edits migrate resource keys and reject conflicts', async () => {

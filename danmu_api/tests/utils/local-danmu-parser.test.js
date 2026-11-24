@@ -10,7 +10,7 @@ import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { Season } from '../../models/dandan-model.js';
 import { logviewJsContent } from '../../ui/js/logview.js';
-import { buildLocalDanmuResourceKey, groupLocalDanmuResources, parseLocalDanmu, normalizeLocalSeason } from '../../utils/local-danmu-parser.js';
+import { buildLegacyLocalDanmuResourceKey, buildLocalDanmuResourceKey, groupLocalDanmuResources, parseLocalDanmu, normalizeLocalSeason } from '../../utils/local-danmu-parser.js';
 import { localDanmuExpected, localDanmuJson } from '../helpers/local-danmu.js';
 
 test('UTF-8 JSON preserves a literal replacement character without changing encoding', () => {
@@ -155,10 +155,22 @@ test('local seasons default to one and reject invalid season numbers', () => {
 });
 test('season keys preserve legacy first-season links and isolate later seasons', () => {
   const fields = { title: '逐玉', year: 2026, type: 'TV', episode: 5 };
-  assert.equal(buildLocalDanmuResourceKey(fields), '逐玉|2026|tv|5');
-  assert.equal(buildLocalDanmuResourceKey({ ...fields, season: 1 }), '逐玉|2026|tv|5');
+  assert.equal(buildLegacyLocalDanmuResourceKey(fields), '逐玉|2026|tv|5');
+  assert.match(buildLocalDanmuResourceKey(fields), /^v2-[0-9a-f]{64}$/);
+  assert.equal(buildLocalDanmuResourceKey({ ...fields, season: 1 }), buildLocalDanmuResourceKey(fields));
   assert.notEqual(buildLocalDanmuResourceKey({ ...fields, season: 2 }), buildLocalDanmuResourceKey(fields));
   assert.throws(() => buildLocalDanmuResourceKey({ ...fields, season: -1 }), /季数/);
+});
+test('extension-like title endings are distinct and an ambiguous legacy group is separated', () => {
+  const fields = { year: 2020, type: 'tv', season: 1 };
+  const rows = [
+    { ...fields, title: 'Manual.json', episode: 1 },
+    { ...fields, title: 'Manual.xml', episode: 2 },
+  ];
+  assert.notEqual(buildLocalDanmuResourceKey(rows[0]), buildLocalDanmuResourceKey({ ...rows[1], episode: 1 }));
+  const groups = groupLocalDanmuResources(rows.map(row => ({ ...row, resourceKey: buildLegacyLocalDanmuResourceKey(row) })));
+  assert.equal(groups.length, 2);
+  assert.ok(groups.every(group => group.groupKey.startsWith('v2-')));
 });
 test('grouping uses title, year, type and season while sorting actual episode numbers', () => {
   const fields = { title: '逐玉', year: 2026, type: 'TV', season: 1, episode: 10, count: 3, size: 100 };
